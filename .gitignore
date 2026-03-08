@@ -1,0 +1,32 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+venv/
+.venv/
+*.egg-info/
+
+# Data — large files, not tracked
+osu/taiko/audio/
+osu/taiko/charts/
+osu/taiko/data/
+osu/taiko/datasets/
+osu/taiko/mels/
+osu/taiko/metadata.csv
+mels/
+
+# Outputs — generated per-run
+osu/taiko/runs/
+osu/taiko/graphs/
+osu/taiko/*_predicted.csv
+
+# OS / IDE
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+.vscode/
+.idea/
+
+# Claude Code, my besty
+.claude/

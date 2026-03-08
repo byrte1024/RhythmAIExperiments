@@ -1,0 +1,1834 @@
+"""Training script for onset detection model."""
+import os
+import json
+import random
+import argparse
+import numpy as np
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+import math
+from torch.utils.data import Dataset, DataLoader, WeightedRandomSampler
+from tqdm import tqdm
+
+from detection_model import OnsetDetector
+
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+
+# ── hyperparams ──
+A_BINS = 500        # past audio context (2.5s at 5ms)
+B_BINS = 500        # future audio context (2.5s at 5ms)
+C_EVENTS = 128      # past event context
+N_CLASSES = 501     # 0-499 bin offsets + 500=STOP
+WINDOW = A_BINS + B_BINS
+MIN_CURSOR_BIN = 6000  # only train where cursor >= 30s
+
+
+# ═══════════════════════════════════════════════════════════════
+#  Dataset
+# ═══════════════════════════════════════════════════════════════
+
+class OnsetDataset(Dataset):
+    """Yields (mel_window, event_offsets, event_mask, conditioning, target) samples."""
+
+    def __init__(self, manifest, ds_dir, chart_indices, augment=False, subsample=1):
+        self.mel_dir = os.path.join(ds_dir, "mels")
+        self.charts = [manifest["charts"][i] for i in chart_indices]
+        self.augment = augment
+
+        self.events = []
+        evt_dir = os.path.join(ds_dir, "events")
+        for chart in self.charts:
+            evt = np.load(os.path.join(evt_dir, chart["event_file"]))
+            self.events.append(evt)
+
+        # build sample index, skip samples where cursor is in first 30s
+        self.samples = []
+        for ci, evt in enumerate(self.events):
+            for ei in range(len(evt)):
+                cursor = max(0, int(evt[0]) - B_BINS) if ei == 0 else int(evt[ei - 1])
+                if cursor >= MIN_CURSOR_BIN:
+                    self.samples.append((ci, ei))
+            if len(evt) > 0 and int(evt[-1]) >= MIN_CURSOR_BIN:
+                self.samples.append((ci, len(evt)))
+
+        # subsample: keep every Nth sample
+        if subsample > 1:
+            self.samples = self.samples[::subsample]
+
+        # precompute class distribution
+        self.class_counts = np.zeros(N_CLASSES, dtype=np.int64)
+        for ci_idx, ei_idx in self.samples:
+            self.class_counts[self._get_target(ci_idx, ei_idx)] += 1
+
+        # per-worker mmap cache (lazily populated)
+        self._mel_cache = {}
+
+    def _get_target(self, ci, ei):
+        evt = self.events[ci]
+        if ei == 0:
+            cursor = max(0, int(evt[0]) - B_BINS) if len(evt) > 0 else 0
+        else:
+            cursor = int(evt[ei - 1])
+        if ei < len(evt):
+            offset = max(0, int(evt[ei]) - cursor)
+            return N_CLASSES - 1 if offset >= B_BINS else offset
+        return N_CLASSES - 1
+
+    def _get_mel(self, mel_file):
+        if mel_file not in self._mel_cache:
+            # mmap: each worker gets its own handle, OS page cache shares data
+            self._mel_cache[mel_file] = np.load(
+                os.path.join(self.mel_dir, mel_file), mmap_mode="r"
+            )
+        return self._mel_cache[mel_file]
+
+    def __len__(self):
+        return len(self.samples)
+
+    def __getitem__(self, idx):
+        ci, ei = self.samples[idx]
+        chart = self.charts[ci]
+        evt = self.events[ci]
+
+        if ei == 0:
+            cursor = max(0, evt[0] - B_BINS) if len(evt) > 0 else 0
+        else:
+            cursor = int(evt[ei - 1])
+
+        # target
+        if ei < len(evt):
+            offset = max(0, int(evt[ei]) - cursor)
+            target = N_CLASSES - 1 if offset >= B_BINS else offset
+        else:
+            target = N_CLASSES - 1
+
+        # mel window (stored as float16, convert 1000-frame slice to float32)
+        mel = self._get_mel(chart["mel_file"])
+        total_frames = mel.shape[1]
+        start = cursor - A_BINS
+        end = cursor + B_BINS
+        pad_left = max(0, -start)
+        pad_right = max(0, end - total_frames)
+        mel_window = mel[:, max(0, start):min(total_frames, end)].astype(np.float32)
+        if pad_left > 0 or pad_right > 0:
+            mel_window = np.pad(mel_window, ((0, 0), (pad_left, pad_right)), mode="constant")
+
+        # past events
+        if ei > 0:
+            past_start = max(0, ei - C_EVENTS)
+            past_bins = evt[past_start:ei].astype(np.int64) - cursor
+        else:
+            past_bins = np.array([], dtype=np.int64)
+
+        # augmentations
+        if self.augment:
+            mel_window, past_bins, cond_jitter = self._augment(mel_window, past_bins)
+        else:
+            cond_jitter = np.ones(3, dtype=np.float32)
+
+        # pad events to C_EVENTS
+        n_past = len(past_bins)
+        event_offsets = np.zeros(C_EVENTS, dtype=np.int64)
+        event_mask = np.ones(C_EVENTS, dtype=bool)
+        if n_past > 0:
+            event_offsets[-n_past:] = past_bins
+            event_mask[-n_past:] = False
+
+        cond = np.array([
+            chart.get("density_mean", 4.0),
+            chart.get("density_peak", 8),
+            chart.get("density_std", 1.5),
+        ], dtype=np.float32) * cond_jitter
+
+        return (
+            torch.from_numpy(mel_window),
+            torch.from_numpy(event_offsets),
+            torch.from_numpy(event_mask),
+            torch.from_numpy(cond),
+            torch.tensor(target, dtype=torch.long),
+        )
+
+    def _augment(self, mel_window, past_bins):
+        rng = np.random.default_rng()
+        cond_jitter = np.ones(3, dtype=np.float32)
+
+        # event jitter ±0-4 bins
+        if len(past_bins) > 0:
+            past_bins = np.sort(past_bins + rng.integers(-4, 5, size=len(past_bins)))
+
+        # context dropout (8%)
+        if rng.random() < 0.08:
+            past_bins = np.array([], dtype=np.int64)
+        # context truncation (10%)
+        elif len(past_bins) > 1 and rng.random() < 0.10:
+            past_bins = past_bins[-rng.integers(1, len(past_bins)):]
+        # context corruption: time-warp events by a random musical fraction (15%)
+        # teaches model that event timing can be misleading
+        elif len(past_bins) > 2 and rng.random() < 0.15:
+            frac = rng.choice([0.5, 2.0, 1.0/3, 0.75, 5.0/3, 1.5, 0.66])
+            past_bins = np.sort((past_bins.astype(np.float64) * frac).astype(np.int64))
+            past_bins = np.clip(past_bins, -A_BINS, -1)
+        # context shuffle: randomize order of gaps (10%)
+        # preserves range but destroys rhythmic pattern
+        elif len(past_bins) > 3 and rng.random() < 0.10:
+            gaps = np.diff(past_bins)
+            rng.shuffle(gaps)
+            past_bins = np.concatenate([[past_bins[0]], past_bins[0] + np.cumsum(gaps)])
+            past_bins = np.clip(past_bins, -A_BINS, -1)
+
+        # audio fade-in (15%)
+        if rng.random() < 0.15:
+            fl = rng.integers(20, 101)
+            mel_window[:, :fl] *= np.linspace(0, 1, fl, dtype=np.float32)[np.newaxis, :]
+        # audio fade-out (15%)
+        if rng.random() < 0.15:
+            fl = rng.integers(20, 101)
+            mel_window[:, -fl:] *= np.linspace(1, 0, fl, dtype=np.float32)[np.newaxis, :]
+
+        # mel gain ±3dB (50%)
+        if rng.random() < 0.5:
+            mel_window = mel_window + rng.uniform(-3.0, 3.0)
+        # mel noise (30%)
+        if rng.random() < 0.3:
+            mel_window = mel_window + rng.normal(0, rng.uniform(0.1, 0.5), mel_window.shape).astype(np.float32)
+
+        # SpecAugment freq mask (40%)
+        if rng.random() < 0.4:
+            n = rng.integers(1, 9)
+            f = rng.integers(0, mel_window.shape[0] - n)
+            mel_window[f:f + n, :] = 0
+        # SpecAugment time mask (40%)
+        if rng.random() < 0.4:
+            n = rng.integers(1, 41)
+            t = rng.integers(0, mel_window.shape[1] - n)
+            mel_window[:, t:t + n] = 0
+
+        # conditioning jitter ±15% (50%)
+        if rng.random() < 0.5:
+            cond_jitter = rng.uniform(0.85, 1.15, size=3).astype(np.float32)
+
+        return mel_window, past_bins, cond_jitter
+
+
+# ═══════════════════════════════════════════════════════════════
+#  Loss
+# ═══════════════════════════════════════════════════════════════
+
+class OnsetLoss(nn.Module):
+    """Trapezoid soft-target cross-entropy loss.
+
+    Soft targets use a trapezoid shape in log-ratio space:
+      - Within `good_pct` (3%): full credit (flat plateau)
+      - Between `good_pct` and `fail_pct` (20%): linear ramp to zero
+      - Beyond `fail_pct`: zero weight (total failure, same as random guess)
+
+    This is proportional: predicting 10 when target is 20 (50% error) is
+    punished the same as predicting 100 when target is 200.
+
+    loss = hard_alpha * hard_CE + (1 - hard_alpha) * soft_CE
+    STOP class always gets a hard target.
+    """
+
+    def __init__(self, weight=None, gamma=0.0, good_pct=0.03, fail_pct=0.20,
+                 hard_alpha=0.5, frame_tolerance=2, stop_weight=3.0):
+        super().__init__()
+        self.gamma = gamma
+        self.good_pct = good_pct
+        self.fail_pct = fail_pct
+        self.hard_alpha = hard_alpha
+        self.frame_tolerance = frame_tolerance  # ±N frames always get some credit
+        self.stop_weight = stop_weight  # extra penalty for missing STOP
+        # precompute log thresholds
+        self.log_good = math.log(1 + good_pct)   # ~0.0296
+        self.log_fail = math.log(1 + fail_pct)    # ~0.182
+        self.register_buffer("weight", weight)
+
+    def _make_soft_targets(self, targets, n_classes):
+        """Convert hard targets to trapezoid soft distributions in log-ratio space."""
+        B = targets.size(0)
+        soft = torch.zeros(B, n_classes, device=targets.device)
+
+        stop = n_classes - 1
+        is_stop = targets == stop
+        is_bin = ~is_stop
+
+        # STOP class: hard target
+        if is_stop.any():
+            soft[is_stop, stop] = 1.0
+
+        # bin classes: trapezoid in log-ratio space over bins 0..(stop-1)
+        if is_bin.any():
+            bin_targets = targets[is_bin].float()  # (M,)
+            bins = torch.arange(stop, device=targets.device, dtype=torch.float32)
+
+            # |log((i+1)/(t+1))| = proportional distance in ratio space
+            abs_log_ratio = torch.abs(
+                torch.log((bins + 1).unsqueeze(0) / (bin_targets + 1).unsqueeze(1))
+            )
+
+            # trapezoid: 1.0 inside good, linear ramp to 0 at fail, 0 beyond
+            ramp_width = self.log_fail - self.log_good
+            ratio_weights = ((self.log_fail - abs_log_ratio) / ramp_width).clamp(0, 1)
+
+            # frame-distance floor: ±frame_tolerance bins always get some credit
+            # (prevents tiny targets like t=2 from having zero-width plateaus)
+            frame_dist = torch.abs(bins.unsqueeze(0) - bin_targets.unsqueeze(1))
+            frame_weights = ((self.frame_tolerance + 1 - frame_dist) / (self.frame_tolerance + 1)).clamp(0, 1)
+
+            # take the max of ratio-based and frame-based
+            weights = torch.max(ratio_weights, frame_weights)
+
+            weights = weights / weights.sum(dim=1, keepdim=True).clamp(min=1e-8)
+            soft[is_bin, :stop] = weights
+
+        return soft
+
+    def forward(self, logits, targets):
+        n_classes = logits.size(1)
+        log_probs = F.log_softmax(logits, dim=-1).clamp(min=-100)
+
+        # ── hard CE: exact target class ──
+        hard_ce = F.cross_entropy(logits, targets, reduction="none")
+
+        # ── soft CE: trapezoid targets ──
+        soft_targets = self._make_soft_targets(targets, n_classes)
+        soft_ce = -(soft_targets * log_probs).sum(dim=-1)
+
+        # ── mix ──
+        ce = self.hard_alpha * hard_ce + (1 - self.hard_alpha) * soft_ce
+
+        # extra penalty when target is STOP — model must learn to stop
+        if self.stop_weight > 1.0:
+            is_stop = (targets == n_classes - 1)
+            ce = ce * torch.where(is_stop, self.stop_weight, 1.0)
+
+        # per-sample class weight
+        if self.weight is not None:
+            ce = ce * self.weight[targets]
+
+        # optional focal modulation
+        if self.gamma > 0:
+            pt = torch.exp(log_probs.gather(1, targets.unsqueeze(1)).squeeze(1))
+            ce = ((1 - pt) ** self.gamma) * ce
+
+        return ce.mean()
+
+
+# ═══════════════════════════════════════════════════════════════
+#  Metrics & Graphs
+# ═══════════════════════════════════════════════════════════════
+
+def print_class_distribution(dataset):
+    """Print class distribution stats."""
+    counts = torch.from_numpy(dataset.class_counts).float()
+    total = counts.sum().item()
+    nonzero = (counts > 0).sum().item()
+
+    print(f"\nClass distribution ({total:.0f} total samples):")
+    print(f"  Non-empty classes: {nonzero}/{N_CLASSES}")
+    print(f"  STOP class (500): {counts[-1]:.0f} ({counts[-1]/total*100:.1f}%)")
+    for lo, hi in [(0, 10), (10, 25), (25, 50), (50, 100), (100, 200), (200, 500)]:
+        c = counts[lo:hi].sum().item()
+        print(f"  Offset {lo:>3}-{hi:>3}: {c:>10.0f} ({c/total*100:5.1f}%)")
+    top_k = torch.topk(counts[:500], 10)
+    print(f"  Top 10 offsets: {', '.join(f'{i}={int(c)}' for i, c in zip(top_k.indices.tolist(), top_k.values.tolist()))}\n")
+
+
+def compute_class_weights(dataset, mode="log"):
+    """Compute per-class loss weights (used when balanced sampling is off)."""
+    counts = torch.from_numpy(dataset.class_counts).float()
+
+    if mode == "log":
+        max_count = counts.max()
+        weights = torch.log(max_count / (counts + 1.0) + 1.0)
+        weights[counts == 0] = 0.0
+    elif mode == "sqrt":
+        weights = 1.0 / torch.sqrt(counts + 1.0)
+    elif mode == "none":
+        weights = torch.ones_like(counts)
+    else:
+        raise ValueError(f"Unknown weight mode: {mode}")
+
+    weights = weights / weights[weights > 0].mean()
+    print(f"  Loss weight mode: {mode}, range: [{weights.min():.4f}, {weights.max():.4f}]")
+    return weights
+
+
+@torch.no_grad()
+def validate_and_collect(model, loader, criterion, device, amp_enabled=False):
+    """Single pass: compute val loss AND collect predictions + extra data for graphs."""
+    model.eval()
+    all_targets = []
+    all_preds = []
+    all_cond = []
+    all_prev_gap = []
+    all_ctx_len = []
+    all_topk = []       # top-10 predictions per sample
+    all_entropy = []    # logit entropy per sample
+    total_loss = 0.0
+    total_n = 0
+    for mel, evt_off, evt_mask, cond, target in loader:
+        mel = mel.to(device, non_blocking=True)
+        evt_off = evt_off.to(device, non_blocking=True)
+        evt_mask = evt_mask.to(device, non_blocking=True)
+        cond = cond.to(device, non_blocking=True)
+        target = target.to(device, non_blocking=True)
+
+        with torch.autocast("cuda", enabled=amp_enabled):
+            logits = model(mel, evt_off, evt_mask, cond)
+            loss = criterion(logits, target)
+
+        total_loss += loss.item() * target.size(0)
+        total_n += target.size(0)
+        all_preds.append(logits.argmax(1).cpu().numpy())
+        all_targets.append(target.cpu().numpy())
+        all_cond.append(cond.cpu().numpy())
+
+        # top-10 predictions
+        all_topk.append(logits.topk(10, dim=1).indices.cpu().numpy())  # (B, 10)
+
+        # entropy of softmax distribution
+        probs = torch.softmax(logits.float(), dim=-1)
+        ent = -(probs * (probs + 1e-10).log()).sum(dim=-1)  # (B,)
+        all_entropy.append(ent.cpu().numpy())
+
+        # context length + prev_gap from event mask
+        em = evt_mask.cpu().numpy()  # (B, C) True=padded
+        ctx_lens = (~em).sum(axis=1)  # number of valid past events
+        all_ctx_len.append(ctx_lens)
+
+        eo = evt_off.cpu().numpy()
+        B = eo.shape[0]
+        prev_gaps = np.full(B, np.nan, dtype=np.float64)
+        for b in range(B):
+            valid = ~em[b]
+            if valid.sum() >= 2:
+                valid_offsets = eo[b][valid]
+                prev_gaps[b] = abs(int(valid_offsets[-2]))
+        all_prev_gap.append(prev_gaps)
+
+    val_loss = total_loss / total_n
+    extra = {
+        "targets": np.concatenate(all_targets),
+        "preds": np.concatenate(all_preds),
+        "conds": np.concatenate(all_cond),
+        "prev_gaps": np.concatenate(all_prev_gap),
+        "ctx_len": np.concatenate(all_ctx_len),
+        "topk": np.concatenate(all_topk),
+        "entropy": np.concatenate(all_entropy),
+    }
+    return val_loss, extra
+
+
+def compute_metrics(targets, preds):
+    """Compute all metrics from target/pred arrays."""
+    m = {}
+
+    # accuracy
+    m["accuracy"] = (targets == preds).mean().item()
+
+    # STOP class (500) F1/precision/recall
+    stop = N_CLASSES - 1
+    tp = ((preds == stop) & (targets == stop)).sum()
+    fp = ((preds == stop) & (targets != stop)).sum()
+    fn = ((preds != stop) & (targets == stop)).sum()
+    m["stop_precision"] = (tp / (tp + fp)).item() if (tp + fp) > 0 else 0.0
+    m["stop_recall"] = (tp / (tp + fn)).item() if (tp + fn) > 0 else 0.0
+    m["stop_f1"] = (2 * tp / (2 * tp + fp + fn)).item() if (2 * tp + fp + fn) > 0 else 0.0
+
+    # non-stop samples only for frame/relative error
+    ns = targets < stop
+    if ns.sum() > 0:
+        t_ns = targets[ns].astype(np.float64)
+        p_ns = preds[ns].astype(np.float64)
+
+        # frame error: |pred - target|
+        frame_err = np.abs(p_ns - t_ns)
+        m["frame_error_mean"] = frame_err.mean().item()
+        m["frame_error_median"] = np.median(frame_err).item()
+        m["frame_error_p90"] = np.percentile(frame_err, 90).item()
+        m["frame_error_p99"] = np.percentile(frame_err, 99).item()
+
+        # ratio: (pred+1)/(target+1), 1.0 = perfect
+        ratio = (p_ns + 1) / (t_ns + 1)
+        pct_err = np.abs(ratio - 1.0)  # 0.0 = perfect, 0.03 = 3% off
+
+        # relative error: log-ratio
+        log_ratio = np.log(p_ns + 1) - np.log(t_ns + 1)
+        m["rel_error_mean"] = np.abs(log_ratio).mean().item()
+        m["rel_error_median"] = np.median(np.abs(log_ratio)).item()
+        m["rel_error_std"] = log_ratio.std().item()
+        m["ratio_mean"] = ratio.mean().item()
+        m["ratio_median"] = np.median(ratio).item()
+
+        # ── primary metrics: HIT / GOOD / MISS rates ──
+        # HIT: within 3% ratio OR within 1 frame (either qualifies)
+        hit = (pct_err <= 0.03) | (frame_err <= 1)
+        good = (pct_err <= 0.10) | (frame_err <= 2)
+        miss = pct_err > 0.20
+
+        m["hit_rate"] = hit.mean().item()       # within 3% or ±1 frame
+        m["good_rate"] = good.mean().item()     # within 10% or ±2 frames
+        m["miss_rate"] = miss.mean().item()     # above 20% off
+
+        # ── frame accuracy tiers ──
+        m["exact_match"] = (frame_err == 0).mean().item()
+        m["within_1_frame"] = (frame_err <= 1).mean().item()
+        m["within_2_frames"] = (frame_err <= 2).mean().item()
+        m["within_4_frames"] = (frame_err <= 4).mean().item()
+
+        # ── ratio accuracy tiers ──
+        m["within_3pct"] = (pct_err <= 0.03).mean().item()
+        m["within_10pct"] = (pct_err <= 0.10).mean().item()
+        m["above_20pct"] = (pct_err > 0.20).mean().item()
+    else:
+        m["frame_error_mean"] = 0.0
+        m["hit_rate"] = 0.0
+        m["miss_rate"] = 1.0
+
+    return m
+
+
+# ═══════════════════════════════════════════════════════════════
+#  Ablation Benchmarks
+# ═══════════════════════════════════════════════════════════════
+
+@torch.no_grad()
+def run_benchmarks(model, val_loader, device, amp_enabled=False):
+    """Run ablation benchmarks on corrupted validation data.
+
+    Returns dict of benchmark_name -> {stop_rate, mean_pred, pred_std, n_samples}.
+    Each benchmark corrupts inputs in a specific way to probe model behavior.
+    """
+    model.eval()
+    rng = np.random.default_rng(42)
+
+    # collect a subset of batches (10% of val set)
+    all_batches = []
+    total_samples = 0
+    target_samples = len(val_loader.dataset) // 10
+    for batch in val_loader:
+        all_batches.append(batch)
+        total_samples += batch[0].size(0)
+        if total_samples >= target_samples:
+            break
+
+    stop = N_CLASSES - 1
+
+    def run_corrupted(batches, corrupt_fn, name):
+        """Run model on corrupted batches, return full arrays + summary stats."""
+        all_preds = []
+        all_targets = []
+        for mel, evt_off, evt_mask, cond, target in batches:
+            mel, evt_off, evt_mask, cond = corrupt_fn(
+                mel.clone(), evt_off.clone(), evt_mask.clone(), cond.clone(), target
+            )
+            mel = mel.to(device, non_blocking=True)
+            evt_off = evt_off.to(device, non_blocking=True)
+            evt_mask = evt_mask.to(device, non_blocking=True)
+            cond = cond.to(device, non_blocking=True)
+            with torch.autocast("cuda", enabled=amp_enabled):
+                logits = model(mel, evt_off, evt_mask, cond)
+            all_preds.append(logits.argmax(1).cpu().numpy())
+            all_targets.append(target.numpy())
+
+        preds = np.concatenate(all_preds)
+        targets = np.concatenate(all_targets)
+        non_stop_preds = preds[preds != stop]
+        return {
+            "preds": preds,
+            "targets": targets,
+            "n_samples": len(preds),
+            "stop_rate": float((preds == stop).mean()),
+            "mean_pred": float(non_stop_preds.mean()) if len(non_stop_preds) > 0 else 0.0,
+            "pred_std": float(non_stop_preds.std()) if len(non_stop_preds) > 0 else 0.0,
+            "unique_preds": int(len(np.unique(preds))),
+            "accuracy": float((preds == targets).mean()),
+        }
+
+    results = {}
+
+    # 1) No events — all past context deleted
+    def no_events(mel, evt_off, evt_mask, cond, target):
+        evt_off.zero_()
+        evt_mask.fill_(True)  # all masked = no events
+        return mel, evt_off, evt_mask, cond
+    results["no_events"] = run_corrupted(all_batches, no_events, "no_events")
+
+    # 2) No audio — silent spectrogram
+    def no_audio(mel, evt_off, evt_mask, cond, target):
+        mel.zero_()
+        return mel, evt_off, evt_mask, cond
+    results["no_audio"] = run_corrupted(all_batches, no_audio, "no_audio")
+
+    # 3) Random events — completely random timestamps
+    def random_events(mel, evt_off, evt_mask, cond, target):
+        B, C = evt_off.shape
+        for b in range(B):
+            n_events = rng.integers(4, C)
+            offsets = np.sort(rng.integers(-A_BINS, 0, size=n_events))
+            evt_off[b].zero_()
+            evt_mask[b].fill_(True)
+            evt_off[b, -n_events:] = torch.from_numpy(offsets)
+            evt_mask[b, -n_events:] = False
+        return mel, evt_off, evt_mask, cond
+    results["random_events"] = run_corrupted(all_batches, random_events, "random_events")
+
+    # 4) Static audio — white noise spectrogram
+    def static_audio(mel, evt_off, evt_mask, cond, target):
+        mel.normal_(mean=mel.mean().item(), std=mel.std().item())
+        return mel, evt_off, evt_mask, cond
+    results["static_audio"] = run_corrupted(all_batches, static_audio, "static_audio")
+
+    # 5) No events + muted audio — everything zeroed
+    def no_events_no_audio(mel, evt_off, evt_mask, cond, target):
+        mel.zero_()
+        evt_off.zero_()
+        evt_mask.fill_(True)
+        return mel, evt_off, evt_mask, cond
+    results["no_events_no_audio"] = run_corrupted(all_batches, no_events_no_audio, "no_events_no_audio")
+
+    # 6) Metronome — fill events with fixed gap far from target
+    def metronome(mel, evt_off, evt_mask, cond, target):
+        B, C = evt_off.shape
+        for b in range(B):
+            t = target[b].item()
+            # pick a gap that's far from the actual target (2x or 0.5x, whichever is farther)
+            if t > 0 and t < stop:
+                gap = t * 2 if t < 100 else max(5, t // 3)
+                # ensure gap != target
+                if abs(gap - t) < 3:
+                    gap = max(5, t * 3)
+            else:
+                gap = rng.integers(10, 80)
+            # fill C events backwards from cursor (offset 0)
+            offsets = np.array([-gap * (i + 1) for i in range(C)], dtype=np.int64)[::-1]
+            offsets = np.clip(offsets, -A_BINS, -1)
+            evt_off[b] = torch.from_numpy(offsets.copy())
+            evt_mask[b] = False  # all valid
+        return mel, evt_off, evt_mask, cond
+    results["metronome"] = run_corrupted(all_batches, metronome, "metronome")
+
+    # 7) Time-shifted context — scale all event offsets by a musical fraction
+    fractions = [0.5, 2.0, 1.0 / 3, 0.75, 5.0 / 3]
+    def time_shifted(mel, evt_off, evt_mask, cond, target):
+        B, C = evt_off.shape
+        for b in range(B):
+            frac = fractions[rng.integers(0, len(fractions))]
+            valid = ~evt_mask[b].bool()
+            if valid.any():
+                scaled = (evt_off[b].float() * frac).long()
+                scaled = scaled.clamp(-A_BINS, -1)
+                evt_off[b] = scaled
+        return mel, evt_off, evt_mask, cond
+    results["time_shifted"] = run_corrupted(all_batches, time_shifted, "time_shifted")
+
+    # 8) Advanced metronome — quantize events to detected BPM
+    def advanced_metronome(mel, evt_off, evt_mask, cond, target):
+        B, C = evt_off.shape
+        for b in range(B):
+            valid = ~evt_mask[b].bool()
+            n_valid = valid.sum().item()
+            if n_valid < 3:
+                continue
+            offsets = evt_off[b][valid].numpy().astype(np.float64)
+            # compute gaps between consecutive events
+            gaps = np.diff(offsets)
+            gaps = gaps[gaps > 0]
+            if len(gaps) < 2:
+                continue
+            # find dominant gap via histogram (BPM detection)
+            gap_min, gap_max = max(3, int(gaps.min())), min(200, int(gaps.max()) + 1)
+            if gap_min >= gap_max:
+                continue
+            hist, edges = np.histogram(gaps, bins=max(1, gap_max - gap_min),
+                                       range=(gap_min, gap_max))
+            dominant_gap = int(edges[hist.argmax()] + 0.5 * (edges[1] - edges[0]))
+            if dominant_gap < 3:
+                dominant_gap = 3
+
+            # skip if target is already 1/1 with the dominant gap
+            t = target[b].item()
+            if t < stop and abs(t - dominant_gap) <= 2:
+                continue
+
+            # rebuild events quantized to dominant_gap
+            last_offset = int(offsets[-1])  # most recent event offset
+            new_offsets = np.array(
+                [last_offset - dominant_gap * (i) for i in range(C)],
+                dtype=np.int64,
+            )[::-1]
+            new_offsets = np.clip(new_offsets, -A_BINS, -1)
+            evt_off[b].zero_()
+            evt_mask[b].fill_(True)
+            # fill from the right
+            n_fill = min(C, len(new_offsets))
+            evt_off[b, -n_fill:] = torch.from_numpy(new_offsets[-n_fill:].copy())
+            evt_mask[b, -n_fill:] = False
+        return mel, evt_off, evt_mask, cond
+    results["advanced_metronome"] = run_corrupted(all_batches, advanced_metronome, "advanced_metronome")
+
+    return results
+
+
+def print_benchmarks(results):
+    """Print benchmark results in a compact table."""
+    print("\n  ┌─ Ablation Benchmarks ─────────────────────────────────────────────────┐")
+    print(f"  │ {'Test':<24} {'STOP%':>6} {'Acc':>6} {'Mean':>6} {'Std':>6} {'Uniq':>5} │")
+    print(f"  ├{'─' * 73}┤")
+    for name, r in results.items():
+        print(f"  │ {name:<24} {r['stop_rate']:>5.1%} {r['accuracy']:>5.1%} "
+              f"{r['mean_pred']:>6.1f} {r['pred_std']:>6.1f} {r['unique_preds']:>5d} │")
+    print(f"  └{'─' * 73}┘")
+
+
+def _serializable(results):
+    """Strip numpy arrays from benchmark results for JSON serialization."""
+    out = {}
+    for name, r in results.items():
+        out[name] = {k: v for k, v in r.items() if k not in ("preds", "targets")}
+    return out
+
+
+def save_benchmark_data(results, epoch, run_dir):
+    """Save per-benchmark epoch JSON + per-epoch prediction distribution graph.
+
+    Folder structure:
+      run_dir/benchmarks/<bench_name>/epoch_001.json
+      run_dir/benchmarks/<bench_name>/epoch_001_pred_dist.png
+      run_dir/benchmarks/<bench_name>/epoch_001_heatmap.png
+      run_dir/benchmarks/<bench_name>/history.png  (updated each epoch)
+    """
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    from scipy.ndimage import gaussian_filter
+
+    bench_root = os.path.join(run_dir, "benchmarks")
+    stop = N_CLASSES - 1
+
+    for name, r in results.items():
+        bench_dir = os.path.join(bench_root, name)
+        os.makedirs(bench_dir, exist_ok=True)
+        prefix = os.path.join(bench_dir, f"epoch_{epoch:03d}")
+
+        # save epoch JSON (no arrays)
+        json_data = {k: v for k, v in r.items() if k not in ("preds", "targets")}
+        json_data["epoch"] = epoch
+        with open(f"{prefix}.json", "w") as f:
+            json.dump(json_data, f, indent=2)
+
+        preds = r["preds"]
+        targets = r["targets"]
+        ns = targets < stop
+        t_ns = targets[ns]
+        p_ns = preds[ns]
+
+        # ── prediction distribution ──
+        fig, axes = plt.subplots(2, 1, figsize=(10, 6))
+        axes[0].hist(t_ns, bins=200, range=(0, 500), color="#4a90d9", alpha=0.8)
+        axes[0].set_title(f"{name} — Epoch {epoch}: Original Targets (non-STOP)")
+        axes[0].set_ylabel("Count")
+        axes[1].hist(p_ns, bins=200, range=(0, 500), color="#e8834a", alpha=0.8)
+        n_stop = (preds == stop).sum()
+        axes[1].set_title(
+            f"{name} — Epoch {epoch}: Predictions "
+            f"({len(np.unique(p_ns))} unique, {n_stop} STOP [{r['stop_rate']:.1%}])"
+        )
+        axes[1].set_xlabel("Bin offset")
+        axes[1].set_ylabel("Count")
+        fig.tight_layout()
+        fig.savefig(f"{prefix}_pred_dist.png", dpi=100)
+        plt.close(fig)
+
+        # ── target vs predicted heatmap ──
+        if len(t_ns) > 0:
+            fig, ax = plt.subplots(figsize=(7, 7))
+            fig.patch.set_facecolor("black")
+            ax.set_facecolor("black")
+            nbins = 250
+            h, xe, ye = np.histogram2d(t_ns, p_ns, bins=nbins,
+                                        range=[[0, 500], [0, 500]])
+            h = gaussian_filter(h.astype(np.float64), sigma=1.0)
+            h[h < 0.5] = np.nan
+            ax.imshow(h.T, origin="lower", aspect="auto", extent=[0, 500, 0, 500],
+                      cmap="inferno", interpolation="bilinear")
+            ax.plot([0, 500], [0, 500], "r--", alpha=0.4, linewidth=1)
+            ax.set_xlabel("Target", color="white")
+            ax.set_ylabel("Predicted", color="white")
+            ax.set_title(f"{name} — Epoch {epoch}: Heatmap", color="white")
+            ax.tick_params(colors="white")
+            fig.tight_layout()
+            fig.savefig(f"{prefix}_heatmap.png", dpi=100, facecolor="black")
+            plt.close(fig)
+
+    # ── history curves (one per benchmark, updated every epoch) ──
+    _save_benchmark_history_graphs(bench_root, run_dir)
+
+
+def _save_benchmark_history_graphs(bench_root, run_dir):
+    """Read all epoch JSONs per benchmark and generate history line plots."""
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+
+    if not os.path.isdir(bench_root):
+        return
+
+    bench_names = sorted(d for d in os.listdir(bench_root)
+                         if os.path.isdir(os.path.join(bench_root, d)))
+    if not bench_names:
+        return
+
+    # collect history per benchmark
+    all_history = {}
+    for name in bench_names:
+        bench_dir = os.path.join(bench_root, name)
+        epochs_data = []
+        for fn in sorted(os.listdir(bench_dir)):
+            if fn.endswith(".json"):
+                with open(os.path.join(bench_dir, fn)) as f:
+                    epochs_data.append(json.load(f))
+        if epochs_data:
+            all_history[name] = epochs_data
+
+    if not all_history:
+        return
+
+    # ── per-benchmark history graph (stop_rate + accuracy over epochs) ──
+    for name, hist in all_history.items():
+        epochs = [d["epoch"] for d in hist]
+        fig, axes = plt.subplots(2, 2, figsize=(12, 8))
+        fig.suptitle(f"Benchmark: {name}", fontsize=14)
+
+        # stop rate
+        ax = axes[0, 0]
+        ax.plot(epochs, [d["stop_rate"] for d in hist], "o-", color="#e8834a")
+        ax.set_ylabel("STOP rate")
+        ax.set_ylim(-0.05, 1.05)
+        ax.set_title("STOP rate")
+        ax.grid(True, alpha=0.3)
+
+        # accuracy
+        ax = axes[0, 1]
+        ax.plot(epochs, [d["accuracy"] for d in hist], "o-", color="#4a90d9")
+        ax.set_ylabel("Accuracy")
+        ax.set_ylim(-0.05, 1.05)
+        ax.set_title("Accuracy (vs original target)")
+        ax.grid(True, alpha=0.3)
+
+        # mean prediction
+        ax = axes[1, 0]
+        ax.plot(epochs, [d["mean_pred"] for d in hist], "o-", color="#50b050")
+        ax.set_ylabel("Mean predicted bin")
+        ax.set_xlabel("Epoch")
+        ax.set_title("Mean prediction (non-STOP)")
+        ax.grid(True, alpha=0.3)
+
+        # unique predictions
+        ax = axes[1, 1]
+        ax.plot(epochs, [d["unique_preds"] for d in hist], "o-", color="#b050b0")
+        ax.set_ylabel("Unique values")
+        ax.set_xlabel("Epoch")
+        ax.set_title("Prediction diversity")
+        ax.grid(True, alpha=0.3)
+
+        fig.tight_layout()
+        fig.savefig(os.path.join(bench_root, name, "history.png"), dpi=120)
+        plt.close(fig)
+
+    # ── combined overlay: all benchmarks on one graph ──
+    fig, axes = plt.subplots(1, 2, figsize=(14, 5))
+    fig.suptitle("Ablation Benchmarks — All", fontsize=14)
+
+    colors = plt.cm.tab10(np.linspace(0, 1, len(all_history)))
+    for i, (name, hist) in enumerate(all_history.items()):
+        epochs = [d["epoch"] for d in hist]
+        axes[0].plot(epochs, [d["stop_rate"] for d in hist], "o-",
+                     color=colors[i], label=name, markersize=4)
+        axes[1].plot(epochs, [d["accuracy"] for d in hist], "o-",
+                     color=colors[i], label=name, markersize=4)
+
+    axes[0].set_title("STOP rate")
+    axes[0].set_ylabel("STOP rate")
+    axes[0].set_xlabel("Epoch")
+    axes[0].set_ylim(-0.05, 1.05)
+    axes[0].legend(fontsize=8, loc="best")
+    axes[0].grid(True, alpha=0.3)
+
+    axes[1].set_title("Accuracy")
+    axes[1].set_ylabel("Accuracy")
+    axes[1].set_xlabel("Epoch")
+    axes[1].set_ylim(-0.05, 1.05)
+    axes[1].legend(fontsize=8, loc="best")
+    axes[1].grid(True, alpha=0.3)
+
+    fig.tight_layout()
+    fig.savefig(os.path.join(bench_root, "all_benchmarks.png"), dpi=120)
+    plt.close(fig)
+
+
+def save_epoch_graphs(targets, preds, metrics, epoch, run_dir, extra=None):
+    """Generate and save all graphs for this epoch."""
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    from matplotlib.colors import LogNorm
+    from scipy.ndimage import gaussian_filter
+
+    epoch_dir = os.path.join(run_dir, "epochs")
+    os.makedirs(epoch_dir, exist_ok=True)
+    prefix = os.path.join(epoch_dir, f"epoch_{epoch:03d}")
+
+    stop = N_CLASSES - 1
+    ns = targets < stop
+    t_ns = targets[ns]
+    p_ns = preds[ns]
+
+    # ── 0. Prediction distribution histogram ──
+    fig, axes = plt.subplots(2, 1, figsize=(12, 8))
+    # target distribution
+    axes[0].hist(t_ns, bins=250, range=(0, 500), color="#4a90d9", alpha=0.8)
+    axes[0].set_title(f"Epoch {epoch}: Target Distribution (non-STOP)")
+    axes[0].set_xlabel("Bin offset")
+    axes[0].set_ylabel("Count")
+    # predicted distribution
+    axes[1].hist(p_ns, bins=250, range=(0, 500), color="#e8834a", alpha=0.8)
+    axes[1].set_title(f"Epoch {epoch}: Predicted Distribution — {len(np.unique(p_ns))} unique values")
+    axes[1].set_xlabel("Bin offset")
+    axes[1].set_ylabel("Count")
+    fig.tight_layout()
+    fig.savefig(f"{prefix}_pred_dist.png", dpi=120)
+    plt.close(fig)
+
+    # ── 1. Scatter: target vs predicted ──
+    fig, ax = plt.subplots(figsize=(8, 8))
+    ax.scatter(t_ns, p_ns, alpha=0.02, s=1, color="#4a90d9")
+    ax.plot([0, 500], [0, 500], "r--", alpha=0.5, linewidth=1)
+    ax.set_xlabel("Target bin offset")
+    ax.set_ylabel("Predicted bin offset")
+    ax.set_title(f"Epoch {epoch}: Target vs Predicted")
+    ax.set_xlim(0, 500)
+    ax.set_ylim(0, 500)
+    fig.tight_layout()
+    fig.savefig(f"{prefix}_scatter.png", dpi=120)
+    plt.close(fig)
+
+    # ── 2. Heatmap: target vs predicted ──
+    fig, ax = plt.subplots(figsize=(8, 8))
+    fig.patch.set_facecolor("black")
+    ax.set_facecolor("black")
+    h, xedges, yedges = np.histogram2d(t_ns, p_ns, bins=250, range=[[0, 500], [0, 500]])
+    h = gaussian_filter(h.astype(np.float64), sigma=1.0)
+    h[h < 0.5] = np.nan
+    ax.imshow(h.T, origin="lower", aspect="auto", extent=[0, 500, 0, 500],
+              norm=LogNorm(vmin=1), cmap="viridis")
+    ax.plot([0, 500], [0, 500], "r--", alpha=0.5, linewidth=1)
+    ax.set_xlabel("Target bin offset", color="white")
+    ax.set_ylabel("Predicted bin offset", color="white")
+    ax.set_title(f"Epoch {epoch}: Prediction Density", color="white")
+    ax.tick_params(colors="white")
+    fig.tight_layout()
+    fig.savefig(f"{prefix}_heatmap.png", dpi=150)
+    plt.close(fig)
+
+    # ── 3. Ratio scatter: target vs relative error ──
+    if len(t_ns) > 0:
+        ratio = (p_ns.astype(np.float64) + 1) / (t_ns.astype(np.float64) + 1)
+        ratio_clipped = np.clip(ratio, 0.1, 10.0)
+
+        fig, ax = plt.subplots(figsize=(10, 6))
+        ax.scatter(t_ns, ratio_clipped, alpha=0.02, s=1, color="#e8834a")
+        ax.axhline(1.0, color="red", linestyle="--", alpha=0.5)
+        ax.set_xlabel("Target bin offset")
+        ax.set_ylabel("Ratio (predicted+1)/(target+1)")
+        ax.set_title(f"Epoch {epoch}: Relative Error")
+        ax.set_ylim(0.1, 10.0)
+        ax.set_yscale("log")
+        ax.set_xlim(0, 500)
+        fig.tight_layout()
+        fig.savefig(f"{prefix}_ratio_scatter.png", dpi=120)
+        plt.close(fig)
+
+        # ── 4. Ratio heatmap ──
+        fig, ax = plt.subplots(figsize=(10, 6))
+        fig.patch.set_facecolor("black")
+        ax.set_facecolor("black")
+        # bin ratio in log space
+        log_ratio = np.log10(ratio_clipped)
+        h, xedges, yedges = np.histogram2d(
+            t_ns.astype(float), log_ratio, bins=[250, 100],
+            range=[[0, 500], [-1, 1]]  # ratio 0.1x to 10x
+        )
+        h = gaussian_filter(h.astype(np.float64), sigma=1.0)
+        h[h < 0.5] = np.nan
+        ax.imshow(h.T, origin="lower", aspect="auto",
+                  extent=[0, 500, -1, 1], norm=LogNorm(vmin=1), cmap="inferno")
+        ax.axhline(0.0, color="white", linestyle="--", alpha=0.5)
+        ax.set_xlabel("Target bin offset", color="white")
+        ax.set_ylabel("log10(ratio)", color="white")
+        ax.set_title(f"Epoch {epoch}: Relative Error Density", color="white")
+        ax.set_yticks([-1, -0.5, 0, 0.5, 1])
+        ax.set_yticklabels(["0.1x", "0.3x", "1.0x", "3.2x", "10x"])
+        ax.tick_params(colors="white")
+        fig.tight_layout()
+        fig.savefig(f"{prefix}_ratio_heatmap.png", dpi=150)
+        plt.close(fig)
+
+    # ── 5. Frame vs Ratio error (scatter + heatmap) ──
+    if len(t_ns) > 0:
+        frame_err = np.abs(p_ns.astype(np.float64) - t_ns.astype(np.float64))
+        ratio = (p_ns.astype(np.float64) + 1) / (t_ns.astype(np.float64) + 1)
+        ratio_err = np.abs(ratio - 1.0)
+
+        fe_clip = np.clip(frame_err, 0, 200)
+        re_clip = np.clip(ratio_err, 0, 5.0)
+
+        # scatter
+        fig, ax = plt.subplots(figsize=(8, 8))
+        ax.scatter(fe_clip, re_clip, alpha=0.02, s=1, color="#4a90d9")
+        ax.set_xlabel("Absolute frame error |pred - target|")
+        ax.set_ylabel("Absolute ratio error |ratio - 1|")
+        ax.set_title(f"Epoch {epoch}: Frame Error vs Ratio Error")
+        ax.set_xlim(0, 200)
+        ax.set_ylim(0, 5.0)
+        fig.tight_layout()
+        fig.savefig(f"{prefix}_frame_vs_ratio_scatter.png", dpi=120)
+        plt.close(fig)
+
+        # heatmap
+        fig, ax = plt.subplots(figsize=(8, 8))
+        fig.patch.set_facecolor("black")
+        ax.set_facecolor("black")
+        h, xe, ye = np.histogram2d(fe_clip, re_clip, bins=[100, 250],
+                                    range=[[0, 200], [0, 5.0]])
+        h = gaussian_filter(h.astype(np.float64), sigma=1.0)
+        h[h < 0.5] = np.nan
+        ax.imshow(h.T, origin="lower", aspect="auto", extent=[0, 200, 0, 5.0],
+                  norm=LogNorm(vmin=1), cmap="magma")
+        ax.set_xlabel("Absolute frame error", color="white")
+        ax.set_ylabel("Absolute ratio error", color="white")
+        ax.set_title(f"Epoch {epoch}: Frame vs Ratio Error Density", color="white")
+        ax.tick_params(colors="white")
+        fig.tight_layout()
+        fig.savefig(f"{prefix}_frame_vs_ratio_heatmap.png", dpi=150)
+        plt.close(fig)
+
+    # ── 6. Ratio error in density space (scatter + heatmap) ──
+    conds = extra.get("conds") if extra else None
+    prev_gaps = extra.get("prev_gaps") if extra else None
+    ctx_len = extra.get("ctx_len") if extra else None
+    topk = extra.get("topk") if extra else None
+    entropy = extra.get("entropy") if extra else None
+
+    if conds is not None and len(t_ns) > 0:
+        # conds: (N, 3) = [mean_density, peak_density, density_std]
+        # filter to non-stop samples
+        conds_ns = conds[ns]
+        mean_dens = conds_ns[:, 0]
+        peak_dens = conds_ns[:, 1]
+        ratio_err_log = np.abs(np.log((p_ns.astype(np.float64) + 1) / (t_ns.astype(np.float64) + 1)))
+        re_clip2 = np.clip(ratio_err_log, 0, 2.0)
+
+        # scatter — color by error
+        fig, ax = plt.subplots(figsize=(10, 8))
+        sc = ax.scatter(mean_dens, peak_dens, c=re_clip2, s=1, alpha=0.1,
+                        cmap="RdYlGn_r", vmin=0, vmax=1.5)
+        fig.colorbar(sc, ax=ax, label="|log-ratio| error")
+        ax.set_xlabel("Mean density (events/sec)")
+        ax.set_ylabel("Peak density (events/sec)")
+        ax.set_title(f"Epoch {epoch}: Error by Chart Density")
+        fig.tight_layout()
+        fig.savefig(f"{prefix}_ratio_in_density_scatter.png", dpi=120)
+        plt.close(fig)
+
+        # heatmap — mean error per density cell
+        fig, ax = plt.subplots(figsize=(10, 8))
+        fig.patch.set_facecolor("black")
+        ax.set_facecolor("black")
+        d_range = [[0, max(20, np.percentile(mean_dens, 99))],
+                    [0, max(40, np.percentile(peak_dens, 99))]]
+        h_sum, xe, ye = np.histogram2d(mean_dens, peak_dens, bins=[80, 80],
+                                        range=d_range, weights=re_clip2)
+        h_cnt, _, _ = np.histogram2d(mean_dens, peak_dens, bins=[80, 80],
+                                      range=d_range)
+        h_mean = np.where(h_cnt > 5, h_sum / h_cnt, np.nan)
+        ax.imshow(h_mean.T, origin="lower", aspect="auto",
+                  extent=[d_range[0][0], d_range[0][1], d_range[1][0], d_range[1][1]],
+                  vmin=0, vmax=1.0, cmap="RdYlGn_r")
+        ax.set_xlabel("Mean density (events/sec)", color="white")
+        ax.set_ylabel("Peak density (events/sec)", color="white")
+        ax.set_title(f"Epoch {epoch}: Mean |log-ratio| Error by Density", color="white")
+        ax.tick_params(colors="white")
+        fig.tight_layout()
+        fig.savefig(f"{prefix}_ratio_in_density_heatmap.png", dpi=150)
+        plt.close(fig)
+
+    # ── 7. Forward error: gap ratio continuity (scatter + heatmap) ──
+    # X = predicted_gap / prev_gap, Y = target_gap / prev_gap
+    if prev_gaps is not None and len(t_ns) > 0:
+        pg = prev_gaps[ns]  # prev_gap for non-stop samples
+        valid = np.isfinite(pg) & (pg > 0)
+        if valid.sum() > 100:
+            tg = t_ns[valid].astype(np.float64)
+            pg_v = pg[valid].astype(np.float64)
+            pr = p_ns[valid].astype(np.float64)
+
+            target_ratio = tg / pg_v    # how big is this gap vs prev gap
+            pred_ratio = pr / pg_v      # what model predicted vs prev gap
+
+            # clip to reasonable range
+            tr_clip = np.clip(target_ratio, 0, 8)
+            pr_clip = np.clip(pred_ratio, 0, 8)
+
+            # scatter
+            fig, ax = plt.subplots(figsize=(8, 8))
+            ax.scatter(pr_clip, tr_clip, alpha=0.02, s=1, color="#6bc46d")
+            ax.plot([0, 8], [0, 8], "r--", alpha=0.5, linewidth=1)
+            # reference lines for common ratios
+            for r, lbl in [(0.5, "½"), (1.0, "1"), (2.0, "2"), (4.0, "4")]:
+                ax.axhline(r, color="white", alpha=0.15, linewidth=0.5)
+                ax.axvline(r, color="white", alpha=0.15, linewidth=0.5)
+            ax.set_xlabel("Predicted gap / prev gap")
+            ax.set_ylabel("Target gap / prev gap")
+            ax.set_title(f"Epoch {epoch}: Gap Ratio Continuity")
+            ax.set_xlim(0, 8)
+            ax.set_ylim(0, 8)
+            fig.tight_layout()
+            fig.savefig(f"{prefix}_forward_error_scatter.png", dpi=120)
+            plt.close(fig)
+
+            # heatmap
+            fig, ax = plt.subplots(figsize=(8, 8))
+            fig.patch.set_facecolor("black")
+            ax.set_facecolor("black")
+            h, xe, ye = np.histogram2d(pr_clip, tr_clip, bins=[200, 200],
+                                        range=[[0, 8], [0, 8]])
+            h = gaussian_filter(h.astype(np.float64), sigma=1.0)
+            h[h < 0.5] = np.nan
+            ax.imshow(h.T, origin="lower", aspect="auto", extent=[0, 8, 0, 8],
+                      norm=LogNorm(vmin=1), cmap="viridis")
+            ax.plot([0, 8], [0, 8], "r--", alpha=0.5, linewidth=1)
+            for r in [0.5, 1.0, 2.0, 4.0]:
+                ax.axhline(r, color="white", alpha=0.2, linewidth=0.5)
+                ax.axvline(r, color="white", alpha=0.2, linewidth=0.5)
+            ax.set_xlabel("Predicted gap / prev gap", color="white")
+            ax.set_ylabel("Target gap / prev gap", color="white")
+            ax.set_title(f"Epoch {epoch}: Gap Ratio Continuity Density", color="white")
+            ax.tick_params(colors="white")
+            fig.tight_layout()
+            fig.savefig(f"{prefix}_forward_error_heatmap.png", dpi=150)
+            plt.close(fig)
+
+    # ── 8. Ratio confusion histogram ──
+    # When wrong, which ratio multiple did the model pick?
+    if len(t_ns) > 0:
+        ratio_raw = (p_ns.astype(np.float64) + 1) / (t_ns.astype(np.float64) + 1)
+        # only look at misses (>20% off)
+        pct_err = np.abs(ratio_raw - 1.0)
+        misses = pct_err > 0.20
+        if misses.sum() > 50:
+            miss_ratios = ratio_raw[misses]
+            log_miss = np.log2(np.clip(miss_ratios, 1/8, 8))
+
+            fig, ax = plt.subplots(figsize=(12, 5))
+            ax.hist(log_miss, bins=400, range=[-3, 3], color="#eb4528", alpha=0.8)
+            # mark common musical ratios
+            for r, lbl in [(1/4, "¼"), (1/3, "⅓"), (1/2, "½"), (1, "1"),
+                           (2, "2"), (3, "3"), (4, "4")]:
+                ax.axvline(np.log2(r), color="white", alpha=0.5, linewidth=1, linestyle="--")
+                ax.text(np.log2(r), ax.get_ylim()[1] * 0.95, lbl,
+                        ha="center", va="top", fontsize=10, color="white",
+                        bbox=dict(boxstyle="round,pad=0.2", fc="black", alpha=0.7))
+            ax.set_xlabel("log₂(pred/target)  — musical ratio")
+            ax.set_ylabel("Count")
+            ax.set_title(f"Epoch {epoch}: Ratio Confusion (misses only, n={misses.sum()})")
+            ax.set_xticks([-3, -2, -1, 0, 1, 2, 3])
+            ax.set_xticklabels(["⅛", "¼", "½", "1", "2", "4", "8"])
+            fig.tight_layout()
+            fig.savefig(f"{prefix}_ratio_confusion.png", dpi=120)
+            plt.close(fig)
+
+    # ── 9. Accuracy by context length ──
+    if ctx_len is not None and len(t_ns) > 0:
+        cl = ctx_len[ns]  # context lengths for non-stop samples
+        frame_err = np.abs(p_ns.astype(np.float64) - t_ns.astype(np.float64))
+        ratio_raw = (p_ns.astype(np.float64) + 1) / (t_ns.astype(np.float64) + 1)
+        pct_err = np.abs(ratio_raw - 1.0)
+        hit = (pct_err <= 0.03) | (frame_err <= 1)
+
+        # bin by context length
+        bin_edges = np.arange(0, 129, 4)  # 0-4, 4-8, ..., 124-128
+        bin_idx = np.digitize(cl, bin_edges) - 1
+        bin_centers = (bin_edges[:-1] + bin_edges[1:]) / 2
+        hit_rates = []
+        counts = []
+        for b in range(len(bin_centers)):
+            mask = bin_idx == b
+            if mask.sum() > 20:
+                hit_rates.append(hit[mask].mean())
+                counts.append(mask.sum())
+            else:
+                hit_rates.append(np.nan)
+                counts.append(0)
+
+        fig, ax1 = plt.subplots(figsize=(12, 5))
+        ax1.bar(bin_centers, counts, width=3.5, alpha=0.3, color="#4a90d9", label="Sample count")
+        ax1.set_ylabel("Sample count", color="#4a90d9")
+        ax1.tick_params(axis="y", labelcolor="#4a90d9")
+
+        ax2 = ax1.twinx()
+        valid_rates = [(c, r) for c, r in zip(bin_centers, hit_rates) if not np.isnan(r)]
+        if valid_rates:
+            ax2.plot([v[0] for v in valid_rates], [v[1] for v in valid_rates],
+                     "o-", color="#eb4528", linewidth=2, markersize=4, label="HIT rate")
+        ax2.set_ylabel("HIT rate", color="#eb4528")
+        ax2.tick_params(axis="y", labelcolor="#eb4528")
+        ax2.set_ylim(0, 1)
+
+        ax1.set_xlabel("Number of past events in context")
+        ax1.set_title(f"Epoch {epoch}: Accuracy by Context Length")
+        fig.tight_layout()
+        fig.savefig(f"{prefix}_accuracy_by_context.png", dpi=120)
+        plt.close(fig)
+
+    # ── 10. Top-K accuracy ──
+    if topk is not None and len(t_ns) > 0:
+        topk_ns = topk[ns]  # (M, 10) — top-10 predictions for non-stop
+        targets_ns_col = t_ns.reshape(-1, 1)
+
+        ks = [1, 2, 3, 5, 10]
+        # exact match
+        exact_topk = [(topk_ns[:, :k] == targets_ns_col).any(axis=1).mean() for k in ks]
+        # within ±1 frame
+        within1_topk = [np.min(np.abs(topk_ns[:, :k].astype(np.int64) - targets_ns_col), axis=1) <= 1 for k in ks]
+        within1_topk = [w.mean() for w in within1_topk]
+        # HIT: within 3% ratio or ±1 frame
+        hit_topk = []
+        for k in ks:
+            tk = topk_ns[:, :k].astype(np.float64)
+            tgt = targets_ns_col.astype(np.float64)
+            ratios = (tk + 1) / (tgt + 1)
+            pct_errs = np.abs(ratios - 1.0)
+            frame_errs = np.abs(tk - tgt)
+            is_hit = ((pct_errs <= 0.03) | (frame_errs <= 1)).any(axis=1)
+            hit_topk.append(is_hit.mean())
+
+        fig, ax = plt.subplots(figsize=(8, 5))
+        x = np.arange(len(ks))
+        w = 0.25
+        ax.bar(x - w, exact_topk, w, label="Exact match", color="#eb4528")
+        ax.bar(x, within1_topk, w, label="Within ±1 frame", color="#e8834a")
+        ax.bar(x + w, hit_topk, w, label="HIT (≤3% or ±1f)", color="#6bc46d")
+        ax.set_xticks(x)
+        ax.set_xticklabels([f"Top-{k}" for k in ks])
+        ax.set_ylabel("Accuracy")
+        ax.set_ylim(0, 1)
+        ax.set_title(f"Epoch {epoch}: Top-K Accuracy")
+        ax.legend()
+        ax.grid(True, alpha=0.3, axis="y")
+        for i, (e, w1, h) in enumerate(zip(exact_topk, within1_topk, hit_topk)):
+            ax.text(i + w, h + 0.02, f"{h:.1%}", ha="center", va="bottom", fontsize=8)
+        fig.tight_layout()
+        fig.savefig(f"{prefix}_topk_accuracy.png", dpi=120)
+        plt.close(fig)
+
+    # ── 11. Logit entropy: correct vs wrong ──
+    if entropy is not None and len(t_ns) > 0:
+        ent_ns = entropy[ns]
+        frame_err = np.abs(p_ns.astype(np.float64) - t_ns.astype(np.float64))
+        ratio_raw = (p_ns.astype(np.float64) + 1) / (t_ns.astype(np.float64) + 1)
+        pct_err = np.abs(ratio_raw - 1.0)
+        hit = (pct_err <= 0.03) | (frame_err <= 1)
+        miss = pct_err > 0.20
+
+        fig, ax = plt.subplots(figsize=(10, 5))
+        ent_max = np.percentile(ent_ns, 99)
+        bins = np.linspace(0, ent_max, 100)
+        if hit.sum() > 0:
+            ax.hist(ent_ns[hit], bins=bins, alpha=0.6, color="#6bc46d", label=f"HIT (n={hit.sum()})", density=True)
+        if miss.sum() > 0:
+            ax.hist(ent_ns[miss], bins=bins, alpha=0.6, color="#eb4528", label=f"MISS (n={miss.sum()})", density=True)
+        # also show "in between" (GOOD but not HIT)
+        between = (~hit) & (~miss)
+        if between.sum() > 0:
+            ax.hist(ent_ns[between], bins=bins, alpha=0.4, color="#fcb71e", label=f"GOOD (n={between.sum()})", density=True)
+        ax.set_xlabel("Softmax entropy (nats)")
+        ax.set_ylabel("Density")
+        ax.set_title(f"Epoch {epoch}: Model Confidence — HIT vs MISS")
+        ax.legend()
+        ax.grid(True, alpha=0.3)
+
+        # add mean lines
+        if hit.sum() > 0:
+            ax.axvline(ent_ns[hit].mean(), color="#6bc46d", linestyle="--", linewidth=2)
+        if miss.sum() > 0:
+            ax.axvline(ent_ns[miss].mean(), color="#eb4528", linestyle="--", linewidth=2)
+        fig.tight_layout()
+        fig.savefig(f"{prefix}_entropy_hit_vs_miss.png", dpi=120)
+        plt.close(fig)
+
+
+def save_training_curves(history, run_dir):
+    """Save loss and metric curves across all epochs."""
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+
+    epochs = [h["epoch"] for h in history]
+
+    # ── loss ──
+    fig, ax = plt.subplots(figsize=(10, 5))
+    ax.plot(epochs, [h["train_loss"] for h in history], label="Train", linewidth=2)
+    ax.plot(epochs, [h["val_loss"] for h in history], label="Val", linewidth=2)
+    ax.set_xlabel("Epoch")
+    ax.set_ylabel("Loss")
+    ax.set_title("Training Loss")
+    ax.legend()
+    ax.grid(True, alpha=0.3)
+    fig.tight_layout()
+    fig.savefig(os.path.join(run_dir, "loss.png"), dpi=150)
+    plt.close(fig)
+
+    # ── accuracy ──
+    fig, ax = plt.subplots(figsize=(10, 5))
+    ax.plot(epochs, [h["val_metrics"].get("accuracy", 0) for h in history],
+            label="Val Accuracy", linewidth=2, color="#4a90d9")
+    ax.set_xlabel("Epoch")
+    ax.set_ylabel("Accuracy")
+    ax.set_title("Overall Accuracy (argmax == target)")
+    ax.legend()
+    ax.set_ylim(0, 1)
+    ax.grid(True, alpha=0.3)
+    fig.tight_layout()
+    fig.savefig(os.path.join(run_dir, "accuracy.png"), dpi=150)
+    plt.close(fig)
+
+    # ── STOP F1/precision/recall ──
+    fig, ax = plt.subplots(figsize=(10, 5))
+    for key, label, color in [
+        ("stop_f1", "F1", "#4a90d9"),
+        ("stop_precision", "Precision", "#6bc46d"),
+        ("stop_recall", "Recall", "#e8834a"),
+    ]:
+        vals = [h["val_metrics"].get(key, 0) for h in history]
+        ax.plot(epochs, vals, label=label, linewidth=2, color=color)
+    ax.set_xlabel("Epoch")
+    ax.set_ylabel("Score")
+    ax.set_title("STOP Class (500): F1 / Precision / Recall")
+    ax.legend()
+    ax.set_ylim(0, 1)
+    ax.grid(True, alpha=0.3)
+    fig.tight_layout()
+    fig.savefig(os.path.join(run_dir, "stop_f1.png"), dpi=150)
+    plt.close(fig)
+
+    # ── frame error ──
+    fig, ax = plt.subplots(figsize=(10, 5))
+    ax.plot(epochs, [h["val_metrics"].get("frame_error_mean", 0) for h in history],
+            label="Mean", linewidth=2, color="#4a90d9")
+    ax.plot(epochs, [h["val_metrics"].get("frame_error_median", 0) for h in history],
+            label="Median", linewidth=2, color="#6bc46d")
+    ax.plot(epochs, [h["val_metrics"].get("frame_error_p90", 0) for h in history],
+            label="P90", linewidth=2, color="#e8834a", linestyle="--")
+    ax.set_xlabel("Epoch")
+    ax.set_ylabel("Frame Error (bins)")
+    ax.set_title("Frame Error Over Training")
+    ax.legend()
+    ax.grid(True, alpha=0.3)
+    fig.tight_layout()
+    fig.savefig(os.path.join(run_dir, "frame_error.png"), dpi=150)
+    plt.close(fig)
+
+    # ── HIT / GOOD / MISS rates ──
+    fig, ax = plt.subplots(figsize=(10, 5))
+    for key, label, color in [
+        ("hit_rate", "HIT (≤3% or ±1f)", "#6bc46d"),
+        ("good_rate", "GOOD (≤10% or ±2f)", "#4a90d9"),
+        ("miss_rate", "MISS (>20%)", "#eb4528"),
+    ]:
+        vals = [h["val_metrics"].get(key, 0) for h in history]
+        ax.plot(epochs, vals, label=label, linewidth=2, color=color)
+    ax.set_xlabel("Epoch")
+    ax.set_ylabel("Rate")
+    ax.set_title("HIT / GOOD / MISS Rates")
+    ax.legend()
+    ax.set_ylim(0, 1)
+    ax.grid(True, alpha=0.3)
+    fig.tight_layout()
+    fig.savefig(os.path.join(run_dir, "hit_good_miss.png"), dpi=150)
+    plt.close(fig)
+
+    # ── frame accuracy tiers ──
+    fig, ax = plt.subplots(figsize=(10, 5))
+    for key, label, color in [
+        ("exact_match", "Exact", "#eb4528"),
+        ("within_1_frame", "±1 frame", "#e8834a"),
+        ("within_2_frames", "±2 frames", "#fcb71e"),
+        ("within_4_frames", "±4 frames", "#6bc46d"),
+    ]:
+        vals = [h["val_metrics"].get(key, 0) for h in history]
+        ax.plot(epochs, vals, label=label, linewidth=2, color=color)
+    ax.set_xlabel("Epoch")
+    ax.set_ylabel("Rate")
+    ax.set_title("Frame Accuracy Tiers")
+    ax.legend()
+    ax.set_ylim(0, 1)
+    ax.grid(True, alpha=0.3)
+    fig.tight_layout()
+    fig.savefig(os.path.join(run_dir, "frame_tiers.png"), dpi=150)
+    plt.close(fig)
+
+    # ── ratio accuracy tiers ──
+    fig, ax = plt.subplots(figsize=(10, 5))
+    for key, label, color in [
+        ("within_3pct", "≤3%", "#6bc46d"),
+        ("within_10pct", "≤10%", "#4a90d9"),
+        ("above_20pct", ">20% (miss)", "#eb4528"),
+    ]:
+        vals = [h["val_metrics"].get(key, 0) for h in history]
+        ax.plot(epochs, vals, label=label, linewidth=2, color=color)
+    ax.set_xlabel("Epoch")
+    ax.set_ylabel("Rate")
+    ax.set_title("Ratio Accuracy Tiers")
+    ax.legend()
+    ax.set_ylim(0, 1)
+    ax.grid(True, alpha=0.3)
+    fig.tight_layout()
+    fig.savefig(os.path.join(run_dir, "ratio_tiers.png"), dpi=150)
+    plt.close(fig)
+
+    # ── relative error ──
+    fig, ax = plt.subplots(figsize=(10, 5))
+    ax.plot(epochs, [h["val_metrics"].get("rel_error_mean", 0) for h in history],
+            label="Mean |log-ratio|", linewidth=2, color="#c76dba")
+    ax.plot(epochs, [h["val_metrics"].get("rel_error_median", 0) for h in history],
+            label="Median |log-ratio|", linewidth=2, color="#4a90d9")
+    ax.set_xlabel("Epoch")
+    ax.set_ylabel("|log((pred+1)/(target+1))|")
+    ax.set_title("Relative Error Over Training")
+    ax.legend()
+    ax.grid(True, alpha=0.3)
+    fig.tight_layout()
+    fig.savefig(os.path.join(run_dir, "relative_error.png"), dpi=150)
+    plt.close(fig)
+
+
+# ═══════════════════════════════════════════════════════════════
+#  Split
+# ═══════════════════════════════════════════════════════════════
+
+def split_by_song(manifest, val_ratio=0.1):
+    song_to_indices = {}
+    for i, chart in enumerate(manifest["charts"]):
+        sid = chart.get("beatmapset_id", str(i))
+        song_to_indices.setdefault(sid, []).append(i)
+
+    songs = list(song_to_indices.keys())
+    random.shuffle(songs)
+    n_val = max(1, int(len(songs) * val_ratio))
+    val_songs = set(songs[:n_val])
+
+    train_idx, val_idx = [], []
+    for sid, indices in song_to_indices.items():
+        (val_idx if sid in val_songs else train_idx).extend(indices)
+    return train_idx, val_idx
+
+
+# ═══════════════════════════════════════════════════════════════
+#  Training Loop
+# ═══════════════════════════════════════════════════════════════
+
+def train(args):
+    ds_dir = os.path.join(SCRIPT_DIR, "datasets", args.dataset)
+    with open(os.path.join(ds_dir, "manifest.json"), "r", encoding="utf-8") as f:
+        manifest = json.load(f)
+
+    # run directory
+    run_dir = os.path.join(SCRIPT_DIR, "runs", args.run_name)
+    ckpt_dir = os.path.join(run_dir, "checkpoints")
+    os.makedirs(ckpt_dir, exist_ok=True)
+    os.makedirs(os.path.join(run_dir, "epochs"), exist_ok=True)
+
+    print(f"Dataset: {args.dataset} ({manifest['total_charts']} charts)")
+    print(f"Run: {args.run_name} → {run_dir}")
+
+    # perf settings
+    torch.backends.cudnn.benchmark = True
+    amp_enabled = args.amp and args.device == "cuda"
+    print(f"AMP: {'enabled' if amp_enabled else 'disabled'}, cudnn.benchmark: True")
+
+    # save run config (don't overwrite on resume)
+    config_path = os.path.join(run_dir, "config.json")
+    if not args.resume or not os.path.exists(config_path):
+        with open(config_path, "w") as f:
+            json.dump(vars(args), f, indent=2)
+
+    # split
+    random.seed(42)
+    train_idx, val_idx = split_by_song(manifest, val_ratio=0.1)
+    print(f"Train: {len(train_idx)} charts, Val: {len(val_idx)} charts")
+
+    sub = args.subsample
+    train_ds = OnsetDataset(manifest, ds_dir, train_idx, augment=True, subsample=sub)
+    val_ds = OnsetDataset(manifest, ds_dir, val_idx, augment=False, subsample=sub)
+    if sub > 1:
+        print(f"Subsample: 1/{sub}")
+    print(f"Train samples: {len(train_ds)}, Val samples: {len(val_ds)}")
+
+    # print class distribution (always useful)
+    print_class_distribution(train_ds)
+
+    # balanced sampling: oversample rare targets so the model sees the full range
+    if args.balanced:
+        counts = train_ds.class_counts
+        sample_weights = np.zeros(len(train_ds), dtype=np.float64)
+        for i, (ci, ei) in enumerate(train_ds.samples):
+            target = train_ds._get_target(ci, ei)
+            sample_weights[i] = 1.0 / np.sqrt(counts[target] + 1)
+        sampler = WeightedRandomSampler(
+            weights=sample_weights,
+            num_samples=len(train_ds),
+            replacement=True,
+        )
+        print(f"Balanced sampling: ON (1/sqrt(count) weights, replacement=True)")
+        loss_weights = None  # sampling handles imbalance, no need for loss weights
+    else:
+        sampler = None
+        loss_weights = compute_class_weights(train_ds, mode=args.weight_mode).to(args.device)
+
+    # workers use mmap — each gets its own file handle, OS page cache shares data
+    nw = args.workers
+    train_loader = DataLoader(
+        train_ds, batch_size=args.batch_size,
+        shuffle=(sampler is None),  # no shuffle when using sampler
+        sampler=sampler,
+        num_workers=nw, pin_memory=True, persistent_workers=nw > 0,
+        prefetch_factor=4 if nw > 0 else None,
+    )
+    val_loader = DataLoader(
+        val_ds, batch_size=args.batch_size, shuffle=False,
+        num_workers=nw, pin_memory=True, persistent_workers=nw > 0,
+        prefetch_factor=4 if nw > 0 else None,
+    )
+
+    # model
+    model = OnsetDetector(
+        n_mels=80, d_model=args.d_model, enc_layers=args.enc_layers,
+        dec_layers=args.dec_layers, n_heads=args.n_heads,
+        n_classes=N_CLASSES, max_events=C_EVENTS, dropout=args.dropout,
+    ).to(args.device)
+
+    n_params = sum(p.numel() for p in model.parameters())
+    print(f"Model: {n_params / 1e6:.1f}M parameters")
+
+    # torch.compile (disabled on Windows — unstable CUDA cleanup at exit)
+    import sys
+    if hasattr(torch, "compile") and args.device == "cuda" and not args.no_compile and sys.platform != "win32":
+        try:
+            model = torch.compile(model)
+            print("torch.compile: enabled")
+        except Exception as e:
+            print(f"torch.compile: failed ({e}), running eager")
+    elif sys.platform == "win32":
+        print("torch.compile: skipped (Windows)")
+
+    criterion = OnsetLoss(
+        weight=loss_weights, gamma=args.focal_gamma,
+        good_pct=args.good_pct, fail_pct=args.fail_pct,
+        hard_alpha=args.hard_alpha, frame_tolerance=args.frame_tolerance,
+        stop_weight=args.stop_weight,
+    ).to(args.device)
+    optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr, weight_decay=args.wd)
+    scaler = torch.amp.GradScaler("cuda", enabled=amp_enabled)
+    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=args.epochs)
+
+    history = []
+    best_val_loss = float("inf")
+    start_epoch = 1
+
+    # ── resume from checkpoint ──
+    if args.resume:
+        # find latest checkpoint in the run
+        ckpt_files = sorted(
+            [f for f in os.listdir(ckpt_dir) if f.startswith("epoch_") and f.endswith(".pt")]
+        )
+        if ckpt_files:
+            resume_path = os.path.join(ckpt_dir, ckpt_files[-1])
+            print(f"Resuming from: {resume_path}")
+            ckpt = torch.load(resume_path, map_location=args.device, weights_only=False)
+
+            model.load_state_dict(ckpt["model"])
+            optimizer.load_state_dict(ckpt["optimizer"])
+            if "scheduler" in ckpt:
+                scheduler.load_state_dict(ckpt["scheduler"])
+            if "scaler" in ckpt:
+                scaler.load_state_dict(ckpt["scaler"])
+
+            # epoch may be fractional (mid-epoch eval); resume from next full epoch
+            ckpt_epoch = ckpt["epoch"]
+            start_epoch = int(ckpt_epoch) + (0 if ckpt_epoch == int(ckpt_epoch) else 1)
+            if start_epoch <= int(ckpt_epoch):
+                start_epoch = int(ckpt_epoch) + 1
+            best_val_loss = ckpt.get("best_val_loss", ckpt.get("val_loss", float("inf")))
+
+            # reload history
+            history_path = os.path.join(run_dir, "history.json")
+            if os.path.exists(history_path):
+                with open(history_path, "r") as f:
+                    history = json.load(f)
+                # trim to resumed eval_step (in case of partial writes)
+                ckpt_eval = ckpt.get("eval_step", ckpt.get("epoch"))
+                history = [h for h in history
+                           if h.get("eval_step", h["epoch"]) <= ckpt_eval]
+
+            print(f"  Resumed at epoch {ckpt_epoch}, eval_step={ckpt.get('eval_step', '?')}, "
+                  f"best_val_loss={best_val_loss:.4f}, lr={scheduler.get_last_lr()[0]:.2e}")
+            print(f"  History: {len(history)} evals loaded, starting epoch {start_epoch}")
+        else:
+            print(f"WARNING: --resume set but no checkpoints found in {ckpt_dir}, starting fresh")
+
+    # how many evals per epoch (1 = end of epoch only, 2 = halfway + end, etc.)
+    evals_per_epoch = args.evals_per_epoch
+    n_batches = len(train_loader)
+    eval_step = 0  # global eval counter (for file naming)
+
+    # if resuming, advance eval_step past existing evals
+    if args.resume and history:
+        eval_step = len(history)
+
+    for epoch in range(start_epoch, args.epochs + 1):
+        # ── train ──
+        model.train()
+        train_loss = 0.0
+        train_total = 0
+        # running metric accumulators (non-stop samples only)
+        train_ns_total = 0
+        train_miss_sum = 0
+        train_w10_sum = 0
+        train_w3_sum = 0
+
+        # compute batch indices where we trigger eval
+        if evals_per_epoch > 1:
+            eval_at_list = sorted(int(n_batches * (k + 1) / evals_per_epoch) - 1
+                                  for k in range(evals_per_epoch - 1))
+            eval_at = set(eval_at_list)
+        else:
+            eval_at_list = []
+            eval_at = set()
+
+        # boundaries for eval segment progress bar
+        seg_boundaries = [0] + [b + 1 for b in eval_at_list] + [n_batches]
+        seg_idx = 0  # which segment we're in
+        seg_label = f"eval {eval_step + 1}" if evals_per_epoch > 1 else ""
+
+        epoch_bar = tqdm(total=n_batches, desc=f"Epoch {epoch}/{args.epochs}",
+                         position=0, leave=True)
+        seg_size = seg_boundaries[seg_idx + 1] - seg_boundaries[seg_idx]
+        seg_bar = tqdm(total=seg_size,
+                       desc=f"  → {seg_label} [{seg_idx+1}/{evals_per_epoch}]",
+                       position=1, leave=False) if evals_per_epoch > 1 else None
+
+        for batch_idx, (mel, evt_off, evt_mask, cond, target) in enumerate(train_loader):
+            mel = mel.to(args.device, non_blocking=True)
+            evt_off = evt_off.to(args.device, non_blocking=True)
+            evt_mask = evt_mask.to(args.device, non_blocking=True)
+            cond = cond.to(args.device, non_blocking=True)
+            target = target.to(args.device, non_blocking=True)
+
+            with torch.autocast("cuda", enabled=amp_enabled):
+                logits = model(mel, evt_off, evt_mask, cond)
+                loss = criterion(logits, target)
+
+            optimizer.zero_grad(set_to_none=True)
+            scaler.scale(loss).backward()
+            scaler.unscale_(optimizer)
+            torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
+            scaler.step(optimizer)
+            scaler.update()
+
+            bs = target.size(0)
+            train_loss += loss.item() * bs
+            train_total += bs
+
+            # batch metrics for tqdm — accumulate on GPU, sync every 50 batches
+            with torch.no_grad():
+                pred = logits.argmax(1)
+                ns = target < (N_CLASSES - 1)
+                ns_count = ns.sum()
+                if ns_count > 0:
+                    t_ns = target[ns].float()
+                    p_ns = pred[ns].float()
+                    frame_err = (p_ns - t_ns).abs()
+                    pct_err = ((p_ns + 1) / (t_ns + 1) - 1.0).abs()
+                    train_ns_total += ns_count.item()
+                    train_miss_sum += (pct_err > 0.20).sum().item()
+                    train_w10_sum += ((pct_err <= 0.10) | (frame_err <= 2)).sum().item()
+                    train_w3_sum += ((pct_err <= 0.03) | (frame_err <= 1)).sum().item()
+
+            # update bars
+            epoch_bar.update(1)
+            if seg_bar is not None:
+                seg_bar.update(1)
+
+            if (batch_idx + 1) % 50 == 0 or batch_idx in eval_at:
+                avg_loss = train_loss / train_total
+                if train_ns_total > 0:
+                    stats = (f"loss={avg_loss:.4f} "
+                             f"≤3%={train_w3_sum/train_ns_total:.1%} "
+                             f"≤10%={train_w10_sum/train_ns_total:.1%} "
+                             f"miss={train_miss_sum/train_ns_total:.1%}")
+                else:
+                    stats = f"loss={avg_loss:.4f}"
+                epoch_bar.set_postfix_str(stats)
+
+            # ── mid-epoch eval checkpoint ──
+            if batch_idx in eval_at:
+                if seg_bar is not None:
+                    seg_bar.close()
+                sub_frac = (batch_idx + 1) / n_batches
+                sub_train_loss = train_loss / train_total
+                eval_step += 1
+                _run_eval(
+                    model, val_loader, criterion, args, amp_enabled,
+                    eval_step, epoch + sub_frac, sub_train_loss,
+                    run_dir, ckpt_dir, history, scheduler, optimizer,
+                    scaler, best_val_loss,
+                )
+                if history and history[-1]["val_loss"] < best_val_loss:
+                    best_val_loss = history[-1]["val_loss"]
+                model.train()  # back to training mode
+
+                # start next segment bar
+                seg_idx += 1
+                if seg_idx < len(seg_boundaries) - 1:
+                    seg_size = seg_boundaries[seg_idx + 1] - seg_boundaries[seg_idx]
+                    seg_bar = tqdm(total=seg_size,
+                                   desc=f"  → eval {eval_step + 1} [{seg_idx+1}/{evals_per_epoch}]",
+                                   position=1, leave=False)
+
+        epoch_bar.close()
+        if seg_bar is not None:
+            seg_bar.close()
+
+        scheduler.step()
+        train_loss /= train_total
+
+        # ── end-of-epoch eval ──
+        eval_step += 1
+        _run_eval(
+            model, val_loader, criterion, args, amp_enabled,
+            eval_step, float(epoch), train_loss,
+            run_dir, ckpt_dir, history, scheduler, optimizer,
+            scaler, best_val_loss,
+        )
+        if history and history[-1]["val_loss"] < best_val_loss:
+            best_val_loss = history[-1]["val_loss"]
+
+    print(f"\nTraining complete. Best val_loss: {best_val_loss:.4f}")
+    print(f"Run dir: {run_dir}")
+
+
+def _run_eval(model, val_loader, criterion, args, amp_enabled,
+              eval_step, epoch_frac, train_loss,
+              run_dir, ckpt_dir, history, scheduler, optimizer,
+              scaler, best_val_loss):
+    """Run validation, benchmarks, save graphs/checkpoints/history."""
+    val_loss, val_extra = validate_and_collect(
+        model, val_loader, criterion, args.device, amp_enabled=amp_enabled,
+    )
+    val_targets = val_extra["targets"]
+    val_preds = val_extra["preds"]
+    val_metrics = compute_metrics(val_targets, val_preds)
+
+    tag = f"{epoch_frac:.2f}" if epoch_frac != int(epoch_frac) else f"{int(epoch_frac)}"
+    print(f"  Eval {eval_step} (epoch {tag}): loss={train_loss:.4f}/{val_loss:.4f} | "
+          f"HIT={val_metrics.get('hit_rate', 0):.1%} GOOD={val_metrics.get('good_rate', 0):.1%} "
+          f"MISS={val_metrics.get('miss_rate', 1):.1%} | "
+          f"exact={val_metrics.get('exact_match', 0):.1%} ±1f={val_metrics.get('within_1_frame', 0):.1%} "
+          f"±2f={val_metrics.get('within_2_frames', 0):.1%} | "
+          f"≤3%={val_metrics.get('within_3pct', 0):.1%} ≤10%={val_metrics.get('within_10pct', 0):.1%} | "
+          f"stop_f1={val_metrics['stop_f1']:.3f} | lr={scheduler.get_last_lr()[0]:.2e}")
+
+    # ── ablation benchmarks ──
+    bench_results = run_benchmarks(model, val_loader, args.device, amp_enabled=amp_enabled)
+    print_benchmarks(bench_results)
+    save_benchmark_data(bench_results, eval_step, run_dir)
+
+    # ── save eval data ──
+    epoch_data = {
+        "eval_step": eval_step,
+        "epoch": epoch_frac,
+        "train_loss": train_loss,
+        "val_loss": val_loss,
+        "lr": scheduler.get_last_lr()[0],
+        "val_metrics": val_metrics,
+        "benchmarks": _serializable(bench_results),
+    }
+    history.append(epoch_data)
+
+    # save eval JSON
+    with open(os.path.join(run_dir, "epochs", f"epoch_{eval_step:03d}.json"), "w") as f:
+        json.dump(epoch_data, f, indent=2)
+
+    # save eval graphs
+    save_epoch_graphs(val_targets, val_preds, val_metrics, eval_step, run_dir,
+                      extra=val_extra)
+
+    # save model checkpoint
+    ckpt = {
+        "eval_step": eval_step,
+        "epoch": epoch_frac,
+        "model": model.state_dict(),
+        "optimizer": optimizer.state_dict(),
+        "scheduler": scheduler.state_dict(),
+        "scaler": scaler.state_dict(),
+        "val_loss": val_loss,
+        "val_acc": val_metrics.get("accuracy", 0),
+        "val_metrics": val_metrics,
+        "best_val_loss": best_val_loss,
+        "args": vars(args),
+    }
+    torch.save(ckpt, os.path.join(ckpt_dir, f"epoch_{eval_step:03d}.pt"))
+    if val_loss < best_val_loss:
+        torch.save(ckpt, os.path.join(ckpt_dir, "best.pt"))
+        print(f"  → New best val_loss: {val_loss:.4f}")
+
+    # save full history + training curves
+    with open(os.path.join(run_dir, "history.json"), "w") as f:
+        json.dump(history, f, indent=2)
+    save_training_curves(history, run_dir)
+
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="Train onset detection model")
+    parser.add_argument("dataset", help="Dataset name (under datasets/)")
+    parser.add_argument("--run-name", required=True, help="Run name for saving outputs")
+    parser.add_argument("--epochs", type=int, default=50)
+    parser.add_argument("--batch-size", type=int, default=256)
+    parser.add_argument("--lr", type=float, default=3e-4)
+    parser.add_argument("--wd", type=float, default=0.01)
+    parser.add_argument("--d-model", type=int, default=512)
+    parser.add_argument("--enc-layers", type=int, default=6)
+    parser.add_argument("--dec-layers", type=int, default=8)
+    parser.add_argument("--n-heads", type=int, default=8)
+    parser.add_argument("--dropout", type=float, default=0.1)
+    parser.add_argument("--focal-gamma", type=float, default=0.0, help="Focal loss gamma (0=disabled, default 0)")
+    parser.add_argument("--good-pct", type=float, default=0.03, help="Soft target plateau threshold (ratio, default 3%%)")
+    parser.add_argument("--fail-pct", type=float, default=0.20, help="Soft target hard cutoff (ratio, default 20%%)")
+    parser.add_argument("--hard-alpha", type=float, default=0.5, help="Weight of hard CE in mixed loss (0=pure soft, 1=pure hard)")
+    parser.add_argument("--frame-tolerance", type=int, default=2, help="±N frame floor for soft targets (default 2 = ±10ms)")
+    parser.add_argument("--stop-weight", type=float, default=3.0, help="Extra loss multiplier when target is STOP (default 3.0)")
+    parser.add_argument("--balanced", action="store_true", default=True, help="Balanced sampling (default on)")
+    parser.add_argument("--no-balanced", dest="balanced", action="store_false", help="Disable balanced sampling")
+    parser.add_argument("--weight-mode", default="log", choices=["log", "sqrt", "none"], help="Class weight mode (only when --no-balanced)")
+    parser.add_argument("--workers", type=int, default=4)
+    parser.add_argument("--subsample", type=int, default=1, help="Train on every Nth sample (e.g. 4 = 4x less data)")
+    parser.add_argument("--evals-per-epoch", type=int, default=1, help="Run eval N times per epoch (default 1 = end only)")
+    parser.add_argument("--resume", action="store_true", help="Resume from latest checkpoint in the run")
+    parser.add_argument("--no-compile", action="store_true", help="Disable torch.compile")
+    parser.add_argument("--amp", action="store_true", help="Enable mixed precision (experimental on Windows)")
+    parser.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
+    args = parser.parse_args()
+    train(args)
