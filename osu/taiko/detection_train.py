@@ -1661,8 +1661,8 @@ def train(args):
             target = target.to(args.device, non_blocking=True)
 
             with torch.autocast("cuda", enabled=amp_enabled):
-                logits, audio_logits, context_logits = model(mel, evt_off, evt_mask, cond)
-                loss = criterion(logits, target) + 0.1 * criterion(audio_logits, target) + 0.1 * criterion(context_logits, target)
+                logits, audio_logits, _context_logits = model(mel, evt_off, evt_mask, cond)
+                loss = criterion(logits, target) + 0.2 * criterion(audio_logits, target)
 
             optimizer.zero_grad(set_to_none=True)
             scaler.scale(loss).backward()
@@ -1833,11 +1833,11 @@ if __name__ == "__main__":
     parser.add_argument("--lr", type=float, default=3e-4)
     parser.add_argument("--wd", type=float, default=0.01)
     parser.add_argument("--d-model", type=int, default=384)
-    parser.add_argument("--d-event", type=int, default=192)
+    parser.add_argument("--d-event", type=int, default=128)
     parser.add_argument("--enc-layers", type=int, default=4)
-    parser.add_argument("--enc-event-layers", type=int, default=3)
+    parser.add_argument("--enc-event-layers", type=int, default=2)
     parser.add_argument("--audio-path-layers", type=int, default=2)
-    parser.add_argument("--context-path-layers", type=int, default=4)
+    parser.add_argument("--context-path-layers", type=int, default=3)
     parser.add_argument("--n-heads", type=int, default=8)
     parser.add_argument("--dropout", type=float, default=0.1)
     parser.add_argument("--focal-gamma", type=float, default=0.0, help="Focal loss gamma (0=disabled, default 0)")

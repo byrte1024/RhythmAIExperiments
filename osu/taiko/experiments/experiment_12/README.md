@@ -30,8 +30,44 @@ The augmentation rates are deliberately light - the goal is to expose the model 
 
 ## Result
 
-*Training in progress.*
+**Failed experiment.** The model stalled almost immediately.
+
+| Metric | E1 | E2 |
+|--------|-----|-----|
+| val_loss | 3.797 | 3.787 |
+| accuracy | 10.7% | 11.9% |
+| hit_rate | 24.7% | 25.3% |
+| top-3 HIT | ~42% | 41.6% |
+| top-10 HIT | ~65% | 65.7% |
+| unique preds | 226 | 288 |
+
+Compare to exp 11 E1: 36.7% accuracy, 56.3% HIT, 430 unique preds, top-10 95%.
+
+**Prediction distribution** showed severe mode collapse — spiky, concentrated on a handful of "safe" bins (~15, ~25, ~50, ~65) with massive peaks. The scatter plot showed horizontal banding: the model predicted the same few y-values regardless of target.
+
+**Benchmarks:**
+
+| Benchmark | E1 | E2 |
+|-----------|-----|-----|
+| no_events | 7.7% | 11.8% |
+| no_audio | 1.8% | 5.4% |
+| ne_na STOP | 99.8% | 90.4% |
+| metronome | 5.6% | 1.6% |
+
+The audio proposer was crippled — it couldn't spread across the output space. Top-10 only reached 65.7% (exp 11 E2 was 95%). With bad candidates, the bigger context path had nothing useful to select from.
 
 ## Lesson
 
-*Pending.*
+**Don't starve the proposer to feed the selector.** Cutting audio aux from 0.2 to 0.1 halved the direct gradient to the audio path. Combined with splitting the remaining budget to the context path, the audio path couldn't learn to propose diverse candidates. The bigger context path was useless because the candidates were garbage.
+
+The context path improvement needs to come from better architecture or training strategy, not by redistributing gradient away from audio. The audio aux loss (0.2) is load-bearing — it's what forces the audio path to be independently capable.
+
+Key takeaway: the AR augmentations (recency-scaled jitter, insertions, deletions) are good and should be kept, but the architecture/loss changes were harmful and should be reverted.
+
+![Pred Dist E1 - spiky mode collapse](epoch_001_pred_dist.png)
+![Pred Dist E2 - still spiky](epoch_002_pred_dist.png)
+![Scatter E2 - horizontal banding](epoch_002_scatter.png)
+![Heatmap E2](epoch_002_heatmap.png)
+![TopK E2 - only 65.7% at top-10](epoch_002_topk_accuracy.png)
+![Loss](loss.png)
+![Accuracy](accuracy.png)
