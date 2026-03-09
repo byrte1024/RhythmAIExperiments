@@ -110,7 +110,7 @@ def run_inference(model, mel, conditioning, device, hop_bins=20, max_events=1000
         evt_tensor = torch.from_numpy(event_offsets).unsqueeze(0).to(device)
         mask_tensor = torch.from_numpy(event_mask).unsqueeze(0).to(device)
 
-        logits = model(mel_tensor, evt_tensor, mask_tensor, cond_tensor)
+        logits, _audio_logits = model(mel_tensor, evt_tensor, mask_tensor, cond_tensor)
         pred = logits.argmax(dim=1).item()
 
         if pred == N_CLASSES - 1:  # STOP
@@ -176,9 +176,12 @@ def main():
 
     model = OnsetDetector(
         n_mels=N_MELS,
-        d_model=ckpt_args.get("d_model", 512),
-        enc_layers=ckpt_args.get("enc_layers", 6),
-        dec_layers=ckpt_args.get("dec_layers", 8),
+        d_model=ckpt_args.get("d_model", 384),
+        d_event=ckpt_args.get("d_event", 128),
+        enc_layers=ckpt_args.get("enc_layers", 4),
+        enc_event_layers=ckpt_args.get("enc_event_layers", 2),
+        audio_path_layers=ckpt_args.get("audio_path_layers", 2),
+        context_path_layers=ckpt_args.get("context_path_layers", 3),
         n_heads=ckpt_args.get("n_heads", 8),
         n_classes=N_CLASSES,
         max_events=C_EVENTS,

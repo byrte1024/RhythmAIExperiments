@@ -157,25 +157,12 @@ class OnsetDataset(Dataset):
         if len(past_bins) > 0:
             past_bins = np.sort(past_bins + rng.integers(-4, 5, size=len(past_bins)))
 
-        # context dropout (8%)
-        if rng.random() < 0.08:
+        # context dropout (5%)
+        if rng.random() < 0.05:
             past_bins = np.array([], dtype=np.int64)
         # context truncation (10%)
         elif len(past_bins) > 1 and rng.random() < 0.10:
             past_bins = past_bins[-rng.integers(1, len(past_bins)):]
-        # context corruption: time-warp events by a random musical fraction (15%)
-        # teaches model that event timing can be misleading
-        elif len(past_bins) > 2 and rng.random() < 0.15:
-            frac = rng.choice([0.5, 2.0, 1.0/3, 0.75, 5.0/3, 1.5, 0.66])
-            past_bins = np.sort((past_bins.astype(np.float64) * frac).astype(np.int64))
-            past_bins = np.clip(past_bins, -A_BINS, -1)
-        # context shuffle: randomize order of gaps (10%)
-        # preserves range but destroys rhythmic pattern
-        elif len(past_bins) > 3 and rng.random() < 0.10:
-            gaps = np.diff(past_bins)
-            rng.shuffle(gaps)
-            past_bins = np.concatenate([[past_bins[0]], past_bins[0] + np.cumsum(gaps)])
-            past_bins = np.clip(past_bins, -A_BINS, -1)
 
         # audio fade-in (15%)
         if rng.random() < 0.15:
@@ -368,7 +355,7 @@ def validate_and_collect(model, loader, criterion, device, amp_enabled=False):
     all_entropy = []    # logit entropy per sample
     total_loss = 0.0
     total_n = 0
-    for mel, evt_off, evt_mask, cond, target in loader:
+    for mel, evt_off, evt_mask, cond, target in tqdm(loader, desc="Validating", leave=False):
         mel = mel.to(device, non_blocking=True)
         evt_off = evt_off.to(device, non_blocking=True)
         evt_mask = evt_mask.to(device, non_blocking=True)
@@ -376,7 +363,7 @@ def validate_and_collect(model, loader, criterion, device, amp_enabled=False):
         target = target.to(device, non_blocking=True)
 
         with torch.autocast("cuda", enabled=amp_enabled):
-            logits = model(mel, evt_off, evt_mask, cond)
+            logits, _audio_logits = model(mel, evt_off, evt_mask, cond)
             loss = criterion(logits, target)
 
         total_loss += loss.item() * target.size(0)
@@ -529,7 +516,7 @@ def run_benchmarks(model, val_loader, device, amp_enabled=False):
             evt_mask = evt_mask.to(device, non_blocking=True)
             cond = cond.to(device, non_blocking=True)
             with torch.autocast("cuda", enabled=amp_enabled):
-                logits = model(mel, evt_off, evt_mask, cond)
+                logits, _audio_logits = model(mel, evt_off, evt_mask, cond)
             all_preds.append(logits.argmax(1).cpu().numpy())
             all_targets.append(target.numpy())
 
@@ -548,6 +535,7 @@ def run_benchmarks(model, val_loader, device, amp_enabled=False):
         }
 
     results = {}
+    bench_bar = tqdm(total=8, desc="Benchmarks", leave=False)
 
     # 1) No events — all past context deleted
     def no_events(mel, evt_off, evt_mask, cond, target):
@@ -555,12 +543,14 @@ def run_benchmarks(model, val_loader, device, amp_enabled=False):
         evt_mask.fill_(True)  # all masked = no events
         return mel, evt_off, evt_mask, cond
     results["no_events"] = run_corrupted(all_batches, no_events, "no_events")
+    bench_bar.update(1)
 
     # 2) No audio — silent spectrogram
     def no_audio(mel, evt_off, evt_mask, cond, target):
         mel.zero_()
         return mel, evt_off, evt_mask, cond
     results["no_audio"] = run_corrupted(all_batches, no_audio, "no_audio")
+    bench_bar.update(1)
 
     # 3) Random events — completely random timestamps
     def random_events(mel, evt_off, evt_mask, cond, target):
@@ -574,12 +564,14 @@ def run_benchmarks(model, val_loader, device, amp_enabled=False):
             evt_mask[b, -n_events:] = False
         return mel, evt_off, evt_mask, cond
     results["random_events"] = run_corrupted(all_batches, random_events, "random_events")
+    bench_bar.update(1)
 
     # 4) Static audio — white noise spectrogram
     def static_audio(mel, evt_off, evt_mask, cond, target):
         mel.normal_(mean=mel.mean().item(), std=mel.std().item())
         return mel, evt_off, evt_mask, cond
     results["static_audio"] = run_corrupted(all_batches, static_audio, "static_audio")
+    bench_bar.update(1)
 
     # 5) No events + muted audio — everything zeroed
     def no_events_no_audio(mel, evt_off, evt_mask, cond, target):
@@ -588,6 +580,7 @@ def run_benchmarks(model, val_loader, device, amp_enabled=False):
         evt_mask.fill_(True)
         return mel, evt_off, evt_mask, cond
     results["no_events_no_audio"] = run_corrupted(all_batches, no_events_no_audio, "no_events_no_audio")
+    bench_bar.update(1)
 
     # 6) Metronome — fill events with fixed gap far from target
     def metronome(mel, evt_off, evt_mask, cond, target):
@@ -609,6 +602,7 @@ def run_benchmarks(model, val_loader, device, amp_enabled=False):
             evt_mask[b] = False  # all valid
         return mel, evt_off, evt_mask, cond
     results["metronome"] = run_corrupted(all_batches, metronome, "metronome")
+    bench_bar.update(1)
 
     # 7) Time-shifted context — scale all event offsets by a musical fraction
     fractions = [0.5, 2.0, 1.0 / 3, 0.75, 5.0 / 3]
@@ -623,6 +617,7 @@ def run_benchmarks(model, val_loader, device, amp_enabled=False):
                 evt_off[b] = scaled
         return mel, evt_off, evt_mask, cond
     results["time_shifted"] = run_corrupted(all_batches, time_shifted, "time_shifted")
+    bench_bar.update(1)
 
     # 8) Advanced metronome — quantize events to detected BPM
     def advanced_metronome(mel, evt_off, evt_mask, cond, target):
@@ -668,6 +663,8 @@ def run_benchmarks(model, val_loader, device, amp_enabled=False):
             evt_mask[b, -n_fill:] = False
         return mel, evt_off, evt_mask, cond
     results["advanced_metronome"] = run_corrupted(all_batches, advanced_metronome, "advanced_metronome")
+    bench_bar.update(1)
+    bench_bar.close()
 
     return results
 
@@ -1515,8 +1512,11 @@ def train(args):
 
     # model
     model = OnsetDetector(
-        n_mels=80, d_model=args.d_model, enc_layers=args.enc_layers,
-        dec_layers=args.dec_layers, n_heads=args.n_heads,
+        n_mels=80, d_model=args.d_model, d_event=args.d_event,
+        enc_layers=args.enc_layers, enc_event_layers=args.enc_event_layers,
+        audio_path_layers=args.audio_path_layers,
+        context_path_layers=args.context_path_layers,
+        n_heads=args.n_heads,
         n_classes=N_CLASSES, max_events=C_EVENTS, dropout=args.dropout,
     ).to(args.device)
 
@@ -1638,8 +1638,8 @@ def train(args):
             target = target.to(args.device, non_blocking=True)
 
             with torch.autocast("cuda", enabled=amp_enabled):
-                logits = model(mel, evt_off, evt_mask, cond)
-                loss = criterion(logits, target)
+                logits, audio_logits = model(mel, evt_off, evt_mask, cond)
+                loss = criterion(logits, target) + 0.2 * criterion(audio_logits, target)
 
             optimizer.zero_grad(set_to_none=True)
             scaler.scale(loss).backward()
@@ -1809,9 +1809,12 @@ if __name__ == "__main__":
     parser.add_argument("--batch-size", type=int, default=256)
     parser.add_argument("--lr", type=float, default=3e-4)
     parser.add_argument("--wd", type=float, default=0.01)
-    parser.add_argument("--d-model", type=int, default=512)
-    parser.add_argument("--enc-layers", type=int, default=6)
-    parser.add_argument("--dec-layers", type=int, default=8)
+    parser.add_argument("--d-model", type=int, default=384)
+    parser.add_argument("--d-event", type=int, default=128)
+    parser.add_argument("--enc-layers", type=int, default=4)
+    parser.add_argument("--enc-event-layers", type=int, default=2)
+    parser.add_argument("--audio-path-layers", type=int, default=2)
+    parser.add_argument("--context-path-layers", type=int, default=3)
     parser.add_argument("--n-heads", type=int, default=8)
     parser.add_argument("--dropout", type=float, default=0.1)
     parser.add_argument("--focal-gamma", type=float, default=0.0, help="Focal loss gamma (0=disabled, default 0)")
@@ -1819,7 +1822,7 @@ if __name__ == "__main__":
     parser.add_argument("--fail-pct", type=float, default=0.20, help="Soft target hard cutoff (ratio, default 20%%)")
     parser.add_argument("--hard-alpha", type=float, default=0.5, help="Weight of hard CE in mixed loss (0=pure soft, 1=pure hard)")
     parser.add_argument("--frame-tolerance", type=int, default=2, help="±N frame floor for soft targets (default 2 = ±10ms)")
-    parser.add_argument("--stop-weight", type=float, default=3.0, help="Extra loss multiplier when target is STOP (default 3.0)")
+    parser.add_argument("--stop-weight", type=float, default=1.5, help="Extra loss multiplier when target is STOP (default 1.5)")
     parser.add_argument("--balanced", action="store_true", default=True, help="Balanced sampling (default on)")
     parser.add_argument("--no-balanced", dest="balanced", action="store_false", help="Disable balanced sampling")
     parser.add_argument("--weight-mode", default="log", choices=["log", "sqrt", "none"], help="Class weight mode (only when --no-balanced)")
