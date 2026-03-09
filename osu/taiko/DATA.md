@@ -6,7 +6,7 @@ The training data consists of ranked osu!taiko beatmaps which are copyrighted co
 
 ## Obtaining maps
 
-Download osu!taiko beatmap packs from the [osu! beatmap pack listing](https://osu.ppy.sh/beatmaps/packs). The ranked taiko packs are monthly archives (`.rar`) containing `.osz` files (which are ZIP archives with audio + `.osu` chart files).
+Download osu!taiko beatmap packs from the [osu! beatmap pack listing](https://osu.ppy.sh/beatmaps/packs). or a source of your choosing. The ranked taiko packs are monthly archives (`.rar`) containing `.osz` files (which are ZIP archives with audio + `.osu` chart files).
 
 ## Pipeline
 
