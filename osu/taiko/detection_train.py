@@ -127,7 +127,9 @@ class OnsetDataset(Dataset):
         else:
             cond_jitter = np.ones(3, dtype=np.float32)
 
-        # pad events to C_EVENTS
+        # pad events to C_EVENTS (trim if augmentation added extras)
+        if len(past_bins) > C_EVENTS:
+            past_bins = past_bins[-C_EVENTS:]
         n_past = len(past_bins)
         event_offsets = np.zeros(C_EVENTS, dtype=np.int64)
         event_mask = np.ones(C_EVENTS, dtype=bool)
