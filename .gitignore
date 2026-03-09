@@ -6,7 +6,7 @@ venv/
 .venv/
 *.egg-info/
 
-# Data — large files, not tracked
+# Data - large files, not tracked
 osu/taiko/audio/
 osu/taiko/charts/
 osu/taiko/data/
@@ -15,7 +15,7 @@ osu/taiko/mels/
 osu/taiko/metadata.csv
 mels/
 
-# Outputs — generated per-run
+# Outputs - generated per-run
 osu/taiko/runs/
 osu/taiko/graphs/
 osu/taiko/*_predicted.csv

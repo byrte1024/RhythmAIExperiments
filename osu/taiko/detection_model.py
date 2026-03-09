@@ -114,8 +114,8 @@ class EventEncoder(nn.Module):
 
     def forward(self, event_offsets, event_mask, cond):
         """
-        event_offsets: (B, C) int — bin positions relative to cursor
-        event_mask: (B, C) bool — True = padded
+        event_offsets: (B, C) int - bin positions relative to cursor
+        event_mask: (B, C) bool - True = padded
         cond: (B, cond_dim)
         Returns: (B, C, d_model)
         """
@@ -131,7 +131,7 @@ class EventEncoder(nn.Module):
 
         # guard: if ALL events are masked for a sample, transformer self-attention
         # produces NaN (softmax over all -inf). Unmask the last position as a
-        # no-op dummy — its content is just positional encoding of offset 0.
+        # no-op dummy - its content is just positional encoding of offset 0.
         all_masked = event_mask.all(dim=1)  # (B,)
         if all_masked.any():
             safe_mask = event_mask.clone()
@@ -181,7 +181,7 @@ class AudioPath(nn.Module):
         """
         audio_tokens: (B, 250, d_model)
         event_tokens: (B, C, d_model) from EventEncoder
-        event_mask: (B, C) bool — True = padded
+        event_mask: (B, C) bool - True = padded
         cond: (B, cond_dim)
         Returns: (B, n_classes) audio logits
         """
@@ -246,7 +246,7 @@ class ContextPath(nn.Module):
         """
         event_tokens: (B, C, d_model) from EventEncoder
         audio_tokens: (B, 250, d_model)
-        event_mask: (B, C) bool — True = padded
+        event_mask: (B, C) bool - True = padded
         cond: (B, cond_dim)
         Returns: (B, n_classes) context logits
         """

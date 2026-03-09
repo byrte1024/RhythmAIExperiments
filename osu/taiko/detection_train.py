@@ -158,21 +158,21 @@ class OnsetDataset(Dataset):
         # event jitter: global shift + recency-scaled per-event noise (simulates AR error)
         if len(past_bins) > 0:
             n = len(past_bins)
-            # global shift applied to ALL events (±0-3 bins) — systematic drift
+            # global shift applied to ALL events (±0-3 bins) - systematic drift
             global_shift = rng.integers(-3, 4)
             # per-event jitter scaled by recency: 1x oldest → 3x most recent
             jitter_scale = np.linspace(1, 3, n)
             per_event = (rng.integers(-4, 5, size=n) * jitter_scale).astype(np.int64)
             past_bins = np.sort(past_bins + global_shift + per_event)
 
-        # random event deletion (8%) — drop individual events to simulate misses
+        # random event deletion (8%) - drop individual events to simulate misses
         if len(past_bins) > 2 and rng.random() < 0.08:
             n_drop = rng.integers(1, max(2, len(past_bins) // 6))
             keep = np.ones(len(past_bins), dtype=bool)
             keep[rng.choice(len(past_bins), size=n_drop, replace=False)] = False
             past_bins = past_bins[keep]
 
-        # random event insertion (8%) — add spurious events to simulate false positives
+        # random event insertion (8%) - add spurious events to simulate false positives
         if len(past_bins) > 0 and rng.random() < 0.08:
             n_insert = rng.integers(1, max(2, len(past_bins) // 6))
             lo, hi = past_bins[0], min(past_bins[-1], -1)
@@ -308,7 +308,7 @@ class OnsetLoss(nn.Module):
         # ── mix ──
         ce = self.hard_alpha * hard_ce + (1 - self.hard_alpha) * soft_ce
 
-        # extra penalty when target is STOP — model must learn to stop
+        # extra penalty when target is STOP - model must learn to stop
         if self.stop_weight > 1.0:
             is_stop = (targets == n_classes - 1)
             ce = ce * torch.where(is_stop, self.stop_weight, 1.0)
@@ -560,7 +560,7 @@ def run_benchmarks(model, val_loader, device, amp_enabled=False):
     results = {}
     bench_bar = tqdm(total=8, desc="Benchmarks", leave=False)
 
-    # 1) No events — all past context deleted
+    # 1) No events - all past context deleted
     def no_events(mel, evt_off, evt_mask, cond, target):
         evt_off.zero_()
         evt_mask.fill_(True)  # all masked = no events
@@ -568,14 +568,14 @@ def run_benchmarks(model, val_loader, device, amp_enabled=False):
     results["no_events"] = run_corrupted(all_batches, no_events, "no_events")
     bench_bar.update(1)
 
-    # 2) No audio — silent spectrogram
+    # 2) No audio - silent spectrogram
     def no_audio(mel, evt_off, evt_mask, cond, target):
         mel.zero_()
         return mel, evt_off, evt_mask, cond
     results["no_audio"] = run_corrupted(all_batches, no_audio, "no_audio")
     bench_bar.update(1)
 
-    # 3) Random events — completely random timestamps
+    # 3) Random events - completely random timestamps
     def random_events(mel, evt_off, evt_mask, cond, target):
         B, C = evt_off.shape
         for b in range(B):
@@ -589,14 +589,14 @@ def run_benchmarks(model, val_loader, device, amp_enabled=False):
     results["random_events"] = run_corrupted(all_batches, random_events, "random_events")
     bench_bar.update(1)
 
-    # 4) Static audio — white noise spectrogram
+    # 4) Static audio - white noise spectrogram
     def static_audio(mel, evt_off, evt_mask, cond, target):
         mel.normal_(mean=mel.mean().item(), std=mel.std().item())
         return mel, evt_off, evt_mask, cond
     results["static_audio"] = run_corrupted(all_batches, static_audio, "static_audio")
     bench_bar.update(1)
 
-    # 5) No events + muted audio — everything zeroed
+    # 5) No events + muted audio - everything zeroed
     def no_events_no_audio(mel, evt_off, evt_mask, cond, target):
         mel.zero_()
         evt_off.zero_()
@@ -605,7 +605,7 @@ def run_benchmarks(model, val_loader, device, amp_enabled=False):
     results["no_events_no_audio"] = run_corrupted(all_batches, no_events_no_audio, "no_events_no_audio")
     bench_bar.update(1)
 
-    # 6) Metronome — fill events with fixed gap far from target
+    # 6) Metronome - fill events with fixed gap far from target
     def metronome(mel, evt_off, evt_mask, cond, target):
         B, C = evt_off.shape
         for b in range(B):
@@ -627,7 +627,7 @@ def run_benchmarks(model, val_loader, device, amp_enabled=False):
     results["metronome"] = run_corrupted(all_batches, metronome, "metronome")
     bench_bar.update(1)
 
-    # 7) Time-shifted context — scale all event offsets by a musical fraction
+    # 7) Time-shifted context - scale all event offsets by a musical fraction
     fractions = [0.5, 2.0, 1.0 / 3, 0.75, 5.0 / 3]
     def time_shifted(mel, evt_off, evt_mask, cond, target):
         B, C = evt_off.shape
@@ -642,7 +642,7 @@ def run_benchmarks(model, val_loader, device, amp_enabled=False):
     results["time_shifted"] = run_corrupted(all_batches, time_shifted, "time_shifted")
     bench_bar.update(1)
 
-    # 8) Advanced metronome — quantize events to detected BPM
+    # 8) Advanced metronome - quantize events to detected BPM
     def advanced_metronome(mel, evt_off, evt_mask, cond, target):
         B, C = evt_off.shape
         for b in range(B):
@@ -748,12 +748,12 @@ def save_benchmark_data(results, epoch, run_dir):
         # ── prediction distribution ──
         fig, axes = plt.subplots(2, 1, figsize=(10, 6))
         axes[0].hist(t_ns, bins=200, range=(0, 500), color="#4a90d9", alpha=0.8)
-        axes[0].set_title(f"{name} — Epoch {epoch}: Original Targets (non-STOP)")
+        axes[0].set_title(f"{name} - Epoch {epoch}: Original Targets (non-STOP)")
         axes[0].set_ylabel("Count")
         axes[1].hist(p_ns, bins=200, range=(0, 500), color="#e8834a", alpha=0.8)
         n_stop = (preds == stop).sum()
         axes[1].set_title(
-            f"{name} — Epoch {epoch}: Predictions "
+            f"{name} - Epoch {epoch}: Predictions "
             f"({len(np.unique(p_ns))} unique, {n_stop} STOP [{r['stop_rate']:.1%}])"
         )
         axes[1].set_xlabel("Bin offset")
@@ -777,7 +777,7 @@ def save_benchmark_data(results, epoch, run_dir):
             ax.plot([0, 500], [0, 500], "r--", alpha=0.4, linewidth=1)
             ax.set_xlabel("Target", color="white")
             ax.set_ylabel("Predicted", color="white")
-            ax.set_title(f"{name} — Epoch {epoch}: Heatmap", color="white")
+            ax.set_title(f"{name} - Epoch {epoch}: Heatmap", color="white")
             ax.tick_params(colors="white")
             fig.tight_layout()
             fig.savefig(f"{prefix}_heatmap.png", dpi=100, facecolor="black")
@@ -860,7 +860,7 @@ def _save_benchmark_history_graphs(bench_root, run_dir):
 
     # ── combined overlay: all benchmarks on one graph ──
     fig, axes = plt.subplots(1, 2, figsize=(14, 5))
-    fig.suptitle("Ablation Benchmarks — All", fontsize=14)
+    fig.suptitle("Ablation Benchmarks - All", fontsize=14)
 
     colors = plt.cm.tab10(np.linspace(0, 1, len(all_history)))
     for i, (name, hist) in enumerate(all_history.items()):
@@ -915,7 +915,7 @@ def save_epoch_graphs(targets, preds, metrics, epoch, run_dir, extra=None):
     axes[0].set_ylabel("Count")
     # predicted distribution
     axes[1].hist(p_ns, bins=250, range=(0, 500), color="#e8834a", alpha=0.8)
-    axes[1].set_title(f"Epoch {epoch}: Predicted Distribution — {len(np.unique(p_ns))} unique values")
+    axes[1].set_title(f"Epoch {epoch}: Predicted Distribution - {len(np.unique(p_ns))} unique values")
     axes[1].set_xlabel("Bin offset")
     axes[1].set_ylabel("Count")
     fig.tight_layout()
@@ -1051,7 +1051,7 @@ def save_epoch_graphs(targets, preds, metrics, epoch, run_dir, extra=None):
         ratio_err_log = np.abs(np.log((p_ns.astype(np.float64) + 1) / (t_ns.astype(np.float64) + 1)))
         re_clip2 = np.clip(ratio_err_log, 0, 2.0)
 
-        # scatter — color by error
+        # scatter - color by error
         fig, ax = plt.subplots(figsize=(10, 8))
         sc = ax.scatter(mean_dens, peak_dens, c=re_clip2, s=1, alpha=0.1,
                         cmap="RdYlGn_r", vmin=0, vmax=1.5)
@@ -1063,7 +1063,7 @@ def save_epoch_graphs(targets, preds, metrics, epoch, run_dir, extra=None):
         fig.savefig(f"{prefix}_ratio_in_density_scatter.png", dpi=120)
         plt.close(fig)
 
-        # heatmap — mean error per density cell
+        # heatmap - mean error per density cell
         fig, ax = plt.subplots(figsize=(10, 8))
         fig.patch.set_facecolor("black")
         ax.set_facecolor("black")
@@ -1161,7 +1161,7 @@ def save_epoch_graphs(targets, preds, metrics, epoch, run_dir, extra=None):
                 ax.text(np.log2(r), ax.get_ylim()[1] * 0.95, lbl,
                         ha="center", va="top", fontsize=10, color="white",
                         bbox=dict(boxstyle="round,pad=0.2", fc="black", alpha=0.7))
-            ax.set_xlabel("log₂(pred/target)  — musical ratio")
+            ax.set_xlabel("log₂(pred/target)  - musical ratio")
             ax.set_ylabel("Count")
             ax.set_title(f"Epoch {epoch}: Ratio Confusion (misses only, n={misses.sum()})")
             ax.set_xticks([-3, -2, -1, 0, 1, 2, 3])
@@ -1215,7 +1215,7 @@ def save_epoch_graphs(targets, preds, metrics, epoch, run_dir, extra=None):
 
     # ── 10. Top-K accuracy ──
     if topk is not None and len(t_ns) > 0:
-        topk_ns = topk[ns]  # (M, 10) — top-10 predictions for non-stop
+        topk_ns = topk[ns]  # (M, 10) - top-10 predictions for non-stop
         targets_ns_col = t_ns.reshape(-1, 1)
 
         ks = [1, 2, 3, 5, 10]
@@ -1276,7 +1276,7 @@ def save_epoch_graphs(targets, preds, metrics, epoch, run_dir, extra=None):
             ax.hist(ent_ns[between], bins=bins, alpha=0.4, color="#fcb71e", label=f"GOOD (n={between.sum()})", density=True)
         ax.set_xlabel("Softmax entropy (nats)")
         ax.set_ylabel("Density")
-        ax.set_title(f"Epoch {epoch}: Model Confidence — HIT vs MISS")
+        ax.set_title(f"Epoch {epoch}: Model Confidence - HIT vs MISS")
         ax.legend()
         ax.grid(True, alpha=0.3)
 
@@ -1518,7 +1518,7 @@ def train(args):
         sampler = None
         loss_weights = compute_class_weights(train_ds, mode=args.weight_mode).to(args.device)
 
-    # workers use mmap — each gets its own file handle, OS page cache shares data
+    # workers use mmap - each gets its own file handle, OS page cache shares data
     nw = args.workers
     train_loader = DataLoader(
         train_ds, batch_size=args.batch_size,
@@ -1546,7 +1546,7 @@ def train(args):
     n_params = sum(p.numel() for p in model.parameters())
     print(f"Model: {n_params / 1e6:.1f}M parameters")
 
-    # torch.compile (disabled on Windows — unstable CUDA cleanup at exit)
+    # torch.compile (disabled on Windows - unstable CUDA cleanup at exit)
     import sys
     if hasattr(torch, "compile") and args.device == "cuda" and not args.no_compile and sys.platform != "win32":
         try:
@@ -1675,7 +1675,7 @@ def train(args):
             train_loss += loss.item() * bs
             train_total += bs
 
-            # batch metrics for tqdm — accumulate on GPU, sync every 50 batches
+            # batch metrics for tqdm - accumulate on GPU, sync every 50 batches
             with torch.no_grad():
                 pred = logits.argmax(1)
                 ns = target < (N_CLASSES - 1)

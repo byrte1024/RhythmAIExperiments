@@ -1,12 +1,12 @@
-# Experiment 12 — Stronger Context Path + AR Augmentation
+# Experiment 12 - Stronger Context Path + AR Augmentation
 
 ## Hypothesis
 
-Experiment 11 showed the two-path architecture working well — audio is now the primary signal (no_events=36.8% >> no_audio=15.5%) and the audio path proposes excellent candidates (top-3 = 84%, top-10 = 95%). But two problems remain:
+Experiment 11 showed the two-path architecture working well - audio is now the primary signal (no_events=36.8% >> no_audio=15.5%) and the audio path proposes excellent candidates (top-3 = 84%, top-10 = 95%). But two problems remain:
 
 **1. The context path is the selection bottleneck.**
 
-Top-K accuracy analysis showed all bars (top-1 through top-10) improving at the same linear rate across epochs. This means the audio path is getting better at proposing candidates, but the context path isn't getting any better at selecting from them. The gap between top-1 (65%) and top-3 (86%) stayed roughly constant — roughly 20% of samples have the correct answer ranked 2nd or 3rd, and the context path can't disambiguate.
+Top-K accuracy analysis showed all bars (top-1 through top-10) improving at the same linear rate across epochs. This means the audio path is getting better at proposing candidates, but the context path isn't getting any better at selecting from them. The gap between top-1 (65%) and top-3 (86%) stayed roughly constant - roughly 20% of samples have the correct answer ranked 2nd or 3rd, and the context path can't disambiguate.
 
 To address this, three changes were made:
 - **Event encoder widened**: d_event increased from 128 to 192 (with 6 attention heads instead of 4), giving the context path richer event representations to work with. Event encoder depth increased from 2 to 3 layers.
@@ -26,7 +26,7 @@ To address this, event augmentation was redesigned to simulate the kinds of erro
 - **Random insertion (8%)**: Add 1 to N/6 spurious events at random positions within the existing event range, simulating false positive predictions.
 - Existing augmentations (5% full dropout, 10% truncation) remain unchanged.
 
-The augmentation rates are deliberately light — the goal is to expose the model to slightly messy event histories that resemble real inference output, not to corrupt the data so heavily that events become useless (the lesson from experiment 07).
+The augmentation rates are deliberately light - the goal is to expose the model to slightly messy event histories that resemble real inference output, not to corrupt the data so heavily that events become useless (the lesson from experiment 07).
 
 ## Result
 
