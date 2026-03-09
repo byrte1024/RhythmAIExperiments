@@ -153,9 +153,30 @@ class OnsetDataset(Dataset):
         rng = np.random.default_rng()
         cond_jitter = np.ones(3, dtype=np.float32)
 
-        # event jitter ±0-4 bins
+        # event jitter: global shift + recency-scaled per-event noise (simulates AR error)
         if len(past_bins) > 0:
-            past_bins = np.sort(past_bins + rng.integers(-4, 5, size=len(past_bins)))
+            n = len(past_bins)
+            # global shift applied to ALL events (±0-3 bins) — systematic drift
+            global_shift = rng.integers(-3, 4)
+            # per-event jitter scaled by recency: 1x oldest → 3x most recent
+            jitter_scale = np.linspace(1, 3, n)
+            per_event = (rng.integers(-4, 5, size=n) * jitter_scale).astype(np.int64)
+            past_bins = np.sort(past_bins + global_shift + per_event)
+
+        # random event deletion (8%) — drop individual events to simulate misses
+        if len(past_bins) > 2 and rng.random() < 0.08:
+            n_drop = rng.integers(1, max(2, len(past_bins) // 6))
+            keep = np.ones(len(past_bins), dtype=bool)
+            keep[rng.choice(len(past_bins), size=n_drop, replace=False)] = False
+            past_bins = past_bins[keep]
+
+        # random event insertion (8%) — add spurious events to simulate false positives
+        if len(past_bins) > 0 and rng.random() < 0.08:
+            n_insert = rng.integers(1, max(2, len(past_bins) // 6))
+            lo, hi = past_bins[0], min(past_bins[-1], -1)
+            if lo < hi:
+                fake = rng.integers(lo, hi, size=n_insert)
+                past_bins = np.sort(np.concatenate([past_bins, fake]))
 
         # context dropout (5%)
         if rng.random() < 0.05:
@@ -363,7 +384,7 @@ def validate_and_collect(model, loader, criterion, device, amp_enabled=False):
         target = target.to(device, non_blocking=True)
 
         with torch.autocast("cuda", enabled=amp_enabled):
-            logits, _audio_logits = model(mel, evt_off, evt_mask, cond)
+            logits, _audio_logits, _context_logits = model(mel, evt_off, evt_mask, cond)
             loss = criterion(logits, target)
 
         total_loss += loss.item() * target.size(0)
@@ -516,7 +537,7 @@ def run_benchmarks(model, val_loader, device, amp_enabled=False):
             evt_mask = evt_mask.to(device, non_blocking=True)
             cond = cond.to(device, non_blocking=True)
             with torch.autocast("cuda", enabled=amp_enabled):
-                logits, _audio_logits = model(mel, evt_off, evt_mask, cond)
+                logits, _audio_logits, _context_logits = model(mel, evt_off, evt_mask, cond)
             all_preds.append(logits.argmax(1).cpu().numpy())
             all_targets.append(target.numpy())
 
@@ -1638,8 +1659,8 @@ def train(args):
             target = target.to(args.device, non_blocking=True)
 
             with torch.autocast("cuda", enabled=amp_enabled):
-                logits, audio_logits = model(mel, evt_off, evt_mask, cond)
-                loss = criterion(logits, target) + 0.2 * criterion(audio_logits, target)
+                logits, audio_logits, context_logits = model(mel, evt_off, evt_mask, cond)
+                loss = criterion(logits, target) + 0.1 * criterion(audio_logits, target) + 0.1 * criterion(context_logits, target)
 
             optimizer.zero_grad(set_to_none=True)
             scaler.scale(loss).backward()
@@ -1810,11 +1831,11 @@ if __name__ == "__main__":
     parser.add_argument("--lr", type=float, default=3e-4)
     parser.add_argument("--wd", type=float, default=0.01)
     parser.add_argument("--d-model", type=int, default=384)
-    parser.add_argument("--d-event", type=int, default=128)
+    parser.add_argument("--d-event", type=int, default=192)
     parser.add_argument("--enc-layers", type=int, default=4)
-    parser.add_argument("--enc-event-layers", type=int, default=2)
+    parser.add_argument("--enc-event-layers", type=int, default=3)
     parser.add_argument("--audio-path-layers", type=int, default=2)
-    parser.add_argument("--context-path-layers", type=int, default=3)
+    parser.add_argument("--context-path-layers", type=int, default=4)
     parser.add_argument("--n-heads", type=int, default=8)
     parser.add_argument("--dropout", type=float, default=0.1)
     parser.add_argument("--focal-gamma", type=float, default=0.0, help="Focal loss gamma (0=disabled, default 0)")

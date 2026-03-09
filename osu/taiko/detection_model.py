@@ -89,7 +89,7 @@ class EventEncoder(nn.Module):
     Operates at d_event (small), projects up to d_model for cross-attention.
     """
 
-    def __init__(self, d_model=384, d_event=128, n_layers=2, n_heads=4,
+    def __init__(self, d_model=384, d_event=192, n_layers=3, n_heads=6,
                  max_events=128, cond_dim=64, dropout=0.1):
         super().__init__()
         self.d_event = d_event
@@ -213,7 +213,7 @@ class ContextPath(nn.Module):
     Uses a query token to predict from rhythm context, grounded in audio.
     """
 
-    def __init__(self, d_model=384, n_layers=3, n_heads=8, n_classes=501,
+    def __init__(self, d_model=384, n_layers=4, n_heads=8, n_classes=501,
                  max_events=128, cond_dim=64, dropout=0.1):
         super().__init__()
 
@@ -295,11 +295,11 @@ class OnsetDetector(nn.Module):
         self,
         n_mels=80,
         d_model=384,
-        d_event=128,
+        d_event=192,
         enc_layers=4,
-        enc_event_layers=2,
+        enc_event_layers=3,
         audio_path_layers=2,
-        context_path_layers=3,
+        context_path_layers=4,
         n_heads=8,
         n_classes=501,
         max_events=128,
@@ -324,7 +324,7 @@ class OnsetDetector(nn.Module):
         )
         self.event_encoder = EventEncoder(
             d_model=d_model, d_event=d_event, n_layers=enc_event_layers,
-            n_heads=4, max_events=max_events, cond_dim=cond_dim, dropout=dropout,
+            n_heads=6, max_events=max_events, cond_dim=cond_dim, dropout=dropout,
         )
 
         # two prediction paths
@@ -344,9 +344,10 @@ class OnsetDetector(nn.Module):
         event_offsets: (B, C) past event bin positions relative to cursor
         event_mask: (B, C) bool, True = padding
         conditioning: (B, 3) [mean_density, peak_density, density_std]
-        Returns: (logits, audio_logits)
+        Returns: (logits, audio_logits, context_logits)
             logits: (B, 501) combined prediction
             audio_logits: (B, 501) audio-only prediction (for aux loss)
+            context_logits: (B, 501) context-only prediction (for aux loss)
         """
         cond = self.cond_mlp(conditioning)
 
@@ -361,4 +362,4 @@ class OnsetDetector(nn.Module):
         # combine: addition in logit space = multiplication in probability space
         logits = audio_logits + context_logits
 
-        return logits, audio_logits
+        return logits, audio_logits, context_logits

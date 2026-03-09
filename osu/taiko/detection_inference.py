@@ -110,7 +110,7 @@ def run_inference(model, mel, conditioning, device, hop_bins=20, max_events=1000
         evt_tensor = torch.from_numpy(event_offsets).unsqueeze(0).to(device)
         mask_tensor = torch.from_numpy(event_mask).unsqueeze(0).to(device)
 
-        logits, _audio_logits = model(mel_tensor, evt_tensor, mask_tensor, cond_tensor)
+        logits, _audio_logits, _context_logits = model(mel_tensor, evt_tensor, mask_tensor, cond_tensor)
         pred = logits.argmax(dim=1).item()
 
         if pred == N_CLASSES - 1:  # STOP
