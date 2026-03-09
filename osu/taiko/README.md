@@ -14,7 +14,7 @@ Output: 501-class classification (bin offset 0–499 + STOP).
 
 ## Data
 
-~10K onset CSVs from ~2,490 ranked osu!taiko maps. See [experiments/](experiments/) for training results.
+~10K onset CSVs from ~2,490 ranked osu!taiko maps. Data is not included — see [DATA.md](DATA.md) for how to obtain and prepare it. See [experiments/](experiments/) for training results.
 
 ## Usage
 
@@ -39,3 +39,7 @@ python viewer.py predicted.csv --audio song.mp3
 | `viewer.py` | Pygame onset visualizer |
 | `parse_osu_taiko.py` | .osz → onset CSV extraction |
 | `experiments/` | Per-experiment hypotheses, results, and graphs |
+
+## Disclaimer
+
+Commercial use of AI-generated rhythm game content is legally ambiguous. You are solely responsible for your use of this software and any data you obtain for it. See [LICENSE.md](../../LICENSE.md) for details.
