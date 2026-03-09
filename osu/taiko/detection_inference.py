@@ -204,9 +204,16 @@ def main():
     print(f"  Predicted {len(events)} events ({len(events) / duration:.1f}/s)")
 
     # write CSV
+    tmp_dir = None
     if args.output is None:
-        stem = os.path.splitext(os.path.basename(args.audio))[0]
-        args.output = os.path.join(SCRIPT_DIR, f"{stem}_predicted.csv")
+        if args.andlaunch:
+            import tempfile
+            tmp_dir = tempfile.mkdtemp(prefix="beatdetect_")
+            stem = os.path.splitext(os.path.basename(args.audio))[0]
+            args.output = os.path.join(tmp_dir, f"{stem}_predicted.csv")
+        else:
+            stem = os.path.splitext(os.path.basename(args.audio))[0]
+            args.output = os.path.join(SCRIPT_DIR, f"{stem}_predicted.csv")
 
     events_to_csv(events, args.output, audio_name=os.path.abspath(args.audio))
 
@@ -215,6 +222,11 @@ def main():
         viewer_path = os.path.join(SCRIPT_DIR, "viewer.py")
         print(f"\nLaunching viewer: {args.output}")
         subprocess.run([sys.executable, viewer_path, args.output, "--audio", args.audio])
+
+    if tmp_dir is not None:
+        import shutil
+        shutil.rmtree(tmp_dir, ignore_errors=True)
+        print(f"Cleaned up temp directory: {tmp_dir}")
 
 
 if __name__ == "__main__":
