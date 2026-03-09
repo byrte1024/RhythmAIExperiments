@@ -35,7 +35,7 @@ N_FFT = 2048
 N_MELS = 80
 F_MIN = 20.0
 F_MAX = 8000.0
-BIN_MS = 5.0            # for converting event times to bins
+BIN_MS = HOP_LENGTH / SAMPLE_RATE * 1000  # exact: ~4.9887ms per mel frame
 
 
 # ─────────────────────────── parsing ───────────────────────────
