@@ -99,17 +99,16 @@ def load_csv(path):
     return audio_file, onsets
 
 
-def make_tick_sound(freq=800, duration_ms=35, volume=0.7):
-    """Generate a short pitched tick sound."""
+def make_tick_sound(duration_ms=40, volume=0.7):
+    """Generate a short static/noise tick sound."""
     mixer_freq, mixer_size, mixer_channels = pygame.mixer.get_init()
     n_samples = int(mixer_freq * duration_ms / 1000)
     buf = array.array("h")
     for i in range(n_samples):
-        t = i / mixer_freq
-        fade = 1.0 - (i / n_samples) ** 0.4
-        val = int(volume * 32767 * fade * math.sin(2 * math.pi * freq * t))
+        fade = 1.0 - (i / n_samples) ** 0.5  # fast decay
+        val = int(volume * 32767 * fade * (random.random() * 2 - 1))
         for _ in range(mixer_channels):
-            buf.append(max(-32767, min(32767, val)))
+            buf.append(val)
     return pygame.mixer.Sound(buffer=buf)
 
 
@@ -258,8 +257,8 @@ class Viewer:
         self.font_small = pygame.font.SysFont("consolas", 11)
 
         # Tick sounds
-        self.tick_don = make_tick_sound(freq=600, duration_ms=40, volume=0.9)
-        self.tick_ka = make_tick_sound(freq=1000, duration_ms=30, volume=0.8)
+        self.tick_don = make_tick_sound(duration_ms=45, volume=0.95)
+        self.tick_ka = make_tick_sound(duration_ms=30, volume=0.85)
 
         # State
         self.playing = False
