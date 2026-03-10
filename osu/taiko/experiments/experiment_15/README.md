@@ -43,8 +43,58 @@ Adding 0.1 context aux increases total gradient. If the model destabilizes, the 
 
 ## Result
 
-*Pending.*
+**Context aux loss did not activate the context path.** Stopped at E4 — no_events never dropped below full accuracy. The context path continued rubber-stamping audio despite direct gradient pressure.
+
+### Trajectory (4 epochs)
+
+|   E | loss  |   acc |   hit |  miss | stop  |  p99 | no_ev | no_au | metro | t_sh  |
+|-----|-------|-------|-------|-------|-------|------|-------|-------|-------|-------|
+|   1 | 2.732 | 47.3% | 65.8% | 33.2% | 0.427 |  182 | 48.9% |  1.7% | 48.3% | 49.5% |
+|   2 | 2.704 | 48.2% | 66.4% | 32.8% | 0.443 |  201 | 48.8% |  0.3% | 47.7% | 49.8% |
+|   3 | 2.674 | 48.8% | 66.8% | 32.4% | 0.476 |  157 | 49.8% |  0.3% | 48.2% | 49.0% |
+|   4 | 2.701 | 48.6% | 66.4% | 32.8% | 0.440 |  151 | 48.5% |  0.2% | 45.0% | 49.3% |
+
+### vs Exp 14 (same epochs)
+
+| Metric | Exp 14 E4 | Exp 15 E4 |
+|--------|-----------|-----------|
+| accuracy | 49.5% | 48.6% |
+| hit_rate | 68.0% | 66.4% |
+| miss_rate | 31.1% | 32.8% |
+| p99 | 150 | 151 |
+| no_events | 50.8% | 48.5% |
+
+Consistently ~1% behind exp 14 on accuracy/hit. The context aux added gradient noise without benefit — the context path's rubber-stamping is a deeper problem than insufficient gradient.
+
+### Density Benchmarks (key discovery)
+
+| Benchmark | E1 | E2 | E3 | E4 |
+|-----------|-----|-----|-----|-----|
+| full accuracy | 47.3% | 48.2% | 48.8% | 48.6% |
+| zero_density | 24.2% | 31.3% | 26.9% | 21.8% |
+| random_density | 43.0% | 43.4% | 42.8% | 40.0% |
+| full − zero gap | 23.1pp | 16.9pp | 21.9pp | **26.8pp** |
+
+**Density conditioning is load-bearing.** Zeroing the density vector halves accuracy, and the gap is *increasing* over training. The model deeply relies on FiLM conditioning — this was invisible without benchmarks.
+
+Random density drops ~8pp, confirming the model uses specific density values, not just "density exists."
+
+### Context Path Analysis
+
+no_events accuracy across all 4 epochs: 48.9%, 48.8%, 49.8%, 48.5%. Full accuracy: 47.3%, 48.2%, 48.8%, 48.6%. The gap is noise — context contributes nothing measurable.
+
+The 0.1 context aux CE loss pushes the context path to independently predict the correct answer, but the path's optimal strategy remains "copy audio's top choice." Standard CE has no mechanism to reward *overriding* audio when audio's #2 or #3 is correct — every wrong answer is equally wrong regardless of whether the right answer was available in audio's top candidates.
+
+![Pred Dist E1](epoch_001_pred_dist.png)
+![Pred Dist E4](epoch_004_pred_dist.png)
+![Scatter E4](epoch_004_scatter.png)
+![Heatmap E4](epoch_004_heatmap.png)
+![TopK E4](epoch_004_topk_accuracy.png)
 
 ## Lesson
 
-*Pending.*
+**You can't aux-loss your way out of a rubber-stamping local minimum.** The context path's strategy of "agree with audio" is a stable equilibrium that standard CE gradient can't escape — agreeing with audio's #1 choice is correct ~67% of the time, while independently overriding is risky. The context path needs a loss that specifically rewards selecting the correct answer *from audio's ranked candidates*, not just predicting the correct answer independently.
+
+**Density conditioning works and is load-bearing.** The new zero_density and random_density benchmarks revealed that FiLM conditioning contributes ~25pp of accuracy. This was completely invisible before — we assumed density might not be working, but it was the second most important signal after audio itself.
+
+**Next direction:** Rank-weighted context loss — weight the context CE by the audio rank of the true target. If audio ranked the correct answer at #2 and context didn't select it, that should be punished far more heavily than if audio ranked it at #50. This directly incentivizes "learn to pick from audio's candidates" rather than "learn to predict independently."

@@ -13,7 +13,8 @@ Each folder contains a README with hypothesis, results, and key graphs.
 | 12 | [Stronger Context Path + AR Aug](experiment_12/) | Failed | Starved audio proposer → mode collapse |
 | 13 | [AR Augmentation Only](experiment_13/) | Stopped early | AR aug works (+8-10% corruption resilience), but found BIN_MS data alignment bug |
 | 14 | [Corrected Data Alignment](experiment_14/) | **New best** | 50.5% acc, 69% HIT, 30% miss. E1 beat all prior exps. Context path dormant — 50% is audio-only ceiling |
-| 15 | [Context Aux Loss + Density Benchmarks](experiment_15/) | Pending | Add 0.1 context aux (total 0.3), density ablation benchmarks |
+| 15 | [Context Aux Loss + Density Benchmarks](experiment_15/) | Failed | 0.1 context aux didn't break rubber-stamping. Density benchmarks revealed FiLM is load-bearing (~25pp) |
+| 16 | [Rank-Weighted Context Loss](experiment_16/) | Pending | Weight context CE by audio rank of target: `5/(rank+4)`, clamped [0.1, 1.0] |
 
 ## Key Lessons
 
@@ -24,3 +25,5 @@ Each folder contains a README with hypothesis, results, and key graphs.
 - **AR augmentations improve robustness** — recency-scaled jitter + insertions/deletions give +8-10% on corruption benchmarks (exp 13)
 - **NaN from all-masked attention** is silent and devastating (exp 10 → 11)
 - **Context path is currently dormant** — no_events ≈ full accuracy at exp 14 E8. The ~50% ceiling is audio-only; breaking it requires activating context + density
+- **Density conditioning is load-bearing** — zero_density drops accuracy by ~25pp, random_density by ~8pp. FiLM conditioning is the second most important signal after audio (exp 15)
+- **Can't aux-loss out of rubber-stamping** — 0.1 context aux CE had zero effect on context engagement over 4 epochs (exp 15). The local minimum of "agree with audio" is stable under standard CE

@@ -1679,7 +1679,29 @@ def train(args):
 
             with torch.autocast("cuda", enabled=amp_enabled):
                 logits, audio_logits, context_logits = model(mel, evt_off, evt_mask, cond)
-                loss = criterion(logits, target) + 0.2 * criterion(audio_logits, target) + 0.1 * criterion(context_logits, target)
+
+                # Rank-weighted context loss: punish context more when audio
+                # already ranked the correct answer highly
+                with torch.no_grad():
+                    sorted_idx = audio_logits.argsort(dim=-1, descending=True)
+                    # rank of true target in audio's ranking (1-indexed)
+                    rank = (sorted_idx == target.unsqueeze(1)).nonzero(as_tuple=True)[1].float() + 1.0
+                    # Smooth bounded weight: 1/(rank+4)*5, clamped to [0.1, 1.0]
+                    ctx_weight = (5.0 / (rank + 4.0)).clamp(min=0.1, max=1.0)
+
+                # Per-sample context CE (reuse OnsetLoss internals for soft targets)
+                ctx_log_probs = F.log_softmax(context_logits, dim=-1).clamp(min=-100)
+                ctx_hard = F.cross_entropy(context_logits, target, reduction="none")
+                ctx_soft_targets = criterion._make_soft_targets(target, context_logits.size(1))
+                ctx_soft = -(ctx_soft_targets * ctx_log_probs).sum(dim=-1)
+                ctx_ce = criterion.hard_alpha * ctx_hard + (1 - criterion.hard_alpha) * ctx_soft
+                # Apply STOP weight
+                if criterion.stop_weight > 1.0:
+                    is_stop = (target == context_logits.size(1) - 1)
+                    ctx_ce = ctx_ce * torch.where(is_stop, criterion.stop_weight, 1.0)
+                ctx_loss = (ctx_weight * ctx_ce).mean()
+
+                loss = criterion(logits, target) + 0.2 * criterion(audio_logits, target) + ctx_loss
 
             optimizer.zero_grad(set_to_none=True)
             scaler.scale(loss).backward()
