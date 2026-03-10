@@ -13,6 +13,7 @@ Each folder contains a README with hypothesis, results, and key graphs.
 | 12 | [Stronger Context Path + AR Aug](experiment_12/) | Failed | Starved audio proposer → mode collapse |
 | 13 | [AR Augmentation Only](experiment_13/) | Stopped early | AR aug works (+8-10% corruption resilience), but found BIN_MS data alignment bug |
 | 14 | [Corrected Data Alignment](experiment_14/) | **New best** | 50.5% acc, 69% HIT, 30% miss. E1 beat all prior exps. Context path dormant — 50% is audio-only ceiling |
+| 15 | [Context Aux Loss + Density Benchmarks](experiment_15/) | Pending | Add 0.1 context aux (total 0.3), density ablation benchmarks |
 
 ## Key Lessons
 

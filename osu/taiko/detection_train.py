@@ -558,7 +558,7 @@ def run_benchmarks(model, val_loader, device, amp_enabled=False):
         }
 
     results = {}
-    bench_bar = tqdm(total=8, desc="Benchmarks", leave=False)
+    bench_bar = tqdm(total=10, desc="Benchmarks", leave=False)
 
     # 1) No events - all past context deleted
     def no_events(mel, evt_off, evt_mask, cond, target):
@@ -686,6 +686,23 @@ def run_benchmarks(model, val_loader, device, amp_enabled=False):
             evt_mask[b, -n_fill:] = False
         return mel, evt_off, evt_mask, cond
     results["advanced_metronome"] = run_corrupted(all_batches, advanced_metronome, "advanced_metronome")
+    bench_bar.update(1)
+
+    # 9) Zero density — conditioning set to [0, 0, 0]
+    def zero_density(mel, evt_off, evt_mask, cond, target):
+        cond.zero_()
+        return mel, evt_off, evt_mask, cond
+    results["zero_density"] = run_corrupted(all_batches, zero_density, "zero_density")
+    bench_bar.update(1)
+
+    # 10) Random density — conditioning randomized
+    def random_density(mel, evt_off, evt_mask, cond, target):
+        B = cond.shape[0]
+        cond[:, 0] = torch.FloatTensor(B).uniform_(1.0, 12.0)  # mean density
+        cond[:, 1] = torch.FloatTensor(B).uniform_(2.0, 20.0)   # peak density
+        cond[:, 2] = torch.FloatTensor(B).uniform_(0.5, 4.0)    # density std
+        return mel, evt_off, evt_mask, cond
+    results["random_density"] = run_corrupted(all_batches, random_density, "random_density")
     bench_bar.update(1)
     bench_bar.close()
 
@@ -1661,8 +1678,8 @@ def train(args):
             target = target.to(args.device, non_blocking=True)
 
             with torch.autocast("cuda", enabled=amp_enabled):
-                logits, audio_logits, _context_logits = model(mel, evt_off, evt_mask, cond)
-                loss = criterion(logits, target) + 0.2 * criterion(audio_logits, target)
+                logits, audio_logits, context_logits = model(mel, evt_off, evt_mask, cond)
+                loss = criterion(logits, target) + 0.2 * criterion(audio_logits, target) + 0.1 * criterion(context_logits, target)
 
             optimizer.zero_grad(set_to_none=True)
             scaler.scale(loss).backward()
