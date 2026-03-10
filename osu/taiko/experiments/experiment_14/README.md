@@ -109,9 +109,9 @@ The data misalignment retroactively explains the entire experiment series:
 
 ### Inference on Real Songs
 
-[Inference Song 1](Screen%20Recording%202026-03-10%20105132.mp4)
+https://file.garden/aXFAdd8gjAe3Zl9i/Screen%20Recording%202026-03-10%20105132.mp4
 
-[Inference Song 2](Screen%20Recording%202026-03-10%20105727.mp4)
+https://file.garden/aXFAdd8gjAe3Zl9i/Screen%20Recording%202026-03-10%20105727.mp4
 
 ## Lesson
 
