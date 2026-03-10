@@ -90,6 +90,9 @@ The 0.1 context aux CE loss pushes the context path to independently predict the
 ![Scatter E4](epoch_004_scatter.png)
 ![Heatmap E4](epoch_004_heatmap.png)
 ![TopK E4](epoch_004_topk_accuracy.png)
+![Loss](loss.png)
+![Accuracy](accuracy.png)
+![Hit/Good/Miss](hit_good_miss.png)
 
 ## Lesson
 

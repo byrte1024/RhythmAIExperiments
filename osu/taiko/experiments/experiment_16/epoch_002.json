@@ -1,0 +1,114 @@
+{
+  "eval_step": 2,
+  "epoch": 2.0,
+  "train_loss": 6.3812209533333455,
+  "val_loss": 2.9458464674627853,
+  "lr": 0.0002988172051971717,
+  "val_metrics": {
+    "accuracy": 0.40177429559926225,
+    "stop_precision": 0.29344073647871116,
+    "stop_recall": 0.5629139072847682,
+    "stop_f1": 0.3857791225416036,
+    "frame_error_mean": 15.220824640645993,
+    "frame_error_median": 1.0,
+    "frame_error_p90": 37.0,
+    "frame_error_p99": 204.0,
+    "rel_error_mean": 0.27967661792549847,
+    "rel_error_median": 0.030771658666753687,
+    "rel_error_std": 0.49639570484356715,
+    "ratio_mean": 1.2749895622292804,
+    "ratio_median": 1.0,
+    "hit_rate": 0.6121677367955547,
+    "good_rate": 0.6323010134154328,
+    "miss_rate": 0.3614267484960807,
+    "exact_match": 0.4012814540249674,
+    "within_1_frame": 0.605409383376206,
+    "within_2_frames": 0.6257722144578801,
+    "within_4_frames": 0.6412266310182091,
+    "within_3pct": 0.4922727917198355,
+    "within_10pct": 0.6222951395218516,
+    "above_20pct": 0.3614267484960807
+  },
+  "benchmarks": {
+    "no_events": {
+      "n_samples": 14912,
+      "stop_rate": 0.008918991416309013,
+      "mean_pred": 44.729481020366734,
+      "pred_std": 49.820965388753436,
+      "unique_preds": 257,
+      "accuracy": 0.4138277896995708
+    },
+    "no_audio": {
+      "n_samples": 14912,
+      "stop_rate": 1.0,
+      "mean_pred": 0.0,
+      "pred_std": 0.0,
+      "unique_preds": 1,
+      "accuracy": 0.002548283261802575
+    },
+    "random_events": {
+      "n_samples": 14912,
+      "stop_rate": 0.007443669527896996,
+      "mean_pred": 43.0794540909398,
+      "pred_std": 48.78802210313201,
+      "unique_preds": 258,
+      "accuracy": 0.40249463519313305
+    },
+    "static_audio": {
+      "n_samples": 14912,
+      "stop_rate": 0.000536480686695279,
+      "mean_pred": 36.104468599033815,
+      "pred_std": 42.062702682430796,
+      "unique_preds": 216,
+      "accuracy": 0.023873390557939914
+    },
+    "no_events_no_audio": {
+      "n_samples": 14912,
+      "stop_rate": 1.0,
+      "mean_pred": 0.0,
+      "pred_std": 0.0,
+      "unique_preds": 1,
+      "accuracy": 0.002548283261802575
+    },
+    "metronome": {
+      "n_samples": 14912,
+      "stop_rate": 0.007980150214592275,
+      "mean_pred": 43.98370851078213,
+      "pred_std": 45.301715849584035,
+      "unique_preds": 249,
+      "accuracy": 0.41516899141630903
+    },
+    "time_shifted": {
+      "n_samples": 14912,
+      "stop_rate": 0.008516630901287554,
+      "mean_pred": 43.64545147108556,
+      "pred_std": 46.442423623010136,
+      "unique_preds": 256,
+      "accuracy": 0.4175831545064378
+    },
+    "advanced_metronome": {
+      "n_samples": 14912,
+      "stop_rate": 0.008650751072961373,
+      "mean_pred": 44.47527565446797,
+      "pred_std": 47.74773101453698,
+      "unique_preds": 265,
+      "accuracy": 0.39733100858369097
+    },
+    "zero_density": {
+      "n_samples": 14912,
+      "stop_rate": 0.02005096566523605,
+      "mean_pred": 115.01786080886882,
+      "pred_std": 73.77796052343403,
+      "unique_preds": 279,
+      "accuracy": 0.06001877682403434
+    },
+    "random_density": {
+      "n_samples": 14912,
+      "stop_rate": 0.008851931330472103,
+      "mean_pred": 46.48849797023004,
+      "pred_std": 56.79559356338765,
+      "unique_preds": 272,
+      "accuracy": 0.33865343347639487
+    }
+  }
+}

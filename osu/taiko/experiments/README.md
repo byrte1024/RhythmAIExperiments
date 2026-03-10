@@ -14,7 +14,8 @@ Each folder contains a README with hypothesis, results, and key graphs.
 | 13 | [AR Augmentation Only](experiment_13/) | Stopped early | AR aug works (+8-10% corruption resilience), but found BIN_MS data alignment bug |
 | 14 | [Corrected Data Alignment](experiment_14/) | **New best** | 50.5% acc, 69% HIT, 30% miss. E1 beat all prior exps. Context path dormant — 50% is audio-only ceiling |
 | 15 | [Context Aux Loss + Density Benchmarks](experiment_15/) | Failed | 0.1 context aux didn't break rubber-stamping. Density benchmarks revealed FiLM is load-bearing (~25pp) |
-| 16 | [Rank-Weighted Context Loss](experiment_16/) | Pending | Weight context CE by audio rank of target: `5/(rank+4)`, clamped [0.1, 1.0] |
+| 16 | [Rank-Weighted Context Loss](experiment_16/) | Failed | Forced opinions degraded combined output. Val loss increasing, top-K dropped 3-5pp. Wrong opinions worse than no opinions |
+| 17 | [Top-K Reranking Architecture](experiment_17/) | Pending | Context selects from audio's top-20 candidates. New selection analysis metrics |
 
 ## Key Lessons
 
@@ -27,3 +28,4 @@ Each folder contains a README with hypothesis, results, and key graphs.
 - **Context path is currently dormant** — no_events ≈ full accuracy at exp 14 E8. The ~50% ceiling is audio-only; breaking it requires activating context + density
 - **Density conditioning is load-bearing** — zero_density drops accuracy by ~25pp, random_density by ~8pp. FiLM conditioning is the second most important signal after audio (exp 15)
 - **Can't aux-loss out of rubber-stamping** — 0.1 context aux CE had zero effect on context engagement over 4 epochs (exp 15). The local minimum of "agree with audio" is stable under standard CE
+- **Wrong opinions worse than no opinions** — rank-weighted context loss forced context to have strong opinions, which corrupted audio's correct rankings and dropped top-K by 3-5pp (exp 16). Loss-function approaches can't solve a structural problem

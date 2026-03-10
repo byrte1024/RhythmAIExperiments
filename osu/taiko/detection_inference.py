@@ -124,7 +124,7 @@ def run_inference(model, mel, conditioning, device, hop_bins=20, max_events=1000
         evt_tensor = torch.from_numpy(evt_offsets).unsqueeze(0).to(device)
         mask_tensor = torch.from_numpy(evt_mask).unsqueeze(0).to(device)
 
-        logits, _audio_logits, _context_logits = model(mel_tensor, evt_tensor, mask_tensor, cond_tensor)
+        logits, _audio_logits, _sel_logits, _topk_idx = model(mel_tensor, evt_tensor, mask_tensor, cond_tensor)
         pred = logits.argmax(dim=1).item()
 
         cursor_history.append((total_calls, cursor, pred))
@@ -494,6 +494,7 @@ def main():
         n_heads=ckpt_args.get("n_heads", 8),
         n_classes=N_CLASSES,
         max_events=C_EVENTS,
+        top_k=ckpt_args.get("top_k", 20),
     ).to(args.device)
     model.load_state_dict(ckpt["model"])
     t_model_load = time.perf_counter() - t0

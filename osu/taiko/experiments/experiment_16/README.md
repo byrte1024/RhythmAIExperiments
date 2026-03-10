@@ -58,8 +58,59 @@ Everything else identical to exp 14/15: same architecture (~21M params), same da
 
 ## Result
 
-*Pending.*
+**Failed — context actively degraded combined output.** Stopped at E2. Val loss *increased* E1→E2, accuracy dropped to 40%, and top-K curves fell uniformly. The rank-weighted loss forced context to have strong opinions before it had learned anything useful, and those wrong opinions corrupted the combined logits.
+
+### Trajectory (2 epochs)
+
+|   E | loss  |   acc |   hit |  miss | stop  |  p99 | no_ev | no_au | metro | t_sh  |
+|-----|-------|-------|-------|-------|-------|------|-------|-------|-------|-------|
+|   1 | 2.865 | 42.0% | 62.3% | 35.4% | 0.342 |  246 | 42.9% |  0.3% | 43.1% | 41.5% |
+|   2 | 2.946 | 40.2% | 61.2% | 36.1% | 0.386 |  204 | 41.4% |  0.3% | 41.5% | 41.8% |
+
+### vs Exp 14 E2
+
+| Metric | Exp 14 E2 | Exp 16 E2 |
+|--------|-----------|-----------|
+| val_loss | 2.670 | **2.946** (+0.276) |
+| accuracy | 48.8% | **40.2%** (-8.6%) |
+| hit_rate | 67.3% | **61.2%** (-6.1%) |
+| top-10 HIT | ~95% | **92.1%** |
+| no_events | 50.7% | **41.4%** |
+
+### Top-K (E2)
+
+| Top-K | Exp 14 E1 | Exp 16 E1 | Exp 16 E2 |
+|-------|-----------|-----------|-----------|
+| Top-1 | 66.8% | 62.3% | **61.2%** |
+| Top-3 | 86.0% | 81.5% | **80.6%** |
+| Top-10 | 95.2% | 92.6% | **92.1%** |
+
+The entire top-K curve dropped 3-5pp uniformly and continued falling. Since audio path is unchanged, this confirms context is pulling correct answers *out* of the top-K — wrong opinions are worse than no opinions.
+
+### Density Benchmarks
+
+| Benchmark | E1 | E2 |
+|-----------|-----|-----|
+| zero_density | 8.9% | **6.0%** |
+| random_density | 34.6% | **33.9%** |
+| full − zero gap | 33.1pp | **34.2pp** |
+
+Context leaned heavily into density as a crutch — zero_density crashed to 6% (vs 24% in exp 15). The rank weighting pushed context to find *any* shortcut to differentiate audio's top candidates, and density was the easiest one.
+
+![TopK E1](epoch_001_topk_accuracy.png)
+![TopK E2](epoch_002_topk_accuracy.png)
+![Scatter E1](epoch_001_scatter.png)
+![Scatter E2](epoch_002_scatter.png)
+![Pred Dist E2](epoch_002_pred_dist.png)
+![Heatmap E2](epoch_002_heatmap.png)
+![Loss](loss.png)
+![Accuracy](accuracy.png)
+![Hit/Good/Miss](hit_good_miss.png)
 
 ## Lesson
 
-*Pending.*
+**You can't loss-function your way out of a structural problem.** Both exp 15 (flat context aux) and exp 16 (rank-weighted context aux) failed to activate the context path. The root cause is architectural: with additive logits (`audio + context`), context's optimal strategy is always to be a no-op or amplify audio. The path of least resistance will always win regardless of loss weighting.
+
+**Wrong opinions are worse than no opinions.** Exp 15's rubber-stamping was at least neutral (matched exp 14). Exp 16's forced opinions were actively harmful — context corrupted audio's correct rankings, dropping top-K by 3-5pp.
+
+**Next direction: architectural change.** The context path needs to be structurally forced into a selector role. Top-K reranking — where audio proposes K candidates and context must pick among them — makes rubber-stamping and no-op architecturally impossible.

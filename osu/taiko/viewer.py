@@ -603,10 +603,12 @@ class Viewer:
 
         # Hit flash
         if self.recent_hits:
-            alpha = max(0, 200 - int((self.now_ms - self.recent_hits[-1][0]) * 0.7))
-            flash_surf = pygame.Surface((40, PLAYFIELD_H), pygame.SRCALPHA)
-            flash_surf.fill((255, 255, 255, alpha))
-            self.screen.blit(flash_surf, (HIT_X - 20, PLAYFIELD_TOP))
+            alpha = max(0, min(255, 200 - int((self.now_ms - self.recent_hits[-1][0]) * 0.7)))
+            if alpha > 0:
+                flash_surf = pygame.Surface((40, PLAYFIELD_H))
+                flash_surf.fill((255, 255, 255))
+                flash_surf.set_alpha(alpha)
+                self.screen.blit(flash_surf, (HIT_X - 20, PLAYFIELD_TOP))
 
         # Hit line
         pygame.draw.line(self.screen, HIT_LINE_COLOR, (HIT_X, PLAYFIELD_TOP + 10),
