@@ -107,6 +107,12 @@ The data misalignment retroactively explains the entire experiment series:
 ![Accuracy](accuracy.png)
 ![Hit/Good/Miss](hit_good_miss.png)
 
+### Inference on Real Songs
+
+[Inference Song 1](Screen%20Recording%202026-03-10%20105132.mp4)
+
+[Inference Song 2](Screen%20Recording%202026-03-10%20105727.mp4)
+
 ## Lesson
 
 **Data quality > model complexity.** A single constant (`5.0` → `4.98866`) had more impact than every architecture change, loss function redesign, and augmentation strategy combined. The model was never the bottleneck — the data was.
