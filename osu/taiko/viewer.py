@@ -17,10 +17,15 @@ import glob
 import os
 import sys
 import array
+import struct
 import math
 import random
 import json
 import argparse
+import io
+import wave
+import subprocess
+import tempfile
 
 AUDIO_DIR = "./osu/taiko/audio"
 DATA_DIR = "./osu/taiko/data"
@@ -120,6 +125,57 @@ def find_audio(name):
         return path
     if os.path.exists(name):
         return name
+    return None
+
+
+def _has_ffmpeg():
+    try:
+        subprocess.run(["ffmpeg", "-version"], capture_output=True, timeout=5)
+        return True
+    except Exception:
+        return False
+
+
+HAS_FFMPEG = None  # lazy-checked
+
+
+def load_audio_at_speed(audio_path, speed):
+    """Load audio file at a given speed using ffmpeg atempo filter.
+    Returns a temp file path to the resampled WAV, or None on failure."""
+    global HAS_FFMPEG
+    if HAS_FFMPEG is None:
+        HAS_FFMPEG = _has_ffmpeg()
+    if not HAS_FFMPEG or not audio_path:
+        return None
+
+    # atempo filter only supports 0.5-100.0; chain for slower
+    tempo = speed
+    atempo_chain = []
+    while tempo < 0.5:
+        atempo_chain.append("atempo=0.5")
+        tempo /= 0.5
+    while tempo > 2.0:
+        atempo_chain.append("atempo=2.0")
+        tempo /= 2.0
+    atempo_chain.append(f"atempo={tempo:.4f}")
+    af = ",".join(atempo_chain)
+
+    tmp = tempfile.NamedTemporaryFile(suffix=".wav", delete=False)
+    tmp.close()
+    try:
+        subprocess.run(
+            ["ffmpeg", "-y", "-i", audio_path, "-af", af,
+             "-ar", "44100", "-ac", "2", "-sample_fmt", "s16", tmp.name],
+            capture_output=True, timeout=30,
+        )
+        if os.path.getsize(tmp.name) > 100:
+            return tmp.name
+    except Exception:
+        pass
+    try:
+        os.unlink(tmp.name)
+    except OSError:
+        pass
     return None
 
 
@@ -230,15 +286,16 @@ class Viewer:
                 self.inference_stats = json.load(f)
 
         # Audio
-        audio_path = audio_override or find_audio(audio_name)
+        self.audio_path = audio_override or find_audio(audio_name)
         self.has_audio = False
+        self._speed_tmp_file = None  # temp file for speed-adjusted audio
 
         pygame.init()
         pygame.mixer.init(frequency=44100, size=-16, channels=2, buffer=512)
 
-        if audio_path and os.path.exists(audio_path):
+        if self.audio_path and os.path.exists(self.audio_path):
             try:
-                pygame.mixer.music.load(audio_path)
+                pygame.mixer.music.load(self.audio_path)
                 self.has_audio = True
             except Exception as e:
                 print(f"Could not load audio: {e}")
@@ -253,8 +310,9 @@ class Viewer:
         self.clock = pygame.time.Clock()
         self.font = pygame.font.SysFont("consolas", 13)
         self.font_big = pygame.font.SysFont("consolas", 16, bold=True)
-        self.font_title = pygame.font.SysFont("consolas", 20, bold=True)
         self.font_small = pygame.font.SysFont("consolas", 11)
+        # Title font needs CJK support for Japanese song names
+        self.font_title = pygame.font.SysFont("meiryoui,meiryo,yugothicui,yugothic,msgothic,msmincho,consolas", 16, bold=True)
 
         # Tick sounds
         self.tick_don = make_tick_sound(duration_ms=45, volume=0.95)
@@ -326,7 +384,11 @@ class Viewer:
             self.next_hit = len(self.onsets)
 
         if self.has_audio:
-            pygame.mixer.music.play(start=from_ms / 1000)
+            # The audio file is resampled by ffmpeg atempo so it plays at 1x
+            # but represents the song at self.speed. Seek position in the
+            # resampled file = from_ms / speed (since the file is shorter/longer).
+            audio_seek_s = from_ms / self.speed / 1000
+            pygame.mixer.music.play(start=audio_seek_s)
             pygame.mixer.music.set_volume(self.volume)
 
     def _pause(self):
@@ -355,9 +417,44 @@ class Viewer:
         if abs(new_speed - self.speed) < 0.01:
             return
         current = self.now_ms
+        was_playing = self.playing
         self.speed = new_speed
-        # Note: pygame.mixer doesn't support speed change, only visual speed changes
-        self.play_start_ticks = pygame.time.get_ticks() - int(current / self.speed)
+        self._reload_audio_at_speed()
+        self._start_playback(current)
+        if not was_playing:
+            self._pause()
+
+    def _reload_audio_at_speed(self):
+        """Reload audio file at current speed using ffmpeg."""
+        # Clean up previous temp file
+        if self._speed_tmp_file:
+            try:
+                os.unlink(self._speed_tmp_file)
+            except OSError:
+                pass
+            self._speed_tmp_file = None
+
+        if not self.has_audio or not self.audio_path:
+            return
+
+        if abs(self.speed - 1.0) < 0.01:
+            # Back to normal speed, use original file
+            try:
+                pygame.mixer.music.load(self.audio_path)
+            except Exception:
+                pass
+            return
+
+        tmp_path = load_audio_at_speed(self.audio_path, self.speed)
+        if tmp_path:
+            try:
+                pygame.mixer.music.load(tmp_path)
+                self._speed_tmp_file = tmp_path
+            except Exception:
+                try:
+                    os.unlink(tmp_path)
+                except OSError:
+                    pass
 
     def handle_events(self):
         for ev in pygame.event.get():
@@ -463,7 +560,7 @@ class Viewer:
         name = os.path.basename(self.csv_path)
         if len(name) > 60:
             name = name[:57] + "..."
-        title = self.font_big.render(name, True, TEXT_COLOR)
+        title = self.font_title.render(name, True, TEXT_COLOR)
         self.screen.blit(title, (10, 8))
 
         # Time
@@ -873,6 +970,12 @@ class Viewer:
             self.draw()
             self.clock.tick(FPS)
         pygame.quit()
+        # Clean up temp audio file
+        if self._speed_tmp_file:
+            try:
+                os.unlink(self._speed_tmp_file)
+            except OSError:
+                pass
 
 
 def main():
