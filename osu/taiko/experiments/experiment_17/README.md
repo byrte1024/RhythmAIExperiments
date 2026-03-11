@@ -116,6 +116,20 @@ Experiments 15-16 proved that loss-function approaches cannot activate the conte
 | miss_rate | 30.0% | 32.3% | +2.3pp |
 | p99 frame error | ~150 | 162 | worse |
 
+## Graphs
+
+![Loss](loss.png)
+![Accuracy](accuracy.png)
+![Hit/Good/Miss](hit_good_miss.png)
+![Frame Error](frame_error.png)
+![Frame Tiers](frame_tiers.png)
+![Ratio Tiers](ratio_tiers.png)
+![Relative Error](relative_error.png)
+![Stop F1](stop_f1.png)
+![Selection Analysis E7](epoch_007_selection_analysis.png)
+![Heatmap E7](epoch_007_heatmap.png)
+![Scatter E7](epoch_007_scatter.png)
+
 ## Lesson
 
 - **Architectural constraint activates context, but activation ≠ value.** The top-K reranking successfully broke rubber-stamping — a first across 6 experiments. But the context path learned to override without learning WHEN to override. 51% override accuracy means context is essentially flipping coins on its disagreements.

@@ -98,4 +98,57 @@ python detection_train.py \
 
 ## Result
 
-*Pending*
+**Best override quality ever, but delta still negative.** Killed after E2.
+
+| Metric | Exp 20 E1 | Exp 21 E1 | Exp 21 E2 |
+|--------|-----------|-----------|-----------|
+| Audio HIT | 69.5% | 69.5% | 69.5% |
+| Final HIT | 68.3% | 68.7% | 68.5% |
+| Delta | -1.18pp | -0.77pp | -0.95pp |
+| Override rate | 11.1% | 27.6% | **36.5%** |
+| Override accuracy | 41.6% | 58.0% | **61.4%** |
+| Override F1 | 22.1% | 40.7% | **45.7%** |
+| Override precision | - | 37.3% | 38.4% |
+| Override recall | - | 44.8% | **56.3%** |
+| True top1 | - | 52.7% | 46.1% |
+| False top1 | - | 19.7% | **17.4%** |
+| True topK | 4.6% | 16.0% | **22.4%** |
+| False topK | 5.8% | 16.8% | 23.3% |
+| Inaccurate topK | 1.7% | 10.1% | 12.5% |
+
+**What worked:**
+- Relative quality loss transformed context behavior. Override F1 doubled (22% → 46%), override accuracy above coin flip for the first time (61.4%).
+- Context got progressively bolder (11% → 28% → 37% override rate) with improving accuracy. The loss is clearly giving useful gradient signal.
+- false_top1 dropped from ~30% (exp 19-20) to 17.4% — context is catching more of audio's mistakes.
+- Selection analysis charts looked much healthier than any previous experiment.
+
+**What didn't work:**
+- Delta still negative (-0.77pp to -0.95pp). Context overrides more each epoch but doesn't distinguish "audio is wrong" from "audio is right" well enough — false_topK (23.3%) slightly exceeds true_topK (22.4%).
+- The loss design has a conservatism bias: when #1 is correct (70% of the time), all other candidates are suppressed to zero weight. This makes "keep #1" the dominant gradient signal.
+- miss_penalty threshold (baseline_quality < 0.5) is too generous — only fires on obvious failures, misses the ambiguous middle where most override opportunity exists.
+- Context sees audio's scores and ranks in candidate embeddings, so it can learn "k=0 is usually right" instead of independently judging quality.
+
+**The real insight:** Context shouldn't be playing "should I override audio?" (a meta-decision biased toward conservatism). It should be playing "which of these 20 positions is best?" (an independent judgment). Strip audio scores, shuffle candidates, and let context pick purely from rhythm + audio snippets.
+
+## Graphs
+
+![Loss](loss.png)
+![Accuracy](accuracy.png)
+![Hit/Good/Miss](hit_good_miss.png)
+![Frame Error](frame_error.png)
+![Frame Tiers](frame_tiers.png)
+![Ratio Tiers](ratio_tiers.png)
+![Relative Error](relative_error.png)
+![Stop F1](stop_f1.png)
+![Override Quality](override_quality.png)
+![Decision Categories](decision_categories.png)
+![Selection Analysis E2](epoch_002_selection_analysis.png)
+![Heatmap E2](epoch_002_heatmap.png)
+![Scatter E2](epoch_002_scatter.png)
+
+## Lesson
+
+- **Relative quality loss works** — soft targets weighted by closeness produce much healthier override behavior than hard CE. Override F1 doubled, accuracy crossed 50% for the first time.
+- **But the framing is wrong.** Any loss that references "audio's baseline" creates conservatism. The optimal loss doesn't compare to audio at all — it just asks "which candidate is closest to the target?"
+- **Context should be blind to audio's preferences.** Shuffle candidates, remove score/rank features, make it a pure "pick the best position" task. Override happens implicitly when context's pick differs from audio's #1.
+- **Next: simplified selection loss** — shuffle K candidates, soft CE weighted by trapezoid quality of each candidate, skip when no candidate is a HIT. No baseline comparison, no miss penalty, no asymmetric scaling.

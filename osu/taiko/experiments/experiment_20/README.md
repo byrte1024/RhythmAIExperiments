@@ -88,6 +88,22 @@ Identical to exp 19 — gap-based context with own encoders.
 
 **The real problem is the loss function, not the training dynamics.** Hard CE rewards only exact correctness. Context is never rewarded for "closer than #1 but not perfect" and never punished for "kept #1 when it was very wrong." This makes "always pick #1" the safe choice under hard CE, since #1 is correct ~70% of the time.
 
+## Graphs
+
+![Loss](loss.png)
+![Accuracy](accuracy.png)
+![Hit/Good/Miss](hit_good_miss.png)
+![Frame Error](frame_error.png)
+![Frame Tiers](frame_tiers.png)
+![Ratio Tiers](ratio_tiers.png)
+![Relative Error](relative_error.png)
+![Stop F1](stop_f1.png)
+![Override Quality](override_quality.png)
+![Decision Categories](decision_categories.png)
+![Selection Analysis E1](epoch_001_selection_analysis.png)
+![Heatmap E1](epoch_001_heatmap.png)
+![Scatter E1](epoch_001_scatter.png)
+
 ## Lesson
 
 - **Warm-start + freeze are proven infrastructure** — should be used going forward. Audio at full quality from step 1, 2x training speed, clean gradient isolation.

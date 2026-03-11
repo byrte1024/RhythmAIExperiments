@@ -488,6 +488,7 @@ def main():
     is_legacy = "top_k" not in ckpt_args
     has_exp18_event_layers = any("context_path.event_layers" in k for k in state_keys)
     has_gap_layers = any("context_path.gap_layers" in k for k in state_keys)
+    has_score_proj = any("context_path.score_proj" in k for k in state_keys)
 
     if is_legacy:
         ModelClass = LegacyOnsetDetector
@@ -529,7 +530,17 @@ def main():
     model_kwargs = base_kwargs
 
     model = ModelClass(**model_kwargs).to(args.device)
-    model.load_state_dict(ckpt["model"])
+    state = ckpt["model"]
+    # exp 19-21 checkpoints have score_proj (removed in exp 22+)
+    if has_gap_layers and has_score_proj:
+        state = {k: v for k, v in state.items() if "score_proj" not in k}
+        # candidate_combine weight shape changed (d_ctx*3 → d_ctx*2), reinit
+        for k in list(state.keys()):
+            if "candidate_combine" in k:
+                del state[k]
+        model.load_state_dict(state, strict=False)
+    else:
+        model.load_state_dict(state)
     if ModelClass == LegacyOnsetDetector:
         print("  (legacy checkpoint — exp 11-16 additive logits)")
     elif ModelClass == Exp17OnsetDetector:

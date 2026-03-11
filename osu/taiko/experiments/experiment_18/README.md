@@ -107,6 +107,20 @@ Candidate embeddings include audio score + normalized rank. #0 is always audio's
 
 **Risk #3 from hypothesis confirmed:** Hard CE with imbalanced 20-way classification where class 0 is correct ~95% of the time led to "mostly pick 0, occasionally pick wrong."
 
+## Graphs
+
+![Loss](loss.png)
+![Accuracy](accuracy.png)
+![Hit/Good/Miss](hit_good_miss.png)
+![Frame Error](frame_error.png)
+![Frame Tiers](frame_tiers.png)
+![Ratio Tiers](ratio_tiers.png)
+![Relative Error](relative_error.png)
+![Stop F1](stop_f1.png)
+![Selection Analysis E2](epoch_002_selection_analysis.png)
+![Heatmap E2](epoch_002_heatmap.png)
+![Scatter E2](epoch_002_scatter.png)
+
 ## Lesson
 
 **The reranking paradigm itself may be fundamentally flawed for this problem.** Across 4 experiments (15-18), no architecture, loss function, or gradient strategy has produced a context path that adds value. The core issue: context needs to determine "is audio wrong here?" — but the signal for that is weak (audio is right ~70% of the time) and the event patterns that would indicate errors are subtle.

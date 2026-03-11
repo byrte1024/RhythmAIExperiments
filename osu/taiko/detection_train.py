@@ -326,41 +326,28 @@ class OnsetLoss(nn.Module):
 
 
 class SelectionLoss(nn.Module):
-    """Relative quality loss for K-way candidate selection.
+    """Simple soft-target loss for K-way candidate selection.
 
-    Instead of hard CE ("pick the exact right one"), this rewards context for
-    picking candidates that are CLOSER to the target than audio's #1, and
-    punishes for picking candidates that are FURTHER.
+    "Here are 20 positions — pick the best one."
 
-    For each candidate k, compute quality = closeness to true target using
-    the same HIT/GOOD/MISS trapezoid as OnsetLoss. Then build soft targets
-    biased toward the best available candidate, with asymmetric weighting:
+    For each candidate, compute quality = trapezoid closeness to true target
+    (same as OnsetLoss). Normalize to soft probability distribution. Soft CE.
+    Skip samples where no candidate is a HIT (within good_pct).
 
-      - Candidates better than #1: high weight (reward overriding)
-      - Candidates equal to #1: moderate weight (reward keeping when correct)
-      - Candidates worse than #1: low/zero weight (punish bad overrides)
-
-    The "target" is the best available candidate, not the absolute truth.
-    If no candidate is close, all get equal weight (can't learn from this sample).
-
-    Asymmetric scaling on the final loss:
-      - Context picked better than #1 → loss is reduced (reward)
-      - Context picked worse than #1 → loss is amplified (punishment)
-      - Missed big opportunity (kept #1 when very wrong) → high loss
+    No baseline comparison, no asymmetric scaling, no audio-awareness.
+    Context is blind to which candidate audio preferred.
     """
 
-    def __init__(self, good_pct=0.03, fail_pct=0.20, frame_tolerance=1,
-                 miss_penalty=2.0):
+    def __init__(self, good_pct=0.03, fail_pct=0.20, frame_tolerance=1):
         super().__init__()
         self.good_pct = good_pct
         self.fail_pct = fail_pct
         self.frame_tolerance = frame_tolerance
-        self.miss_penalty = miss_penalty  # extra weight when keeping #1 was a big miss
 
     def forward(self, sel_logits, topk_indices, targets):
         """
-        sel_logits: (B, K) context's scores over K candidates
-        topk_indices: (B, K) bin indices for each candidate
+        sel_logits: (B, K) context's scores over K candidates (shuffled)
+        topk_indices: (B, K) bin indices for each candidate (shuffled to match)
         targets: (B,) true target bins (or STOP=500)
         Returns: scalar loss
         """
@@ -368,17 +355,14 @@ class SelectionLoss(nn.Module):
         stop = 500
         is_stop = (targets == stop)
 
-        # ── 1. Compute quality of each candidate ──
-        # Quality = how close candidate k is to the true target
-        # Uses trapezoid in ratio space, same as OnsetLoss
+        # ── 1. Quality of each candidate: trapezoid closeness to target ──
         cand = topk_indices.float()  # (B, K)
         tgt = targets.float().unsqueeze(1)  # (B, 1)
 
-        # For bin targets: ratio-based distance
         pct_err = ((cand + 1) / (tgt + 1) - 1.0).abs()  # (B, K)
         frame_err = (cand - tgt).abs()  # (B, K)
 
-        # Trapezoid: 1.0 within good_pct, ramp to 0 at fail_pct, 0 beyond
+        # Trapezoid: 1.0 within good_pct, ramp to 0 at fail_pct
         ramp = self.fail_pct - self.good_pct
         ratio_quality = ((self.fail_pct - pct_err) / ramp).clamp(0, 1)
 
@@ -388,62 +372,21 @@ class SelectionLoss(nn.Module):
 
         quality = torch.max(ratio_quality, frame_quality)  # (B, K)
 
-        # For STOP targets: quality is 1.0 for STOP candidates, 0.0 otherwise
+        # STOP targets: quality 1.0 for STOP candidates, 0.0 otherwise
         stop_quality = (topk_indices == stop).float()
         quality = torch.where(is_stop.unsqueeze(1), stop_quality, quality)
 
-        # ── 2. Identify baseline (#1) and best available ──
-        baseline_quality = quality[:, 0]  # (B,) quality of audio's top pick
-        best_quality, best_idx = quality.max(dim=1)  # (B,) best available
+        # ── 2. Skip samples where no candidate is a HIT ──
+        best_quality = quality.max(dim=1).values  # (B,)
+        has_signal = (best_quality > 1e-8)
 
-        # ── 3. Build soft targets ──
-        # Weight candidates by how much they improve over baseline
-        # improvement > 0 → better than #1, < 0 → worse than #1
-        improvement = quality - baseline_quality.unsqueeze(1)  # (B, K)
+        # ── 3. Soft targets from quality scores ──
+        soft_targets = quality / quality.sum(dim=1, keepdim=True).clamp(min=1e-8)
 
-        # Soft target weights:
-        # - Candidates at or above baseline get weight proportional to quality
-        # - Candidates below baseline get near-zero weight
-        # - The best available gets the most weight
-        # Use quality directly as weight (peaked at best available),
-        # but suppress anything below baseline
-        soft_weights = quality.clone()
-        # Anything worse than baseline gets heavily suppressed
-        worse_than_baseline = improvement < -0.01
-        soft_weights = soft_weights * (~worse_than_baseline).float()
-
-        # If all weights are zero (no candidate is good), uniform → skip sample
-        weight_sum = soft_weights.sum(dim=1, keepdim=True)  # (B, 1)
-        has_signal = (weight_sum.squeeze(1) > 1e-8)
-
-        # Normalize to probability distribution
-        soft_targets = soft_weights / weight_sum.clamp(min=1e-8)  # (B, K)
-
-        # ── 4. Soft CE loss ──
+        # ── 4. Soft CE ──
         log_probs = F.log_softmax(sel_logits, dim=-1)
         per_sample_loss = -(soft_targets * log_probs).sum(dim=-1)  # (B,)
 
-        # ── 5. Asymmetric scaling based on what context actually picked ──
-        chosen = sel_logits.argmax(dim=1)  # (B,) what context picked
-        chosen_quality = quality.gather(1, chosen.unsqueeze(1)).squeeze(1)  # (B,)
-
-        # Scale factor based on outcome:
-        # - picked better than baseline → reduce loss (reward)
-        # - picked equal to baseline → neutral (1.0)
-        # - picked worse than baseline → amplify loss (punish)
-        # - kept #1 (chosen==0) when baseline is bad → amplify (missed opportunity)
-        chose_top1 = (chosen == 0)
-        baseline_is_bad = (baseline_quality < 0.5)  # below GOOD threshold
-        best_was_available = (best_quality > baseline_quality + 0.1)
-
-        # Missed opportunity: kept #1, it was bad, and something better existed
-        missed_opportunity = chose_top1 & baseline_is_bad & best_was_available
-        scale = torch.ones(B, device=sel_logits.device)
-        scale = torch.where(missed_opportunity, self.miss_penalty, scale)
-
-        per_sample_loss = per_sample_loss * scale
-
-        # Only train on samples with signal
         if has_signal.any():
             return (per_sample_loss * has_signal.float()).sum() / has_signal.sum()
         else:
@@ -2062,7 +2005,6 @@ def train(args):
     ).to(args.device)
     sel_criterion = SelectionLoss(
         good_pct=args.good_pct, fail_pct=args.fail_pct,
-        miss_penalty=args.miss_penalty,
     ).to(args.device)
     # Only pass trainable params to optimizer
     optimizer = torch.optim.AdamW(

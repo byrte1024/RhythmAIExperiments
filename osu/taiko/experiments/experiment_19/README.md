@@ -122,6 +122,22 @@ Same as exp 18:
 **Key issue: audio instability during training.**
 Context learns to rerank proposals from an audio model that is itself still learning. Early batches have ~15% HIT audio proposals — mostly garbage. Context wastes capacity learning patterns about bad proposals that become irrelevant as audio improves. By E3, audio has stabilized near 67-69% but context has already baked in noisy patterns.
 
+## Graphs
+
+![Loss](loss.png)
+![Accuracy](accuracy.png)
+![Hit/Good/Miss](hit_good_miss.png)
+![Frame Error](frame_error.png)
+![Frame Tiers](frame_tiers.png)
+![Ratio Tiers](ratio_tiers.png)
+![Relative Error](relative_error.png)
+![Stop F1](stop_f1.png)
+![Override Quality](override_quality.png)
+![Decision Categories](decision_categories.png)
+![Selection Analysis E3](epoch_003_selection_analysis.png)
+![Heatmap E3](epoch_003_heatmap.png)
+![Scatter E3](epoch_003_scatter.png)
+
 ## Lesson
 
 - **Gap representation works** — inter-onset intervals + local audio snippets + own encoders is the right architecture for context. First experiment where context showed positive signal during training.
