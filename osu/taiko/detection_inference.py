@@ -15,7 +15,7 @@ import librosa
 from tqdm import tqdm
 from collections import Counter
 
-from detection_model import OnsetDetector
+from detection_model import OnsetDetector, LegacyOnsetDetector
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 
@@ -483,7 +483,11 @@ def main():
     ckpt = torch.load(args.checkpoint, map_location=args.device, weights_only=False)
     ckpt_args = ckpt["args"]
 
-    model = OnsetDetector(
+    # Detect legacy checkpoints (pre top-K reranking, exp 11-16)
+    is_legacy = "top_k" not in ckpt_args
+    ModelClass = LegacyOnsetDetector if is_legacy else OnsetDetector
+
+    model_kwargs = dict(
         n_mels=N_MELS,
         d_model=ckpt_args.get("d_model", 384),
         d_event=ckpt_args.get("d_event", 128),
@@ -494,9 +498,14 @@ def main():
         n_heads=ckpt_args.get("n_heads", 8),
         n_classes=N_CLASSES,
         max_events=C_EVENTS,
-        top_k=ckpt_args.get("top_k", 20),
-    ).to(args.device)
+    )
+    if not is_legacy:
+        model_kwargs["top_k"] = ckpt_args.get("top_k", 20)
+
+    model = ModelClass(**model_kwargs).to(args.device)
     model.load_state_dict(ckpt["model"])
+    if is_legacy:
+        print("  (legacy checkpoint — using additive logits model)")
     t_model_load = time.perf_counter() - t0
     print(f"  Epoch {ckpt['epoch']}, val_loss={ckpt['val_loss']:.4f}, acc={ckpt.get('val_metrics', {}).get('accuracy', 0):.3f}")
 
@@ -549,6 +558,26 @@ def main():
 
     events_to_csv(events, args.output, audio_name=os.path.abspath(args.audio))
 
+    # Save mel spectrogram and waveform envelope for viewer
+    mel_npy_path = args.output.replace(".csv", "_mel.npy")
+    np.save(mel_npy_path, mel)
+    print(f"Wrote mel spectrogram to {mel_npy_path} (shape {mel.shape})")
+
+    # Save waveform envelope (downsampled amplitude for visualization)
+    wave_npy_path = args.output.replace(".csv", "_wave.npy")
+    y_raw, _ = librosa.load(args.audio, sr=SAMPLE_RATE, mono=True)
+    # Downsample to ~1 sample per mel frame using max-abs envelope
+    hop = HOP_LENGTH
+    n_frames = mel.shape[1]
+    envelope = np.zeros(n_frames, dtype=np.float32)
+    for i in range(n_frames):
+        start = i * hop
+        end = min(start + hop, len(y_raw))
+        if start < len(y_raw):
+            envelope[i] = np.max(np.abs(y_raw[start:end]))
+    np.save(wave_npy_path, envelope)
+    print(f"Wrote waveform envelope to {wave_npy_path} ({n_frames} frames)")
+
     # Write stats JSON alongside CSV
     stats_path = args.output.replace(".csv", "_stats.json")
     # Remove timeline from JSON to keep it manageable (can be large)
@@ -568,7 +597,8 @@ def main():
         viewer_path = os.path.join(SCRIPT_DIR, "viewer.py")
         print(f"\nLaunching viewer: {args.output}")
         cmd = [sys.executable, viewer_path, args.output, "--audio", args.audio,
-               "--stats-json", stats_path]
+               "--stats-json", stats_path,
+               "--mel-npy", mel_npy_path, "--wave-npy", wave_npy_path]
         subprocess.run(cmd)
 
     if tmp_dir is not None:

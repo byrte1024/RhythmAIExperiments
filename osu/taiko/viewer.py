@@ -10,6 +10,7 @@ Controls:
   T         - Toggle stats panel
   M         - Toggle minimap
   D         - Toggle density graph
+  W         - Toggle mel spectrogram + waveform
   Esc/Q     - Quit
 """
 import pygame
@@ -76,6 +77,8 @@ def parse_args():
     parser.add_argument("--audio", default=None, help="Override audio file path")
     parser.add_argument("--compare", default=None, help="Second CSV to overlay (e.g. ground truth)")
     parser.add_argument("--stats-json", default=None, help="Inference stats JSON file")
+    parser.add_argument("--mel-npy", default=None, help="Mel spectrogram .npy file")
+    parser.add_argument("--wave-npy", default=None, help="Waveform envelope .npy file")
     return parser.parse_args()
 
 
@@ -265,8 +268,54 @@ def format_time(ms):
     return f"{m}:{s:05.2f}"
 
 
+try:
+    import numpy as np
+    HAS_NUMPY = True
+except ImportError:
+    HAS_NUMPY = False
+
+# Must match training constants for mel frame timing
+MEL_HOP_LENGTH = 110
+MEL_SAMPLE_RATE = 22050
+MEL_BIN_MS = MEL_HOP_LENGTH / MEL_SAMPLE_RATE * 1000  # ~4.9887ms
+
+# Mel colormap: black -> blue -> cyan -> yellow -> white
+_MEL_CMAP = None
+
+def _get_mel_colormap():
+    """Build a 256-entry colormap for mel spectrogram rendering."""
+    global _MEL_CMAP
+    if _MEL_CMAP is not None:
+        return _MEL_CMAP
+    cmap = []
+    # 5 control points: black, dark blue, cyan, yellow, white
+    stops = [
+        (0,   (0, 0, 0)),
+        (64,  (10, 10, 80)),
+        (128, (20, 100, 160)),
+        (192, (220, 200, 50)),
+        (255, (255, 255, 255)),
+    ]
+    for i in range(256):
+        # Find bounding stops
+        lo, hi = stops[0], stops[-1]
+        for j in range(len(stops) - 1):
+            if stops[j][0] <= i <= stops[j+1][0]:
+                lo, hi = stops[j], stops[j+1]
+                break
+        span = hi[0] - lo[0]
+        t = (i - lo[0]) / span if span > 0 else 0
+        r = int(lo[1][0] + t * (hi[1][0] - lo[1][0]))
+        g = int(lo[1][1] + t * (hi[1][1] - lo[1][1]))
+        b = int(lo[1][2] + t * (hi[1][2] - lo[1][2]))
+        cmap.append((r, g, b))
+    _MEL_CMAP = cmap
+    return cmap
+
+
 class Viewer:
-    def __init__(self, csv_path, audio_override=None, compare_csv=None, stats_json_path=None):
+    def __init__(self, csv_path, audio_override=None, compare_csv=None,
+                 stats_json_path=None, mel_npy_path=None, wave_npy_path=None):
         self.csv_path = csv_path
         audio_name, self.onsets = load_csv(csv_path)
         self.stats = compute_level_stats(self.onsets)
@@ -284,6 +333,17 @@ class Viewer:
         if stats_json_path and os.path.exists(stats_json_path):
             with open(stats_json_path, "r") as f:
                 self.inference_stats = json.load(f)
+
+        # Mel spectrogram + waveform data (from inference)
+        self.mel_data = None  # shape (n_mels, T) numpy array
+        self.wave_data = None  # shape (T,) numpy array
+        if HAS_NUMPY:
+            if mel_npy_path and os.path.exists(mel_npy_path):
+                self.mel_data = np.load(mel_npy_path)
+                print(f"Loaded mel spectrogram: {self.mel_data.shape}")
+            if wave_npy_path and os.path.exists(wave_npy_path):
+                self.wave_data = np.load(wave_npy_path)
+                print(f"Loaded waveform envelope: {self.wave_data.shape}")
 
         # Audio
         self.audio_path = audio_override or find_audio(audio_name)
@@ -330,6 +390,19 @@ class Viewer:
         self.show_stats = True
         self.show_minimap = True
         self.show_density = True
+        self.show_mel = bool(self.mel_data is not None or self.wave_data is not None)
+        self.zoom = 1.0  # zoom multiplier for scroll speed
+        # Precompute global normalization ranges for consistent rendering
+        if HAS_NUMPY and self.mel_data is not None:
+            self._mel_global_min = float(self.mel_data.min())
+            self._mel_global_max = float(self.mel_data.max())
+        else:
+            self._mel_global_min = 0.0
+            self._mel_global_max = 1.0
+        if HAS_NUMPY and self.wave_data is not None:
+            self._wave_global_max = float(self.wave_data.max()) if self.wave_data.max() > 0 else 1.0
+        else:
+            self._wave_global_max = 1.0
         self.scroll_offset = 0  # for stats panel scrolling
         self.recent_hits = []  # (time, kind) for hit flash animation
 
@@ -497,6 +570,9 @@ class Viewer:
                     self.show_minimap = not self.show_minimap
                 elif ev.key == pygame.K_d:
                     self.show_density = not self.show_density
+                elif ev.key == pygame.K_w:
+                    if self.mel_data is not None or self.wave_data is not None:
+                        self.show_mel = not self.show_mel
 
             if ev.type == pygame.MOUSEBUTTONDOWN:
                 # Click on progress bar to seek
@@ -505,6 +581,11 @@ class Viewer:
                 if prog_y <= my <= prog_y + 20 and self.song_end_ms > 0:
                     frac = max(0, min(1, (mx - 10) / (self.w - 20)))
                     self._seek(frac * self.song_end_ms - self.now_ms)
+
+            if ev.type == pygame.MOUSEWHEEL:
+                # Scroll wheel zooms in/out (note highway + mel/wave)
+                factor = 1.15 if ev.y > 0 else 1 / 1.15
+                self.zoom = max(0.1, min(10.0, self.zoom * factor))
 
             if ev.type == pygame.VIDEORESIZE:
                 self.w, self.h = ev.w, ev.h
@@ -537,6 +618,10 @@ class Viewer:
         self._draw_progress_bar()
 
         y_below = PLAYFIELD_TOP + PLAYFIELD_H + 30
+
+        if self.show_mel:
+            self._draw_mel_view(y_below)
+            y_below += 145
 
         if self.show_density:
             self._draw_density_graph(y_below)
@@ -575,6 +660,8 @@ class Viewer:
         if not self.playing:
             badges.append(("PAUSED", (255, 200, 60)))
         badges.append((f"{self.speed:.2f}x", TEXT_COLOR))
+        if abs(self.zoom - 1.0) > 0.01:
+            badges.append((f"ZOOM {self.zoom:.1f}x", ACCENT))
         badges.append((f"VOL {int(self.volume * 100)}%", TEXT_COLOR))
         if not self.has_audio:
             badges.append(("NO AUDIO", (255, 80, 80)))
@@ -590,7 +677,7 @@ class Viewer:
             self.screen.blit(surf, (x + 6, 11))
 
         # Help hint
-        hint = self.font_small.render("H=Help  T=Stats  M=Map  D=Density", True, DIM_TEXT)
+        hint = self.font_small.render("H=Help  T=Stats  M=Map  D=Density  W=Mel/Wave", True, DIM_TEXT)
         self.screen.blit(hint, (self.w - hint.get_width() - 10, 36))
 
     def _draw_playfield(self):
@@ -634,7 +721,7 @@ class Viewer:
     def _draw_notes(self, onsets, cy, alpha_mod=1.0, outline_only=False):
         """Draw note circles on the playfield."""
         for time_ms, kind in onsets:
-            x = HIT_X + (time_ms - self.now_ms) * SCROLL_SPEED
+            x = HIT_X + (time_ms - self.now_ms) * SCROLL_SPEED * self.zoom
             if x < -40:
                 continue
             if x > self.w + 40:
@@ -685,6 +772,139 @@ class Viewer:
             # Cursor
             cx = bar_x + fill_w
             pygame.draw.rect(self.screen, PROGRESS_CURSOR, (cx - 1, y - 2, 3, bar_h + 4), border_radius=1)
+
+    def _draw_mel_view(self, y_start):
+        """Draw scrolling mel spectrogram + waveform aligned to playfield cursor.
+        Uses numpy + pygame.surfarray for fast rendering."""
+        if not HAS_NUMPY:
+            return
+        view_w = self.w - 20
+        mel_h = 80
+        wave_h = 40
+        pad_x = 10
+
+        px_per_frame = SCROLL_SPEED * self.zoom * MEL_BIN_MS
+        cursor_frame = int(self.now_ms / MEL_BIN_MS)
+
+        frames_left = int((HIT_X - pad_x) / px_per_frame)
+        frames_right = int((view_w - HIT_X + pad_x) / px_per_frame)
+        frame_start = cursor_frame - frames_left
+        frame_end = cursor_frame + frames_right
+
+        label = self.font_small.render(
+            "Mel Spectrogram + Waveform (W to toggle)" if self.mel_data is not None else "Waveform (W to toggle)",
+            True, DIM_TEXT)
+        self.screen.blit(label, (pad_x, y_start))
+        y = y_start + 14
+
+        # --- Mel spectrogram (fast path via surfarray) ---
+        if self.mel_data is not None:
+            pygame.draw.rect(self.screen, PANEL_BG, (pad_x, y, view_w, mel_h), border_radius=3)
+
+            cmap = np.array(_get_mel_colormap(), dtype=np.uint8)  # (256, 3)
+            n_mels, total_mel_frames = self.mel_data.shape
+
+            f0 = max(0, frame_start)
+            f1 = min(total_mel_frames, frame_end)
+            n_total = frame_end - frame_start
+
+            if f1 > f0 and n_total > 0:
+                mel_slice = self.mel_data[:, f0:f1]
+                mel_range = self._mel_global_max - self._mel_global_min
+                if mel_range <= 0:
+                    mel_range = 1.0
+                mel_norm = np.clip((mel_slice - self._mel_global_min) / mel_range * 255, 0, 255).astype(np.uint8)
+
+                # Flip vertically so low freq is at bottom
+                mel_norm = mel_norm[::-1, :]
+
+                # Map to RGB via colormap: (n_mels, n_visible) -> (n_mels, n_visible, 3)
+                mel_rgb = cmap[mel_norm]  # (n_mels, n_visible, 3)
+
+                # Create pixel array at native mel resolution, then scale
+                # pygame.surfarray wants (width, height, 3) i.e. (cols, rows, 3)
+                mel_rgb_t = mel_rgb.transpose(1, 0, 2)  # (n_visible, n_mels, 3)
+
+                # Make surface at mel resolution
+                mel_surf = pygame.surfarray.make_surface(mel_rgb_t)
+
+                # Compute where this slice sits in the view
+                slice_x_start = int((f0 - frame_start) * px_per_frame)
+                slice_pixel_w = max(1, int((f1 - f0) * px_per_frame))
+
+                # Scale to display size
+                scaled = pygame.transform.scale(mel_surf, (slice_pixel_w, mel_h))
+                self.screen.blit(scaled, (pad_x + slice_x_start, y))
+
+            # Cursor line
+            cx = pad_x + int(frames_left * px_per_frame)
+            pygame.draw.line(self.screen, (255, 255, 255), (cx, y), (cx, y + mel_h), 1)
+
+            # Onset markers along bottom edge of mel
+            for t_ms, kind in self.onsets:
+                f = int(t_ms / MEL_BIN_MS)
+                if frame_start <= f <= frame_end:
+                    ox = pad_x + int((f - frame_start) * px_per_frame)
+                    c = COLORS.get(kind, (200, 200, 200))
+                    pygame.draw.line(self.screen, c, (ox, y + mel_h - 5), (ox, y + mel_h), 2)
+
+            # Second time labels
+            for sec in range(max(0, int(frame_start * MEL_BIN_MS / 1000)),
+                             int(frame_end * MEL_BIN_MS / 1000) + 1):
+                f = int(sec * 1000 / MEL_BIN_MS)
+                if frame_start <= f <= frame_end:
+                    lx = pad_x + int((f - frame_start) * px_per_frame)
+                    lbl = self.font_small.render(f"{sec}s", True, (200, 200, 200))
+                    self.screen.blit(lbl, (lx + 2, y + 1))
+                    pygame.draw.line(self.screen, (80, 80, 100), (lx, y), (lx, y + mel_h), 1)
+
+            y += mel_h + 4
+
+        # --- Waveform (fast path via surfarray) ---
+        if self.wave_data is not None:
+            pygame.draw.rect(self.screen, PANEL_BG, (pad_x, y, view_w, wave_h), border_radius=3)
+
+            total_wave_frames = len(self.wave_data)
+            f0 = max(0, frame_start)
+            f1 = min(total_wave_frames, frame_end)
+            n_total = frame_end - frame_start
+
+            if f1 > f0 and n_total > 0:
+                wave_slice = self.wave_data[f0:f1]
+                amp = wave_slice / self._wave_global_max  # normalized 0-1 using global max
+
+                # Build RGB image: (n_visible, wave_h, 3)
+                n_vis = f1 - f0
+                img = np.zeros((n_vis, wave_h, 3), dtype=np.uint8)
+                img[:, :] = (28, 28, 38)  # panel bg
+
+                center = wave_h // 2
+                for col in range(n_vis):
+                    a = amp[col]
+                    bar_h = int(a * (wave_h // 2 - 2))
+                    if bar_h > 0:
+                        r = min(255, int(80 + a * 175))
+                        g = min(255, int(140 + a * 60))
+                        b = min(255, int(220 - a * 80))
+                        img[col, center - bar_h:center + bar_h + 1] = (r, g, b)
+
+                wave_surf = pygame.surfarray.make_surface(img)
+                slice_x_start = int((f0 - frame_start) * px_per_frame)
+                slice_pixel_w = max(1, int((f1 - f0) * px_per_frame))
+                scaled = pygame.transform.scale(wave_surf, (slice_pixel_w, wave_h))
+                self.screen.blit(scaled, (pad_x + slice_x_start, y))
+
+            # Cursor line
+            cx = pad_x + int(frames_left * px_per_frame)
+            pygame.draw.line(self.screen, (255, 255, 255), (cx, y), (cx, y + wave_h), 1)
+
+            # Onset markers along top
+            for t_ms, kind in self.onsets:
+                f = int(t_ms / MEL_BIN_MS)
+                if frame_start <= f <= frame_end:
+                    ox = pad_x + int((f - frame_start) * px_per_frame)
+                    c = COLORS.get(kind, (200, 200, 200))
+                    pygame.draw.line(self.screen, c, (ox, y), (ox, y + 4), 2)
 
     def _draw_density_graph(self, y_start):
         """Density over time graph."""
@@ -930,6 +1150,8 @@ class Viewer:
             ("T", "Toggle stats panel"),
             ("M", "Toggle minimap"),
             ("D", "Toggle density graph"),
+            ("W", "Toggle mel spectrogram + waveform"),
+            ("Scroll wheel", "Zoom in / out"),
             ("Click progress bar", "Seek to position"),
             ("Esc / Q", "Quit"),
             ("", ""),
@@ -991,7 +1213,9 @@ def main():
         return
 
     viewer = Viewer(csv_path, audio_override=args.audio, compare_csv=args.compare,
-                    stats_json_path=args.stats_json)
+                    stats_json_path=args.stats_json,
+                    mel_npy_path=getattr(args, 'mel_npy', None),
+                    wave_npy_path=getattr(args, 'wave_npy', None))
     viewer.run()
 
 

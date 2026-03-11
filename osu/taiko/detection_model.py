@@ -208,6 +208,49 @@ class AudioPath(nn.Module):
         return logits
 
 
+class LegacyContextPath(nn.Module):
+    """Legacy 501-way context path (exp 11-16). Used for loading old checkpoints."""
+
+    def __init__(self, d_model=384, n_layers=3, n_heads=8, n_classes=501,
+                 max_events=128, cond_dim=64, dropout=0.1):
+        super().__init__()
+        self.query_token = nn.Parameter(torch.randn(1, 1, d_model) * 0.02)
+        self.seq_pos_emb = nn.Embedding(max_events + 1, d_model)
+        self.film_layers = nn.ModuleList([FiLM(cond_dim, d_model) for _ in range(n_layers)])
+        self.layers = nn.ModuleList([
+            nn.TransformerDecoderLayer(
+                d_model=d_model, nhead=n_heads, dim_feedforward=d_model * 4,
+                dropout=dropout, activation="gelu", batch_first=True, norm_first=True,
+            )
+            for _ in range(n_layers)
+        ])
+        self.head_norm = nn.LayerNorm(d_model)
+        self.head_proj = nn.Linear(d_model, n_classes)
+        self.head_smooth = nn.Sequential(
+            nn.Conv1d(1, 8, kernel_size=5, padding=2),
+            nn.GELU(),
+            nn.Conv1d(8, 1, kernel_size=5, padding=2),
+        )
+
+    def forward(self, event_tokens, audio_tokens, event_mask, cond):
+        B, C, _ = event_tokens.shape
+        query = self.query_token.expand(B, -1, -1)
+        seq = torch.cat([event_tokens, query], dim=1)
+        seq_pos = torch.arange(C + 1, device=seq.device).unsqueeze(0).expand(B, -1)
+        seq = seq + self.seq_pos_emb(seq_pos)
+        causal_mask = nn.Transformer.generate_square_subsequent_mask(C + 1, device=seq.device)
+        query_pad = torch.zeros(B, 1, dtype=torch.bool, device=seq.device)
+        tgt_pad_mask = torch.cat([event_mask, query_pad], dim=1)
+        x = seq
+        for layer, film in zip(self.layers, self.film_layers):
+            x = layer(x, audio_tokens, tgt_mask=causal_mask, tgt_key_padding_mask=tgt_pad_mask)
+            x = film(x, cond)
+        query_out = x[:, -1, :]
+        logits = self.head_proj(self.head_norm(query_out))
+        logits = logits + self.head_smooth(logits.unsqueeze(1)).squeeze(1)
+        return logits
+
+
 class ContextPath(nn.Module):
     """Top-K reranking selector: picks from audio's top-K candidates using event context.
 
@@ -421,3 +464,51 @@ class OnsetDetector(nn.Module):
         logits.scatter_(1, top_k_indices, selection_logits)
 
         return logits, audio_logits, selection_logits, top_k_indices
+
+
+class LegacyOnsetDetector(nn.Module):
+    """Legacy two-path detector (exp 11-16) with additive logits.
+
+    Returns the same 4-tuple as OnsetDetector for interface compatibility,
+    but selection_logits and top_k_indices are synthesized from the combined output.
+    """
+
+    def __init__(self, n_mels=80, d_model=384, d_event=128, enc_layers=4,
+                 enc_event_layers=2, audio_path_layers=2, context_path_layers=3,
+                 n_heads=8, n_classes=501, max_events=128, dropout=0.1, cond_dim=64):
+        super().__init__()
+        self.n_classes = n_classes
+        self.d_model = d_model
+
+        self.cond_mlp = nn.Sequential(
+            nn.Linear(3, cond_dim), nn.GELU(), nn.Linear(cond_dim, cond_dim),
+        )
+        self.audio_encoder = AudioEncoder(
+            n_mels=n_mels, d_model=d_model, n_layers=enc_layers,
+            n_heads=n_heads, cond_dim=cond_dim, dropout=dropout,
+        )
+        self.event_encoder = EventEncoder(
+            d_model=d_model, d_event=d_event, n_layers=enc_event_layers,
+            n_heads=4, max_events=max_events, cond_dim=cond_dim, dropout=dropout,
+        )
+        self.audio_path = AudioPath(
+            d_model=d_model, n_layers=audio_path_layers, n_heads=n_heads,
+            n_classes=n_classes, cond_dim=cond_dim, dropout=dropout,
+        )
+        self.context_path = LegacyContextPath(
+            d_model=d_model, n_layers=context_path_layers, n_heads=n_heads,
+            n_classes=n_classes, max_events=max_events, cond_dim=cond_dim,
+            dropout=dropout,
+        )
+
+    def forward(self, mel, event_offsets, event_mask, conditioning):
+        cond = self.cond_mlp(conditioning)
+        audio_tokens = self.audio_encoder(mel, cond)
+        event_tokens = self.event_encoder(event_offsets, event_mask, cond)
+        audio_logits = self.audio_path(audio_tokens, event_tokens, event_mask, cond)
+        context_logits = self.context_path(event_tokens, audio_tokens, event_mask, cond)
+        logits = audio_logits + context_logits
+
+        # Synthesize 4-tuple interface: use combined logits top-20 as fake selection
+        top_k_scores, top_k_indices = logits.topk(20, dim=-1)
+        return logits, audio_logits, top_k_scores, top_k_indices
