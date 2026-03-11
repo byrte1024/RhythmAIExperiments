@@ -16,7 +16,7 @@ Each folder contains a README with hypothesis, results, and key graphs.
 | 15 | [Context Aux Loss + Density Benchmarks](experiment_15/) | Failed | 0.1 context aux didn't break rubber-stamping. Density benchmarks revealed FiLM is load-bearing (~25pp) |
 | 16 | [Rank-Weighted Context Loss](experiment_16/) | Failed | Forced opinions degraded combined output. Val loss increasing, top-K dropped 3-5pp. Wrong opinions worse than no opinions |
 | 17 | [Top-K Reranking Architecture](experiment_17/) | Partial | First context activation ever (50% override), but override accuracy ~51% (coin flip). 43% acc, 65.3% HIT — below exp 14's audio-only 69% |
-| 18 | [Gradient-Isolated Context + Two-Stage Event Focus](experiment_18/) | Pending | Stop-gradient + 2-stage context (event self-attn → candidate cross-attn) + hard CE |
+| 18 | [Gradient-Isolated Context + Two-Stage Event Focus](experiment_18/) | Failed | Stop-gradient works (audio protected), but context overrides net-harmful (-0.94pp). 35% override accuracy, worse than coin flip. Reranking paradigm may be fundamentally flawed |
 
 ## Key Lessons
 
