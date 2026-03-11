@@ -19,6 +19,7 @@ Each folder contains a README with hypothesis, results, and key graphs.
 | 18 | [Gradient-Isolated Context + Two-Stage Event Focus](experiment_18/) | Failed | Stop-gradient works (audio protected), but context overrides net-harmful (-0.94pp). 35% override accuracy, worse than coin flip. Reranking paradigm may be fundamentally flawed |
 | 19 | [Gap-Based Context with Own Encoders](experiment_19/) | Hopeful | First context to beat audio during training. Gap repr + snippets + own encoders. Delta -0.18pp at E2 (best ever), but plateaued. Unstable proposer poisons selector |
 | 20 | [Warm-Start + Frozen Audio, Context-Only](experiment_20/) | Infra win | Warm-start + freeze work (69.5% HIT, 2x speed). Context bolder (11% override, F1=22%) but delta -1.18pp. Loss function is now the bottleneck |
+| 21 | [Relative Quality Selection Loss](experiment_21/) | Running | Soft targets weighted by closeness improvement over audio's #1. Asymmetric miss_penalty=2x for conservatism. Same warm-start + freeze infra |
 
 ## Key Lessons
 
