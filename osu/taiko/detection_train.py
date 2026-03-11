@@ -390,7 +390,27 @@ def validate_and_collect(model, loader, criterion, device, amp_enabled=False):
 
         with torch.autocast("cuda", enabled=amp_enabled):
             logits, audio_logits, sel_logits, topk_idx = model(mel, evt_off, evt_mask, cond)
-            loss = criterion(logits, target)
+
+            # Val loss: audio loss + selection loss (matches training loss)
+            K = sel_logits.size(1)
+            stop = N_CLASSES - 1
+            is_stop = (target == stop)
+            cand_f = topk_idx.float() + 1.0
+            tgt_f = target.float().unsqueeze(1) + 1.0
+            log_ratio = torch.abs(torch.log(cand_f / tgt_f))
+            log_good = math.log(1 + 0.03)
+            log_fail = math.log(1 + 0.20)
+            ramp = log_fail - log_good
+            ratio_w = ((log_fail - log_ratio) / ramp).clamp(0, 1)
+            frame_dist = torch.abs(topk_idx.float() - target.unsqueeze(1).float())
+            frame_w = ((3.0 - frame_dist) / 3.0).clamp(0, 1)
+            sel_weights = torch.max(ratio_w, frame_w)
+            stop_mask = (topk_idx == stop).float()
+            sel_weights = torch.where(is_stop.unsqueeze(1), stop_mask, sel_weights)
+            sel_weights = sel_weights / sel_weights.sum(dim=1, keepdim=True).clamp(min=1e-8)
+            sel_log_probs = F.log_softmax(sel_logits, dim=-1)
+            sel_loss = -(sel_weights * sel_log_probs).sum(dim=-1).mean()
+            loss = criterion(audio_logits, target) + sel_loss
 
         total_loss += loss.item() * target.size(0)
         total_n += target.size(0)
