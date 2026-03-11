@@ -371,6 +371,7 @@ def validate_and_collect(model, loader, criterion, device, amp_enabled=False):
     model.eval()
     all_targets = []
     all_preds = []
+    all_audio_preds = []
     all_cond = []
     all_prev_gap = []
     all_ctx_len = []
@@ -392,29 +393,21 @@ def validate_and_collect(model, loader, criterion, device, amp_enabled=False):
             logits, audio_logits, sel_logits, topk_idx = model(mel, evt_off, evt_mask, cond)
 
             # Val loss: audio loss + selection loss (matches training loss)
-            K = sel_logits.size(1)
             stop = N_CLASSES - 1
             is_stop = (target == stop)
-            cand_f = topk_idx.float() + 1.0
-            tgt_f = target.float().unsqueeze(1) + 1.0
-            log_ratio = torch.abs(torch.log(cand_f / tgt_f))
-            log_good = math.log(1 + 0.03)
-            log_fail = math.log(1 + 0.20)
-            ramp = log_fail - log_good
-            ratio_w = ((log_fail - log_ratio) / ramp).clamp(0, 1)
             frame_dist = torch.abs(topk_idx.float() - target.unsqueeze(1).float())
-            frame_w = ((3.0 - frame_dist) / 3.0).clamp(0, 1)
-            sel_weights = torch.max(ratio_w, frame_w)
-            stop_mask = (topk_idx == stop).float()
-            sel_weights = torch.where(is_stop.unsqueeze(1), stop_mask, sel_weights)
-            sel_weights = sel_weights / sel_weights.sum(dim=1, keepdim=True).clamp(min=1e-8)
-            sel_log_probs = F.log_softmax(sel_logits, dim=-1)
-            sel_loss = -(sel_weights * sel_log_probs).sum(dim=-1).mean()
+            stop_dist = torch.where(topk_idx == stop,
+                                    torch.zeros_like(frame_dist),
+                                    torch.full_like(frame_dist, 1e6))
+            frame_dist = torch.where(is_stop.unsqueeze(1), stop_dist, frame_dist)
+            sel_target = frame_dist.argmin(dim=1)
+            sel_loss = F.cross_entropy(sel_logits, sel_target)
             loss = criterion(audio_logits, target) + sel_loss
 
         total_loss += loss.item() * target.size(0)
         total_n += target.size(0)
         all_preds.append(logits.argmax(1).cpu().numpy())
+        all_audio_preds.append(audio_logits.argmax(1).cpu().numpy())
         all_targets.append(target.cpu().numpy())
         all_cond.append(cond.cpu().numpy())
 
@@ -450,6 +443,7 @@ def validate_and_collect(model, loader, criterion, device, amp_enabled=False):
     extra = {
         "targets": np.concatenate(all_targets),
         "preds": np.concatenate(all_preds),
+        "audio_preds": np.concatenate(all_audio_preds),
         "conds": np.concatenate(all_cond),
         "prev_gaps": np.concatenate(all_prev_gap),
         "ctx_len": np.concatenate(all_ctx_len),
@@ -1471,10 +1465,50 @@ def save_epoch_graphs(targets, preds, metrics, epoch, run_dir, extra=None):
         else:
             override_acc = 0.0
 
+        # Audio vs context HIT comparison
+        audio_preds_arr = extra.get("audio_preds")
+        if audio_preds_arr is not None:
+            ap_ns = audio_preds_arr[ns].astype(np.float64)
+            fp_ns = extra["preds"][ns].astype(np.float64)
+            t_ns_f = t_ns.astype(np.float64)
+
+            # HIT = within 3% or ±1 frame
+            def _hit(pred, tgt):
+                ratio = np.abs((pred + 1) / (tgt + 1) - 1.0)
+                frame = np.abs(pred - tgt)
+                return ((ratio <= 0.03) | (frame <= 1)).astype(float)
+
+            audio_hit = _hit(ap_ns, t_ns_f)
+            final_hit = _hit(fp_ns, t_ns_f)
+            audio_hit_rate = float(audio_hit.mean())
+            final_hit_rate = float(final_hit.mean())
+            context_delta = final_hit_rate - audio_hit_rate
+
+            # Rescued: audio wrong, context right (when context overrides)
+            # Damaged: audio right, context wrong (when context overrides)
+            override = override_mask  # already computed above
+            if override.sum() > 0:
+                rescued = float(((audio_hit[override] == 0) & (final_hit[override] == 1)).mean())
+                damaged = float(((audio_hit[override] == 1) & (final_hit[override] == 0)).mean())
+            else:
+                rescued = 0.0
+                damaged = 0.0
+        else:
+            audio_hit_rate = 0.0
+            final_hit_rate = 0.0
+            context_delta = 0.0
+            rescued = 0.0
+            damaged = 0.0
+
         # Save selection stats to extra for JSON serialization
         extra["selection_stats"] = {
             "override_rate": float(override_rate),
             "override_accuracy": override_acc,
+            "audio_hit_rate": audio_hit_rate,
+            "final_hit_rate": final_hit_rate,
+            "context_delta": context_delta,
+            "rescued_rate": rescued,
+            "damaged_rate": damaged,
             "target_in_topk": float(target_in_topk.mean()),
             "rank_distribution": [float(counts[i] / counts.sum()) for i in range(min(10, K))],
         }
@@ -1728,7 +1762,8 @@ def train(args):
         n_mels=80, d_model=args.d_model, d_event=args.d_event,
         enc_layers=args.enc_layers, enc_event_layers=args.enc_event_layers,
         audio_path_layers=args.audio_path_layers,
-        context_path_layers=args.context_path_layers,
+        context_event_layers=args.context_event_layers,
+        context_select_layers=args.context_select_layers,
         n_heads=args.n_heads,
         n_classes=N_CLASSES, max_events=C_EVENTS, dropout=args.dropout,
         top_k=args.top_k,
@@ -1857,44 +1892,24 @@ def train(args):
                 # Audio aux loss: keeps audio path learning to propose
                 audio_loss = criterion(audio_logits, target)
 
-                # Selection loss: soft K-way CE with trapezoid targets
-                # Find how good each candidate is relative to the true target
+                # Selection loss: hard CE — find best candidate, that's the label
                 K = sel_logits.size(1)
                 stop = N_CLASSES - 1
                 is_stop = (target == stop)
 
-                # Ratio-based distance (same as OnsetLoss trapezoid)
-                cand_f = topk_idx.float() + 1.0  # (B, K)
-                tgt_f = target.float().unsqueeze(1) + 1.0  # (B, 1)
-                log_ratio = torch.abs(torch.log(cand_f / tgt_f))
-
-                log_good = math.log(1 + 0.03)
-                log_fail = math.log(1 + 0.20)
-                ramp = log_fail - log_good
-                ratio_w = ((log_fail - log_ratio) / ramp).clamp(0, 1)
-
-                # Frame-based floor (±2 frames always get credit)
+                # Distance from each candidate to true target
                 frame_dist = torch.abs(topk_idx.float() - target.unsqueeze(1).float())
-                frame_w = ((3.0 - frame_dist) / 3.0).clamp(0, 1)
 
-                sel_weights = torch.max(ratio_w, frame_w)  # (B, K)
+                # For STOP targets: distance is 0 for STOP candidate, large otherwise
+                stop_dist = torch.where(topk_idx == stop,
+                                        torch.zeros_like(frame_dist),
+                                        torch.full_like(frame_dist, 1e6))
+                frame_dist = torch.where(is_stop.unsqueeze(1), stop_dist, frame_dist)
 
-                # For STOP targets: only STOP candidate gets credit
-                stop_mask = (topk_idx == stop).float()  # (B, K)
-                sel_weights = torch.where(is_stop.unsqueeze(1), stop_mask, sel_weights)
+                # Best candidate = closest to target → that's the correct class
+                sel_target = frame_dist.argmin(dim=1)  # (B,)
 
-                # Normalize to soft target distribution
-                sel_weights = sel_weights / sel_weights.sum(dim=1, keepdim=True).clamp(min=1e-8)
-
-                # CE against soft targets
-                sel_log_probs = F.log_softmax(sel_logits, dim=-1)
-                sel_loss = -(sel_weights * sel_log_probs).sum(dim=-1)
-
-                # Extra weight on STOP samples
-                if criterion.stop_weight > 1.0:
-                    sel_loss = sel_loss * torch.where(is_stop, criterion.stop_weight, 1.0)
-
-                sel_loss = sel_loss.mean()
+                sel_loss = F.cross_entropy(sel_logits, sel_target)
 
                 loss = audio_loss + sel_loss
 
@@ -1999,9 +2014,15 @@ def _run_eval(model, val_loader, criterion, args, amp_enabled,
     val_preds = val_extra["preds"]
     val_metrics = compute_metrics(val_targets, val_preds)
 
+    # Audio-only metrics (before context reranking)
+    audio_preds = val_extra.get("audio_preds")
+    audio_metrics = compute_metrics(val_targets, audio_preds) if audio_preds is not None else None
+
     tag = f"{epoch_frac:.2f}" if epoch_frac != int(epoch_frac) else f"{int(epoch_frac)}"
+    audio_hit_str = f" audio_HIT={audio_metrics['hit_rate']:.1%}" if audio_metrics else ""
     print(f"  Eval {eval_step} (epoch {tag}): loss={train_loss:.4f}/{val_loss:.4f} | "
-          f"HIT={val_metrics.get('hit_rate', 0):.1%} GOOD={val_metrics.get('good_rate', 0):.1%} "
+          f"HIT={val_metrics.get('hit_rate', 0):.1%}{audio_hit_str} "
+          f"GOOD={val_metrics.get('good_rate', 0):.1%} "
           f"MISS={val_metrics.get('miss_rate', 1):.1%} | "
           f"exact={val_metrics.get('exact_match', 0):.1%} ±1f={val_metrics.get('within_1_frame', 0):.1%} "
           f"±2f={val_metrics.get('within_2_frames', 0):.1%} | "
@@ -2027,6 +2048,9 @@ def _run_eval(model, val_loader, criterion, args, amp_enabled,
         "val_metrics": val_metrics,
         "benchmarks": _serializable(bench_results),
     }
+    # include audio-only metrics (before context reranking)
+    if audio_metrics is not None:
+        epoch_data["audio_metrics"] = audio_metrics
     # include selection stats if available
     if val_extra and "selection_stats" in val_extra:
         epoch_data["selection_stats"] = val_extra["selection_stats"]
@@ -2074,7 +2098,8 @@ if __name__ == "__main__":
     parser.add_argument("--enc-layers", type=int, default=4)
     parser.add_argument("--enc-event-layers", type=int, default=2)
     parser.add_argument("--audio-path-layers", type=int, default=2)
-    parser.add_argument("--context-path-layers", type=int, default=3)
+    parser.add_argument("--context-event-layers", type=int, default=2, help="Context event understanding layers (self-attn only)")
+    parser.add_argument("--context-select-layers", type=int, default=2, help="Context candidate selection layers (self-attn + cross-attn)")
     parser.add_argument("--n-heads", type=int, default=8)
     parser.add_argument("--dropout", type=float, default=0.1)
     parser.add_argument("--top-k", type=int, default=20, help="Number of audio candidates for context reranking (default 20)")

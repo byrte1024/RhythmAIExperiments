@@ -1,8 +1,12 @@
 """Onset detection model: two-path architecture with top-K reranking.
 
 Audio Path (proposer): audio-primary with light event cross-attention → 501 logits
-Context Path (selector): selects from audio's top-K candidates using event context
-Final: context picks from audio's top-K proposals
+Context Path (selector): K-way classifier over audio's top-K candidates
+Final: context picks class 0-K from audio's ranked proposals
+
+Gradient isolation (exp 18+): stop-gradient between shared encoders and context path.
+Audio loss trains: audio_path + audio_encoder + event_encoder + cond_mlp
+Selection loss trains: context_path ONLY (encoder outputs detached)
 """
 import math
 import torch
@@ -251,21 +255,98 @@ class LegacyContextPath(nn.Module):
         return logits
 
 
-class ContextPath(nn.Module):
-    """Top-K reranking selector: picks from audio's top-K candidates using event context.
+class Exp17ContextPath(nn.Module):
+    """Exp 17 ContextPath: top-K with dot-product scoring, audio cross-attention.
 
-    Architecture:
-    1. Takes audio's top-K candidate bins + their scores + audio features at those positions
-    2. Builds candidate embeddings from bin position + audio score + audio feature
-    3. Processes event history through transformer decoder (event self-attn + audio cross-attn)
-    4. Scores each candidate via dot product with context query vector
-    5. Returns K-way selection logits
-
-    This makes rubber-stamping architecturally impossible: context MUST pick one of K candidates.
+    Used for loading exp 17 checkpoints.
     """
 
     def __init__(self, d_model=384, n_layers=3, n_heads=8, K=20,
                  max_events=128, cond_dim=64, dropout=0.1):
+        super().__init__()
+        self.K = K
+        self.d_model = d_model
+        self.bin_pos_emb = SinusoidalPosEmb(d_model)
+        self.score_proj = nn.Sequential(nn.Linear(2, d_model), nn.GELU())
+        self.candidate_combine = nn.Sequential(
+            nn.Linear(d_model * 3, d_model), nn.GELU(), nn.LayerNorm(d_model),
+        )
+        self.query_token = nn.Parameter(torch.randn(1, 1, d_model) * 0.02)
+        self.seq_pos_emb = nn.Embedding(max_events + 1, d_model)
+        self.film_layers = nn.ModuleList([FiLM(cond_dim, d_model) for _ in range(n_layers)])
+        self.layers = nn.ModuleList([
+            nn.TransformerDecoderLayer(
+                d_model=d_model, nhead=n_heads, dim_feedforward=d_model * 4,
+                dropout=dropout, activation="gelu", batch_first=True, norm_first=True,
+            ) for _ in range(n_layers)
+        ])
+        d_score = 64
+        self.q_proj = nn.Linear(d_model, d_score)
+        self.k_proj = nn.Linear(d_model, d_score)
+        self.score_scale = d_score ** -0.5
+
+    def forward(self, event_tokens, audio_tokens, event_mask, cond, audio_logits):
+        B, C, _ = event_tokens.shape
+        audio_logits_det = audio_logits.detach()
+        top_k_scores, top_k_indices = audio_logits_det.topk(self.K, dim=-1)
+        stop_idx = audio_logits_det.size(1) - 1
+        has_stop = (top_k_indices == stop_idx).any(dim=1)
+        if not has_stop.all():
+            no_stop = ~has_stop
+            top_k_indices[no_stop, -1] = stop_idx
+            top_k_scores[no_stop, -1] = audio_logits_det[no_stop, stop_idx]
+
+        bin_emb = self.bin_pos_emb(top_k_indices)
+        ranks = torch.arange(1, self.K + 1, device=audio_logits.device, dtype=torch.float32)
+        ranks = ranks.unsqueeze(0).expand(B, -1) / self.K
+        score_feat = self.score_proj(torch.stack([top_k_scores, ranks], dim=-1))
+        token_idx = ((500 + top_k_indices.clamp(max=499)).float() / 4.0).long()
+        token_idx = token_idx.clamp(0, audio_tokens.size(1) - 1)
+        audio_feat = audio_tokens.gather(
+            1, token_idx.unsqueeze(-1).expand(-1, -1, audio_tokens.size(-1))
+        )
+        candidate_feat = self.candidate_combine(
+            torch.cat([bin_emb, score_feat, audio_feat], dim=-1)
+        )
+
+        query = self.query_token.expand(B, -1, -1)
+        seq = torch.cat([event_tokens, query], dim=1)
+        seq_pos = torch.arange(C + 1, device=seq.device).unsqueeze(0).expand(B, -1)
+        seq = seq + self.seq_pos_emb(seq_pos)
+        causal_mask = nn.Transformer.generate_square_subsequent_mask(C + 1, device=seq.device)
+        query_pad = torch.zeros(B, 1, dtype=torch.bool, device=seq.device)
+        tgt_pad_mask = torch.cat([event_mask, query_pad], dim=1)
+        x = seq
+        for layer, film in zip(self.layers, self.film_layers):
+            x = layer(x, audio_tokens, tgt_mask=causal_mask, tgt_key_padding_mask=tgt_pad_mask)
+            x = film(x, cond)
+        query_out = x[:, -1, :]
+
+        q = self.q_proj(query_out)
+        k = self.k_proj(candidate_feat)
+        selection_logits = torch.bmm(k, q.unsqueeze(-1)).squeeze(-1) * self.score_scale
+        return selection_logits, top_k_indices
+
+
+class ContextPath(nn.Module):
+    """K-way classifier: picks one of audio's top-K candidates using event context.
+
+    Context is told audio's confidence and order (#0 = highest confidence).
+    Two-stage architecture that prioritizes event pattern understanding:
+
+    Stage 1 — Event understanding (encoder layers, no candidates):
+      Events self-attend to build deep temporal pattern representations.
+      This is where context learns rhythm, spacing, expected intervals.
+
+    Stage 2 — Candidate selection (decoder layers, cross-attend to candidates):
+      Events (now pattern-aware) cross-attend to all K candidates.
+      Query token collects consensus → dot-product scoring → K-way logits.
+
+    Gradient-isolated: all inputs detached, selection loss only trains this module.
+    """
+
+    def __init__(self, d_model=384, n_event_layers=2, n_select_layers=2,
+                 n_heads=8, K=20, max_events=128, cond_dim=64, dropout=0.1):
         super().__init__()
         self.K = K
         self.d_model = d_model
@@ -282,21 +363,35 @@ class ContextPath(nn.Module):
             nn.LayerNorm(d_model),
         )
 
-        # Event context: transformer decoder (event self-attn + audio cross-attn)
-        self.query_token = nn.Parameter(torch.randn(1, 1, d_model) * 0.02)
+        # Stage 1: Event understanding (pure self-attention)
         self.seq_pos_emb = nn.Embedding(max_events + 1, d_model)
 
-        self.film_layers = nn.ModuleList([FiLM(cond_dim, d_model) for _ in range(n_layers)])
+        self.event_film_layers = nn.ModuleList(
+            [FiLM(cond_dim, d_model) for _ in range(n_event_layers)]
+        )
+        self.event_layers = nn.ModuleList([
+            nn.TransformerEncoderLayer(
+                d_model=d_model, nhead=n_heads, dim_feedforward=d_model * 4,
+                dropout=dropout, activation="gelu", batch_first=True, norm_first=True,
+            )
+            for _ in range(n_event_layers)
+        ])
 
-        self.layers = nn.ModuleList([
+        # Stage 2: Candidate selection (self-attn + cross-attn to candidates)
+        self.query_token = nn.Parameter(torch.randn(1, 1, d_model) * 0.02)
+
+        self.select_film_layers = nn.ModuleList(
+            [FiLM(cond_dim, d_model) for _ in range(n_select_layers)]
+        )
+        self.select_layers = nn.ModuleList([
             nn.TransformerDecoderLayer(
                 d_model=d_model, nhead=n_heads, dim_feedforward=d_model * 4,
                 dropout=dropout, activation="gelu", batch_first=True, norm_first=True,
             )
-            for _ in range(n_layers)
+            for _ in range(n_select_layers)
         ])
 
-        # Selection scoring: project query and candidates to scoring space
+        # Selection scoring: dot product between query and each candidate
         d_score = 64
         self.q_proj = nn.Linear(d_model, d_score)
         self.k_proj = nn.Linear(d_model, d_score)
@@ -304,16 +399,17 @@ class ContextPath(nn.Module):
 
     def forward(self, event_tokens, audio_tokens, event_mask, cond, audio_logits):
         """
+        All tensor inputs should be detached (stop-gradient).
         event_tokens: (B, C, d_model) from EventEncoder
         audio_tokens: (B, 250, d_model)
         event_mask: (B, C) bool - True = padded
         cond: (B, cond_dim)
-        audio_logits: (B, n_classes) from AudioPath (detached)
+        audio_logits: (B, n_classes) from AudioPath
         Returns: (selection_logits: (B, K), top_k_indices: (B, K))
         """
         B, C, _ = event_tokens.shape
 
-        # ── 1. Get top-K candidates from audio ──
+        # ── 1. Get top-K candidates from audio (sorted by confidence) ──
         audio_logits_det = audio_logits.detach()
         top_k_scores, top_k_indices = audio_logits_det.topk(self.K, dim=-1)  # (B, K)
 
@@ -325,51 +421,65 @@ class ContextPath(nn.Module):
             top_k_indices[no_stop, -1] = stop_idx
             top_k_scores[no_stop, -1] = audio_logits_det[no_stop, stop_idx]
 
-        # ── 2. Build candidate feature embeddings ──
-        # Bin position encoding
+        # ── 2. Build candidate embeddings (position + confidence + audio feature) ──
         bin_emb = self.bin_pos_emb(top_k_indices)  # (B, K, d_model)
 
-        # Audio score + rank features
         ranks = torch.arange(1, self.K + 1, device=audio_logits.device, dtype=torch.float32)
         ranks = ranks.unsqueeze(0).expand(B, -1) / self.K  # (B, K) normalized 0-1
         score_feat = self.score_proj(
             torch.stack([top_k_scores, ranks], dim=-1)  # (B, K, 2)
         )  # (B, K, d_model)
 
-        # Audio features at candidate temporal positions
-        # Bin offset j → audio token index: (500 + j) / 4, clamped
         token_idx = ((500 + top_k_indices.clamp(max=499)).float() / 4.0).long()
         token_idx = token_idx.clamp(0, audio_tokens.size(1) - 1)  # (B, K)
         audio_feat = audio_tokens.gather(
             1, token_idx.unsqueeze(-1).expand(-1, -1, audio_tokens.size(-1))
         )  # (B, K, d_model)
 
-        # Combine into candidate embeddings
         candidate_feat = self.candidate_combine(
             torch.cat([bin_emb, score_feat, audio_feat], dim=-1)
         )  # (B, K, d_model)
 
-        # ── 3. Process event context ──
-        query = self.query_token.expand(B, -1, -1)
-        seq = torch.cat([event_tokens, query], dim=1)  # (B, C+1, d_model)
+        # ── 3. Stage 1: Event understanding (pure self-attention) ──
+        # Events reason about temporal patterns before seeing any candidates
+        x = event_tokens  # (B, C, d_model)
+        seq_pos = torch.arange(C, device=x.device).unsqueeze(0).expand(B, -1)
+        x = x + self.seq_pos_emb(seq_pos)
 
-        seq_pos = torch.arange(C + 1, device=seq.device).unsqueeze(0).expand(B, -1)
-        seq = seq + self.seq_pos_emb(seq_pos)
+        # guard: NaN from all-masked attention
+        all_masked = event_mask.all(dim=1)
+        if all_masked.any():
+            safe_mask = event_mask.clone()
+            safe_mask[all_masked, -1] = False
+        else:
+            safe_mask = event_mask
 
-        causal_mask = nn.Transformer.generate_square_subsequent_mask(C + 1, device=seq.device)
-        query_pad = torch.zeros(B, 1, dtype=torch.bool, device=seq.device)
-        tgt_pad_mask = torch.cat([event_mask, query_pad], dim=1)
-
-        x = seq
-        for layer, film in zip(self.layers, self.film_layers):
-            x = layer(x, audio_tokens,
-                      tgt_mask=causal_mask,
-                      tgt_key_padding_mask=tgt_pad_mask)
+        for layer, film in zip(self.event_layers, self.event_film_layers):
+            x = layer(x, src_key_padding_mask=safe_mask)
             x = film(x, cond)
 
-        query_out = x[:, -1, :]  # (B, d_model) - context query vector
+        # ── 4. Stage 2: Candidate selection (cross-attend to candidates) ──
+        # Append query token with its own position embedding
+        query = self.query_token.expand(B, -1, -1)
+        query_pos = self.seq_pos_emb(
+            torch.full((B, 1), C, dtype=torch.long, device=x.device)
+        )  # (B, 1, d_model)
+        seq = torch.cat([x, query + query_pos], dim=1)  # (B, C+1, d_model)
 
-        # ── 4. Score candidates via scaled dot product ──
+        # No causal mask: stage 1 already built global event representations,
+        # causal mask would undo that for early events. All events evaluate
+        # candidates on equal footing, query collects consensus.
+        query_pad = torch.zeros(B, 1, dtype=torch.bool, device=seq.device)
+        tgt_pad_mask = torch.cat([safe_mask, query_pad], dim=1)
+
+        for layer, film in zip(self.select_layers, self.select_film_layers):
+            seq = layer(seq, candidate_feat,
+                        tgt_key_padding_mask=tgt_pad_mask)
+            seq = film(seq, cond)
+
+        query_out = seq[:, -1, :]  # (B, d_model) — consensus from all events
+
+        # ── 5. Score candidates via scaled dot product → K-way logits ──
         q = self.q_proj(query_out)  # (B, d_score)
         k = self.k_proj(candidate_feat)  # (B, K, d_score)
         selection_logits = torch.bmm(k, q.unsqueeze(-1)).squeeze(-1) * self.score_scale  # (B, K)
@@ -393,7 +503,8 @@ class OnsetDetector(nn.Module):
         enc_layers=4,
         enc_event_layers=2,
         audio_path_layers=2,
-        context_path_layers=3,
+        context_event_layers=2,
+        context_select_layers=2,
         n_heads=8,
         n_classes=501,
         max_events=128,
@@ -429,7 +540,8 @@ class OnsetDetector(nn.Module):
             n_classes=n_classes, cond_dim=cond_dim, dropout=dropout,
         )
         self.context_path = ContextPath(
-            d_model=d_model, n_layers=context_path_layers, n_heads=n_heads,
+            d_model=d_model, n_event_layers=context_event_layers,
+            n_select_layers=context_select_layers, n_heads=n_heads,
             K=top_k, max_events=max_events, cond_dim=cond_dim, dropout=dropout,
         )
 
@@ -451,12 +563,14 @@ class OnsetDetector(nn.Module):
         audio_tokens = self.audio_encoder(mel, cond)
         event_tokens = self.event_encoder(event_offsets, event_mask, cond)
 
-        # audio proposes
+        # audio proposes (gradients flow through encoders)
         audio_logits = self.audio_path(audio_tokens, event_tokens, event_mask, cond)
 
         # context selects from audio's top-K
+        # stop-gradient: selection loss only trains context_path, not encoders
         selection_logits, top_k_indices = self.context_path(
-            event_tokens, audio_tokens, event_mask, cond, audio_logits
+            event_tokens.detach(), audio_tokens.detach(), event_mask,
+            cond.detach(), audio_logits
         )
 
         # scatter selection back to 501-way for compatibility with metrics
@@ -512,3 +626,51 @@ class LegacyOnsetDetector(nn.Module):
         # Synthesize 4-tuple interface: use combined logits top-20 as fake selection
         top_k_scores, top_k_indices = logits.topk(20, dim=-1)
         return logits, audio_logits, top_k_scores, top_k_indices
+
+
+class Exp17OnsetDetector(nn.Module):
+    """Exp 17 detector: top-K reranking with shared encoder gradients (no stop-gradient).
+
+    Used for loading exp 17 checkpoints.
+    """
+
+    def __init__(self, n_mels=80, d_model=384, d_event=128, enc_layers=4,
+                 enc_event_layers=2, audio_path_layers=2, context_path_layers=3,
+                 n_heads=8, n_classes=501, max_events=128, dropout=0.1,
+                 cond_dim=64, top_k=20):
+        super().__init__()
+        self.n_classes = n_classes
+        self.d_model = d_model
+        self.top_k = top_k
+
+        self.cond_mlp = nn.Sequential(
+            nn.Linear(3, cond_dim), nn.GELU(), nn.Linear(cond_dim, cond_dim),
+        )
+        self.audio_encoder = AudioEncoder(
+            n_mels=n_mels, d_model=d_model, n_layers=enc_layers,
+            n_heads=n_heads, cond_dim=cond_dim, dropout=dropout,
+        )
+        self.event_encoder = EventEncoder(
+            d_model=d_model, d_event=d_event, n_layers=enc_event_layers,
+            n_heads=4, max_events=max_events, cond_dim=cond_dim, dropout=dropout,
+        )
+        self.audio_path = AudioPath(
+            d_model=d_model, n_layers=audio_path_layers, n_heads=n_heads,
+            n_classes=n_classes, cond_dim=cond_dim, dropout=dropout,
+        )
+        self.context_path = Exp17ContextPath(
+            d_model=d_model, n_layers=context_path_layers, n_heads=n_heads,
+            K=top_k, max_events=max_events, cond_dim=cond_dim, dropout=dropout,
+        )
+
+    def forward(self, mel, event_offsets, event_mask, conditioning):
+        cond = self.cond_mlp(conditioning)
+        audio_tokens = self.audio_encoder(mel, cond)
+        event_tokens = self.event_encoder(event_offsets, event_mask, cond)
+        audio_logits = self.audio_path(audio_tokens, event_tokens, event_mask, cond)
+        selection_logits, top_k_indices = self.context_path(
+            event_tokens, audio_tokens, event_mask, cond, audio_logits
+        )
+        logits = torch.full_like(audio_logits, -100.0)
+        logits.scatter_(1, top_k_indices, selection_logits)
+        return logits, audio_logits, selection_logits, top_k_indices
