@@ -62,8 +62,63 @@ Experiments 15-16 proved that loss-function approaches cannot activate the conte
 
 ## Result
 
-*Pending.*
+**Partial success — context activated but not helpful.** Stopped at E7.
+
+### Trajectory
+
+| Epoch | train_loss | val_loss | accuracy | hit_rate | miss_rate | override_rate | override_acc | target_in_topk |
+|-------|-----------|----------|----------|----------|-----------|---------------|-------------|----------------|
+| 1 | 6.048 | —* | 45.1% | 63.7% | 35.3% | 25.8% | 38.5% | 97.6% |
+| 2 | 5.713 | —* | 44.5% | 64.1% | 34.7% | 35.2% | 44.0% | 97.4% |
+| 3 | 5.589 | —* | 40.8% | 63.1% | 34.6% | 46.2% | 47.1% | 97.1% |
+| 4 | 5.502 | —* | 42.6% | 63.9% | 34.5% | 46.6% | 48.3% | 96.9% |
+| 5 | 5.442 | —* | 42.9% | 64.4% | 33.8% | 45.5% | 50.4% | 96.8% |
+| 6 | 5.394 | —* | 42.1% | 65.3% | 32.5% | 50.0% | 52.5% | 96.4% |
+| 7 | 5.360 | 5.178 | 43.0% | 65.3% | 32.3% | 47.1% | 51.5% | 96.3% |
+
+*E1-E6 val_loss was miscalculated due to a bug (OnsetLoss computed on scattered 501-way logits with -100 at non-candidate positions). Fixed for E7+.
+
+### What worked
+
+- **Context path activated for the first time ever.** Override rate rose from 26% (E1) to 50% (E6), proving the architectural constraint forced engagement. Exp 11-16 never achieved this.
+- **no_events benchmark diverged from full accuracy** — E1: 47.7% vs full 45.1%, E7: 42.0% vs full 43.0%. Context IS contributing signal (unlike exp 14-16 where no_events ≈ full).
+- **Architecture > loss tricks confirmed.** Exp 15 aux CE = zero engagement. Exp 16 rank-weighted CE = wrong opinions. Exp 17 top-K constraint = immediate engagement by E1.
+
+### What didn't work
+
+- **Override accuracy plateaued at ~51-52%**, barely above coin flip for overrides. Context learned to override but not WHEN to override correctly.
+- **Accuracy dropped from E1 (45.1%) as context became more active.** The model was better at E1 with 26% override than at E7 with 47% override. Context overrides are net-negative.
+- **Hit rate stuck at 65.3%**, still 3-4pp below exp 14's audio-only 69%. The reranking overhead costs more than the selection gains.
+- **Rank distribution heavily skewed**: ~53% pick #0, ~24% pick #1, ~12% pick #2. Context mostly agrees with audio and when it disagrees, it's wrong half the time.
+- **Selection stats plateau by E5-E6**: override_accuracy, override_rate, and target_in_topk all flat. No sign of continued learning.
+
+### Benchmarks (E7)
+
+| Benchmark | Accuracy | Notes |
+|-----------|----------|-------|
+| full (normal) | 43.0% | Below exp 14's 50.5% |
+| no_events | 42.0% | Context engaged but not helpful |
+| no_audio | 0.3% | Audio is essential (expected) |
+| random_events | 43.3% | ≈ full — context isn't using events well |
+| static_audio | 1.7% | Audio temporal structure needed |
+| metronome | 42.8% | ≈ full |
+| time_shifted | 42.6% | ≈ full |
+| advanced_metronome | 41.7% | ≈ full |
+| zero_density | 10.3% | Density still load-bearing |
+| random_density | 34.4% | ~9pp drop from full |
+
+### Key numbers vs exp 14
+
+| Metric | Exp 14 (E8) | Exp 17 (E7) | Delta |
+|--------|-------------|-------------|-------|
+| accuracy | 50.5% | 43.0% | -7.5pp |
+| hit_rate | 69.0% | 65.3% | -3.7pp |
+| miss_rate | 30.0% | 32.3% | +2.3pp |
+| p99 frame error | ~150 | 162 | worse |
 
 ## Lesson
 
-*Pending.*
+- **Architectural constraint activates context, but activation ≠ value.** The top-K reranking successfully broke rubber-stamping — a first across 6 experiments. But the context path learned to override without learning WHEN to override. 51% override accuracy means context is essentially flipping coins on its disagreements.
+- **The reranking bottleneck hurts audio.** Restricting final output to K=20 candidates with context selection overhead costs 7.5pp accuracy vs audio-only (exp 14). The selection loss competes with the audio loss for shared encoder capacity.
+- **Shared encoders create gradient interference.** Audio and context share the AudioEncoder and EventEncoder. Context's selection loss gradient flows back through these shared paths, potentially degrading audio's proposal quality. This explains why accuracy is BELOW exp 14 despite identical audio architecture.
+- **Next direction: full path separation.** Give audio and context completely separate losses with stop-gradient between paths. Audio optimizes top-1 proposal quality only. Context optimizes selection quality only. No gradient leakage between the two objectives.
