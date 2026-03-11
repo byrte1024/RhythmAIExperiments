@@ -325,6 +325,131 @@ class OnsetLoss(nn.Module):
         return ce.mean()
 
 
+class SelectionLoss(nn.Module):
+    """Relative quality loss for K-way candidate selection.
+
+    Instead of hard CE ("pick the exact right one"), this rewards context for
+    picking candidates that are CLOSER to the target than audio's #1, and
+    punishes for picking candidates that are FURTHER.
+
+    For each candidate k, compute quality = closeness to true target using
+    the same HIT/GOOD/MISS trapezoid as OnsetLoss. Then build soft targets
+    biased toward the best available candidate, with asymmetric weighting:
+
+      - Candidates better than #1: high weight (reward overriding)
+      - Candidates equal to #1: moderate weight (reward keeping when correct)
+      - Candidates worse than #1: low/zero weight (punish bad overrides)
+
+    The "target" is the best available candidate, not the absolute truth.
+    If no candidate is close, all get equal weight (can't learn from this sample).
+
+    Asymmetric scaling on the final loss:
+      - Context picked better than #1 → loss is reduced (reward)
+      - Context picked worse than #1 → loss is amplified (punishment)
+      - Missed big opportunity (kept #1 when very wrong) → high loss
+    """
+
+    def __init__(self, good_pct=0.03, fail_pct=0.20, frame_tolerance=1,
+                 miss_penalty=2.0):
+        super().__init__()
+        self.good_pct = good_pct
+        self.fail_pct = fail_pct
+        self.frame_tolerance = frame_tolerance
+        self.miss_penalty = miss_penalty  # extra weight when keeping #1 was a big miss
+
+    def forward(self, sel_logits, topk_indices, targets):
+        """
+        sel_logits: (B, K) context's scores over K candidates
+        topk_indices: (B, K) bin indices for each candidate
+        targets: (B,) true target bins (or STOP=500)
+        Returns: scalar loss
+        """
+        B, K = sel_logits.shape
+        stop = 500
+        is_stop = (targets == stop)
+
+        # ── 1. Compute quality of each candidate ──
+        # Quality = how close candidate k is to the true target
+        # Uses trapezoid in ratio space, same as OnsetLoss
+        cand = topk_indices.float()  # (B, K)
+        tgt = targets.float().unsqueeze(1)  # (B, 1)
+
+        # For bin targets: ratio-based distance
+        pct_err = ((cand + 1) / (tgt + 1) - 1.0).abs()  # (B, K)
+        frame_err = (cand - tgt).abs()  # (B, K)
+
+        # Trapezoid: 1.0 within good_pct, ramp to 0 at fail_pct, 0 beyond
+        ramp = self.fail_pct - self.good_pct
+        ratio_quality = ((self.fail_pct - pct_err) / ramp).clamp(0, 1)
+
+        # Frame floor: ±frame_tolerance always gets some credit
+        ft = self.frame_tolerance
+        frame_quality = ((ft + 1 - frame_err) / (ft + 1)).clamp(0, 1)
+
+        quality = torch.max(ratio_quality, frame_quality)  # (B, K)
+
+        # For STOP targets: quality is 1.0 for STOP candidates, 0.0 otherwise
+        stop_quality = (topk_indices == stop).float()
+        quality = torch.where(is_stop.unsqueeze(1), stop_quality, quality)
+
+        # ── 2. Identify baseline (#1) and best available ──
+        baseline_quality = quality[:, 0]  # (B,) quality of audio's top pick
+        best_quality, best_idx = quality.max(dim=1)  # (B,) best available
+
+        # ── 3. Build soft targets ──
+        # Weight candidates by how much they improve over baseline
+        # improvement > 0 → better than #1, < 0 → worse than #1
+        improvement = quality - baseline_quality.unsqueeze(1)  # (B, K)
+
+        # Soft target weights:
+        # - Candidates at or above baseline get weight proportional to quality
+        # - Candidates below baseline get near-zero weight
+        # - The best available gets the most weight
+        # Use quality directly as weight (peaked at best available),
+        # but suppress anything below baseline
+        soft_weights = quality.clone()
+        # Anything worse than baseline gets heavily suppressed
+        worse_than_baseline = improvement < -0.01
+        soft_weights = soft_weights * (~worse_than_baseline).float()
+
+        # If all weights are zero (no candidate is good), uniform → skip sample
+        weight_sum = soft_weights.sum(dim=1, keepdim=True)  # (B, 1)
+        has_signal = (weight_sum.squeeze(1) > 1e-8)
+
+        # Normalize to probability distribution
+        soft_targets = soft_weights / weight_sum.clamp(min=1e-8)  # (B, K)
+
+        # ── 4. Soft CE loss ──
+        log_probs = F.log_softmax(sel_logits, dim=-1)
+        per_sample_loss = -(soft_targets * log_probs).sum(dim=-1)  # (B,)
+
+        # ── 5. Asymmetric scaling based on what context actually picked ──
+        chosen = sel_logits.argmax(dim=1)  # (B,) what context picked
+        chosen_quality = quality.gather(1, chosen.unsqueeze(1)).squeeze(1)  # (B,)
+
+        # Scale factor based on outcome:
+        # - picked better than baseline → reduce loss (reward)
+        # - picked equal to baseline → neutral (1.0)
+        # - picked worse than baseline → amplify loss (punish)
+        # - kept #1 (chosen==0) when baseline is bad → amplify (missed opportunity)
+        chose_top1 = (chosen == 0)
+        baseline_is_bad = (baseline_quality < 0.5)  # below GOOD threshold
+        best_was_available = (best_quality > baseline_quality + 0.1)
+
+        # Missed opportunity: kept #1, it was bad, and something better existed
+        missed_opportunity = chose_top1 & baseline_is_bad & best_was_available
+        scale = torch.ones(B, device=sel_logits.device)
+        scale = torch.where(missed_opportunity, self.miss_penalty, scale)
+
+        per_sample_loss = per_sample_loss * scale
+
+        # Only train on samples with signal
+        if has_signal.any():
+            return (per_sample_loss * has_signal.float()).sum() / has_signal.sum()
+        else:
+            return torch.zeros(1, device=sel_logits.device)
+
+
 # ═══════════════════════════════════════════════════════════════
 #  Metrics & Graphs
 # ═══════════════════════════════════════════════════════════════
@@ -366,7 +491,7 @@ def compute_class_weights(dataset, mode="log"):
 
 
 @torch.no_grad()
-def validate_and_collect(model, loader, criterion, device, amp_enabled=False):
+def validate_and_collect(model, loader, criterion, device, amp_enabled=False, sel_criterion=None):
     """Single pass: compute val loss AND collect predictions + extra data for graphs."""
     model.eval()
     all_targets = []
@@ -393,15 +518,25 @@ def validate_and_collect(model, loader, criterion, device, amp_enabled=False):
             logits, audio_logits, sel_logits, topk_idx = model(mel, evt_off, evt_mask, cond)
 
             # Val loss: audio loss + selection loss (matches training loss)
-            stop = N_CLASSES - 1
-            is_stop = (target == stop)
-            frame_dist = torch.abs(topk_idx.float() - target.unsqueeze(1).float())
-            stop_dist = torch.where(topk_idx == stop,
-                                    torch.zeros_like(frame_dist),
-                                    torch.full_like(frame_dist, 1e6))
-            frame_dist = torch.where(is_stop.unsqueeze(1), stop_dist, frame_dist)
-            sel_target = frame_dist.argmin(dim=1)
-            sel_loss = F.cross_entropy(sel_logits, sel_target)
+            if sel_criterion is not None:
+                sel_loss = sel_criterion(sel_logits, topk_idx, target)
+            else:
+                # Fallback: hard CE with masking (legacy)
+                stop = N_CLASSES - 1
+                is_stop = (target == stop)
+                frame_dist = torch.abs(topk_idx.float() - target.unsqueeze(1).float())
+                stop_dist = torch.where(topk_idx == stop,
+                                        torch.zeros_like(frame_dist),
+                                        torch.full_like(frame_dist, 1e6))
+                frame_dist = torch.where(is_stop.unsqueeze(1), stop_dist, frame_dist)
+                sel_target = frame_dist.argmin(dim=1)
+                best_dist = frame_dist.gather(1, sel_target.unsqueeze(1)).squeeze(1)
+                has_target = is_stop | (best_dist <= 1)
+                if has_target.any():
+                    sel_loss = F.cross_entropy(sel_logits, sel_target, reduction='none')
+                    sel_loss = (sel_loss * has_target.float()).sum() / has_target.sum()
+                else:
+                    sel_loss = torch.zeros(1, device=sel_logits.device)
             loss = criterion(audio_logits, target) + sel_loss
 
         total_loss += loss.item() * target.size(0)
@@ -1115,7 +1250,7 @@ def save_epoch_graphs(targets, preds, metrics, epoch, run_dir, extra=None):
                                         range=d_range, weights=re_clip2)
         h_cnt, _, _ = np.histogram2d(mean_dens, peak_dens, bins=[80, 80],
                                       range=d_range)
-        h_mean = np.where(h_cnt > 5, h_sum / h_cnt, np.nan)
+        h_mean = np.divide(h_sum, h_cnt, where=h_cnt > 5, out=np.full_like(h_sum, np.nan))
         ax.imshow(h_mean.T, origin="lower", aspect="auto",
                   extent=[d_range[0][0], d_range[0][1], d_range[1][0], d_range[1][1]],
                   vmin=0, vmax=1.0, cmap="RdYlGn_r")
@@ -1886,13 +2021,54 @@ def train(args):
     elif sys.platform == "win32":
         print("torch.compile: skipped (Windows)")
 
+    # ── warm-start: load audio weights from a previous checkpoint ──
+    if args.warm_start:
+        print(f"Warm-start: loading audio weights from {args.warm_start}")
+        ws_ckpt = torch.load(args.warm_start, map_location=args.device, weights_only=False)
+        ws_state = ws_ckpt["model"]
+        # Load matching keys for audio components
+        audio_prefixes = ("audio_encoder.", "event_encoder.", "audio_path.", "cond_mlp.")
+        ws_keys = {k: v for k, v in ws_state.items() if k.startswith(audio_prefixes)}
+        model_state = model.state_dict()
+        loaded, skipped = 0, 0
+        for k, v in ws_keys.items():
+            if k in model_state and model_state[k].shape == v.shape:
+                model_state[k] = v
+                loaded += 1
+            else:
+                skipped += 1
+        model.load_state_dict(model_state)
+        print(f"  Loaded {loaded} params, skipped {skipped}")
+        ws_epoch = ws_ckpt.get("epoch", "?")
+        ws_metrics = ws_ckpt.get("val_metrics", {})
+        print(f"  Source: epoch {ws_epoch}, HIT={ws_metrics.get('hit_rate', 0):.1%}")
+
+    # ── freeze audio: only train context_path ──
+    if args.freeze_audio:
+        frozen_prefixes = ("audio_encoder.", "event_encoder.", "audio_path.", "cond_mlp.")
+        n_frozen = 0
+        for name, param in model.named_parameters():
+            if name.startswith(frozen_prefixes):
+                param.requires_grad = False
+                n_frozen += 1
+        trainable = sum(p.numel() for p in model.parameters() if p.requires_grad)
+        print(f"Freeze audio: {n_frozen} params frozen, {trainable/1e6:.1f}M trainable")
+
     criterion = OnsetLoss(
         weight=loss_weights, gamma=args.focal_gamma,
         good_pct=args.good_pct, fail_pct=args.fail_pct,
         hard_alpha=args.hard_alpha, frame_tolerance=args.frame_tolerance,
         stop_weight=args.stop_weight,
     ).to(args.device)
-    optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr, weight_decay=args.wd)
+    sel_criterion = SelectionLoss(
+        good_pct=args.good_pct, fail_pct=args.fail_pct,
+        miss_penalty=args.miss_penalty,
+    ).to(args.device)
+    # Only pass trainable params to optimizer
+    optimizer = torch.optim.AdamW(
+        [p for p in model.parameters() if p.requires_grad],
+        lr=args.lr, weight_decay=args.wd,
+    )
     scaler = torch.amp.GradScaler("cuda", enabled=amp_enabled)
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=args.epochs)
 
@@ -2005,24 +2181,8 @@ def train(args):
                 # Audio aux loss: keeps audio path learning to propose
                 audio_loss = criterion(audio_logits, target)
 
-                # Selection loss: hard CE — find best candidate, that's the label
-                K = sel_logits.size(1)
-                stop = N_CLASSES - 1
-                is_stop = (target == stop)
-
-                # Distance from each candidate to true target
-                frame_dist = torch.abs(topk_idx.float() - target.unsqueeze(1).float())
-
-                # For STOP targets: distance is 0 for STOP candidate, large otherwise
-                stop_dist = torch.where(topk_idx == stop,
-                                        torch.zeros_like(frame_dist),
-                                        torch.full_like(frame_dist, 1e6))
-                frame_dist = torch.where(is_stop.unsqueeze(1), stop_dist, frame_dist)
-
-                # Best candidate = closest to target → that's the correct class
-                sel_target = frame_dist.argmin(dim=1)  # (B,)
-
-                sel_loss = F.cross_entropy(sel_logits, sel_target)
+                # Selection loss: relative quality (rewards improvement over #1)
+                sel_loss = sel_criterion(sel_logits, topk_idx, target)
 
                 loss = audio_loss + sel_loss
 
@@ -2126,7 +2286,7 @@ def train(args):
                     model, val_loader, criterion, args, amp_enabled,
                     eval_step, epoch + sub_frac, sub_train_loss,
                     run_dir, ckpt_dir, history, scheduler, optimizer,
-                    scaler, best_val_loss,
+                    scaler, best_val_loss, sel_criterion=sel_criterion,
                 )
                 if history and history[-1]["val_loss"] < best_val_loss:
                     best_val_loss = history[-1]["val_loss"]
@@ -2153,7 +2313,7 @@ def train(args):
             model, val_loader, criterion, args, amp_enabled,
             eval_step, float(epoch), train_loss,
             run_dir, ckpt_dir, history, scheduler, optimizer,
-            scaler, best_val_loss,
+            scaler, best_val_loss, sel_criterion=sel_criterion,
         )
         if history and history[-1]["val_loss"] < best_val_loss:
             best_val_loss = history[-1]["val_loss"]
@@ -2165,10 +2325,11 @@ def train(args):
 def _run_eval(model, val_loader, criterion, args, amp_enabled,
               eval_step, epoch_frac, train_loss,
               run_dir, ckpt_dir, history, scheduler, optimizer,
-              scaler, best_val_loss):
+              scaler, best_val_loss, sel_criterion=None):
     """Run validation, benchmarks, save graphs/checkpoints/history."""
     val_loss, val_extra = validate_and_collect(
         model, val_loader, criterion, args.device, amp_enabled=amp_enabled,
+        sel_criterion=sel_criterion,
     )
     val_targets = val_extra["targets"]
     val_preds = val_extra["preds"]
@@ -2288,6 +2449,9 @@ if __name__ == "__main__":
     parser.add_argument("--subsample", type=int, default=1, help="Train on every Nth sample (e.g. 4 = 4x less data)")
     parser.add_argument("--evals-per-epoch", type=int, default=1, help="Run eval N times per epoch (default 1 = end only)")
     parser.add_argument("--resume", action="store_true", help="Resume from latest checkpoint in the run")
+    parser.add_argument("--warm-start", type=str, default=None, help="Path to checkpoint to load audio weights from (audio_encoder, event_encoder, audio_path, cond_mlp)")
+    parser.add_argument("--freeze-audio", action="store_true", help="Freeze audio_encoder, event_encoder, audio_path, cond_mlp (only train context_path)")
+    parser.add_argument("--miss-penalty", type=float, default=2.0, help="Loss multiplier when context kept #1 but better candidate existed (default 2.0)")
     parser.add_argument("--no-compile", action="store_true", help="Disable torch.compile")
     parser.add_argument("--amp", action="store_true", help="Enable mixed precision (experimental on Windows)")
     parser.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
