@@ -15,7 +15,7 @@ import librosa
 from tqdm import tqdm
 from collections import Counter
 
-from detection_model import OnsetDetector, LegacyOnsetDetector, Exp17OnsetDetector
+from detection_model import OnsetDetector, LegacyOnsetDetector, Exp17OnsetDetector, Exp18OnsetDetector
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 
@@ -483,16 +483,20 @@ def main():
     ckpt = torch.load(args.checkpoint, map_location=args.device, weights_only=False)
     ckpt_args = ckpt["args"]
 
-    # Detect checkpoint era: exp 11-16 (legacy), exp 17 (shared grads), exp 18+ (stop-grad)
+    # Detect checkpoint era by state dict keys and args
+    state_keys = set(ckpt["model"].keys())
     is_legacy = "top_k" not in ckpt_args
+    has_exp18_event_layers = any("context_path.event_layers" in k for k in state_keys)
+    has_gap_layers = any("context_path.gap_layers" in k for k in state_keys)
+
     if is_legacy:
         ModelClass = LegacyOnsetDetector
+    elif has_gap_layers:
+        ModelClass = OnsetDetector  # exp 19+ (gap-based context)
+    elif has_exp18_event_layers:
+        ModelClass = Exp18OnsetDetector  # exp 18 (two-stage shared encoder)
     else:
-        # exp 17: has context_path layers but no event_layers (single-stage decoder)
-        # exp 18+: has context_path.event_layers (two-stage: event understanding + selection)
-        state_keys = set(ckpt["model"].keys())
-        has_event_layers = any("context_path.event_layers" in k for k in state_keys)
-        ModelClass = OnsetDetector if has_event_layers else Exp17OnsetDetector
+        ModelClass = Exp17OnsetDetector  # exp 17 (single-stage shared encoder)
 
     # Build model kwargs based on checkpoint era
     base_kwargs = dict(
@@ -507,25 +511,31 @@ def main():
         max_events=C_EVENTS,
     )
     if ModelClass == LegacyOnsetDetector:
-        # exp 11-16: uses context_path_layers
         base_kwargs["context_path_layers"] = ckpt_args.get("context_path_layers", 3)
     elif ModelClass == Exp17OnsetDetector:
-        # exp 17: uses context_path_layers + top_k
         base_kwargs["context_path_layers"] = ckpt_args.get("context_path_layers", 3)
         base_kwargs["top_k"] = ckpt_args.get("top_k", 20)
-    else:
-        # exp 18+: two-stage context (event layers + select layers) + top_k
+    elif ModelClass == Exp18OnsetDetector:
         base_kwargs["context_event_layers"] = ckpt_args.get("context_event_layers", 2)
         base_kwargs["context_select_layers"] = ckpt_args.get("context_select_layers", 2)
         base_kwargs["top_k"] = ckpt_args.get("top_k", 20)
+    else:
+        # exp 19+: gap-based context with own encoders
+        base_kwargs["d_ctx"] = ckpt_args.get("d_ctx", 192)
+        base_kwargs["context_gap_layers"] = ckpt_args.get("context_gap_layers", 2)
+        base_kwargs["context_select_layers"] = ckpt_args.get("context_select_layers", 2)
+        base_kwargs["top_k"] = ckpt_args.get("top_k", 20)
+        base_kwargs["snippet_frames"] = ckpt_args.get("snippet_frames", 10)
     model_kwargs = base_kwargs
 
     model = ModelClass(**model_kwargs).to(args.device)
     model.load_state_dict(ckpt["model"])
-    if is_legacy:
+    if ModelClass == LegacyOnsetDetector:
         print("  (legacy checkpoint — exp 11-16 additive logits)")
     elif ModelClass == Exp17OnsetDetector:
         print("  (exp 17 checkpoint — shared-gradient top-K reranking)")
+    elif ModelClass == Exp18OnsetDetector:
+        print("  (exp 18 checkpoint — two-stage stop-gradient reranking)")
     t_model_load = time.perf_counter() - t0
     print(f"  Epoch {ckpt['epoch']}, val_loss={ckpt['val_loss']:.4f}, acc={ckpt.get('val_metrics', {}).get('accuracy', 0):.3f}")
 

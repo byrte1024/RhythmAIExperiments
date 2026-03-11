@@ -17,6 +17,7 @@ Each folder contains a README with hypothesis, results, and key graphs.
 | 16 | [Rank-Weighted Context Loss](experiment_16/) | Failed | Forced opinions degraded combined output. Val loss increasing, top-K dropped 3-5pp. Wrong opinions worse than no opinions |
 | 17 | [Top-K Reranking Architecture](experiment_17/) | Partial | First context activation ever (50% override), but override accuracy ~51% (coin flip). 43% acc, 65.3% HIT — below exp 14's audio-only 69% |
 | 18 | [Gradient-Isolated Context + Two-Stage Event Focus](experiment_18/) | Failed | Stop-gradient works (audio protected), but context overrides net-harmful (-0.94pp). 35% override accuracy, worse than coin flip. Reranking paradigm may be fundamentally flawed |
+| 19 | [Gap-Based Context with Own Encoders](experiment_19/) | Pending | Gap representation (inter-onset intervals) + local ~50ms mel snippets + own encoders (2.5M). d_ctx=192, 16M total |
 
 ## Key Lessons
 
@@ -31,3 +32,4 @@ Each folder contains a README with hypothesis, results, and key graphs.
 - **Can't aux-loss out of rubber-stamping** — 0.1 context aux CE had zero effect on context engagement over 4 epochs (exp 15). The local minimum of "agree with audio" is stable under standard CE
 - **Wrong opinions worse than no opinions** — rank-weighted context loss forced context to have strong opinions, which corrupted audio's correct rankings and dropped top-K by 3-5pp (exp 16). Loss-function approaches can't solve a structural problem
 - **Activation ≠ value** — top-K reranking forced context to engage (50% override rate, first ever), but override accuracy plateaued at 51% (coin flip). Shared encoder gradients degraded audio quality, netting -7.5pp accuracy vs audio-only exp 14 (exp 17). Next: full path separation with stop-gradient
+- **Stop-gradient works, two-stage doesn't help** — gradient isolation protects audio HIT (67.5% at E1), proven reliable (exp 18). But two-stage architecture with shared encoder features still produced harmful overrides (35% accuracy, -0.94pp). The problem isn't architecture — it's that shared encoder features aren't shaped for context's task

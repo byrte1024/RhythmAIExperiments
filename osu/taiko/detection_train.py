@@ -1760,13 +1760,15 @@ def train(args):
     # model
     model = OnsetDetector(
         n_mels=80, d_model=args.d_model, d_event=args.d_event,
+        d_ctx=args.d_ctx,
         enc_layers=args.enc_layers, enc_event_layers=args.enc_event_layers,
         audio_path_layers=args.audio_path_layers,
-        context_event_layers=args.context_event_layers,
+        context_gap_layers=args.context_gap_layers,
         context_select_layers=args.context_select_layers,
         n_heads=args.n_heads,
         n_classes=N_CLASSES, max_events=C_EVENTS, dropout=args.dropout,
         top_k=args.top_k,
+        snippet_frames=args.snippet_frames,
     ).to(args.device)
 
     n_params = sum(p.numel() for p in model.parameters())
@@ -1857,6 +1859,11 @@ def train(args):
         train_miss_sum = 0
         train_w10_sum = 0
         train_w3_sum = 0
+        train_audio_miss_sum = 0
+        train_audio_hit_sum = 0
+        train_audio_loss_sum = 0
+        train_sel_loss_sum = 0
+        train_loss_count = 0
 
         # compute batch indices where we trigger eval
         if evals_per_epoch > 1:
@@ -1923,14 +1930,20 @@ def train(args):
             bs = target.size(0)
             train_loss += loss.item() * bs
             train_total += bs
+            train_audio_loss_sum += audio_loss.item() * bs
+            train_sel_loss_sum += sel_loss.item() * bs
+            train_loss_count += bs
 
             # batch metrics for tqdm - accumulate on GPU, sync every 50 batches
             with torch.no_grad():
                 pred = logits.argmax(1)
+                audio_pred = audio_logits.argmax(1)
                 ns = target < (N_CLASSES - 1)
                 ns_count = ns.sum()
                 if ns_count > 0:
                     t_ns = target[ns].float()
+
+                    # Final (after context) stats
                     p_ns = pred[ns].float()
                     frame_err = (p_ns - t_ns).abs()
                     pct_err = ((p_ns + 1) / (t_ns + 1) - 1.0).abs()
@@ -1939,20 +1952,30 @@ def train(args):
                     train_w10_sum += ((pct_err <= 0.10) | (frame_err <= 2)).sum().item()
                     train_w3_sum += ((pct_err <= 0.03) | (frame_err <= 1)).sum().item()
 
+                    # Audio-only stats
+                    ap_ns = audio_pred[ns].float()
+                    a_frame_err = (ap_ns - t_ns).abs()
+                    a_pct_err = ((ap_ns + 1) / (t_ns + 1) - 1.0).abs()
+                    train_audio_miss_sum += (a_pct_err > 0.20).sum().item()
+                    train_audio_hit_sum += ((a_pct_err <= 0.10) | (a_frame_err <= 2)).sum().item()
+
             # update bars
             epoch_bar.update(1)
             if seg_bar is not None:
                 seg_bar.update(1)
 
             if (batch_idx + 1) % 50 == 0 or batch_idx in eval_at:
-                avg_loss = train_loss / train_total
+                a_loss = train_audio_loss_sum / train_loss_count
+                s_loss = train_sel_loss_sum / train_loss_count
                 if train_ns_total > 0:
-                    stats = (f"loss={avg_loss:.4f} "
-                             f"≤3%={train_w3_sum/train_ns_total:.1%} "
-                             f"≤10%={train_w10_sum/train_ns_total:.1%} "
-                             f"miss={train_miss_sum/train_ns_total:.1%}")
+                    a_hit = train_audio_hit_sum / train_ns_total
+                    a_miss = train_audio_miss_sum / train_ns_total
+                    c_hit = train_w10_sum / train_ns_total
+                    c_miss = train_miss_sum / train_ns_total
+                    stats = (f"audio[L={a_loss:.3f} HIT={a_hit:.1%} miss={a_miss:.1%}] "
+                             f"ctx[L={s_loss:.3f} HIT={c_hit:.1%} miss={c_miss:.1%}]")
                 else:
-                    stats = f"loss={avg_loss:.4f}"
+                    stats = f"audio_L={a_loss:.3f} sel_L={s_loss:.3f}"
                 epoch_bar.set_postfix_str(stats)
 
             # ── mid-epoch eval checkpoint ──
@@ -2098,8 +2121,10 @@ if __name__ == "__main__":
     parser.add_argument("--enc-layers", type=int, default=4)
     parser.add_argument("--enc-event-layers", type=int, default=2)
     parser.add_argument("--audio-path-layers", type=int, default=2)
-    parser.add_argument("--context-event-layers", type=int, default=2, help="Context event understanding layers (self-attn only)")
-    parser.add_argument("--context-select-layers", type=int, default=2, help="Context candidate selection layers (self-attn + cross-attn)")
+    parser.add_argument("--d-ctx", type=int, default=192, help="Context path hidden dimension (default 192)")
+    parser.add_argument("--context-gap-layers", type=int, default=2, help="Context gap encoder layers (self-attn)")
+    parser.add_argument("--context-select-layers", type=int, default=2, help="Context candidate selection layers (cross-attn)")
+    parser.add_argument("--snippet-frames", type=int, default=10, help="Mel frames per audio snippet (~5ms each, default 10 = ~50ms)")
     parser.add_argument("--n-heads", type=int, default=8)
     parser.add_argument("--dropout", type=float, default=0.1)
     parser.add_argument("--top-k", type=int, default=20, help="Number of audio candidates for context reranking (default 20)")
