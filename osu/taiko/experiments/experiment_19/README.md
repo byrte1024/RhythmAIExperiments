@@ -88,8 +88,42 @@ Same as exp 18:
 
 ## Result
 
-*Pending.*
+**Most promising context results yet, but still net-negative.** Killed after E3.
+
+| Metric | E1 | E2 | E3 |
+|--------|----|----|-----|
+| Audio HIT | 66.8% | 68.1% | 67.3% |
+| Final HIT | 65.9% | 67.9% | 66.9% |
+| Context delta | -0.89pp | **-0.18pp** | -0.44pp |
+| Override rate | 8.1% | 6.1% | 6.1% |
+| Override accuracy | 36.5% | **40.4%** | 38.2% |
+| Override F1 | 14.6% | 13.3% | 12.2% |
+| Rescued | 31.1% | 36.7% | 32.5% |
+| Damaged | 42.1% | 39.6% | 39.7% |
+| True Top1 | 63.0% | 65.4% | 64.5% |
+| False Top1 | 29.0% | 28.5% | 29.4% |
+| True TopK | 2.9% | 2.5% | 2.3% |
+| False TopK | 3.8% | 2.7% | 2.8% |
+| Inaccurate TopK | 1.7% | 1.2% | 1.3% |
+
+**What worked:**
+- Gap-based representation is the right framing. During training, context consistently beat audio (54.2% vs 52.5% HIT at 58% through E1). First time context ever outperformed audio on any metric.
+- Own encoders with direct gradient signal — context path trained without detach, gradient isolation is structural (no shared encoder outputs used).
+- Override accuracy (36-40%) is better than exp 18's declining 35%, and E2 hit 40.4%.
+- Delta reached -0.18pp at E2 — closest to break-even any context experiment has achieved.
+- New metrics (override F1, decision categories) give clear diagnostic signal.
+
+**What didn't work:**
+- Training advantage didn't fully transfer to validation — context memorized training patterns but didn't generalize.
+- Delta bounced between -0.18pp and -0.89pp rather than converging toward zero.
+- Override F1 slowly declined (14.6% → 12.2%) — context didn't improve at overriding over epochs.
+- ~29% false_top1 (kept #1 when it was wrong) shows massive untapped opportunity.
+
+**Key issue: audio instability during training.**
+Context learns to rerank proposals from an audio model that is itself still learning. Early batches have ~15% HIT audio proposals — mostly garbage. Context wastes capacity learning patterns about bad proposals that become irrelevant as audio improves. By E3, audio has stabilized near 67-69% but context has already baked in noisy patterns.
 
 ## Lesson
 
-*Pending.*
+- **Gap representation works** — inter-onset intervals + local audio snippets + own encoders is the right architecture for context. First experiment where context showed positive signal during training.
+- **Unstable proposer poisons the selector** — context can't learn to rerank well when the proposals themselves are changing. The ~29% false_top1 rate (missed overrides) suggests context is too conservative, possibly because early noisy overrides were punished.
+- **Next step: warm-start audio from exp 14** — load trained audio weights, freeze them, only train the 2.5M context path against stable high-quality proposals. Also mask selection loss when target isn't in top-K to remove impossible training signal.

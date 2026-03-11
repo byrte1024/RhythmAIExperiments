@@ -17,7 +17,7 @@ Each folder contains a README with hypothesis, results, and key graphs.
 | 16 | [Rank-Weighted Context Loss](experiment_16/) | Failed | Forced opinions degraded combined output. Val loss increasing, top-K dropped 3-5pp. Wrong opinions worse than no opinions |
 | 17 | [Top-K Reranking Architecture](experiment_17/) | Partial | First context activation ever (50% override), but override accuracy ~51% (coin flip). 43% acc, 65.3% HIT — below exp 14's audio-only 69% |
 | 18 | [Gradient-Isolated Context + Two-Stage Event Focus](experiment_18/) | Failed | Stop-gradient works (audio protected), but context overrides net-harmful (-0.94pp). 35% override accuracy, worse than coin flip. Reranking paradigm may be fundamentally flawed |
-| 19 | [Gap-Based Context with Own Encoders](experiment_19/) | Pending | Gap representation (inter-onset intervals) + local ~50ms mel snippets + own encoders (2.5M). d_ctx=192, 16M total |
+| 19 | [Gap-Based Context with Own Encoders](experiment_19/) | Hopeful | First context to beat audio during training. Gap repr + snippets + own encoders. Delta -0.18pp at E2 (best ever), but plateaued. Unstable proposer poisons selector |
 
 ## Key Lessons
 
@@ -33,3 +33,4 @@ Each folder contains a README with hypothesis, results, and key graphs.
 - **Wrong opinions worse than no opinions** — rank-weighted context loss forced context to have strong opinions, which corrupted audio's correct rankings and dropped top-K by 3-5pp (exp 16). Loss-function approaches can't solve a structural problem
 - **Activation ≠ value** — top-K reranking forced context to engage (50% override rate, first ever), but override accuracy plateaued at 51% (coin flip). Shared encoder gradients degraded audio quality, netting -7.5pp accuracy vs audio-only exp 14 (exp 17). Next: full path separation with stop-gradient
 - **Stop-gradient works, two-stage doesn't help** — gradient isolation protects audio HIT (67.5% at E1), proven reliable (exp 18). But two-stage architecture with shared encoder features still produced harmful overrides (35% accuracy, -0.94pp). The problem isn't architecture — it's that shared encoder features aren't shaped for context's task
+- **Gap representation is the right framing** — inter-onset intervals + local audio snippets + own encoders produced the first context that beat audio during training (exp 19). Delta reached -0.18pp at E2 (best ever). But an unstable proposer (audio still learning) poisons the selector — context wastes capacity on noisy early proposals. Next: warm-start audio, freeze it, train only context
