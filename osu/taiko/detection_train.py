@@ -1500,15 +1500,56 @@ def save_epoch_graphs(targets, preds, metrics, epoch, run_dir, extra=None):
             rescued = 0.0
             damaged = 0.0
 
+        # Decision categories: true/false top1/topK breakdown
+        # Uses non-stop preds only (already filtered above)
+        chosen_is_top1 = chosen_rank == 0
+        chosen_is_other = ~chosen_is_top1
+
+        # Was audio's #1 correct? (HIT = ≤3% or ±1 frame)
+        top1_bins_f = tidx_ns[:, 0].astype(np.float64)
+        t_ns_f64 = t_ns.astype(np.float64)
+        top1_ratio = np.abs((top1_bins_f + 1) / (t_ns_f64 + 1) - 1.0)
+        top1_frame = np.abs(top1_bins_f - t_ns_f64)
+        top1_correct = (top1_ratio <= 0.03) | (top1_frame <= 1)
+
+        # Was context's final pick correct?
+        fp_ns_f64 = extra["preds"][ns].astype(np.float64)
+        final_ratio = np.abs((fp_ns_f64 + 1) / (t_ns_f64 + 1) - 1.0)
+        final_frame = np.abs(fp_ns_f64 - t_ns_f64)
+        final_correct = (final_ratio <= 0.03) | (final_frame <= 1)
+
+        n_ns = len(t_ns)
+        true_top1 = float((chosen_is_top1 & top1_correct).sum() / n_ns)
+        false_top1 = float((chosen_is_top1 & ~top1_correct).sum() / n_ns)
+        true_topK = float((chosen_is_other & final_correct).sum() / n_ns)
+        false_topK = float((chosen_is_other & top1_correct).sum() / n_ns)
+        inaccurate_topK = float((chosen_is_other & ~final_correct & ~top1_correct).sum() / n_ns)
+
+        # Override F1: measures quality of the override decision
+        ovr_tp = true_topK * n_ns
+        ovr_fp = (false_topK + inaccurate_topK) * n_ns
+        ovr_fn = false_top1 * n_ns
+        ovr_prec = ovr_tp / (ovr_tp + ovr_fp) if (ovr_tp + ovr_fp) > 0 else 0.0
+        ovr_rec = ovr_tp / (ovr_tp + ovr_fn) if (ovr_tp + ovr_fn) > 0 else 0.0
+        override_f1 = 2 * ovr_prec * ovr_rec / (ovr_prec + ovr_rec) if (ovr_prec + ovr_rec) > 0 else 0.0
+
         # Save selection stats to extra for JSON serialization
         extra["selection_stats"] = {
             "override_rate": float(override_rate),
             "override_accuracy": override_acc,
+            "override_f1": override_f1,
+            "override_precision": ovr_prec,
+            "override_recall": ovr_rec,
             "audio_hit_rate": audio_hit_rate,
             "final_hit_rate": final_hit_rate,
             "context_delta": context_delta,
             "rescued_rate": rescued,
             "damaged_rate": damaged,
+            "true_top1": true_top1,
+            "false_top1": false_top1,
+            "true_topK": true_topK,
+            "false_topK": false_topK,
+            "inaccurate_topK": inaccurate_topK,
             "target_in_topk": float(target_in_topk.mean()),
             "rank_distribution": [float(counts[i] / counts.sum()) for i in range(min(10, K))],
         }
@@ -1657,6 +1698,66 @@ def save_training_curves(history, run_dir):
     fig.tight_layout()
     fig.savefig(os.path.join(run_dir, "relative_error.png"), dpi=150)
     plt.close(fig)
+
+    # ── override F1 / precision / recall ──
+    has_ss = any("selection_stats" in h for h in history)
+    if has_ss:
+        fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(16, 5))
+
+        # Left: Override F1, precision, recall
+        for key, label, color in [
+            ("override_f1", "Override F1", "#4a90d9"),
+            ("override_precision", "Precision", "#6bc46d"),
+            ("override_recall", "Recall", "#e8834a"),
+        ]:
+            vals = [h.get("selection_stats", {}).get(key, 0) for h in history]
+            ax1.plot(epochs, vals, label=label, linewidth=2, color=color)
+        ax1.set_xlabel("Epoch")
+        ax1.set_ylabel("Score")
+        ax1.set_title("Override Quality (F1 / Precision / Recall)")
+        ax1.legend()
+        ax1.set_ylim(0, 1)
+        ax1.grid(True, alpha=0.3)
+
+        # Right: Audio HIT vs Final HIT + context delta
+        a_hit = [h.get("selection_stats", {}).get("audio_hit_rate", 0) for h in history]
+        f_hit = [h.get("selection_stats", {}).get("final_hit_rate", 0) for h in history]
+        delta = [h.get("selection_stats", {}).get("context_delta", 0) for h in history]
+        ax2.plot(epochs, a_hit, label="Audio HIT", linewidth=2, color="#4a90d9")
+        ax2.plot(epochs, f_hit, label="Final HIT", linewidth=2, color="#6bc46d")
+        ax2b = ax2.twinx()
+        ax2b.bar(epochs, delta, alpha=0.3, color="#e8834a", width=0.3, label="Delta")
+        ax2b.axhline(y=0, color="gray", linestyle="--", alpha=0.5)
+        ax2b.set_ylabel("Context Delta (pp)")
+        ax2.set_xlabel("Epoch")
+        ax2.set_ylabel("HIT Rate")
+        ax2.set_title("Audio vs Final HIT Rate")
+        ax2.legend(loc="upper left")
+        ax2b.legend(loc="upper right")
+        ax2.grid(True, alpha=0.3)
+
+        fig.tight_layout()
+        fig.savefig(os.path.join(run_dir, "override_quality.png"), dpi=150)
+        plt.close(fig)
+
+        # ── decision categories stacked area ──
+        fig, ax = plt.subplots(figsize=(10, 5))
+        cats = ["true_top1", "false_top1", "true_topK", "false_topK", "inaccurate_topK"]
+        labels = ["True Top1", "False Top1", "True TopK", "False TopK", "Inaccurate TopK"]
+        colors = ["#6bc46d", "#fcb71e", "#4a90d9", "#eb4528", "#c76dba"]
+        cat_data = []
+        for cat in cats:
+            cat_data.append([h.get("selection_stats", {}).get(cat, 0) for h in history])
+        ax.stackplot(epochs, *cat_data, labels=labels, colors=colors, alpha=0.8)
+        ax.set_xlabel("Epoch")
+        ax.set_ylabel("Fraction of Predictions")
+        ax.set_title("Context Decision Categories")
+        ax.legend(loc="upper right", fontsize=8)
+        ax.set_ylim(0, 1)
+        ax.grid(True, alpha=0.3)
+        fig.tight_layout()
+        fig.savefig(os.path.join(run_dir, "decision_categories.png"), dpi=150)
+        plt.close(fig)
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -1864,6 +1965,11 @@ def train(args):
         train_audio_loss_sum = 0
         train_sel_loss_sum = 0
         train_loss_count = 0
+        train_true_top1 = 0
+        train_false_top1 = 0
+        train_true_topK = 0
+        train_false_topK = 0
+        train_inaccurate_topK = 0
 
         # compute batch indices where we trigger eval
         if evals_per_epoch > 1:
@@ -1959,6 +2065,28 @@ def train(args):
                     train_audio_miss_sum += (a_pct_err > 0.20).sum().item()
                     train_audio_hit_sum += ((a_pct_err <= 0.10) | (a_frame_err <= 2)).sum().item()
 
+                    # Override decision categories (non-stop only)
+                    # "top1" = context picked audio's #1; "topK" = context overrode
+                    sel_chosen = sel_logits.argmax(1)  # (B,) which candidate context picked
+                    sel_chosen_ns = sel_chosen[ns]
+                    picked_top1 = (sel_chosen_ns == 0)  # picked audio's #1
+                    picked_other = ~picked_top1
+
+                    # Was audio's #1 correct? (HIT = ≤3% or ±1 frame)
+                    top1_bins = topk_idx[ns, 0].float()
+                    top1_ferr = (top1_bins - t_ns).abs()
+                    top1_perr = ((top1_bins + 1) / (t_ns + 1) - 1.0).abs()
+                    top1_correct = (top1_perr <= 0.03) | (top1_ferr <= 1)
+
+                    # Was context's final pick correct?
+                    final_correct = (pct_err <= 0.03) | (frame_err <= 1)
+
+                    train_true_top1 += (picked_top1 & top1_correct).sum().item()
+                    train_false_top1 += (picked_top1 & ~top1_correct).sum().item()
+                    train_true_topK += (picked_other & final_correct).sum().item()
+                    train_false_topK += (picked_other & top1_correct).sum().item()
+                    train_inaccurate_topK += (picked_other & ~final_correct & ~top1_correct).sum().item()
+
             # update bars
             epoch_bar.update(1)
             if seg_bar is not None:
@@ -1972,8 +2100,17 @@ def train(args):
                     a_miss = train_audio_miss_sum / train_ns_total
                     c_hit = train_w10_sum / train_ns_total
                     c_miss = train_miss_sum / train_ns_total
+                    # Override F1: precision=correct overrides/all overrides,
+                    # recall=correct overrides/(correct overrides + missed overrides)
+                    ovr_tp = train_true_topK
+                    ovr_fp = train_false_topK + train_inaccurate_topK
+                    ovr_fn = train_false_top1  # picked #1 but it was wrong
+                    ovr_prec = ovr_tp / (ovr_tp + ovr_fp) if (ovr_tp + ovr_fp) > 0 else 0
+                    ovr_rec = ovr_tp / (ovr_tp + ovr_fn) if (ovr_tp + ovr_fn) > 0 else 0
+                    ovr_f1 = 2 * ovr_prec * ovr_rec / (ovr_prec + ovr_rec) if (ovr_prec + ovr_rec) > 0 else 0
                     stats = (f"audio[L={a_loss:.3f} HIT={a_hit:.1%} miss={a_miss:.1%}] "
-                             f"ctx[L={s_loss:.3f} HIT={c_hit:.1%} miss={c_miss:.1%}]")
+                             f"ctx[L={s_loss:.3f} HIT={c_hit:.1%} miss={c_miss:.1%}] "
+                             f"ovr_f1={ovr_f1:.1%}")
                 else:
                     stats = f"audio_L={a_loss:.3f} sel_L={s_loss:.3f}"
                 epoch_bar.set_postfix_str(stats)
@@ -2051,6 +2188,16 @@ def _run_eval(model, val_loader, criterion, args, amp_enabled,
           f"±2f={val_metrics.get('within_2_frames', 0):.1%} | "
           f"≤3%={val_metrics.get('within_3pct', 0):.1%} ≤10%={val_metrics.get('within_10pct', 0):.1%} | "
           f"stop_f1={val_metrics['stop_f1']:.3f} | lr={scheduler.get_last_lr()[0]:.2e}")
+
+    # Print override decision breakdown
+    ss = val_extra.get("selection_stats", {}) if val_extra else {}
+    if ss:
+        print(f"    Override: F1={ss.get('override_f1', 0):.1%} "
+              f"(P={ss.get('override_precision', 0):.1%} R={ss.get('override_recall', 0):.1%}) "
+              f"rate={ss.get('override_rate', 0):.1%} delta={ss.get('context_delta', 0):+.2%}")
+        print(f"    Decisions: T1={ss.get('true_top1', 0):.1%} F1={ss.get('false_top1', 0):.1%} | "
+              f"TK={ss.get('true_topK', 0):.1%} FK={ss.get('false_topK', 0):.1%} "
+              f"IK={ss.get('inaccurate_topK', 0):.1%}")
 
     # ── ablation benchmarks ──
     bench_results = run_benchmarks(model, val_loader, args.device, amp_enabled=amp_enabled)
