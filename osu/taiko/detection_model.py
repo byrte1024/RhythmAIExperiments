@@ -529,8 +529,9 @@ class ContextPath(nn.Module):
         ])
 
         # ── Candidate building ──
+        self.score_proj = nn.Sequential(nn.Linear(1, d_ctx), nn.GELU())
         self.candidate_combine = nn.Sequential(
-            nn.Linear(d_ctx * 2, d_ctx),  # gap_emb + snippet (no audio scores)
+            nn.Linear(d_ctx * 3, d_ctx),  # gap_emb + snippet + score
             nn.GELU(),
             nn.LayerNorm(d_ctx),
         )
@@ -701,8 +702,13 @@ class ContextPath(nn.Module):
             cand_snippet_feat = cand_snippet_feat.clone()
             cand_snippet_feat[is_stop] = self.stop_snippet_emb
 
+        # Audio confidence per candidate (softmax probability, no rank info)
+        audio_probs = F.softmax(audio_logits_det, dim=-1)
+        cand_probs = audio_probs.gather(1, top_k_indices.long())  # (B, K)
+        score_feat = self.score_proj(cand_probs.unsqueeze(-1))  # (B, K, d_ctx)
+
         candidate_feat = self.candidate_combine(
-            torch.cat([cand_gap_emb, cand_snippet_feat], dim=-1)
+            torch.cat([cand_gap_emb, cand_snippet_feat, score_feat], dim=-1)
         )  # (B, K, d_ctx)
 
         # Shuffle candidates so context can't learn positional bias (k=0 = audio's #1)

@@ -1600,7 +1600,7 @@ def save_epoch_graphs(targets, preds, metrics, epoch, run_dir, extra=None):
         true_top1 = float((chosen_is_top1 & top1_correct).sum() / n_ns)
         false_top1 = float((chosen_is_top1 & ~top1_correct).sum() / n_ns)
         true_topK = float((chosen_is_other & final_correct).sum() / n_ns)
-        false_topK = float((chosen_is_other & top1_correct).sum() / n_ns)
+        false_topK = float((chosen_is_other & ~final_correct & top1_correct).sum() / n_ns)
         inaccurate_topK = float((chosen_is_other & ~final_correct & ~top1_correct).sum() / n_ns)
 
         # Override F1: measures quality of the override decision

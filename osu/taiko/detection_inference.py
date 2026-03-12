@@ -531,14 +531,18 @@ def main():
 
     model = ModelClass(**model_kwargs).to(args.device)
     state = ckpt["model"]
-    # exp 19-21 checkpoints have score_proj (removed in exp 22+)
-    if has_gap_layers and has_score_proj:
-        state = {k: v for k, v in state.items() if "score_proj" not in k}
-        # candidate_combine weight shape changed (d_ctx*3 → d_ctx*2), reinit
-        for k in list(state.keys()):
-            if "candidate_combine" in k:
-                del state[k]
-        model.load_state_dict(state, strict=False)
+    if has_gap_layers:
+        # Check if score_proj shape matches current model (exp 23+: Linear(1, d_ctx))
+        score_proj_key = "context_path.score_proj.0.weight"
+        current_shape = model.state_dict().get(score_proj_key, torch.empty(0)).shape
+        ckpt_shape = state.get(score_proj_key, torch.empty(0)).shape
+        if current_shape != ckpt_shape:
+            # Shape mismatch (exp 19-21: Linear(2,...) or exp 22: missing) — reinit
+            state = {k: v for k, v in state.items()
+                     if "score_proj" not in k and "candidate_combine" not in k}
+            model.load_state_dict(state, strict=False)
+        else:
+            model.load_state_dict(state)
     else:
         model.load_state_dict(state)
     if ModelClass == LegacyOnsetDetector:

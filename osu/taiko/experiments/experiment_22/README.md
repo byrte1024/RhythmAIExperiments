@@ -80,4 +80,55 @@ No baseline comparison, no miss penalty, no asymmetric scaling. The loss simply 
 
 ## Result
 
-*Pending*
+**Context overrides too aggressively without audio confidence signal.** Killed after E15.
+
+| Metric | E1 | E5 | E10 | E14 (best) | E15 |
+|--------|----|----|-----|------------|-----|
+| Audio HIT | 69.5% | 69.5% | 69.5% | 69.5% | 69.5% |
+| Final HIT | 58.9% | 62.9% | 63.8% | **64.8%** | 63.5% |
+| Delta | -10.6pp | -6.6pp | -5.7pp | **-4.6pp** | -5.9pp |
+| Override rate | 65.1% | 54.7% | 53.5% | 52.5% | 56.2% |
+| Override accuracy | 47.8% | 49.5% | 51.1% | **52.3%** | 51.0% |
+| Override F1 | 48.5% | 48.5% | 48.9% | 49.6% | **49.8%** |
+| false_top1 | 7.2% | 9.5% | 10.0% | 9.2% | **9.0%** |
+| true_topK | 31.1% | 27.1% | 27.3% | 27.4% | 28.6% |
+| false_topK | 41.7% | 33.7% | 33.0% | 31.4% | 34.6% |
+| inaccurate_topK | 17.2% | 14.3% | 14.1% | 12.8% | 14.3% |
+
+**What worked:**
+- Shuffling eliminated positional bias — context can't learn "k=0 is usually right."
+- When context overrides, it rarely picks garbage — inaccurate_topK stayed low (12-14%). The override selections are mostly reasonable positions.
+- false_top1 dropped to 9% — context catches ~70% of audio's mistakes (vs ~20% false_top1 in exp 21). It overrides aggressively when audio is wrong.
+- Delta slowly improved over 15 epochs (-10.6pp → -4.6pp at E14), showing learning signal exists.
+- Override accuracy crossed 50% by E10 — context is slightly better than coin flip.
+
+**What didn't work:**
+- Delta still deeply negative (-4.6pp at best vs exp 21's -0.77pp). Context overrides >50% of predictions — way too many.
+- Without audio confidence, context has no signal about WHEN to override. It overrides uniformly whether audio was 99% sure or 30% sure. This wastes correct #1 picks.
+- Override accuracy plateaued around 51% — barely above coin flip despite 15 epochs. Shuffled candidates without scores is genuinely hard.
+- false_topK (31-35%) consistently exceeds true_topK (27-29%). Bad overrides outnumber good ones.
+
+**Key insight:** Audio confidence IS an informative signal. When audio is very confident, its #1 is almost always correct — overriding is wasteful. When audio is uncertain, overriding is valuable. Removing this signal entirely forces context to override blindly. The right approach: give confidence as a per-candidate scalar (shuffled), not rank ordering.
+
+## Graphs
+
+![Loss](loss.png)
+![Accuracy](accuracy.png)
+![Hit/Good/Miss](hit_good_miss.png)
+![Frame Error](frame_error.png)
+![Frame Tiers](frame_tiers.png)
+![Ratio Tiers](ratio_tiers.png)
+![Relative Error](relative_error.png)
+![Stop F1](stop_f1.png)
+![Override Quality](override_quality.png)
+![Decision Categories](decision_categories.png)
+![Selection Analysis E15](epoch_015_selection_analysis.png)
+![Heatmap E15](epoch_015_heatmap.png)
+![Scatter E15](epoch_015_scatter.png)
+
+## Lesson
+
+- **Audio confidence is informative, not just bias.** Stripping all score info forced context to override 50%+ of predictions uniformly. Context needs to know "how sure was audio?" to decide when overriding is worthwhile.
+- **Shuffling works** — eliminates positional bias, should be kept. The problem was removing scores, not shuffling order.
+- **Context makes reasonable picks** — low inaccurate_topK (12-14%) shows it understands which positions fit the rhythm. The issue is override frequency, not override quality.
+- **Next: shuffled candidates WITH confidence scores.** Keep the shuffle (no rank ordering), but attach audio's softmax probability to each candidate as a feature. Context sees "here are 20 positions, each with a confidence level" in random order. It can learn "low confidence = worth investigating, high confidence = trust audio."
