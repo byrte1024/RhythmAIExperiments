@@ -325,73 +325,6 @@ class OnsetLoss(nn.Module):
         return ce.mean()
 
 
-class SelectionLoss(nn.Module):
-    """Simple soft-target loss for K-way candidate selection.
-
-    "Here are 20 positions — pick the best one."
-
-    For each candidate, compute quality = trapezoid closeness to true target
-    (same as OnsetLoss). Normalize to soft probability distribution. Soft CE.
-    Skip samples where no candidate is a HIT (within good_pct).
-
-    No baseline comparison, no asymmetric scaling, no audio-awareness.
-    Context is blind to which candidate audio preferred.
-    """
-
-    def __init__(self, good_pct=0.03, fail_pct=0.20, frame_tolerance=1):
-        super().__init__()
-        self.good_pct = good_pct
-        self.fail_pct = fail_pct
-        self.frame_tolerance = frame_tolerance
-
-    def forward(self, sel_logits, topk_indices, targets):
-        """
-        sel_logits: (B, K) context's scores over K candidates (shuffled)
-        topk_indices: (B, K) bin indices for each candidate (shuffled to match)
-        targets: (B,) true target bins (or STOP=500)
-        Returns: scalar loss
-        """
-        B, K = sel_logits.shape
-        stop = 500
-        is_stop = (targets == stop)
-
-        # ── 1. Quality of each candidate: trapezoid closeness to target ──
-        cand = topk_indices.float()  # (B, K)
-        tgt = targets.float().unsqueeze(1)  # (B, 1)
-
-        pct_err = ((cand + 1) / (tgt + 1) - 1.0).abs()  # (B, K)
-        frame_err = (cand - tgt).abs()  # (B, K)
-
-        # Trapezoid: 1.0 within good_pct, ramp to 0 at fail_pct
-        ramp = self.fail_pct - self.good_pct
-        ratio_quality = ((self.fail_pct - pct_err) / ramp).clamp(0, 1)
-
-        # Frame floor: ±frame_tolerance always gets some credit
-        ft = self.frame_tolerance
-        frame_quality = ((ft + 1 - frame_err) / (ft + 1)).clamp(0, 1)
-
-        quality = torch.max(ratio_quality, frame_quality)  # (B, K)
-
-        # STOP targets: quality 1.0 for STOP candidates, 0.0 otherwise
-        stop_quality = (topk_indices == stop).float()
-        quality = torch.where(is_stop.unsqueeze(1), stop_quality, quality)
-
-        # ── 2. Skip samples where no candidate is a HIT ──
-        best_quality = quality.max(dim=1).values  # (B,)
-        has_signal = (best_quality > 1e-8)
-
-        # ── 3. Soft targets from quality scores ──
-        soft_targets = quality / quality.sum(dim=1, keepdim=True).clamp(min=1e-8)
-
-        # ── 4. Soft CE ──
-        log_probs = F.log_softmax(sel_logits, dim=-1)
-        per_sample_loss = -(soft_targets * log_probs).sum(dim=-1)  # (B,)
-
-        if has_signal.any():
-            return (per_sample_loss * has_signal.float()).sum() / has_signal.sum()
-        else:
-            return torch.zeros(1, device=sel_logits.device)
-
 
 # ═══════════════════════════════════════════════════════════════
 #  Metrics & Graphs
@@ -434,20 +367,20 @@ def compute_class_weights(dataset, mode="log"):
 
 
 @torch.no_grad()
-def validate_and_collect(model, loader, criterion, device, amp_enabled=False, sel_criterion=None):
+def validate_and_collect(model, loader, criterion, device, amp_enabled=False):
     """Single pass: compute val loss AND collect predictions + extra data for graphs."""
     model.eval()
     all_targets = []
     all_preds = []
     all_audio_preds = []
+    all_context_preds = []
     all_cond = []
     all_prev_gap = []
     all_ctx_len = []
     all_topk = []       # top-10 predictions per sample
     all_entropy = []    # logit entropy per sample
-    all_selection = []  # context's K-way selection logits
-    all_topk_idx = []   # audio's top-K candidate indices
     all_audio_topk = [] # audio-only top-10 for proposal quality tracking
+    all_context_topk = [] # context-only top-10
     total_loss = 0.0
     total_n = 0
     for mel, evt_off, evt_mask, cond, target in tqdm(loader, desc="Validating", leave=False):
@@ -458,44 +391,27 @@ def validate_and_collect(model, loader, criterion, device, amp_enabled=False, se
         target = target.to(device, non_blocking=True)
 
         with torch.autocast("cuda", enabled=amp_enabled):
-            logits, audio_logits, sel_logits, topk_idx = model(mel, evt_off, evt_mask, cond)
+            logits, audio_logits, context_logits = model(mel, evt_off, evt_mask, cond)
 
-            # Val loss: audio loss + selection loss (matches training loss)
-            if sel_criterion is not None:
-                sel_loss = sel_criterion(sel_logits, topk_idx, target)
-            else:
-                # Fallback: hard CE with masking (legacy)
-                stop = N_CLASSES - 1
-                is_stop = (target == stop)
-                frame_dist = torch.abs(topk_idx.float() - target.unsqueeze(1).float())
-                stop_dist = torch.where(topk_idx == stop,
-                                        torch.zeros_like(frame_dist),
-                                        torch.full_like(frame_dist, 1e6))
-                frame_dist = torch.where(is_stop.unsqueeze(1), stop_dist, frame_dist)
-                sel_target = frame_dist.argmin(dim=1)
-                best_dist = frame_dist.gather(1, sel_target.unsqueeze(1)).squeeze(1)
-                has_target = is_stop | (best_dist <= 1)
-                if has_target.any():
-                    sel_loss = F.cross_entropy(sel_logits, sel_target, reduction='none')
-                    sel_loss = (sel_loss * has_target.float()).sum() / has_target.sum()
-                else:
-                    sel_loss = torch.zeros(1, device=sel_logits.device)
-            loss = criterion(audio_logits, target) + sel_loss
+            # Val loss: audio loss + context loss (matches training loss)
+            audio_loss = criterion(audio_logits, target)
+            ctx_loss = criterion(context_logits, target)
+            loss = audio_loss + ctx_loss
 
         total_loss += loss.item() * target.size(0)
         total_n += target.size(0)
         all_preds.append(logits.argmax(1).cpu().numpy())
         all_audio_preds.append(audio_logits.argmax(1).cpu().numpy())
+        all_context_preds.append(context_logits.argmax(1).cpu().numpy())
         all_targets.append(target.cpu().numpy())
         all_cond.append(cond.cpu().numpy())
 
         # top-10 predictions (from combined logits)
         all_topk.append(logits.topk(10, dim=1).indices.cpu().numpy())  # (B, 10)
 
-        # selection data for context analysis
-        all_selection.append(sel_logits.cpu().numpy())  # (B, K)
-        all_topk_idx.append(topk_idx.cpu().numpy())  # (B, K)
+        # audio-only and context-only top-10
         all_audio_topk.append(audio_logits.topk(10, dim=1).indices.cpu().numpy())  # (B, 10)
+        all_context_topk.append(context_logits.topk(10, dim=1).indices.cpu().numpy())  # (B, 10)
 
         # entropy of softmax distribution
         probs = torch.softmax(logits.float(), dim=-1)
@@ -522,14 +438,14 @@ def validate_and_collect(model, loader, criterion, device, amp_enabled=False, se
         "targets": np.concatenate(all_targets),
         "preds": np.concatenate(all_preds),
         "audio_preds": np.concatenate(all_audio_preds),
+        "context_preds": np.concatenate(all_context_preds),
         "conds": np.concatenate(all_cond),
         "prev_gaps": np.concatenate(all_prev_gap),
         "ctx_len": np.concatenate(all_ctx_len),
         "topk": np.concatenate(all_topk),
         "entropy": np.concatenate(all_entropy),
-        "selection": np.concatenate(all_selection),
-        "topk_idx": np.concatenate(all_topk_idx),
         "audio_topk": np.concatenate(all_audio_topk),
+        "context_topk": np.concatenate(all_context_topk),
     }
     return val_loss, extra
 
@@ -642,7 +558,7 @@ def run_benchmarks(model, val_loader, device, amp_enabled=False):
             evt_mask = evt_mask.to(device, non_blocking=True)
             cond = cond.to(device, non_blocking=True)
             with torch.autocast("cuda", enabled=amp_enabled):
-                logits, _audio_logits, _sel_logits, _topk_idx = model(mel, evt_off, evt_mask, cond)
+                logits, _audio_logits, _context_logits = model(mel, evt_off, evt_mask, cond)
             all_preds.append(logits.argmax(1).cpu().numpy())
             all_targets.append(target.numpy())
 
@@ -1409,227 +1325,100 @@ def save_epoch_graphs(targets, preds, metrics, epoch, run_dir, extra=None):
         fig.savefig(f"{prefix}_entropy_hit_vs_miss.png", dpi=120)
         plt.close(fig)
 
-    # ── 12. Audio proposal quality (audio-only top-K) ──
+    # ── 12. Audio / Context / Combined proposal quality (top-K) ──
     audio_topk = extra.get("audio_topk") if extra else None
+    context_topk = extra.get("context_topk") if extra else None
     if audio_topk is not None and len(t_ns) > 0:
         audio_topk_ns = audio_topk[ns]  # (M, 10)
         targets_ns_col = t_ns.reshape(-1, 1)
 
         ks = [1, 2, 3, 5, 10]
-        audio_hit_topk = []
-        for k in ks:
-            tk = audio_topk_ns[:, :k].astype(np.float64)
-            tgt = targets_ns_col.astype(np.float64)
-            ratios = (tk + 1) / (tgt + 1)
-            pct_errs = np.abs(ratios - 1.0)
-            frame_errs = np.abs(tk - tgt)
-            is_hit = ((pct_errs <= 0.03) | (frame_errs <= 1)).any(axis=1)
-            audio_hit_topk.append(is_hit.mean())
 
-        fig, ax = plt.subplots(figsize=(8, 5))
-        x = np.arange(len(ks))
-        w = 0.35
-        # audio proposals
-        ax.bar(x - w/2, audio_hit_topk, w, label="Audio proposals", color="#e8834a")
-        # combined (final) top-K for comparison
-        if topk is not None:
-            topk_ns_data = topk[ns]
-            combined_hit_topk = []
+        def _topk_hit_rates(topk_data):
+            rates = []
             for k in ks:
-                tk = topk_ns_data[:, :k].astype(np.float64)
+                tk = topk_data[:, :k].astype(np.float64)
                 tgt = targets_ns_col.astype(np.float64)
                 ratios = (tk + 1) / (tgt + 1)
                 pct_errs = np.abs(ratios - 1.0)
                 frame_errs = np.abs(tk - tgt)
                 is_hit = ((pct_errs <= 0.03) | (frame_errs <= 1)).any(axis=1)
-                combined_hit_topk.append(is_hit.mean())
-            ax.bar(x + w/2, combined_hit_topk, w, label="Final (after selection)", color="#6bc46d")
+                rates.append(is_hit.mean())
+            return rates
+
+        audio_hit_topk = _topk_hit_rates(audio_topk_ns)
+
+        fig, ax = plt.subplots(figsize=(8, 5))
+        x = np.arange(len(ks))
+        n_bars = 2
+        w = 0.25
+        # audio proposals
+        ax.bar(x - w, audio_hit_topk, w, label="Audio", color="#e8834a")
+        # context proposals
+        if context_topk is not None:
+            ctx_topk_ns = context_topk[ns]
+            ctx_hit_topk = _topk_hit_rates(ctx_topk_ns)
+            ax.bar(x, ctx_hit_topk, w, label="Context", color="#c76dba")
+            n_bars = 3
+        # combined (final) top-K for comparison
+        if topk is not None:
+            topk_ns_data = topk[ns]
+            combined_hit_topk = _topk_hit_rates(topk_ns_data)
+            ax.bar(x + w, combined_hit_topk, w, label="Combined", color="#6bc46d")
         ax.set_xticks(x)
         ax.set_xticklabels([f"Top-{k}" for k in ks])
         ax.set_ylabel("HIT Rate")
         ax.set_ylim(0, 1)
-        ax.set_title(f"Epoch {epoch}: Audio Proposal Quality vs Final")
+        ax.set_title(f"Epoch {epoch}: Audio vs Context vs Combined Top-K")
         ax.legend()
         ax.grid(True, alpha=0.3, axis="y")
         for i, h in enumerate(audio_hit_topk):
-            ax.text(i - w/2, h + 0.02, f"{h:.1%}", ha="center", va="bottom", fontsize=7)
+            ax.text(i - w, h + 0.02, f"{h:.1%}", ha="center", va="bottom", fontsize=7)
         fig.tight_layout()
         fig.savefig(f"{prefix}_audio_proposals.png", dpi=120)
         plt.close(fig)
 
-    # ── 13. Context candidate selection analysis ──
-    selection = extra.get("selection") if extra else None
-    topk_idx = extra.get("topk_idx") if extra else None
-    if selection is not None and topk_idx is not None and len(t_ns) > 0:
-        sel_ns = selection[ns]  # (M, K)
-        tidx_ns = topk_idx[ns]  # (M, K)
-        K = sel_ns.shape[1]
+    # ── 13. Additive context analysis: audio vs context vs combined ──
+    audio_preds_arr = extra.get("audio_preds") if extra else None
+    context_preds_arr = extra.get("context_preds") if extra else None
+    if audio_preds_arr is not None and context_preds_arr is not None and len(t_ns) > 0:
+        ap_ns = audio_preds_arr[ns].astype(np.float64)
+        cp_ns = context_preds_arr[ns].astype(np.float64)
+        fp_ns = extra["preds"][ns].astype(np.float64)
+        t_ns_f = t_ns.astype(np.float64)
 
-        # Which candidate rank did context choose?
-        chosen_rank = sel_ns.argmax(axis=1)  # (M,) 0-indexed
+        # HIT = within 3% or +/- 1 frame
+        def _hit(pred, tgt):
+            ratio = np.abs((pred + 1) / (tgt + 1) - 1.0)
+            frame = np.abs(pred - tgt)
+            return (ratio <= 0.03) | (frame <= 1)
 
-        # a) Candidate rank histogram
-        fig, axes = plt.subplots(1, 2, figsize=(14, 5))
+        audio_hit = _hit(ap_ns, t_ns_f)
+        context_hit = _hit(cp_ns, t_ns_f)
+        combined_hit = _hit(fp_ns, t_ns_f)
 
-        ax = axes[0]
-        counts = np.bincount(chosen_rank, minlength=K)
-        ax.bar(range(K), counts / counts.sum(), color="#4a90d9")
-        ax.set_xlabel("Candidate rank (0 = audio's #1)")
-        ax.set_ylabel("Selection frequency")
-        ax.set_title(f"Epoch {epoch}: Which Candidate Did Context Pick?")
-        ax.grid(True, alpha=0.3, axis="y")
-        # annotate top-3
-        for i in range(min(5, K)):
-            ax.text(i, counts[i] / counts.sum() + 0.01,
-                    f"{counts[i] / counts.sum():.1%}", ha="center", fontsize=8)
+        audio_hit_rate = float(audio_hit.mean())
+        context_hit_rate = float(context_hit.mean())
+        combined_hit_rate = float(combined_hit.mean())
+        context_delta = combined_hit_rate - audio_hit_rate
 
-        # b) Override accuracy: when context picks rank > 0, how often is it correct?
-        ax = axes[1]
-        rank_acc = []
-        rank_labels = []
-        for r in range(min(K, 10)):
-            mask = chosen_rank == r
-            if mask.sum() > 0:
-                chosen_bins = tidx_ns[mask, r]
-                targets_r = t_ns[mask]
-                ratio = (chosen_bins.astype(np.float64) + 1) / (targets_r.astype(np.float64) + 1)
-                pct_err = np.abs(ratio - 1.0)
-                frame_err = np.abs(chosen_bins.astype(np.float64) - targets_r.astype(np.float64))
-                hit = ((pct_err <= 0.03) | (frame_err <= 1)).mean()
-                rank_acc.append(hit)
-                rank_labels.append(f"#{r}")
-            else:
-                rank_acc.append(0)
-                rank_labels.append(f"#{r}")
-
-        colors = ["#6bc46d" if i == 0 else "#e8834a" for i in range(len(rank_acc))]
-        ax.bar(range(len(rank_acc)), rank_acc, color=colors)
-        ax.set_xticks(range(len(rank_acc)))
-        ax.set_xticklabels(rank_labels)
-        ax.set_ylabel("HIT rate when selected")
-        ax.set_ylim(0, 1)
-        ax.set_title(f"Epoch {epoch}: Accuracy by Selected Candidate Rank")
-        ax.grid(True, alpha=0.3, axis="y")
-        for i, a in enumerate(rank_acc):
-            if a > 0:
-                ax.text(i, a + 0.02, f"{a:.1%}", ha="center", fontsize=8)
-
-        fig.tight_layout()
-        fig.savefig(f"{prefix}_selection_analysis.png", dpi=120)
-        plt.close(fig)
-
-        # c) Target availability: how often is correct answer in top-K?
-        # For non-stop samples
-        target_in_topk = np.zeros(len(t_ns), dtype=bool)
-        for k_check in [1, 3, 5, 10, K]:
-            cand = tidx_ns[:, :k_check].astype(np.float64)
-            tgt = t_ns.reshape(-1, 1).astype(np.float64)
-            ratios = (cand + 1) / (tgt + 1)
-            pct_errs = np.abs(ratios - 1.0)
-            frame_errs = np.abs(cand - tgt)
-            if k_check == K:
-                target_in_topk = ((pct_errs <= 0.03) | (frame_errs <= 1)).any(axis=1)
-
-        # Override stats for epoch JSON
-        override_mask = chosen_rank > 0
-        override_rate = override_mask.mean()
-        if override_mask.sum() > 0:
-            override_bins = tidx_ns[override_mask, chosen_rank[override_mask]]
-            override_tgt = t_ns[override_mask]
-            ratio = (override_bins.astype(np.float64) + 1) / (override_tgt.astype(np.float64) + 1)
-            pct_err = np.abs(ratio - 1.0)
-            frame_err = np.abs(override_bins.astype(np.float64) - override_tgt.astype(np.float64))
-            override_acc = float(((pct_err <= 0.03) | (frame_err <= 1)).mean())
-        else:
-            override_acc = 0.0
-
-        # Audio vs context HIT comparison
-        audio_preds_arr = extra.get("audio_preds")
-        if audio_preds_arr is not None:
-            ap_ns = audio_preds_arr[ns].astype(np.float64)
-            fp_ns = extra["preds"][ns].astype(np.float64)
-            t_ns_f = t_ns.astype(np.float64)
-
-            # HIT = within 3% or ±1 frame
-            def _hit(pred, tgt):
-                ratio = np.abs((pred + 1) / (tgt + 1) - 1.0)
-                frame = np.abs(pred - tgt)
-                return ((ratio <= 0.03) | (frame <= 1)).astype(float)
-
-            audio_hit = _hit(ap_ns, t_ns_f)
-            final_hit = _hit(fp_ns, t_ns_f)
-            audio_hit_rate = float(audio_hit.mean())
-            final_hit_rate = float(final_hit.mean())
-            context_delta = final_hit_rate - audio_hit_rate
-
-            # Rescued: audio wrong, context right (when context overrides)
-            # Damaged: audio right, context wrong (when context overrides)
-            override = override_mask  # already computed above
-            if override.sum() > 0:
-                rescued = float(((audio_hit[override] == 0) & (final_hit[override] == 1)).mean())
-                damaged = float(((audio_hit[override] == 1) & (final_hit[override] == 0)).mean())
-            else:
-                rescued = 0.0
-                damaged = 0.0
-        else:
-            audio_hit_rate = 0.0
-            final_hit_rate = 0.0
-            context_delta = 0.0
-            rescued = 0.0
-            damaged = 0.0
-
-        # Decision categories: true/false top1/topK breakdown
-        # Uses non-stop preds only (already filtered above)
-        chosen_is_top1 = chosen_rank == 0
-        chosen_is_other = ~chosen_is_top1
-
-        # Was audio's #1 correct? (HIT = ≤3% or ±1 frame)
-        top1_bins_f = tidx_ns[:, 0].astype(np.float64)
-        t_ns_f64 = t_ns.astype(np.float64)
-        top1_ratio = np.abs((top1_bins_f + 1) / (t_ns_f64 + 1) - 1.0)
-        top1_frame = np.abs(top1_bins_f - t_ns_f64)
-        top1_correct = (top1_ratio <= 0.03) | (top1_frame <= 1)
-
-        # Was context's final pick correct?
-        fp_ns_f64 = extra["preds"][ns].astype(np.float64)
-        final_ratio = np.abs((fp_ns_f64 + 1) / (t_ns_f64 + 1) - 1.0)
-        final_frame = np.abs(fp_ns_f64 - t_ns_f64)
-        final_correct = (final_ratio <= 0.03) | (final_frame <= 1)
-
+        # Decision categories
         n_ns = len(t_ns)
-        true_top1 = float((chosen_is_top1 & top1_correct).sum() / n_ns)
-        false_top1 = float((chosen_is_top1 & ~top1_correct).sum() / n_ns)
-        true_topK = float((chosen_is_other & final_correct).sum() / n_ns)
-        false_topK = float((chosen_is_other & ~final_correct & top1_correct).sum() / n_ns)
-        inaccurate_topK = float((chosen_is_other & ~final_correct & ~top1_correct).sum() / n_ns)
-
-        # Override F1: measures quality of the override decision
-        ovr_tp = true_topK * n_ns
-        ovr_fp = (false_topK + inaccurate_topK) * n_ns
-        ovr_fn = false_top1 * n_ns
-        ovr_prec = ovr_tp / (ovr_tp + ovr_fp) if (ovr_tp + ovr_fp) > 0 else 0.0
-        ovr_rec = ovr_tp / (ovr_tp + ovr_fn) if (ovr_tp + ovr_fn) > 0 else 0.0
-        override_f1 = 2 * ovr_prec * ovr_rec / (ovr_prec + ovr_rec) if (ovr_prec + ovr_rec) > 0 else 0.0
+        audio_only_correct = float((audio_hit & combined_hit).sum() / n_ns)
+        context_helped = float((~audio_hit & combined_hit).sum() / n_ns)
+        context_hurt = float((audio_hit & ~combined_hit).sum() / n_ns)
+        both_wrong = float((~audio_hit & ~combined_hit).sum() / n_ns)
 
         # Save selection stats to extra for JSON serialization
         extra["selection_stats"] = {
-            "override_rate": float(override_rate),
-            "override_accuracy": override_acc,
-            "override_f1": override_f1,
-            "override_precision": ovr_prec,
-            "override_recall": ovr_rec,
             "audio_hit_rate": audio_hit_rate,
-            "final_hit_rate": final_hit_rate,
+            "context_hit_rate": context_hit_rate,
+            "combined_hit_rate": combined_hit_rate,
             "context_delta": context_delta,
-            "rescued_rate": rescued,
-            "damaged_rate": damaged,
-            "true_top1": true_top1,
-            "false_top1": false_top1,
-            "true_topK": true_topK,
-            "false_topK": false_topK,
-            "inaccurate_topK": inaccurate_topK,
-            "target_in_topk": float(target_in_topk.mean()),
-            "rank_distribution": [float(counts[i] / counts.sum()) for i in range(min(10, K))],
+            "context_helped": context_helped,
+            "context_hurt": context_hurt,
+            "audio_only_correct": audio_only_correct,
+            "both_wrong": both_wrong,
         }
 
 
@@ -1777,42 +1566,29 @@ def save_training_curves(history, run_dir):
     fig.savefig(os.path.join(run_dir, "relative_error.png"), dpi=150)
     plt.close(fig)
 
-    # ── override F1 / precision / recall ──
+    # ── context analysis: audio vs context vs combined HIT ──
     has_ss = any("selection_stats" in h for h in history)
     if has_ss:
-        fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(16, 5))
+        fig, ax = plt.subplots(figsize=(10, 5))
 
-        # Left: Override F1, precision, recall
-        for key, label, color in [
-            ("override_f1", "Override F1", "#4a90d9"),
-            ("override_precision", "Precision", "#6bc46d"),
-            ("override_recall", "Recall", "#e8834a"),
-        ]:
-            vals = [h.get("selection_stats", {}).get(key, 0) for h in history]
-            ax1.plot(epochs, vals, label=label, linewidth=2, color=color)
-        ax1.set_xlabel("Epoch")
-        ax1.set_ylabel("Score")
-        ax1.set_title("Override Quality (F1 / Precision / Recall)")
-        ax1.legend()
-        ax1.set_ylim(0, 1)
-        ax1.grid(True, alpha=0.3)
-
-        # Right: Audio HIT vs Final HIT + context delta
         a_hit = [h.get("selection_stats", {}).get("audio_hit_rate", 0) for h in history]
-        f_hit = [h.get("selection_stats", {}).get("final_hit_rate", 0) for h in history]
+        c_hit = [h.get("selection_stats", {}).get("context_hit_rate", 0) for h in history]
+        f_hit = [h.get("selection_stats", {}).get("combined_hit_rate", 0) for h in history]
         delta = [h.get("selection_stats", {}).get("context_delta", 0) for h in history]
-        ax2.plot(epochs, a_hit, label="Audio HIT", linewidth=2, color="#4a90d9")
-        ax2.plot(epochs, f_hit, label="Final HIT", linewidth=2, color="#6bc46d")
-        ax2b = ax2.twinx()
-        ax2b.bar(epochs, delta, alpha=0.3, color="#e8834a", width=0.3, label="Delta")
-        ax2b.axhline(y=0, color="gray", linestyle="--", alpha=0.5)
-        ax2b.set_ylabel("Context Delta (pp)")
-        ax2.set_xlabel("Epoch")
-        ax2.set_ylabel("HIT Rate")
-        ax2.set_title("Audio vs Final HIT Rate")
-        ax2.legend(loc="upper left")
-        ax2b.legend(loc="upper right")
-        ax2.grid(True, alpha=0.3)
+
+        ax.plot(epochs, a_hit, label="Audio HIT", linewidth=2, color="#e8834a")
+        ax.plot(epochs, c_hit, label="Context HIT", linewidth=2, color="#c76dba")
+        ax.plot(epochs, f_hit, label="Combined HIT", linewidth=2, color="#6bc46d")
+        axb = ax.twinx()
+        axb.bar(epochs, delta, alpha=0.3, color="#4a90d9", width=0.3, label="Delta (combined - audio)")
+        axb.axhline(y=0, color="gray", linestyle="--", alpha=0.5)
+        axb.set_ylabel("Context Delta (pp)")
+        ax.set_xlabel("Epoch")
+        ax.set_ylabel("HIT Rate")
+        ax.set_title("Audio vs Context vs Combined HIT Rate")
+        ax.legend(loc="upper left")
+        axb.legend(loc="upper right")
+        ax.grid(True, alpha=0.3)
 
         fig.tight_layout()
         fig.savefig(os.path.join(run_dir, "override_quality.png"), dpi=150)
@@ -1820,9 +1596,9 @@ def save_training_curves(history, run_dir):
 
         # ── decision categories stacked area ──
         fig, ax = plt.subplots(figsize=(10, 5))
-        cats = ["true_top1", "false_top1", "true_topK", "false_topK", "inaccurate_topK"]
-        labels = ["True Top1", "False Top1", "True TopK", "False TopK", "Inaccurate TopK"]
-        colors = ["#6bc46d", "#fcb71e", "#4a90d9", "#eb4528", "#c76dba"]
+        cats = ["audio_only_correct", "context_helped", "context_hurt", "both_wrong"]
+        labels = ["Audio+Combined Correct", "Context Helped", "Context Hurt", "Both Wrong"]
+        colors = ["#6bc46d", "#4a90d9", "#eb4528", "#c76dba"]
         cat_data = []
         for cat in cats:
             cat_data.append([h.get("selection_stats", {}).get(cat, 0) for h in history])
@@ -1943,10 +1719,8 @@ def train(args):
         enc_layers=args.enc_layers, enc_event_layers=args.enc_event_layers,
         audio_path_layers=args.audio_path_layers,
         context_gap_layers=args.context_gap_layers,
-        context_select_layers=args.context_select_layers,
         n_heads=args.n_heads,
         n_classes=N_CLASSES, max_events=C_EVENTS, dropout=args.dropout,
-        top_k=args.top_k,
         snippet_frames=args.snippet_frames,
     ).to(args.device)
 
@@ -2002,9 +1776,6 @@ def train(args):
         good_pct=args.good_pct, fail_pct=args.fail_pct,
         hard_alpha=args.hard_alpha, frame_tolerance=args.frame_tolerance,
         stop_weight=args.stop_weight,
-    ).to(args.device)
-    sel_criterion = SelectionLoss(
-        good_pct=args.good_pct, fail_pct=args.fail_pct,
     ).to(args.device)
     # Only pass trainable params to optimizer
     optimizer = torch.optim.AdamW(
@@ -2081,13 +1852,10 @@ def train(args):
         train_audio_miss_sum = 0
         train_audio_hit_sum = 0
         train_audio_loss_sum = 0
-        train_sel_loss_sum = 0
+        train_ctx_loss_sum = 0
         train_loss_count = 0
-        train_true_top1 = 0
-        train_false_top1 = 0
-        train_true_topK = 0
-        train_false_topK = 0
-        train_inaccurate_topK = 0
+        train_ctx_hit_sum = 0
+        train_ctx_miss_sum = 0
 
         # compute batch indices where we trigger eval
         if evals_per_epoch > 1:
@@ -2118,15 +1886,15 @@ def train(args):
             target = target.to(args.device, non_blocking=True)
 
             with torch.autocast("cuda", enabled=amp_enabled):
-                logits, audio_logits, sel_logits, topk_idx = model(mel, evt_off, evt_mask, cond)
+                logits, audio_logits, context_logits = model(mel, evt_off, evt_mask, cond)
 
-                # Audio aux loss: keeps audio path learning to propose
+                # Audio loss: keeps audio path learning
                 audio_loss = criterion(audio_logits, target)
 
-                # Selection loss: relative quality (rewards improvement over #1)
-                sel_loss = sel_criterion(sel_logits, topk_idx, target)
+                # Context loss: keeps context path learning
+                ctx_loss = criterion(context_logits, target)
 
-                loss = audio_loss + sel_loss
+                loss = audio_loss + ctx_loss
 
             optimizer.zero_grad(set_to_none=True)
             scaler.scale(loss).backward()
@@ -2139,7 +1907,7 @@ def train(args):
             train_loss += loss.item() * bs
             train_total += bs
             train_audio_loss_sum += audio_loss.item() * bs
-            train_sel_loss_sum += sel_loss.item() * bs
+            train_ctx_loss_sum += ctx_loss.item() * bs
             train_loss_count += bs
 
             # batch metrics for tqdm - accumulate on GPU, sync every 50 batches
@@ -2167,27 +1935,13 @@ def train(args):
                     train_audio_miss_sum += (a_pct_err > 0.20).sum().item()
                     train_audio_hit_sum += ((a_pct_err <= 0.10) | (a_frame_err <= 2)).sum().item()
 
-                    # Override decision categories (non-stop only)
-                    # "top1" = context picked audio's #1; "topK" = context overrode
-                    sel_chosen = sel_logits.argmax(1)  # (B,) which candidate context picked
-                    sel_chosen_ns = sel_chosen[ns]
-                    picked_top1 = (sel_chosen_ns == 0)  # picked audio's #1
-                    picked_other = ~picked_top1
-
-                    # Was audio's #1 correct? (HIT = ≤3% or ±1 frame)
-                    top1_bins = topk_idx[ns, 0].float()
-                    top1_ferr = (top1_bins - t_ns).abs()
-                    top1_perr = ((top1_bins + 1) / (t_ns + 1) - 1.0).abs()
-                    top1_correct = (top1_perr <= 0.03) | (top1_ferr <= 1)
-
-                    # Was context's final pick correct?
-                    final_correct = (pct_err <= 0.03) | (frame_err <= 1)
-
-                    train_true_top1 += (picked_top1 & top1_correct).sum().item()
-                    train_false_top1 += (picked_top1 & ~top1_correct).sum().item()
-                    train_true_topK += (picked_other & final_correct).sum().item()
-                    train_false_topK += (picked_other & top1_correct).sum().item()
-                    train_inaccurate_topK += (picked_other & ~final_correct & ~top1_correct).sum().item()
+                    # Context-only stats
+                    ctx_pred = context_logits.argmax(1)
+                    cp_ns = ctx_pred[ns].float()
+                    c_frame_err = (cp_ns - t_ns).abs()
+                    c_pct_err = ((cp_ns + 1) / (t_ns + 1) - 1.0).abs()
+                    train_ctx_hit_sum += ((c_pct_err <= 0.03) | (c_frame_err <= 1)).sum().item()
+                    train_ctx_miss_sum += (c_pct_err > 0.20).sum().item()
 
             # update bars
             epoch_bar.update(1)
@@ -2196,25 +1950,19 @@ def train(args):
 
             if (batch_idx + 1) % 50 == 0 or batch_idx in eval_at:
                 a_loss = train_audio_loss_sum / train_loss_count
-                s_loss = train_sel_loss_sum / train_loss_count
+                c_loss = train_ctx_loss_sum / train_loss_count
                 if train_ns_total > 0:
                     a_hit = train_audio_hit_sum / train_ns_total
                     a_miss = train_audio_miss_sum / train_ns_total
-                    c_hit = train_w10_sum / train_ns_total
-                    c_miss = train_miss_sum / train_ns_total
-                    # Override F1: precision=correct overrides/all overrides,
-                    # recall=correct overrides/(correct overrides + missed overrides)
-                    ovr_tp = train_true_topK
-                    ovr_fp = train_false_topK + train_inaccurate_topK
-                    ovr_fn = train_false_top1  # picked #1 but it was wrong
-                    ovr_prec = ovr_tp / (ovr_tp + ovr_fp) if (ovr_tp + ovr_fp) > 0 else 0
-                    ovr_rec = ovr_tp / (ovr_tp + ovr_fn) if (ovr_tp + ovr_fn) > 0 else 0
-                    ovr_f1 = 2 * ovr_prec * ovr_rec / (ovr_prec + ovr_rec) if (ovr_prec + ovr_rec) > 0 else 0
+                    comb_hit = train_w3_sum / train_ns_total
+                    comb_miss = train_miss_sum / train_ns_total
+                    ctx_hit = train_ctx_hit_sum / train_ns_total
+                    ctx_miss = train_ctx_miss_sum / train_ns_total
                     stats = (f"audio[L={a_loss:.3f} HIT={a_hit:.1%} miss={a_miss:.1%}] "
-                             f"ctx[L={s_loss:.3f} HIT={c_hit:.1%} miss={c_miss:.1%}] "
-                             f"ovr_f1={ovr_f1:.1%}")
+                             f"ctx[L={c_loss:.3f} HIT={ctx_hit:.1%} miss={ctx_miss:.1%}] "
+                             f"combined[HIT={comb_hit:.1%}]")
                 else:
-                    stats = f"audio_L={a_loss:.3f} sel_L={s_loss:.3f}"
+                    stats = f"audio_L={a_loss:.3f} ctx_L={c_loss:.3f}"
                 epoch_bar.set_postfix_str(stats)
 
             # ── mid-epoch eval checkpoint ──
@@ -2228,7 +1976,7 @@ def train(args):
                     model, val_loader, criterion, args, amp_enabled,
                     eval_step, epoch + sub_frac, sub_train_loss,
                     run_dir, ckpt_dir, history, scheduler, optimizer,
-                    scaler, best_val_loss, sel_criterion=sel_criterion,
+                    scaler, best_val_loss,
                 )
                 if history and history[-1]["val_loss"] < best_val_loss:
                     best_val_loss = history[-1]["val_loss"]
@@ -2255,7 +2003,7 @@ def train(args):
             model, val_loader, criterion, args, amp_enabled,
             eval_step, float(epoch), train_loss,
             run_dir, ckpt_dir, history, scheduler, optimizer,
-            scaler, best_val_loss, sel_criterion=sel_criterion,
+            scaler, best_val_loss,
         )
         if history and history[-1]["val_loss"] < best_val_loss:
             best_val_loss = history[-1]["val_loss"]
@@ -2267,11 +2015,10 @@ def train(args):
 def _run_eval(model, val_loader, criterion, args, amp_enabled,
               eval_step, epoch_frac, train_loss,
               run_dir, ckpt_dir, history, scheduler, optimizer,
-              scaler, best_val_loss, sel_criterion=None):
+              scaler, best_val_loss):
     """Run validation, benchmarks, save graphs/checkpoints/history."""
     val_loss, val_extra = validate_and_collect(
         model, val_loader, criterion, args.device, amp_enabled=amp_enabled,
-        sel_criterion=sel_criterion,
     )
     val_targets = val_extra["targets"]
     val_preds = val_extra["preds"]
@@ -2292,15 +2039,17 @@ def _run_eval(model, val_loader, criterion, args, amp_enabled,
           f"≤3%={val_metrics.get('within_3pct', 0):.1%} ≤10%={val_metrics.get('within_10pct', 0):.1%} | "
           f"stop_f1={val_metrics['stop_f1']:.3f} | lr={scheduler.get_last_lr()[0]:.2e}")
 
-    # Print override decision breakdown
+    # Print context analysis
     ss = val_extra.get("selection_stats", {}) if val_extra else {}
     if ss:
-        print(f"    Override: F1={ss.get('override_f1', 0):.1%} "
-              f"(P={ss.get('override_precision', 0):.1%} R={ss.get('override_recall', 0):.1%}) "
-              f"rate={ss.get('override_rate', 0):.1%} delta={ss.get('context_delta', 0):+.2%}")
-        print(f"    Decisions: T1={ss.get('true_top1', 0):.1%} F1={ss.get('false_top1', 0):.1%} | "
-              f"TK={ss.get('true_topK', 0):.1%} FK={ss.get('false_topK', 0):.1%} "
-              f"IK={ss.get('inaccurate_topK', 0):.1%}")
+        print(f"    Context: HIT={ss.get('context_hit_rate', 0):.1%} "
+              f"Audio: HIT={ss.get('audio_hit_rate', 0):.1%} "
+              f"Combined: HIT={ss.get('combined_hit_rate', 0):.1%} "
+              f"delta={ss.get('context_delta', 0):+.2%}")
+        print(f"    Decisions: audio_ok={ss.get('audio_only_correct', 0):.1%} "
+              f"ctx_helped={ss.get('context_helped', 0):.1%} "
+              f"ctx_hurt={ss.get('context_hurt', 0):.1%} "
+              f"both_wrong={ss.get('both_wrong', 0):.1%}")
 
     # ── ablation benchmarks ──
     bench_results = run_benchmarks(model, val_loader, args.device, amp_enabled=amp_enabled)
@@ -2373,11 +2122,9 @@ if __name__ == "__main__":
     parser.add_argument("--audio-path-layers", type=int, default=2)
     parser.add_argument("--d-ctx", type=int, default=192, help="Context path hidden dimension (default 192)")
     parser.add_argument("--context-gap-layers", type=int, default=2, help="Context gap encoder layers (self-attn)")
-    parser.add_argument("--context-select-layers", type=int, default=2, help="Context candidate selection layers (cross-attn)")
     parser.add_argument("--snippet-frames", type=int, default=10, help="Mel frames per audio snippet (~5ms each, default 10 = ~50ms)")
     parser.add_argument("--n-heads", type=int, default=8)
     parser.add_argument("--dropout", type=float, default=0.1)
-    parser.add_argument("--top-k", type=int, default=20, help="Number of audio candidates for context reranking (default 20)")
     parser.add_argument("--focal-gamma", type=float, default=0.0, help="Focal loss gamma (0=disabled, default 0)")
     parser.add_argument("--good-pct", type=float, default=0.03, help="Soft target plateau threshold (ratio, default 3%%)")
     parser.add_argument("--fail-pct", type=float, default=0.20, help="Soft target hard cutoff (ratio, default 20%%)")
@@ -2393,7 +2140,6 @@ if __name__ == "__main__":
     parser.add_argument("--resume", action="store_true", help="Resume from latest checkpoint in the run")
     parser.add_argument("--warm-start", type=str, default=None, help="Path to checkpoint to load audio weights from (audio_encoder, event_encoder, audio_path, cond_mlp)")
     parser.add_argument("--freeze-audio", action="store_true", help="Freeze audio_encoder, event_encoder, audio_path, cond_mlp (only train context_path)")
-    parser.add_argument("--miss-penalty", type=float, default=2.0, help="Loss multiplier when context kept #1 but better candidate existed (default 2.0)")
     parser.add_argument("--no-compile", action="store_true", help="Disable torch.compile")
     parser.add_argument("--amp", action="store_true", help="Enable mixed precision (experimental on Windows)")
     parser.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")

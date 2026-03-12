@@ -15,7 +15,7 @@ import librosa
 from tqdm import tqdm
 from collections import Counter
 
-from detection_model import OnsetDetector, LegacyOnsetDetector, Exp17OnsetDetector, Exp18OnsetDetector
+from detection_model import OnsetDetector, RerankerOnsetDetector, LegacyOnsetDetector, Exp17OnsetDetector, Exp18OnsetDetector
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 
@@ -488,12 +488,14 @@ def main():
     is_legacy = "top_k" not in ckpt_args
     has_exp18_event_layers = any("context_path.event_layers" in k for k in state_keys)
     has_gap_layers = any("context_path.gap_layers" in k for k in state_keys)
-    has_score_proj = any("context_path.score_proj" in k for k in state_keys)
+    has_output_head = any("context_path.output_head" in k for k in state_keys)
 
     if is_legacy:
         ModelClass = LegacyOnsetDetector
+    elif has_gap_layers and has_output_head:
+        ModelClass = OnsetDetector  # exp 24+ (additive context)
     elif has_gap_layers:
-        ModelClass = OnsetDetector  # exp 19+ (gap-based context)
+        ModelClass = RerankerOnsetDetector  # exp 19-23 (gap-based reranker)
     elif has_exp18_event_layers:
         ModelClass = Exp18OnsetDetector  # exp 18 (two-stage shared encoder)
     else:
@@ -520,24 +522,28 @@ def main():
         base_kwargs["context_event_layers"] = ckpt_args.get("context_event_layers", 2)
         base_kwargs["context_select_layers"] = ckpt_args.get("context_select_layers", 2)
         base_kwargs["top_k"] = ckpt_args.get("top_k", 20)
-    else:
-        # exp 19+: gap-based context with own encoders
+    elif ModelClass == RerankerOnsetDetector:
+        # exp 19-23: gap-based reranker context
         base_kwargs["d_ctx"] = ckpt_args.get("d_ctx", 192)
         base_kwargs["context_gap_layers"] = ckpt_args.get("context_gap_layers", 2)
         base_kwargs["context_select_layers"] = ckpt_args.get("context_select_layers", 2)
         base_kwargs["top_k"] = ckpt_args.get("top_k", 20)
         base_kwargs["snippet_frames"] = ckpt_args.get("snippet_frames", 10)
+    else:
+        # exp 24+: additive context
+        base_kwargs["d_ctx"] = ckpt_args.get("d_ctx", 192)
+        base_kwargs["context_gap_layers"] = ckpt_args.get("context_gap_layers", 2)
+        base_kwargs["snippet_frames"] = ckpt_args.get("snippet_frames", 10)
     model_kwargs = base_kwargs
 
     model = ModelClass(**model_kwargs).to(args.device)
     state = ckpt["model"]
-    if has_gap_layers:
-        # Check if score_proj shape matches current model (exp 23+: Linear(1, d_ctx))
+    if ModelClass == RerankerOnsetDetector:
+        # Handle score_proj shape mismatches between exp 19-23 variants
         score_proj_key = "context_path.score_proj.0.weight"
         current_shape = model.state_dict().get(score_proj_key, torch.empty(0)).shape
         ckpt_shape = state.get(score_proj_key, torch.empty(0)).shape
         if current_shape != ckpt_shape:
-            # Shape mismatch (exp 19-21: Linear(2,...) or exp 22: missing) — reinit
             state = {k: v for k, v in state.items()
                      if "score_proj" not in k and "candidate_combine" not in k}
             model.load_state_dict(state, strict=False)

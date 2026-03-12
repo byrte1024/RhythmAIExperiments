@@ -22,6 +22,7 @@ Each folder contains a README with hypothesis, results, and key graphs.
 | 21 | [Relative Quality Selection Loss](experiment_21/) | Promising | Best override quality ever (F1=46%, acc=61%), but delta still -0.95pp. Conservatism bias in loss design. Context shouldn't know audio's preferences |
 | 22 | [Blind Selection (Shuffled, No Scores)](experiment_22/) | Too aggressive | Shuffling works, but no confidence signal → 50%+ override rate, delta -4.6pp. Context picks reasonably but overrides too often. Need scores back as scalar |
 | 23 | [Shuffled Candidates + Confidence](experiment_23/) | Best reranking | Best override quality ever (F1=67%, acc=64%, 4:1 ratio). But delta still -3.2pp. Proves reranking paradigm fundamentally limited after 9 experiments |
+| 24 | [Additive Context Logits](experiment_24/) | Pending | New paradigm: context outputs 501-way logits added to audio. Soft influence, no hard overrides. Gap encoder + cursor token → output head |
 
 ## Key Lessons
 
