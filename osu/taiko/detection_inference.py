@@ -15,7 +15,7 @@ import librosa
 from tqdm import tqdm
 from collections import Counter
 
-from detection_model import OnsetDetector, RerankerOnsetDetector, LegacyOnsetDetector, Exp17OnsetDetector, Exp18OnsetDetector
+from detection_model import OnsetDetector, AdditiveOnsetDetector, RerankerOnsetDetector, LegacyOnsetDetector, Exp17OnsetDetector, Exp18OnsetDetector
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 
@@ -124,7 +124,8 @@ def run_inference(model, mel, conditioning, device, hop_bins=20, max_events=1000
         evt_tensor = torch.from_numpy(evt_offsets).unsqueeze(0).to(device)
         mask_tensor = torch.from_numpy(evt_mask).unsqueeze(0).to(device)
 
-        logits, _audio_logits, _sel_logits, _topk_idx = model(mel_tensor, evt_tensor, mask_tensor, cond_tensor)
+        output = model(mel_tensor, evt_tensor, mask_tensor, cond_tensor)
+        logits = output[0] if isinstance(output, tuple) else output
         pred = logits.argmax(dim=1).item()
 
         cursor_history.append((total_calls, cursor, pred))
@@ -485,56 +486,72 @@ def main():
 
     # Detect checkpoint era by state dict keys and args
     state_keys = set(ckpt["model"].keys())
-    is_legacy = "top_k" not in ckpt_args
-    has_exp18_event_layers = any("context_path.event_layers" in k for k in state_keys)
-    has_gap_layers = any("context_path.gap_layers" in k for k in state_keys)
+    has_fusion_layers = any("fusion_layers" in k for k in state_keys)
+    has_gap_encoder = any("gap_encoder." in k for k in state_keys)
     has_output_head = any("context_path.output_head" in k for k in state_keys)
+    has_gap_layers = any("context_path.gap_layers" in k for k in state_keys)
+    has_exp18_event_layers = any("context_path.event_layers" in k for k in state_keys)
+    is_legacy = "top_k" not in ckpt_args and not has_fusion_layers and not has_gap_encoder
 
-    if is_legacy:
-        ModelClass = LegacyOnsetDetector
+    if has_fusion_layers or has_gap_encoder:
+        ModelClass = OnsetDetector  # exp 25+ (unified fusion)
+    elif is_legacy:
+        ModelClass = LegacyOnsetDetector  # exp 11-16
     elif has_gap_layers and has_output_head:
-        ModelClass = OnsetDetector  # exp 24+ (additive context)
+        ModelClass = AdditiveOnsetDetector  # exp 24 (additive context)
     elif has_gap_layers:
         ModelClass = RerankerOnsetDetector  # exp 19-23 (gap-based reranker)
     elif has_exp18_event_layers:
-        ModelClass = Exp18OnsetDetector  # exp 18 (two-stage shared encoder)
+        ModelClass = Exp18OnsetDetector  # exp 18
     else:
-        ModelClass = Exp17OnsetDetector  # exp 17 (single-stage shared encoder)
+        ModelClass = Exp17OnsetDetector  # exp 17
 
     # Build model kwargs based on checkpoint era
-    base_kwargs = dict(
-        n_mels=N_MELS,
-        d_model=ckpt_args.get("d_model", 384),
-        d_event=ckpt_args.get("d_event", 128),
-        enc_layers=ckpt_args.get("enc_layers", 4),
-        enc_event_layers=ckpt_args.get("enc_event_layers", 2),
-        audio_path_layers=ckpt_args.get("audio_path_layers", 2),
-        n_heads=ckpt_args.get("n_heads", 8),
-        n_classes=N_CLASSES,
-        max_events=C_EVENTS,
-    )
-    if ModelClass == LegacyOnsetDetector:
-        base_kwargs["context_path_layers"] = ckpt_args.get("context_path_layers", 3)
-    elif ModelClass == Exp17OnsetDetector:
-        base_kwargs["context_path_layers"] = ckpt_args.get("context_path_layers", 3)
-        base_kwargs["top_k"] = ckpt_args.get("top_k", 20)
-    elif ModelClass == Exp18OnsetDetector:
-        base_kwargs["context_event_layers"] = ckpt_args.get("context_event_layers", 2)
-        base_kwargs["context_select_layers"] = ckpt_args.get("context_select_layers", 2)
-        base_kwargs["top_k"] = ckpt_args.get("top_k", 20)
-    elif ModelClass == RerankerOnsetDetector:
-        # exp 19-23: gap-based reranker context
-        base_kwargs["d_ctx"] = ckpt_args.get("d_ctx", 192)
-        base_kwargs["context_gap_layers"] = ckpt_args.get("context_gap_layers", 2)
-        base_kwargs["context_select_layers"] = ckpt_args.get("context_select_layers", 2)
-        base_kwargs["top_k"] = ckpt_args.get("top_k", 20)
-        base_kwargs["snippet_frames"] = ckpt_args.get("snippet_frames", 10)
+    if ModelClass == OnsetDetector:
+        # exp 25+: unified fusion
+        model_kwargs = dict(
+            n_mels=N_MELS,
+            d_model=ckpt_args.get("d_model", 384),
+            enc_layers=ckpt_args.get("enc_layers", 4),
+            gap_enc_layers=ckpt_args.get("gap_enc_layers", 2),
+            fusion_layers=ckpt_args.get("fusion_layers", 4),
+            n_heads=ckpt_args.get("n_heads", 8),
+            n_classes=N_CLASSES,
+            max_events=C_EVENTS,
+            snippet_frames=ckpt_args.get("snippet_frames", 10),
+        )
     else:
-        # exp 24+: additive context
-        base_kwargs["d_ctx"] = ckpt_args.get("d_ctx", 192)
-        base_kwargs["context_gap_layers"] = ckpt_args.get("context_gap_layers", 2)
-        base_kwargs["snippet_frames"] = ckpt_args.get("snippet_frames", 10)
-    model_kwargs = base_kwargs
+        base_kwargs = dict(
+            n_mels=N_MELS,
+            d_model=ckpt_args.get("d_model", 384),
+            d_event=ckpt_args.get("d_event", 128),
+            enc_layers=ckpt_args.get("enc_layers", 4),
+            enc_event_layers=ckpt_args.get("enc_event_layers", 2),
+            audio_path_layers=ckpt_args.get("audio_path_layers", 2),
+            n_heads=ckpt_args.get("n_heads", 8),
+            n_classes=N_CLASSES,
+            max_events=C_EVENTS,
+        )
+        if ModelClass == LegacyOnsetDetector:
+            base_kwargs["context_path_layers"] = ckpt_args.get("context_path_layers", 3)
+        elif ModelClass == Exp17OnsetDetector:
+            base_kwargs["context_path_layers"] = ckpt_args.get("context_path_layers", 3)
+            base_kwargs["top_k"] = ckpt_args.get("top_k", 20)
+        elif ModelClass == Exp18OnsetDetector:
+            base_kwargs["context_event_layers"] = ckpt_args.get("context_event_layers", 2)
+            base_kwargs["context_select_layers"] = ckpt_args.get("context_select_layers", 2)
+            base_kwargs["top_k"] = ckpt_args.get("top_k", 20)
+        elif ModelClass == RerankerOnsetDetector:
+            base_kwargs["d_ctx"] = ckpt_args.get("d_ctx", 192)
+            base_kwargs["context_gap_layers"] = ckpt_args.get("context_gap_layers", 2)
+            base_kwargs["context_select_layers"] = ckpt_args.get("context_select_layers", 2)
+            base_kwargs["top_k"] = ckpt_args.get("top_k", 20)
+            base_kwargs["snippet_frames"] = ckpt_args.get("snippet_frames", 10)
+        elif ModelClass == AdditiveOnsetDetector:
+            base_kwargs["d_ctx"] = ckpt_args.get("d_ctx", 192)
+            base_kwargs["context_gap_layers"] = ckpt_args.get("context_gap_layers", 2)
+            base_kwargs["snippet_frames"] = ckpt_args.get("snippet_frames", 10)
+        model_kwargs = base_kwargs
 
     model = ModelClass(**model_kwargs).to(args.device)
     state = ckpt["model"]
@@ -551,7 +568,11 @@ def main():
             model.load_state_dict(state)
     else:
         model.load_state_dict(state)
-    if ModelClass == LegacyOnsetDetector:
+    if ModelClass == OnsetDetector:
+        print("  (exp 25+ checkpoint — unified audio+gap fusion)")
+    elif ModelClass == AdditiveOnsetDetector:
+        print("  (exp 24 checkpoint — additive context logits)")
+    elif ModelClass == LegacyOnsetDetector:
         print("  (legacy checkpoint — exp 11-16 additive logits)")
     elif ModelClass == Exp17OnsetDetector:
         print("  (exp 17 checkpoint — shared-gradient top-K reranking)")

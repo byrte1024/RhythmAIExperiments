@@ -158,65 +158,65 @@ class OnsetDataset(Dataset):
         # event jitter: global shift + recency-scaled per-event noise (simulates AR error)
         if len(past_bins) > 0:
             n = len(past_bins)
-            # global shift applied to ALL events (±0-3 bins) - systematic drift
-            global_shift = rng.integers(-3, 4)
-            # per-event jitter scaled by recency: 1x oldest → 3x most recent
-            jitter_scale = np.linspace(1, 3, n)
-            per_event = (rng.integers(-4, 5, size=n) * jitter_scale).astype(np.int64)
+            # global shift applied to ALL events (±0-2 bins) - systematic drift
+            global_shift = rng.integers(-2, 3)
+            # per-event jitter scaled by recency: 1x oldest → 2x most recent
+            jitter_scale = np.linspace(1, 2, n)
+            per_event = (rng.integers(-2, 3, size=n) * jitter_scale).astype(np.int64)
             past_bins = np.sort(past_bins + global_shift + per_event)
 
-        # random event deletion (8%) - drop individual events to simulate misses
-        if len(past_bins) > 2 and rng.random() < 0.08:
-            n_drop = rng.integers(1, max(2, len(past_bins) // 6))
+        # random event deletion (4%) - drop individual events to simulate misses
+        if len(past_bins) > 2 and rng.random() < 0.04:
+            n_drop = rng.integers(1, max(2, len(past_bins) // 8))
             keep = np.ones(len(past_bins), dtype=bool)
             keep[rng.choice(len(past_bins), size=n_drop, replace=False)] = False
             past_bins = past_bins[keep]
 
-        # random event insertion (8%) - add spurious events to simulate false positives
-        if len(past_bins) > 0 and rng.random() < 0.08:
-            n_insert = rng.integers(1, max(2, len(past_bins) // 6))
+        # random event insertion (4%) - add spurious events to simulate false positives
+        if len(past_bins) > 0 and rng.random() < 0.04:
+            n_insert = rng.integers(1, max(2, len(past_bins) // 8))
             lo, hi = past_bins[0], min(past_bins[-1], -1)
             if lo < hi:
                 fake = rng.integers(lo, hi, size=n_insert)
                 past_bins = np.sort(np.concatenate([past_bins, fake]))
 
-        # context dropout (5%)
-        if rng.random() < 0.05:
+        # context dropout (2%)
+        if rng.random() < 0.02:
             past_bins = np.array([], dtype=np.int64)
-        # context truncation (10%)
-        elif len(past_bins) > 1 and rng.random() < 0.10:
+        # context truncation (5%)
+        elif len(past_bins) > 1 and rng.random() < 0.05:
             past_bins = past_bins[-rng.integers(1, len(past_bins)):]
 
-        # audio fade-in (15%)
-        if rng.random() < 0.15:
+        # audio fade-in (10%)
+        if rng.random() < 0.10:
             fl = rng.integers(20, 101)
             mel_window[:, :fl] *= np.linspace(0, 1, fl, dtype=np.float32)[np.newaxis, :]
-        # audio fade-out (15%)
-        if rng.random() < 0.15:
+        # audio fade-out (10%)
+        if rng.random() < 0.10:
             fl = rng.integers(20, 101)
             mel_window[:, -fl:] *= np.linspace(1, 0, fl, dtype=np.float32)[np.newaxis, :]
 
-        # mel gain ±3dB (50%)
-        if rng.random() < 0.5:
-            mel_window = mel_window + rng.uniform(-3.0, 3.0)
-        # mel noise (30%)
+        # mel gain ±2dB (30%)
         if rng.random() < 0.3:
-            mel_window = mel_window + rng.normal(0, rng.uniform(0.1, 0.5), mel_window.shape).astype(np.float32)
+            mel_window = mel_window + rng.uniform(-2.0, 2.0)
+        # mel noise (15%)
+        if rng.random() < 0.15:
+            mel_window = mel_window + rng.normal(0, rng.uniform(0.1, 0.3), mel_window.shape).astype(np.float32)
 
-        # SpecAugment freq mask (40%)
-        if rng.random() < 0.4:
+        # SpecAugment freq mask (20%)
+        if rng.random() < 0.2:
             n = rng.integers(1, 9)
             f = rng.integers(0, mel_window.shape[0] - n)
             mel_window[f:f + n, :] = 0
-        # SpecAugment time mask (40%)
-        if rng.random() < 0.4:
-            n = rng.integers(1, 41)
+        # SpecAugment time mask (20%)
+        if rng.random() < 0.2:
+            n = rng.integers(1, 31)
             t = rng.integers(0, mel_window.shape[1] - n)
             mel_window[:, t:t + n] = 0
 
-        # conditioning jitter ±15% (50%)
-        if rng.random() < 0.5:
-            cond_jitter = rng.uniform(0.85, 1.15, size=3).astype(np.float32)
+        # conditioning jitter ±10% (30%)
+        if rng.random() < 0.3:
+            cond_jitter = rng.uniform(0.90, 1.10, size=3).astype(np.float32)
 
         return mel_window, past_bins, cond_jitter
 
@@ -372,15 +372,11 @@ def validate_and_collect(model, loader, criterion, device, amp_enabled=False):
     model.eval()
     all_targets = []
     all_preds = []
-    all_audio_preds = []
-    all_context_preds = []
     all_cond = []
     all_prev_gap = []
     all_ctx_len = []
     all_topk = []       # top-10 predictions per sample
     all_entropy = []    # logit entropy per sample
-    all_audio_topk = [] # audio-only top-10 for proposal quality tracking
-    all_context_topk = [] # context-only top-10
     total_loss = 0.0
     total_n = 0
     for mel, evt_off, evt_mask, cond, target in tqdm(loader, desc="Validating", leave=False):
@@ -391,36 +387,29 @@ def validate_and_collect(model, loader, criterion, device, amp_enabled=False):
         target = target.to(device, non_blocking=True)
 
         with torch.autocast("cuda", enabled=amp_enabled):
-            logits, audio_logits, context_logits = model(mel, evt_off, evt_mask, cond)
-
-            # Val loss: audio loss + context loss (matches training loss)
-            audio_loss = criterion(audio_logits, target)
-            ctx_loss = criterion(context_logits, target)
-            loss = audio_loss + ctx_loss
+            logits = model(mel, evt_off, evt_mask, cond)
+            # Handle both unified (single tensor) and legacy (tuple) model outputs
+            if isinstance(logits, tuple):
+                logits = logits[0]
+            loss = criterion(logits, target)
 
         total_loss += loss.item() * target.size(0)
         total_n += target.size(0)
         all_preds.append(logits.argmax(1).cpu().numpy())
-        all_audio_preds.append(audio_logits.argmax(1).cpu().numpy())
-        all_context_preds.append(context_logits.argmax(1).cpu().numpy())
         all_targets.append(target.cpu().numpy())
         all_cond.append(cond.cpu().numpy())
 
-        # top-10 predictions (from combined logits)
-        all_topk.append(logits.topk(10, dim=1).indices.cpu().numpy())  # (B, 10)
-
-        # audio-only and context-only top-10
-        all_audio_topk.append(audio_logits.topk(10, dim=1).indices.cpu().numpy())  # (B, 10)
-        all_context_topk.append(context_logits.topk(10, dim=1).indices.cpu().numpy())  # (B, 10)
+        # top-10 predictions
+        all_topk.append(logits.topk(10, dim=1).indices.cpu().numpy())
 
         # entropy of softmax distribution
         probs = torch.softmax(logits.float(), dim=-1)
-        ent = -(probs * (probs + 1e-10).log()).sum(dim=-1)  # (B,)
+        ent = -(probs * (probs + 1e-10).log()).sum(dim=-1)
         all_entropy.append(ent.cpu().numpy())
 
         # context length + prev_gap from event mask
-        em = evt_mask.cpu().numpy()  # (B, C) True=padded
-        ctx_lens = (~em).sum(axis=1)  # number of valid past events
+        em = evt_mask.cpu().numpy()
+        ctx_lens = (~em).sum(axis=1)
         all_ctx_len.append(ctx_lens)
 
         eo = evt_off.cpu().numpy()
@@ -437,15 +426,11 @@ def validate_and_collect(model, loader, criterion, device, amp_enabled=False):
     extra = {
         "targets": np.concatenate(all_targets),
         "preds": np.concatenate(all_preds),
-        "audio_preds": np.concatenate(all_audio_preds),
-        "context_preds": np.concatenate(all_context_preds),
         "conds": np.concatenate(all_cond),
         "prev_gaps": np.concatenate(all_prev_gap),
         "ctx_len": np.concatenate(all_ctx_len),
         "topk": np.concatenate(all_topk),
         "entropy": np.concatenate(all_entropy),
-        "audio_topk": np.concatenate(all_audio_topk),
-        "context_topk": np.concatenate(all_context_topk),
     }
     return val_loss, extra
 
@@ -558,7 +543,9 @@ def run_benchmarks(model, val_loader, device, amp_enabled=False):
             evt_mask = evt_mask.to(device, non_blocking=True)
             cond = cond.to(device, non_blocking=True)
             with torch.autocast("cuda", enabled=amp_enabled):
-                logits, _audio_logits, _context_logits = model(mel, evt_off, evt_mask, cond)
+                logits = model(mel, evt_off, evt_mask, cond)
+                if isinstance(logits, tuple):
+                    logits = logits[0]
             all_preds.append(logits.argmax(1).cpu().numpy())
             all_targets.append(target.numpy())
 
@@ -989,6 +976,73 @@ def save_epoch_graphs(targets, preds, metrics, epoch, run_dir, extra=None):
     fig.savefig(f"{prefix}_heatmap.png", dpi=150)
     plt.close(fig)
 
+    # ── 2b. Entropy heatmap: RGB = (entropy, count, inverse-entropy) ──
+    entropy = extra.get("entropy") if extra else None
+    if entropy is not None and len(t_ns) > 0:
+        ent_ns = entropy[ns]
+        n_bins = 250
+        bin_range = [[0, 500], [0, 500]]
+
+        # Accumulate entropy sums and counts per (target, pred) bin
+        ent_sum = np.zeros((n_bins, n_bins), dtype=np.float64)
+        counts = np.zeros((n_bins, n_bins), dtype=np.float64)
+
+        # Digitize targets and preds into bin indices
+        t_idx = np.clip(((t_ns.astype(np.float64)) / 500 * n_bins).astype(int), 0, n_bins - 1)
+        p_idx = np.clip(((p_ns.astype(np.float64)) / 500 * n_bins).astype(int), 0, n_bins - 1)
+
+        np.add.at(ent_sum, (t_idx, p_idx), ent_ns)
+        np.add.at(counts, (t_idx, p_idx), 1)
+
+        # Build RGB image (n_bins x n_bins x 3)
+        # Normalize entropy to [0, 1] — use mean entropy per bin
+        mask = counts > 0
+        mean_ent = np.zeros_like(ent_sum)
+        mean_ent[mask] = ent_sum[mask] / counts[mask]
+
+        # Normalize: entropy range from data
+        if mean_ent[mask].size > 0:
+            ent_max = np.percentile(mean_ent[mask], 99)
+            ent_min = np.percentile(mean_ent[mask], 1)
+        else:
+            ent_min, ent_max = 0, 1
+        if ent_max <= ent_min:
+            ent_max = ent_min + 1
+        ent_norm = np.clip((mean_ent - ent_min) / (ent_max - ent_min), 0, 1)
+
+        # Normalize counts (log scale for visibility)
+        log_counts = np.zeros_like(counts)
+        log_counts[mask] = np.log1p(counts[mask])
+        count_max = log_counts.max() if log_counts.max() > 0 else 1
+        count_norm = log_counts / count_max
+
+        # R = entropy, G = count, B = inverse entropy
+        rgb = np.zeros((n_bins, n_bins, 3))
+        rgb[:, :, 0] = ent_norm       # R: high entropy = red
+        rgb[:, :, 1] = count_norm     # G: many predictions = green
+        rgb[:, :, 2] = 1 - ent_norm   # B: low entropy = blue
+
+        # Multiply by presence mask so empty bins stay black
+        for c in range(3):
+            rgb[:, :, c] *= (counts > 0).astype(float)
+
+        # Light gaussian blur for smoothness
+        for c in range(3):
+            rgb[:, :, c] = gaussian_filter(rgb[:, :, c], sigma=0.8)
+
+        fig, ax = plt.subplots(figsize=(8, 8))
+        fig.patch.set_facecolor("black")
+        ax.set_facecolor("black")
+        ax.imshow(rgb.transpose(1, 0, 2), origin="lower", aspect="auto", extent=[0, 500, 0, 500])
+        ax.plot([0, 500], [0, 500], "w--", alpha=0.4, linewidth=1)
+        ax.set_xlabel("Target bin offset", color="white")
+        ax.set_ylabel("Predicted bin offset", color="white")
+        ax.set_title(f"Epoch {epoch}: Entropy Heatmap (R=entropy, G=count, B=confident)", color="white")
+        ax.tick_params(colors="white")
+        fig.tight_layout()
+        fig.savefig(f"{prefix}_entropy_heatmap.png", dpi=150)
+        plt.close(fig)
+
     # ── 3. Ratio scatter: target vs relative error ──
     if len(t_ns) > 0:
         ratio = (p_ns.astype(np.float64) + 1) / (t_ns.astype(np.float64) + 1)
@@ -1325,11 +1379,9 @@ def save_epoch_graphs(targets, preds, metrics, epoch, run_dir, extra=None):
         fig.savefig(f"{prefix}_entropy_hit_vs_miss.png", dpi=120)
         plt.close(fig)
 
-    # ── 12. Audio / Context / Combined proposal quality (top-K) ──
-    audio_topk = extra.get("audio_topk") if extra else None
-    context_topk = extra.get("context_topk") if extra else None
-    if audio_topk is not None and len(t_ns) > 0:
-        audio_topk_ns = audio_topk[ns]  # (M, 10)
+    # ── 12. Top-K proposal quality ──
+    if topk is not None and len(t_ns) > 0:
+        topk_ns_data = topk[ns]
         targets_ns_col = t_ns.reshape(-1, 1)
 
         ks = [1, 2, 3, 5, 10]
@@ -1346,80 +1398,22 @@ def save_epoch_graphs(targets, preds, metrics, epoch, run_dir, extra=None):
                 rates.append(is_hit.mean())
             return rates
 
-        audio_hit_topk = _topk_hit_rates(audio_topk_ns)
+        hit_topk = _topk_hit_rates(topk_ns_data)
 
         fig, ax = plt.subplots(figsize=(8, 5))
         x = np.arange(len(ks))
-        n_bars = 2
-        w = 0.25
-        # audio proposals
-        ax.bar(x - w, audio_hit_topk, w, label="Audio", color="#e8834a")
-        # context proposals
-        if context_topk is not None:
-            ctx_topk_ns = context_topk[ns]
-            ctx_hit_topk = _topk_hit_rates(ctx_topk_ns)
-            ax.bar(x, ctx_hit_topk, w, label="Context", color="#c76dba")
-            n_bars = 3
-        # combined (final) top-K for comparison
-        if topk is not None:
-            topk_ns_data = topk[ns]
-            combined_hit_topk = _topk_hit_rates(topk_ns_data)
-            ax.bar(x + w, combined_hit_topk, w, label="Combined", color="#6bc46d")
+        ax.bar(x, hit_topk, 0.5, color="#6bc46d")
         ax.set_xticks(x)
         ax.set_xticklabels([f"Top-{k}" for k in ks])
         ax.set_ylabel("HIT Rate")
         ax.set_ylim(0, 1)
-        ax.set_title(f"Epoch {epoch}: Audio vs Context vs Combined Top-K")
-        ax.legend()
+        ax.set_title(f"Epoch {epoch}: Top-K HIT Rate")
         ax.grid(True, alpha=0.3, axis="y")
-        for i, h in enumerate(audio_hit_topk):
-            ax.text(i - w, h + 0.02, f"{h:.1%}", ha="center", va="bottom", fontsize=7)
+        for i, h in enumerate(hit_topk):
+            ax.text(i, h + 0.02, f"{h:.1%}", ha="center", va="bottom", fontsize=8)
         fig.tight_layout()
-        fig.savefig(f"{prefix}_audio_proposals.png", dpi=120)
+        fig.savefig(f"{prefix}_topk_quality.png", dpi=120)
         plt.close(fig)
-
-    # ── 13. Additive context analysis: audio vs context vs combined ──
-    audio_preds_arr = extra.get("audio_preds") if extra else None
-    context_preds_arr = extra.get("context_preds") if extra else None
-    if audio_preds_arr is not None and context_preds_arr is not None and len(t_ns) > 0:
-        ap_ns = audio_preds_arr[ns].astype(np.float64)
-        cp_ns = context_preds_arr[ns].astype(np.float64)
-        fp_ns = extra["preds"][ns].astype(np.float64)
-        t_ns_f = t_ns.astype(np.float64)
-
-        # HIT = within 3% or +/- 1 frame
-        def _hit(pred, tgt):
-            ratio = np.abs((pred + 1) / (tgt + 1) - 1.0)
-            frame = np.abs(pred - tgt)
-            return (ratio <= 0.03) | (frame <= 1)
-
-        audio_hit = _hit(ap_ns, t_ns_f)
-        context_hit = _hit(cp_ns, t_ns_f)
-        combined_hit = _hit(fp_ns, t_ns_f)
-
-        audio_hit_rate = float(audio_hit.mean())
-        context_hit_rate = float(context_hit.mean())
-        combined_hit_rate = float(combined_hit.mean())
-        context_delta = combined_hit_rate - audio_hit_rate
-
-        # Decision categories
-        n_ns = len(t_ns)
-        audio_only_correct = float((audio_hit & combined_hit).sum() / n_ns)
-        context_helped = float((~audio_hit & combined_hit).sum() / n_ns)
-        context_hurt = float((audio_hit & ~combined_hit).sum() / n_ns)
-        both_wrong = float((~audio_hit & ~combined_hit).sum() / n_ns)
-
-        # Save selection stats to extra for JSON serialization
-        extra["selection_stats"] = {
-            "audio_hit_rate": audio_hit_rate,
-            "context_hit_rate": context_hit_rate,
-            "combined_hit_rate": combined_hit_rate,
-            "context_delta": context_delta,
-            "context_helped": context_helped,
-            "context_hurt": context_hurt,
-            "audio_only_correct": audio_only_correct,
-            "both_wrong": both_wrong,
-        }
 
 
 def save_training_curves(history, run_dir):
@@ -1566,52 +1560,7 @@ def save_training_curves(history, run_dir):
     fig.savefig(os.path.join(run_dir, "relative_error.png"), dpi=150)
     plt.close(fig)
 
-    # ── context analysis: audio vs context vs combined HIT ──
-    has_ss = any("selection_stats" in h for h in history)
-    if has_ss:
-        fig, ax = plt.subplots(figsize=(10, 5))
-
-        a_hit = [h.get("selection_stats", {}).get("audio_hit_rate", 0) for h in history]
-        c_hit = [h.get("selection_stats", {}).get("context_hit_rate", 0) for h in history]
-        f_hit = [h.get("selection_stats", {}).get("combined_hit_rate", 0) for h in history]
-        delta = [h.get("selection_stats", {}).get("context_delta", 0) for h in history]
-
-        ax.plot(epochs, a_hit, label="Audio HIT", linewidth=2, color="#e8834a")
-        ax.plot(epochs, c_hit, label="Context HIT", linewidth=2, color="#c76dba")
-        ax.plot(epochs, f_hit, label="Combined HIT", linewidth=2, color="#6bc46d")
-        axb = ax.twinx()
-        axb.bar(epochs, delta, alpha=0.3, color="#4a90d9", width=0.3, label="Delta (combined - audio)")
-        axb.axhline(y=0, color="gray", linestyle="--", alpha=0.5)
-        axb.set_ylabel("Context Delta (pp)")
-        ax.set_xlabel("Epoch")
-        ax.set_ylabel("HIT Rate")
-        ax.set_title("Audio vs Context vs Combined HIT Rate")
-        ax.legend(loc="upper left")
-        axb.legend(loc="upper right")
-        ax.grid(True, alpha=0.3)
-
-        fig.tight_layout()
-        fig.savefig(os.path.join(run_dir, "override_quality.png"), dpi=150)
-        plt.close(fig)
-
-        # ── decision categories stacked area ──
-        fig, ax = plt.subplots(figsize=(10, 5))
-        cats = ["audio_only_correct", "context_helped", "context_hurt", "both_wrong"]
-        labels = ["Audio+Combined Correct", "Context Helped", "Context Hurt", "Both Wrong"]
-        colors = ["#6bc46d", "#4a90d9", "#eb4528", "#c76dba"]
-        cat_data = []
-        for cat in cats:
-            cat_data.append([h.get("selection_stats", {}).get(cat, 0) for h in history])
-        ax.stackplot(epochs, *cat_data, labels=labels, colors=colors, alpha=0.8)
-        ax.set_xlabel("Epoch")
-        ax.set_ylabel("Fraction of Predictions")
-        ax.set_title("Context Decision Categories")
-        ax.legend(loc="upper right", fontsize=8)
-        ax.set_ylim(0, 1)
-        ax.grid(True, alpha=0.3)
-        fig.tight_layout()
-        fig.savefig(os.path.join(run_dir, "decision_categories.png"), dpi=150)
-        plt.close(fig)
+    # (override_quality and decision_categories graphs removed — unified model has no separate paths)
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -1714,11 +1663,10 @@ def train(args):
 
     # model
     model = OnsetDetector(
-        n_mels=80, d_model=args.d_model, d_event=args.d_event,
-        d_ctx=args.d_ctx,
-        enc_layers=args.enc_layers, enc_event_layers=args.enc_event_layers,
-        audio_path_layers=args.audio_path_layers,
-        context_gap_layers=args.context_gap_layers,
+        n_mels=80, d_model=args.d_model,
+        enc_layers=args.enc_layers,
+        gap_enc_layers=args.gap_enc_layers,
+        fusion_layers=args.fusion_layers,
         n_heads=args.n_heads,
         n_classes=N_CLASSES, max_events=C_EVENTS, dropout=args.dropout,
         snippet_frames=args.snippet_frames,
@@ -1738,17 +1686,14 @@ def train(args):
     elif sys.platform == "win32":
         print("torch.compile: skipped (Windows)")
 
-    # ── warm-start: load audio weights from a previous checkpoint ──
+    # ── warm-start: load matching weights from a previous checkpoint ──
     if args.warm_start:
-        print(f"Warm-start: loading audio weights from {args.warm_start}")
+        print(f"Warm-start: loading weights from {args.warm_start}")
         ws_ckpt = torch.load(args.warm_start, map_location=args.device, weights_only=False)
         ws_state = ws_ckpt["model"]
-        # Load matching keys for audio components
-        audio_prefixes = ("audio_encoder.", "event_encoder.", "audio_path.", "cond_mlp.")
-        ws_keys = {k: v for k, v in ws_state.items() if k.startswith(audio_prefixes)}
         model_state = model.state_dict()
         loaded, skipped = 0, 0
-        for k, v in ws_keys.items():
+        for k, v in ws_state.items():
             if k in model_state and model_state[k].shape == v.shape:
                 model_state[k] = v
                 loaded += 1
@@ -1759,17 +1704,6 @@ def train(args):
         ws_epoch = ws_ckpt.get("epoch", "?")
         ws_metrics = ws_ckpt.get("val_metrics", {})
         print(f"  Source: epoch {ws_epoch}, HIT={ws_metrics.get('hit_rate', 0):.1%}")
-
-    # ── freeze audio: only train context_path ──
-    if args.freeze_audio:
-        frozen_prefixes = ("audio_encoder.", "event_encoder.", "audio_path.", "cond_mlp.")
-        n_frozen = 0
-        for name, param in model.named_parameters():
-            if name.startswith(frozen_prefixes):
-                param.requires_grad = False
-                n_frozen += 1
-        trainable = sum(p.numel() for p in model.parameters() if p.requires_grad)
-        print(f"Freeze audio: {n_frozen} params frozen, {trainable/1e6:.1f}M trainable")
 
     criterion = OnsetLoss(
         weight=loss_weights, gamma=args.focal_gamma,
@@ -1849,13 +1783,7 @@ def train(args):
         train_miss_sum = 0
         train_w10_sum = 0
         train_w3_sum = 0
-        train_audio_miss_sum = 0
-        train_audio_hit_sum = 0
-        train_audio_loss_sum = 0
-        train_ctx_loss_sum = 0
-        train_loss_count = 0
-        train_ctx_hit_sum = 0
-        train_ctx_miss_sum = 0
+        train_hit_sum = 0
 
         # compute batch indices where we trigger eval
         if evals_per_epoch > 1:
@@ -1886,15 +1814,10 @@ def train(args):
             target = target.to(args.device, non_blocking=True)
 
             with torch.autocast("cuda", enabled=amp_enabled):
-                logits, audio_logits, context_logits = model(mel, evt_off, evt_mask, cond)
-
-                # Audio loss: keeps audio path learning
-                audio_loss = criterion(audio_logits, target)
-
-                # Context loss: keeps context path learning
-                ctx_loss = criterion(context_logits, target)
-
-                loss = audio_loss + ctx_loss
+                logits = model(mel, evt_off, evt_mask, cond)
+                if isinstance(logits, tuple):
+                    logits = logits[0]
+                loss = criterion(logits, target)
 
             optimizer.zero_grad(set_to_none=True)
             scaler.scale(loss).backward()
@@ -1906,20 +1829,14 @@ def train(args):
             bs = target.size(0)
             train_loss += loss.item() * bs
             train_total += bs
-            train_audio_loss_sum += audio_loss.item() * bs
-            train_ctx_loss_sum += ctx_loss.item() * bs
-            train_loss_count += bs
 
-            # batch metrics for tqdm - accumulate on GPU, sync every 50 batches
+            # batch metrics for tqdm
             with torch.no_grad():
                 pred = logits.argmax(1)
-                audio_pred = audio_logits.argmax(1)
                 ns = target < (N_CLASSES - 1)
                 ns_count = ns.sum()
                 if ns_count > 0:
                     t_ns = target[ns].float()
-
-                    # Final (after context) stats
                     p_ns = pred[ns].float()
                     frame_err = (p_ns - t_ns).abs()
                     pct_err = ((p_ns + 1) / (t_ns + 1) - 1.0).abs()
@@ -1927,21 +1844,7 @@ def train(args):
                     train_miss_sum += (pct_err > 0.20).sum().item()
                     train_w10_sum += ((pct_err <= 0.10) | (frame_err <= 2)).sum().item()
                     train_w3_sum += ((pct_err <= 0.03) | (frame_err <= 1)).sum().item()
-
-                    # Audio-only stats
-                    ap_ns = audio_pred[ns].float()
-                    a_frame_err = (ap_ns - t_ns).abs()
-                    a_pct_err = ((ap_ns + 1) / (t_ns + 1) - 1.0).abs()
-                    train_audio_miss_sum += (a_pct_err > 0.20).sum().item()
-                    train_audio_hit_sum += ((a_pct_err <= 0.10) | (a_frame_err <= 2)).sum().item()
-
-                    # Context-only stats
-                    ctx_pred = context_logits.argmax(1)
-                    cp_ns = ctx_pred[ns].float()
-                    c_frame_err = (cp_ns - t_ns).abs()
-                    c_pct_err = ((cp_ns + 1) / (t_ns + 1) - 1.0).abs()
-                    train_ctx_hit_sum += ((c_pct_err <= 0.03) | (c_frame_err <= 1)).sum().item()
-                    train_ctx_miss_sum += (c_pct_err > 0.20).sum().item()
+                    train_hit_sum += ((pct_err <= 0.10) | (frame_err <= 2)).sum().item()
 
             # update bars
             epoch_bar.update(1)
@@ -1949,20 +1852,14 @@ def train(args):
                 seg_bar.update(1)
 
             if (batch_idx + 1) % 50 == 0 or batch_idx in eval_at:
-                a_loss = train_audio_loss_sum / train_loss_count
-                c_loss = train_ctx_loss_sum / train_loss_count
+                avg_loss = train_loss / train_total if train_total > 0 else 0
                 if train_ns_total > 0:
-                    a_hit = train_audio_hit_sum / train_ns_total
-                    a_miss = train_audio_miss_sum / train_ns_total
-                    comb_hit = train_w3_sum / train_ns_total
-                    comb_miss = train_miss_sum / train_ns_total
-                    ctx_hit = train_ctx_hit_sum / train_ns_total
-                    ctx_miss = train_ctx_miss_sum / train_ns_total
-                    stats = (f"audio[L={a_loss:.3f} HIT={a_hit:.1%} miss={a_miss:.1%}] "
-                             f"ctx[L={c_loss:.3f} HIT={ctx_hit:.1%} miss={ctx_miss:.1%}] "
-                             f"combined[HIT={comb_hit:.1%}]")
+                    hit = train_hit_sum / train_ns_total
+                    miss = train_miss_sum / train_ns_total
+                    w3 = train_w3_sum / train_ns_total
+                    stats = f"L={avg_loss:.3f} HIT={hit:.1%} miss={miss:.1%} ≤3%={w3:.1%}"
                 else:
-                    stats = f"audio_L={a_loss:.3f} ctx_L={c_loss:.3f}"
+                    stats = f"L={avg_loss:.3f}"
                 epoch_bar.set_postfix_str(stats)
 
             # ── mid-epoch eval checkpoint ──
@@ -2024,9 +1921,7 @@ def _run_eval(model, val_loader, criterion, args, amp_enabled,
     val_preds = val_extra["preds"]
     val_metrics = compute_metrics(val_targets, val_preds)
 
-    # Audio-only metrics (before context reranking)
-    audio_preds = val_extra.get("audio_preds")
-    audio_metrics = compute_metrics(val_targets, audio_preds) if audio_preds is not None else None
+    audio_metrics = None  # unified model has no separate audio path
 
     tag = f"{epoch_frac:.2f}" if epoch_frac != int(epoch_frac) else f"{int(epoch_frac)}"
     audio_hit_str = f" audio_HIT={audio_metrics['hit_rate']:.1%}" if audio_metrics else ""
@@ -2039,17 +1934,7 @@ def _run_eval(model, val_loader, criterion, args, amp_enabled,
           f"≤3%={val_metrics.get('within_3pct', 0):.1%} ≤10%={val_metrics.get('within_10pct', 0):.1%} | "
           f"stop_f1={val_metrics['stop_f1']:.3f} | lr={scheduler.get_last_lr()[0]:.2e}")
 
-    # Print context analysis
-    ss = val_extra.get("selection_stats", {}) if val_extra else {}
-    if ss:
-        print(f"    Context: HIT={ss.get('context_hit_rate', 0):.1%} "
-              f"Audio: HIT={ss.get('audio_hit_rate', 0):.1%} "
-              f"Combined: HIT={ss.get('combined_hit_rate', 0):.1%} "
-              f"delta={ss.get('context_delta', 0):+.2%}")
-        print(f"    Decisions: audio_ok={ss.get('audio_only_correct', 0):.1%} "
-              f"ctx_helped={ss.get('context_helped', 0):.1%} "
-              f"ctx_hurt={ss.get('context_hurt', 0):.1%} "
-              f"both_wrong={ss.get('both_wrong', 0):.1%}")
+    # (no context analysis — unified model has single path)
 
     # ── ablation benchmarks ──
     bench_results = run_benchmarks(model, val_loader, args.device, amp_enabled=amp_enabled)
@@ -2070,12 +1955,8 @@ def _run_eval(model, val_loader, criterion, args, amp_enabled,
         "val_metrics": val_metrics,
         "benchmarks": _serializable(bench_results),
     }
-    # include audio-only metrics (before context reranking)
     if audio_metrics is not None:
         epoch_data["audio_metrics"] = audio_metrics
-    # include selection stats if available
-    if val_extra and "selection_stats" in val_extra:
-        epoch_data["selection_stats"] = val_extra["selection_stats"]
     history.append(epoch_data)
 
     # save eval JSON
@@ -2116,12 +1997,9 @@ if __name__ == "__main__":
     parser.add_argument("--lr", type=float, default=3e-4)
     parser.add_argument("--wd", type=float, default=0.01)
     parser.add_argument("--d-model", type=int, default=384)
-    parser.add_argument("--d-event", type=int, default=128)
-    parser.add_argument("--enc-layers", type=int, default=4)
-    parser.add_argument("--enc-event-layers", type=int, default=2)
-    parser.add_argument("--audio-path-layers", type=int, default=2)
-    parser.add_argument("--d-ctx", type=int, default=192, help="Context path hidden dimension (default 192)")
-    parser.add_argument("--context-gap-layers", type=int, default=2, help="Context gap encoder layers (self-attn)")
+    parser.add_argument("--enc-layers", type=int, default=4, help="AudioEncoder transformer layers")
+    parser.add_argument("--gap-enc-layers", type=int, default=2, help="GapEncoder self-attention layers")
+    parser.add_argument("--fusion-layers", type=int, default=4, help="Fusion self-attention layers over [audio+gap] tokens")
     parser.add_argument("--snippet-frames", type=int, default=10, help="Mel frames per audio snippet (~5ms each, default 10 = ~50ms)")
     parser.add_argument("--n-heads", type=int, default=8)
     parser.add_argument("--dropout", type=float, default=0.1)
@@ -2138,8 +2016,7 @@ if __name__ == "__main__":
     parser.add_argument("--subsample", type=int, default=1, help="Train on every Nth sample (e.g. 4 = 4x less data)")
     parser.add_argument("--evals-per-epoch", type=int, default=1, help="Run eval N times per epoch (default 1 = end only)")
     parser.add_argument("--resume", action="store_true", help="Resume from latest checkpoint in the run")
-    parser.add_argument("--warm-start", type=str, default=None, help="Path to checkpoint to load audio weights from (audio_encoder, event_encoder, audio_path, cond_mlp)")
-    parser.add_argument("--freeze-audio", action="store_true", help="Freeze audio_encoder, event_encoder, audio_path, cond_mlp (only train context_path)")
+    parser.add_argument("--warm-start", type=str, default=None, help="Path to checkpoint to load matching weights from")
     parser.add_argument("--no-compile", action="store_true", help="Disable torch.compile")
     parser.add_argument("--amp", action="store_true", help="Enable mixed precision (experimental on Windows)")
     parser.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")

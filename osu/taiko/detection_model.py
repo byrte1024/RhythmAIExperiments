@@ -1,12 +1,10 @@
-"""Onset detection model: two-path architecture with top-K reranking.
+"""Onset detection model.
 
-Audio Path (proposer): audio-primary with light event cross-attention → 501 logits
-Context Path (selector): K-way classifier over audio's top-K candidates
-Final: context picks class 0-K from audio's ranked proposals
-
-Gradient isolation (exp 18+): stop-gradient between shared encoders and context path.
-Audio loss trains: audio_path + audio_encoder + event_encoder + cond_mlp
-Selection loss trains: context_path ONLY (encoder outputs detached)
+Exp 25+: Unified architecture — audio + gap tokens fused via self-attention.
+Exp 24: Additive context logits (AdditiveOnsetDetector).
+Exp 19-23: Gap-based reranker (RerankerOnsetDetector).
+Exp 17-18: Shared encoder rerankers (legacy).
+Exp 11-16: Legacy two-path additive (LegacyOnsetDetector).
 """
 import math
 import torch
@@ -151,10 +149,139 @@ class EventEncoder(nn.Module):
         return self.up_proj(x)  # (B, C, d_model)
 
 
+class GapEncoder(nn.Module):
+    """Gap-based event encoder (exp 25+).
+
+    Replaces EventEncoder with the proven gap representation from exp 19-24.
+    Computes inter-onset intervals, extracts mel snippets at event positions,
+    and processes through self-attention to produce gap tokens at d_model.
+
+    Output tokens participate in fusion self-attention alongside audio tokens.
+    """
+
+    def __init__(self, n_mels=80, d_model=384, n_layers=2, n_heads=6,
+                 max_events=128, cond_dim=64, dropout=0.1, snippet_frames=10):
+        super().__init__()
+        self.d_model = d_model
+        self.snippet_frames = snippet_frames
+        self.max_events = max_events
+
+        # Snippet encoder: ~50ms mel window → d_model feature vector
+        self.snippet_encoder = nn.Sequential(
+            nn.Linear(n_mels * snippet_frames, d_model),
+            nn.GELU(),
+            nn.Linear(d_model, d_model),
+        )
+
+        # Gap encoding: sinusoidal encoding of inter-onset intervals
+        self.gap_emb = SinusoidalPosEmb(d_model)
+        self.seq_pos_emb = nn.Embedding(max_events + 1, d_model)
+
+        # Self-attention over gap sequence
+        self.film_layers = nn.ModuleList(
+            [FiLM(cond_dim, d_model) for _ in range(n_layers)]
+        )
+        self.layers = nn.ModuleList([
+            nn.TransformerEncoderLayer(
+                d_model=d_model, nhead=n_heads, dim_feedforward=d_model * 4,
+                dropout=dropout, activation="gelu", batch_first=True, norm_first=True,
+            )
+            for _ in range(n_layers)
+        ])
+
+    def _extract_snippets(self, mel, frame_positions, valid_mask):
+        """Extract mel snippets at given positions and encode them.
+
+        mel: (B, n_mels, T)
+        frame_positions: (B, N) mel frame indices
+        valid_mask: (B, N) bool — True = valid position
+        Returns: (B, N, d_model)
+        """
+        B, n_mels, T = mel.shape
+        N = frame_positions.size(1)
+        half = self.snippet_frames // 2
+
+        centers = frame_positions.clamp(half, T - half - 1)
+        offsets = torch.arange(-half, half, device=mel.device)
+        frame_idx = centers.unsqueeze(-1) + offsets
+        frame_idx = frame_idx.clamp(0, T - 1)
+
+        flat_idx = frame_idx.reshape(B, -1)
+        flat_idx = flat_idx.unsqueeze(1).expand(-1, n_mels, -1)
+        snippets = mel.gather(2, flat_idx)
+        snippets = snippets.reshape(B, n_mels, N, self.snippet_frames)
+        snippets = snippets.permute(0, 2, 1, 3).reshape(B, N, -1)
+        snippets = snippets * valid_mask.unsqueeze(-1).float()
+
+        return self.snippet_encoder(snippets)
+
+    def forward(self, event_offsets, event_mask, mel, cond):
+        """
+        event_offsets: (B, C) int — bin positions relative to cursor (negative/zero)
+        event_mask: (B, C) bool — True = padded
+        mel: (B, n_mels, 1000)
+        cond: (B, cond_dim)
+        Returns: (gap_tokens: (B, C, d_model), gap_mask: (B, C) bool)
+        """
+        B, C = event_offsets.shape
+        event_valid = ~event_mask
+
+        # ── 1. Compute gap sequence ──
+        gap_before = event_offsets[:, 1:] - event_offsets[:, :-1]
+        gap_valid = event_valid[:, 1:] & event_valid[:, :-1]
+
+        has_events = event_valid[:, -1]
+        time_since_last = (-event_offsets[:, -1]).unsqueeze(1)
+
+        all_gaps = torch.cat([gap_before, time_since_last], dim=1)  # (B, C)
+        all_gap_valid = torch.cat([gap_valid, has_events.unsqueeze(1)], dim=1)
+        all_gap_mask = ~all_gap_valid
+
+        # ── 2. Build representations: gap encoding + audio snippets ──
+        gap_features = self.gap_emb(all_gaps.abs())  # (B, C, d_model)
+
+        event_mel_frames = 500 + event_offsets
+        snippet_valid_events = event_valid & (event_mel_frames >= 0) & (event_mel_frames < mel.size(2))
+
+        snippet_frames_for_gaps = torch.cat([
+            event_mel_frames[:, 1:],
+            torch.full((B, 1), 500, device=mel.device, dtype=event_mel_frames.dtype),
+        ], dim=1)
+        snippet_valid_for_gaps = torch.cat([
+            snippet_valid_events[:, 1:],
+            has_events.unsqueeze(1),
+        ], dim=1)
+
+        event_snippet_feat = self._extract_snippets(
+            mel, snippet_frames_for_gaps, snippet_valid_for_gaps
+        )  # (B, C, d_model)
+
+        x = gap_features + event_snippet_feat
+
+        seq_pos = torch.arange(C, device=x.device).unsqueeze(0).expand(B, -1)
+        x = x + self.seq_pos_emb(seq_pos)
+
+        # NaN guard
+        all_masked = all_gap_mask.all(dim=1)
+        if all_masked.any():
+            safe_mask = all_gap_mask.clone()
+            safe_mask[all_masked, -1] = False
+        else:
+            safe_mask = all_gap_mask
+
+        # ── 3. Self-attention over gap sequence ──
+        for layer, film in zip(self.layers, self.film_layers):
+            x = layer(x, src_key_padding_mask=safe_mask)
+            x = film(x, cond)
+
+        return x, safe_mask  # (B, C, d_model), (B, C) mask
+
+
 class AudioPath(nn.Module):
     """Audio-primary proposer: audio self-attention + cross-attention to events.
 
     Extracts the cursor token (center of window) and produces broad logits.
+    Used by legacy detectors (exp 11-24).
     """
 
     def __init__(self, d_model=384, n_layers=2, n_heads=8, n_classes=501,
@@ -904,7 +1031,119 @@ class ContextPath(nn.Module):
 
 
 class OnsetDetector(nn.Module):
-    """Two-path onset detector: audio + context additive logits.
+    """Unified onset detector (exp 25+).
+
+    Single path: AudioEncoder → GapEncoder → Fusion self-attention → 501 logits.
+    Audio and gap tokens concatenated and jointly attended — no separate paths.
+
+    Architecture:
+      1. AudioEncoder: mel → 250 audio tokens (d_model)
+      2. GapEncoder: event gaps + snippets → C gap tokens (d_model)
+      3. Concatenate [audio_tokens; gap_tokens] → 250+C tokens
+      4. FusionTransformer: N self-attention layers over combined tokens
+      5. Extract cursor at position 125 → output head → 501 logits
+    """
+
+    def __init__(
+        self,
+        n_mels=80,
+        d_model=384,
+        enc_layers=4,
+        gap_enc_layers=2,
+        fusion_layers=4,
+        n_heads=8,
+        n_classes=501,
+        max_events=128,
+        dropout=0.1,
+        cond_dim=64,
+        snippet_frames=10,
+    ):
+        super().__init__()
+        self.n_classes = n_classes
+        self.d_model = d_model
+
+        # conditioning MLP
+        self.cond_mlp = nn.Sequential(
+            nn.Linear(3, cond_dim),
+            nn.GELU(),
+            nn.Linear(cond_dim, cond_dim),
+        )
+
+        # audio encoder (warm-start from exp 14)
+        self.audio_encoder = AudioEncoder(
+            n_mels=n_mels, d_model=d_model, n_layers=enc_layers,
+            n_heads=n_heads, cond_dim=cond_dim, dropout=dropout,
+        )
+
+        # gap encoder (replaces EventEncoder — proven gap representation)
+        self.gap_encoder = GapEncoder(
+            n_mels=n_mels, d_model=d_model, n_layers=gap_enc_layers,
+            n_heads=n_heads, max_events=max_events, cond_dim=cond_dim,
+            dropout=dropout, snippet_frames=snippet_frames,
+        )
+
+        # fusion: self-attention over concatenated [audio; gap] tokens
+        self.fusion_film_layers = nn.ModuleList(
+            [FiLM(cond_dim, d_model) for _ in range(fusion_layers)]
+        )
+        self.fusion_layers = nn.ModuleList([
+            nn.TransformerEncoderLayer(
+                d_model=d_model, nhead=n_heads, dim_feedforward=d_model * 4,
+                dropout=dropout, activation="gelu", batch_first=True, norm_first=True,
+            )
+            for _ in range(fusion_layers)
+        ])
+
+        # output head (same as AudioPath)
+        self.head_norm = nn.LayerNorm(d_model)
+        self.head_proj = nn.Linear(d_model, n_classes)
+        self.head_smooth = nn.Sequential(
+            nn.Conv1d(1, 8, kernel_size=5, padding=2),
+            nn.GELU(),
+            nn.Conv1d(8, 1, kernel_size=5, padding=2),
+        )
+
+    def forward(self, mel, event_offsets, event_mask, conditioning):
+        """
+        mel: (B, n_mels, 1000)
+        event_offsets: (B, C) past event bin positions relative to cursor
+        event_mask: (B, C) bool, True = padding
+        conditioning: (B, 3) [mean_density, peak_density, density_std]
+        Returns: logits (B, 501)
+        """
+        cond = self.cond_mlp(conditioning)
+
+        # encode audio → 250 tokens
+        audio_tokens = self.audio_encoder(mel, cond)  # (B, 250, d_model)
+
+        # encode gaps → C tokens
+        gap_tokens, gap_mask = self.gap_encoder(
+            event_offsets, event_mask, mel, cond
+        )  # (B, C, d_model), (B, C)
+
+        # concatenate [audio; gap] — audio first so cursor stays at position 125
+        x = torch.cat([audio_tokens, gap_tokens], dim=1)  # (B, 250+C, d_model)
+
+        # padding mask: audio tokens are never masked, gap tokens use gap_mask
+        B = mel.size(0)
+        audio_pad = torch.zeros(B, audio_tokens.size(1), dtype=torch.bool, device=mel.device)
+        fused_mask = torch.cat([audio_pad, gap_mask], dim=1)  # (B, 250+C)
+
+        # fusion: self-attention over all tokens
+        for layer, film in zip(self.fusion_layers, self.fusion_film_layers):
+            x = layer(x, src_key_padding_mask=fused_mask)
+            x = film(x, cond)
+
+        # extract cursor (center of audio window, position 125)
+        cursor = x[:, 125, :]  # (B, d_model)
+
+        logits = self.head_proj(self.head_norm(cursor))
+        logits = logits + self.head_smooth(logits.unsqueeze(1)).squeeze(1)
+        return logits
+
+
+class AdditiveOnsetDetector(nn.Module):
+    """Two-path additive onset detector (exp 24).
 
     Audio path: audio self-attn + event cross-attn → 501 logits
     Context path: gap-based with own encoders → 501 logits
@@ -932,14 +1171,11 @@ class OnsetDetector(nn.Module):
         self.n_classes = n_classes
         self.d_model = d_model
 
-        # conditioning MLP: (mean_density, peak_density, density_std) → cond_dim
         self.cond_mlp = nn.Sequential(
             nn.Linear(3, cond_dim),
             nn.GELU(),
             nn.Linear(cond_dim, cond_dim),
         )
-
-        # shared encoders (used by audio path only)
         self.audio_encoder = AudioEncoder(
             n_mels=n_mels, d_model=d_model, n_layers=enc_layers,
             n_heads=n_heads, cond_dim=cond_dim, dropout=dropout,
@@ -948,13 +1184,10 @@ class OnsetDetector(nn.Module):
             d_model=d_model, d_event=d_event, n_layers=enc_event_layers,
             n_heads=4, max_events=max_events, cond_dim=cond_dim, dropout=dropout,
         )
-
-        # audio path (proposer)
         self.audio_path = AudioPath(
             d_model=d_model, n_layers=audio_path_layers, n_heads=n_heads,
             n_classes=n_classes, cond_dim=cond_dim, dropout=dropout,
         )
-        # context path (additive logits with own encoders)
         self.context_path = ContextPath(
             n_mels=n_mels, d_ctx=d_ctx, n_gap_layers=context_gap_layers,
             n_heads=6, n_classes=n_classes, max_events=max_events,
@@ -962,34 +1195,14 @@ class OnsetDetector(nn.Module):
         )
 
     def forward(self, mel, event_offsets, event_mask, conditioning):
-        """
-        mel: (B, n_mels, 1000)
-        event_offsets: (B, C) past event bin positions relative to cursor
-        event_mask: (B, C) bool, True = padding
-        conditioning: (B, 3) [mean_density, peak_density, density_std]
-        Returns: (logits, audio_logits, context_logits)
-            logits: (B, 501) combined prediction (audio + context)
-            audio_logits: (B, 501) audio-only prediction
-            context_logits: (B, 501) context-only prediction
-        """
         cond = self.cond_mlp(conditioning)
-
-        # shared encoding (for audio path)
         audio_tokens = self.audio_encoder(mel, cond)
         event_tokens = self.event_encoder(event_offsets, event_mask, cond)
-
-        # audio path (gradients flow through shared encoders)
         audio_logits = self.audio_path(audio_tokens, event_tokens, event_mask, cond)
-
-        # context path (own encoders, independent of audio)
-        # cond detached to protect cond_mlp from context loss
         context_logits = self.context_path(
             event_offsets, event_mask, mel, cond.detach()
         )
-
-        # additive combination
         logits = audio_logits + context_logits
-
         return logits, audio_logits, context_logits
 
 

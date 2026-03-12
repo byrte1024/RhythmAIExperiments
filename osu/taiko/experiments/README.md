@@ -23,6 +23,7 @@ Each folder contains a README with hypothesis, results, and key graphs.
 | 22 | [Blind Selection (Shuffled, No Scores)](experiment_22/) | Too aggressive | Shuffling works, but no confidence signal → 50%+ override rate, delta -4.6pp. Context picks reasonably but overrides too often. Need scores back as scalar |
 | 23 | [Shuffled Candidates + Confidence](experiment_23/) | Best reranking | Best override quality ever (F1=67%, acc=64%, 4:1 ratio). But delta still -3.2pp. Proves reranking paradigm fundamentally limited after 9 experiments |
 | 24 | [Additive Context Logits](experiment_24/) | Best delta | Additive logits safer than reranking (best delta -0.64pp), but context without audio access caps at ~53% HIT. Proves separate paths cannot break even — unification needed |
+| 25 | [Unified Audio + Gap Fusion](experiment_25/) | Pending | New paradigm: no separate paths. GapEncoder replaces EventEncoder, audio + gap tokens fused via 4-layer self-attention. Train from scratch, lighter augmentation |
 
 ## Key Lessons
 
