@@ -496,10 +496,34 @@ def compute_metrics(targets, preds):
         m["within_3pct"] = (pct_err <= 0.03).mean().item()
         m["within_10pct"] = (pct_err <= 0.10).mean().item()
         m["above_20pct"] = (pct_err > 0.20).mean().item()
+
+        # ── model score: continuous quality metric [-1, +1] ──
+        # Continuous function of log-ratio error:
+        #   0% error → +1.0 (max reward)
+        #   3% error → 0.0 (neutral)
+        #   200% error → -1.0 (max penalty = magnitude of max reward)
+        #   >200% → capped at -1.0
+        #   ±1 frame → always +1.0 (for small targets)
+        abs_lr = np.abs(log_ratio)
+        threshold = np.log(1.03)   # 3% = neutral point
+        max_pen = np.log(5.0)      # 400% = -1.0
+        pen_range = max_pen - threshold
+        # Reward at 0% = magnitude of penalty at 200%
+        reward_at_zero = (np.log(3.0) - threshold) / pen_range
+
+        scores = np.where(
+            abs_lr <= threshold,
+            (1.0 - abs_lr / threshold) * reward_at_zero,
+            -np.minimum((abs_lr - threshold) / pen_range, 1.0),
+        )
+        # ±1 frame always gets max reward (small targets)
+        scores[frame_err <= 1] = reward_at_zero
+        m["model_score"] = scores.mean().item()
     else:
         m["frame_error_mean"] = 0.0
         m["hit_rate"] = 0.0
         m["miss_rate"] = 1.0
+        m["model_score"] = -1.0
 
     return m
 
@@ -1560,7 +1584,21 @@ def save_training_curves(history, run_dir):
     fig.savefig(os.path.join(run_dir, "relative_error.png"), dpi=150)
     plt.close(fig)
 
-    # (override_quality and decision_categories graphs removed — unified model has no separate paths)
+    # ── model score ──
+    fig, ax = plt.subplots(figsize=(10, 5))
+    scores = [h["val_metrics"].get("model_score", 0) for h in history]
+    ax.plot(epochs, scores, linewidth=2, color="#4a90d9", marker="o", markersize=4)
+    ax.axhline(y=0, color="gray", linestyle="--", alpha=0.5)
+    ax.fill_between(epochs, scores, 0, alpha=0.2,
+                     color="#4a90d9" if all(s >= 0 for s in scores) else "#c76dba")
+    ax.set_xlabel("Epoch")
+    ax.set_ylabel("Model Score")
+    ax.set_title("Model Score (0%=+0.68, 3%=0, 200%=-0.68, 400%=-1)")
+    ax.set_ylim(-1, 1)
+    ax.grid(True, alpha=0.3)
+    fig.tight_layout()
+    fig.savefig(os.path.join(run_dir, "model_score.png"), dpi=150)
+    plt.close(fig)
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -1784,6 +1822,7 @@ def train(args):
         train_w10_sum = 0
         train_w3_sum = 0
         train_hit_sum = 0
+        train_score_sum = 0.0
 
         # compute batch indices where we trigger eval
         if evals_per_epoch > 1:
@@ -1846,6 +1885,21 @@ def train(args):
                     train_w3_sum += ((pct_err <= 0.03) | (frame_err <= 1)).sum().item()
                     train_hit_sum += ((pct_err <= 0.10) | (frame_err <= 2)).sum().item()
 
+                    # model score: continuous [-1, +1]
+                    # 0%→+1, 3%→0, 200%→-1, ±1 frame→+1
+                    abs_lr = ((p_ns + 1).log() - (t_ns + 1).log()).abs()
+                    thr = math.log(1.03)
+                    max_p = math.log(5.0)
+                    pen_range = max_p - thr
+                    r_at_zero = (math.log(3.0) - thr) / pen_range
+                    batch_scores = torch.where(
+                        abs_lr <= thr,
+                        (1.0 - abs_lr / thr) * r_at_zero,
+                        -(((abs_lr - thr) / pen_range).clamp(max=1.0)),
+                    )
+                    batch_scores[frame_err <= 1] = r_at_zero
+                    train_score_sum += batch_scores.sum().item()
+
             # update bars
             epoch_bar.update(1)
             if seg_bar is not None:
@@ -1857,7 +1911,8 @@ def train(args):
                     hit = train_hit_sum / train_ns_total
                     miss = train_miss_sum / train_ns_total
                     w3 = train_w3_sum / train_ns_total
-                    stats = f"L={avg_loss:.3f} HIT={hit:.1%} miss={miss:.1%} ≤3%={w3:.1%}"
+                    score = train_score_sum / train_ns_total
+                    stats = f"L={avg_loss:.3f} HIT={hit:.1%} miss={miss:.1%} score={score:+.3f}"
                 else:
                     stats = f"L={avg_loss:.3f}"
                 epoch_bar.set_postfix_str(stats)
@@ -1932,7 +1987,8 @@ def _run_eval(model, val_loader, criterion, args, amp_enabled,
           f"exact={val_metrics.get('exact_match', 0):.1%} ±1f={val_metrics.get('within_1_frame', 0):.1%} "
           f"±2f={val_metrics.get('within_2_frames', 0):.1%} | "
           f"≤3%={val_metrics.get('within_3pct', 0):.1%} ≤10%={val_metrics.get('within_10pct', 0):.1%} | "
-          f"stop_f1={val_metrics['stop_f1']:.3f} | lr={scheduler.get_last_lr()[0]:.2e}")
+          f"stop_f1={val_metrics['stop_f1']:.3f} | "
+          f"score={val_metrics.get('model_score', 0):+.3f} | lr={scheduler.get_last_lr()[0]:.2e}")
 
     # (no context analysis — unified model has single path)
 
