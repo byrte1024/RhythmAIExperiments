@@ -82,8 +82,51 @@ Same trapezoid soft-target loss on audio_logits and context_logits independently
 
 ## Result
 
-*Pending*
+**Best delta ever (-0.64pp at E4), but context logit magnitude divergence at E5.** Killed after E5.
+
+| Metric | E1 | E2 | E3 | E4 (best) | E5 |
+|--------|----|----|-----|-----------|-----|
+| Audio HIT | 69.5% | 69.5% | 69.5% | 69.5% | 69.5% |
+| Context HIT | 48.7% | 48.6% | 49.0% | 53.8% | 53.3% |
+| Combined HIT | 68.4% | 68.6% | 68.7% | **68.8%** | 68.5% |
+| Delta | -1.04pp | -0.85pp | -0.79pp | **-0.64pp** | -0.97pp |
+| context_helped | 5.68% | 5.64% | 5.39% | 5.52% | 5.97% |
+| context_hurt | 6.72% | 6.49% | 6.18% | **6.15%** | 6.94% |
+| audio_only_correct | 62.7% | 63.0% | 63.3% | 63.3% | 62.5% |
+| both_wrong | 24.9% | 24.9% | 25.1% | 25.0% | 24.6% |
+| Val loss | 5.917 | 5.884 | 5.877 | 5.772 | 5.739 |
+
+**What worked:**
+- Additive paradigm is fundamentally safer than reranking — delta -0.64pp at best vs reranking's best of -0.77pp (exp 21 E1), and less volatile.
+- Context learned real signal: 48.7% → 53.8% standalone HIT from gaps + snippets alone. The cursor architecture produces meaningful 501-way distributions.
+- Val loss consistently dropped — context was genuinely learning better timing predictions.
+- context_hurt tracked downward E1-E4 (6.72% → 6.15%), confirming context learned where NOT to push.
+
+**What didn't work:**
+- E5 regression: context logit magnitudes grew, hurt spiked to 6.94%, delta back to -0.97pp. The predicted risk materialized — unchecked logit magnitude growth.
+- context_helped never exceeded ~6%. Even with 53.8% standalone HIT, context couldn't reliably fix audio's mistakes because it doesn't see the audio signal.
+- Combined HIT never reached audio-only HIT. The fundamental issue: context operating blindly (only gaps + snippets) will always hurt as much as it helps because it can't condition its influence on what audio already knows.
+
+**The core insight from 10 experiments (15-24):**
+
+Every approach — reranking (exp 15-23) and additive logits (exp 24) — treats context as a separate system that either overrides or nudges audio. But context without audio access is fundamentally limited: it can learn rhythm patterns (~53% HIT) but can't know when audio is already correct (70% of the time). This means context's influence is essentially random with respect to audio's correctness, guaranteeing net-negative delta.
+
+## Graphs
+
+![Loss](loss.png)
+![Accuracy](accuracy.png)
+![Hit/Good/Miss](hit_good_miss.png)
+![Frame Error](frame_error.png)
+![Frame Tiers](frame_tiers.png)
+![Ratio Tiers](ratio_tiers.png)
+![Relative Error](relative_error.png)
+![Stop F1](stop_f1.png)
+![Override Quality](override_quality.png)
+![Decision Categories](decision_categories.png)
 
 ## Lesson
 
-*Pending*
+- **Additive logits are safer than reranking** — soft influence self-regulates early (small magnitudes = safe default), but magnitude growth eventually causes the same problems.
+- **Context in isolation caps at ~53% HIT** — gap patterns + snippets without full audio are not sufficient to reliably predict onset positions. Useful signal exists but not enough to improve on a 70% audio model.
+- **Separate paths cannot break even** — 10 experiments across two paradigms (reranking and additive) prove that any architecture where context operates without seeing audio's full representation will have context_hurt ≈ context_helped. The information asymmetry is the bottleneck, not the output interface.
+- **The path forward is unification** — a single model where audio and context features (gaps, rhythm) are jointly attended to, not separate paths combined post-hoc. The model needs to see both "what does the audio say?" and "what does the rhythm pattern say?" simultaneously when making each prediction.
