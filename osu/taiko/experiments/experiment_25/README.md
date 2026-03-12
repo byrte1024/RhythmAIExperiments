@@ -72,8 +72,53 @@ events (B, C)      → GapEncoder (2 layers)   → C gap tokens (d=384)
 
 ## Result
 
-*Pending*
+**Matched exp 14 but did not exceed it. Overfitting by E5, context contribution shrinking.** Killed after E5.
+
+| Metric | E1 | E2 | E3 | E4 | E5 (best) |
+|--------|-----|-----|-----|-----|-----------|
+| HIT | 66.0% | 68.4% | 67.9% | 68.4% | **68.6%** |
+| GOOD | 66.4% | 68.8% | 68.2% | 68.7% | **68.9%** |
+| Miss | 33.4% | 31.1% | 31.6% | 31.1% | **30.9%** |
+| Score | 0.298 | 0.328 | 0.320 | 0.327 | **0.330** |
+| Accuracy | 47.7% | 49.8% | 49.2% | 49.6% | **49.8%** |
+| Frame err mean | 13.4 | 11.7 | 12.4 | 11.9 | 11.9 |
+| Stop F1 | 0.467 | 0.486 | 0.483 | **0.502** | 0.495 |
+| Train loss | 3.405 | 3.017 | 2.859 | 2.761 | 2.694 |
+| Val loss | 2.697 | **2.623** | 2.654 | 2.658 | 2.665 |
+| no_events acc | 40.9% | 44.7% | 46.1% | 46.1% | 47.5% |
+| Context delta | 6.8% | 5.1% | 3.1% | 3.5% | **2.3%** |
+
+**What worked:**
+- Unified fusion matched exp 14's best-epoch range (~68.6% HIT) despite training from scratch. The architecture is capable of learning audio features through the fusion pathway.
+- Training from scratch converged fast - reached exp 14 E1-level performance by E1 (66.0% HIT vs exp 14's 66.0%), matching exp 14 E3 by E3. No penalty for skipping warm-start.
+- Benchmarks confirm audio understanding: no_audio accuracy stayed near 0%, static_audio ~25%, meaning the model genuinely uses audio signal through the fusion layers.
+
+**What didn't work:**
+- **Context contribution shrank over training** - the gap between full accuracy and no_events accuracy dropped from 6.8% (E1) to 2.3% (E5). The model learned to rely almost entirely on audio, with gap tokens contributing less each epoch.
+- **Overfitting from E2 onward** - val loss bottomed at E2 (2.623) then rose steadily to 2.665 by E5, while train loss kept falling (3.02 → 2.69). The lighter augmentation (intended to encourage context reliance) instead accelerated overfitting.
+- **Never exceeded exp 14's best** - exp 14 peaked at 68.9% HIT / 0.337 score at E8. Exp 25 at E5 (68.6% / 0.330) was still below, and the overfitting trend means further training would not close the gap.
+- **Gap tokens drowned out** - the predicted risk materialized. With 250 audio tokens vs ~128 gap tokens (7:1 ratio), self-attention learned to route through audio features. Gap tokens became noise the model learned to ignore, same as exp 14's event tokens but through a different mechanism.
+
+**The core finding:**
+
+Unification alone is not sufficient. Even with bidirectional attention between audio and gap tokens, the model converges to an audio-dominant solution because audio features are more immediately informative (directly predict nearby onsets) while gap features require multi-hop reasoning. The cursor bottleneck compounds this: extracting a single token at position 125 means nearby audio energy directly predicts close targets, but distant targets require information to propagate through multiple attention layers. Entropy analysis confirms this - prediction confidence correlates with target proximity to bin 0, not prediction correctness.
+
+## Graphs
+
+![Loss](loss.png)
+![Accuracy](accuracy.png)
+![Hit/Good/Miss](hit_good_miss.png)
+![Frame Error](frame_error.png)
+![Frame Tiers](frame_tiers.png)
+![Ratio Tiers](ratio_tiers.png)
+![Relative Error](relative_error.png)
+![Stop F1](stop_f1.png)
+![Model Score](model_score.png)
 
 ## Lesson
 
-*Pending*
+- **Unification doesn't guarantee fusion** - putting audio and gap tokens in the same self-attention doesn't mean the model learns to use both. When one modality (audio) is more directly informative, gradient descent finds the path of least resistance and the weaker modality atrophies.
+- **The cursor bottleneck is real** - single-position extraction at token 125 creates an information funnel where nearby audio dominates. Distant targets require multi-hop attention propagation that 4 fusion layers can't reliably learn. Future architectures should explore multi-position pooling, learnable cursor queries, or framewise detection.
+- **Lighter augmentation backfired** - reducing augmentation to encourage context reliance instead caused faster overfitting without improving context contribution. The model overfits to audio patterns rather than learning to lean on gaps.
+- **Context contribution as a diagnostic** - tracking the accuracy gap between full model and no_events benchmark over training is a direct measure of whether context features are being used. A shrinking gap is an early termination signal.
+- **11 experiments (15-25) confirm: context integration is the hard problem** - whether separate paths (exp 15-24) or unified (exp 25), the model consistently finds ways to ignore or underweight context. The next approach needs to structurally force context dependence, not just make it available.

@@ -4,7 +4,7 @@ Autoregressive model that predicts beat onset timings for osu!taiko charts given
 
 ## Architecture
 
-**Current: Unified Audio + Gap Fusion ([Exp 25](experiments/experiment_25))** - ~19M params, training in progress
+**Current: Unified Audio + Gap Fusion ([Exp 25](experiments/experiment_25))** - ~19M params
 - **AudioEncoder**: Conv stack + 4 FiLM-conditioned transformer layers over mel spectrogram → 250 audio tokens
 - **GapEncoder**: Inter-onset intervals + local mel snippets + 2 transformer layers → C gap tokens
 - **FusionTransformer**: Audio + gap tokens concatenated and fused via 4-layer self-attention

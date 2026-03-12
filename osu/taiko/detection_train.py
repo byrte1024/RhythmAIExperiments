@@ -196,23 +196,47 @@ class OnsetDataset(Dataset):
             fl = rng.integers(20, 101)
             mel_window[:, -fl:] *= np.linspace(1, 0, fl, dtype=np.float32)[np.newaxis, :]
 
-        # mel gain ±2dB (30%)
-        if rng.random() < 0.3:
-            mel_window = mel_window + rng.uniform(-2.0, 2.0)
-        # mel noise (15%)
-        if rng.random() < 0.15:
-            mel_window = mel_window + rng.normal(0, rng.uniform(0.1, 0.3), mel_window.shape).astype(np.float32)
+        # mel gain ±3dB (50%)
+        if rng.random() < 0.5:
+            mel_window = mel_window + rng.uniform(-3.0, 3.0)
+        # mel noise (30%)
+        if rng.random() < 0.30:
+            mel_window = mel_window + rng.normal(0, rng.uniform(0.1, 0.4), mel_window.shape).astype(np.float32)
 
-        # SpecAugment freq mask (20%)
-        if rng.random() < 0.2:
-            n = rng.integers(1, 9)
-            f = rng.integers(0, mel_window.shape[0] - n)
-            mel_window[f:f + n, :] = 0
-        # SpecAugment time mask (20%)
-        if rng.random() < 0.2:
-            n = rng.integers(1, 31)
-            t = rng.integers(0, mel_window.shape[1] - n)
-            mel_window[:, t:t + n] = 0
+        # frequency jitter: shift all mel bands up/down by ±1-5 bins (30%)
+        if rng.random() < 0.30:
+            shift = rng.integers(-5, 6)
+            if shift != 0:
+                mel_window = np.roll(mel_window, shift, axis=0)
+                if shift > 0:
+                    mel_window[:shift, :] = 0
+                else:
+                    mel_window[shift:, :] = 0
+
+        # temporal corruption: split into 10-frame chunks and shuffle (2%)
+        if rng.random() < 0.02:
+            chunk = 10
+            n_chunks = mel_window.shape[1] // chunk
+            if n_chunks > 1:
+                chunks = [mel_window[:, i*chunk:(i+1)*chunk] for i in range(n_chunks)]
+                remainder = mel_window[:, n_chunks*chunk:]
+                rng.shuffle(chunks)
+                mel_window = np.concatenate(chunks + [remainder], axis=1)
+
+        # SpecAugment freq mask (40%, 1-2 masks, up to 15 bands each)
+        if rng.random() < 0.4:
+            n_masks = rng.integers(1, 3)
+            for _ in range(n_masks):
+                n = rng.integers(1, 16)
+                f = rng.integers(0, mel_window.shape[0] - n)
+                mel_window[f:f + n, :] = 0
+        # SpecAugment time mask (40%, 1-2 masks, up to 50 frames each)
+        if rng.random() < 0.4:
+            n_masks = rng.integers(1, 3)
+            for _ in range(n_masks):
+                n = rng.integers(1, 51)
+                t = rng.integers(0, mel_window.shape[1] - n)
+                mel_window[:, t:t + n] = 0
 
         # conditioning jitter ±10% (30%)
         if rng.random() < 0.3:
