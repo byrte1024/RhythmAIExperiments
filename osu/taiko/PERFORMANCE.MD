@@ -54,7 +54,7 @@ mapped onset. Trained for 8 epochs on ~150k samples.
 
 **Prediction density heatmap (E8):**
 
-![Exp 14 E8 Heatmap](runs/detect_experiment_14/epochs/epoch_008_heatmap.png)
+![Exp 14 E8 Heatmap](experiments/experiment_14/epoch_008_heatmap.png)
 
 The heatmap shows strong diagonal concentration - predictions cluster tightly around the correct target
 across the full range of bin offsets. The bright diagonal line confirms the model has learned the
@@ -63,14 +63,14 @@ ratio-quantized prediction modes (the model learns common rhythmic ratios like 1
 
 **Prediction distribution (E8):**
 
-![Exp 14 E8 Pred Dist](runs/detect_experiment_14/epochs/epoch_008_pred_dist.png)
+![Exp 14 E8 Pred Dist](experiments/experiment_14/epoch_008_pred_dist.png)
 
 The predicted distribution closely mirrors the target distribution shape - peaked around bins 10-40
 with a natural tail. This means the model has learned the overall rhythm density patterns of taiko charts.
 
 **Target vs Predicted scatter (E8):**
 
-![Exp 14 E8 Scatter](runs/detect_experiment_14/epochs/epoch_008_scatter.png)
+![Exp 14 E8 Scatter](experiments/experiment_14/epoch_008_scatter.png)
 
 Points cluster along the diagonal with clear linear structure. The discrete rays visible correspond
 to integer-ratio relationships between predictions and targets, a natural consequence of musical
@@ -89,15 +89,15 @@ timing (e.g., predicting the next beat vs. the next half-beat).
 | 7 | 50.2% | 68.7% | 69.2% | 30.5% | 12.1 | 2.670 | 0.452 |
 | 8 | 50.4% | 68.9% | 69.5% | 30.3% | 11.6 | 2.672 | 0.502 |
 
-![Exp 14 HIT/GOOD/MISS](runs/detect_experiment_14/hit_good_miss.png)
+![Exp 14 HIT/GOOD/MISS](experiments/experiment_14/hit_good_miss.png)
 
-![Exp 14 Accuracy](runs/detect_experiment_14/accuracy.png)
+![Exp 14 Accuracy](experiments/experiment_14/accuracy.png)
 
-![Exp 14 Loss](runs/detect_experiment_14/loss.png)
+![Exp 14 Loss](experiments/experiment_14/loss.png)
 
-![Exp 14 Frame Error](runs/detect_experiment_14/frame_error.png)
+![Exp 14 Frame Error](experiments/experiment_14/frame_error.png)
 
-![Exp 14 Stop F1](runs/detect_experiment_14/stop_f1.png)
+![Exp 14 Stop F1](experiments/experiment_14/stop_f1.png)
 
 ---
 
