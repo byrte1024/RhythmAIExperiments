@@ -569,15 +569,15 @@ def main():
     else:
         model.load_state_dict(state)
     if ModelClass == OnsetDetector:
-        print("  (exp 25+ checkpoint — unified audio+gap fusion)")
+        print("  (exp 25+ checkpoint - unified audio+gap fusion)")
     elif ModelClass == AdditiveOnsetDetector:
-        print("  (exp 24 checkpoint — additive context logits)")
+        print("  (exp 24 checkpoint - additive context logits)")
     elif ModelClass == LegacyOnsetDetector:
-        print("  (legacy checkpoint — exp 11-16 additive logits)")
+        print("  (legacy checkpoint - exp 11-16 additive logits)")
     elif ModelClass == Exp17OnsetDetector:
-        print("  (exp 17 checkpoint — shared-gradient top-K reranking)")
+        print("  (exp 17 checkpoint - shared-gradient top-K reranking)")
     elif ModelClass == Exp18OnsetDetector:
-        print("  (exp 18 checkpoint — two-stage stop-gradient reranking)")
+        print("  (exp 18 checkpoint - two-stage stop-gradient reranking)")
     t_model_load = time.perf_counter() - t0
     print(f"  Epoch {ckpt['epoch']}, val_loss={ckpt['val_loss']:.4f}, acc={ckpt.get('val_metrics', {}).get('accuracy', 0):.3f}")
 

@@ -2,9 +2,9 @@
 
 ## Hypothesis
 
-Experiment 12 showed that increasing the context path capacity while reducing the audio aux loss was catastrophic — the audio proposer collapsed into mode collapse (226 unique preds, horizontal banding in scatter, top-10 only 65%). The lesson: the audio aux loss at 0.2 is load-bearing and the audio path must be strong before the context path can be useful.
+Experiment 12 showed that increasing the context path capacity while reducing the audio aux loss was catastrophic - the audio proposer collapsed into mode collapse (226 unique preds, horizontal banding in scatter, top-10 only 65%). The lesson: the audio aux loss at 0.2 is load-bearing and the audio path must be strong before the context path can be useful.
 
-Experiment 11 had excellent results (E5: 47.1% acc, 64.8% HIT, top-3 ~86%, top-10 ~95%) but suffered from autoregressive drift during inference — the model trains on ground truth event history but infers on its own noisy predictions, and errors compound over a song's duration.
+Experiment 11 had excellent results (E5: 47.1% acc, 64.8% HIT, top-3 ~86%, top-10 ~95%) but suffered from autoregressive drift during inference - the model trains on ground truth event history but infers on its own noisy predictions, and errors compound over a song's duration.
 
 This experiment keeps exp 11's architecture and loss exactly as-is, and adds only the AR-simulating augmentations from exp 12:
 
@@ -39,7 +39,7 @@ Ran for 2 epochs before being stopped early due to discovery of a fundamental da
 | stop_f1 | 0.347 | 0.325 | 0.370 |
 | p99 error | 274 | 316 | 212 |
 
-Raw accuracy slightly behind exp 11 (expected — harder augmentations), but the benchmarks showed exactly the desired effect:
+Raw accuracy slightly behind exp 11 (expected - harder augmentations), but the benchmarks showed exactly the desired effect:
 
 | Benchmark | Exp 13 E1 | Exp 13 E2 | Exp 11 E2 |
 |-----------|-----------|-----------|-----------|
@@ -50,14 +50,14 @@ Raw accuracy slightly behind exp 11 (expected — harder augmentations), but the
 | random_events | 28.8% | **32.5%** | 26.0% |
 
 The AR augmentations worked as intended:
-- **no_audio dropped to 0.4%** — strongest audio dominance ever. The model almost completely ignores events without audio.
-- **Corruption resilience up ~8-10% across the board** vs exp 11 — metronome, time_shifted, random_events all ~30-33% vs exp 11's ~22-26%.
+- **no_audio dropped to 0.4%** - strongest audio dominance ever. The model almost completely ignores events without audio.
+- **Corruption resilience up ~8-10% across the board** vs exp 11 - metronome, time_shifted, random_events all ~30-33% vs exp 11's ~22-26%.
 - The model learned that event context can be noisy and shouldn't be blindly trusted.
 
 **Entropy analysis** revealed three distinct confidence populations:
 - **HIT** predictions: low entropy (confident and correct), sharp peak at ~2.7 nats
 - **MISS** predictions: moderate entropy (less confident, wrong), peak at ~3.2 nats
-- **GOOD** predictions (close but not exact): extremely high entropy (~4.5 nats), flat distribution — the model spreads probability across nearby bins and the argmax lands close by chance
+- **GOOD** predictions (close but not exact): extremely high entropy (~4.5 nats), flat distribution - the model spreads probability across nearby bins and the argmax lands close by chance
 
 **Inference on real songs** still showed autoregressive drift despite the augmentations. The model's per-prediction accuracy was good, but errors still compounded over song duration.
 
@@ -79,10 +79,10 @@ This means `event_bin = int(time_ms / 5.0)` but `mel_frame[event_bin]` represent
 | 5 min | **680ms (136.4 frames)** |
 
 By 3 minutes into a song, the model is seeing audio from **408ms before the actual event**. This likely explains:
-1. The ~46% accuracy ceiling across all experiments — the model literally cannot learn precise timing because the labels are wrong relative to the audio
-2. The "blurry" heatmap diagonal — predictions scatter because the audio doesn't match the expected event position
-3. Why inference seems worse than validation — the model learned to compensate for drift at specific offsets in the training distribution, but inference starts from different positions
-4. Why autoregressive errors compound — each prediction is slightly off due to the underlying misalignment, and subsequent predictions inherit that systematic error
+1. The ~46% accuracy ceiling across all experiments - the model literally cannot learn precise timing because the labels are wrong relative to the audio
+2. The "blurry" heatmap diagonal - predictions scatter because the audio doesn't match the expected event position
+3. Why inference seems worse than validation - the model learned to compensate for drift at specific offsets in the training distribution, but inference starts from different positions
+4. Why autoregressive errors compound - each prediction is slightly off due to the underlying misalignment, and subsequent predictions inherit that systematic error
 
 ![Pred Dist E2](epoch_002_pred_dist.png)
 ![Heatmap E2](epoch_002_heatmap.png)

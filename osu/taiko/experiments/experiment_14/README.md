@@ -20,11 +20,11 @@ By 3 minutes, the model was seeing audio from **408ms before the labeled event**
 The dataset has been regenerated with the exact `BIN_MS = HOP_LENGTH / SAMPLE_RATE * 1000`. Everything else is identical to experiment 13: same two-path architecture (~21M params), same loss (main + 0.2 audio aux), same AR augmentations (recency-scaled jitter, global shift, 8% insertions/deletions), same NaN guard.
 
 **Expected outcomes:**
-- Sharper scatter plots with a tighter diagonal — predictions should cluster close to the identity line instead of a diffuse band
+- Sharper scatter plots with a tighter diagonal - predictions should cluster close to the identity line instead of a diffuse band
 - Miss rate dropping significantly, estimated **10-30%** (from exp 13's ~43%)
-- Accuracy ceiling breaking well past 46% — potentially 60%+ since the model can now learn precise audio-event correspondence
+- Accuracy ceiling breaking well past 46% - potentially 60%+ since the model can now learn precise audio-event correspondence
 - Cleaner heatmaps with less off-diagonal spread
-- Better inference on real songs — the systematic drift that plagued all previous inference runs should be gone
+- Better inference on real songs - the systematic drift that plagued all previous inference runs should be gone
 
 This is the most impactful single change in the experiment series. Every model improvement from exp 05-13 was fighting against corrupted ground truth.
 
@@ -73,26 +73,26 @@ Every record broken. Miss rate went from ~42% to 30.3% (within the predicted 10-
 ### Key Observations
 
 **The data fix unlocked the audio path.** In previous experiments, the model rationally relied on event context over audio because audio was misaligned. Now audio is the dominant signal:
-- no_events (50.2%) ≈ full accuracy (50.4%) — audio alone nearly matches full performance
-- no_audio (0.1-4.7%) — without audio the model is helpless
-- All corruption benchmarks (metronome, time_shifted, random_events) within 1-4% of full accuracy — corrupting events barely matters
+- no_events (50.2%) ≈ full accuracy (50.4%) - audio alone nearly matches full performance
+- no_audio (0.1-4.7%) - without audio the model is helpless
+- All corruption benchmarks (metronome, time_shifted, random_events) within 1-4% of full accuracy - corrupting events barely matters
 
-**The scatter is dramatically sharper** — tight diagonal especially for targets <100, compared to the diffuse blur of all previous experiments. However, clear **ray patterns** fan out from the origin at harmonic multiples (2x, 0.5x, etc), showing the model picks the right tempo but sometimes the wrong beat.
+**The scatter is dramatically sharper** - tight diagonal especially for targets <100, compared to the diffuse blur of all previous experiments. However, clear **ray patterns** fan out from the origin at harmonic multiples (2x, 0.5x, etc), showing the model picks the right tempo but sometimes the wrong beat.
 
 **The context path is dormant.** no_events accuracy matches full accuracy, meaning context contributes almost nothing. This explains:
 - Density conditioning not affecting inference output
 - The ~50% accuracy plateau being the audio-only ceiling
 - Ray patterns / harmonic confusion that context (knowing recent beat spacing) should resolve
 
-**ne_na_stop is unstable**, oscillating between 0% and 87% across epochs — STOP behavior without any input hasn't converged.
+**ne_na_stop is unstable**, oscillating between 0% and 87% across epochs - STOP behavior without any input hasn't converged.
 
-**Inference on real songs** produced the first acceptable results — near-perfect on some songs. Still missing notes and not responding to density, consistent with the dormant context path.
+**Inference on real songs** produced the first acceptable results - near-perfect on some songs. Still missing notes and not responding to density, consistent with the dormant context path.
 
 ### Retrospective: Why Previous Experiments Behaved the Way They Did
 
 The data misalignment retroactively explains the entire experiment series:
 
-- **Why the model relied on events over audio (exp 09)**: Audio was misaligned garbage past 30s. The model was *correct* to prefer events — they preserved relative spacing even when absolute positions drifted.
+- **Why the model relied on events over audio (exp 09)**: Audio was misaligned garbage past 30s. The model was *correct* to prefer events - they preserved relative spacing even when absolute positions drifted.
 - **Why heavy augmentation was catastrophic (exp 07)**: We corrupted the only reliable signal (events) while the "reliable" signal (audio) was broken. The model had nothing left.
 - **Why the audio aux loss was load-bearing (exp 12)**: Without forcing it, the audio path wouldn't learn because the audio genuinely didn't match the labels.
 - **Why the ~46% accuracy ceiling was unbreakable**: 100% of training samples had >10 frames of drift. At the median sample position, the drift exceeded even the 20% fail tolerance of the soft targets for ALL target sizes. The model was being trained on labels its own loss function classified as "total failure."
@@ -115,11 +115,11 @@ https://file.garden/aXFAdd8gjAe3Zl9i/Screen%20Recording%202026-03-10%20105727.mp
 
 ## Lesson
 
-**Data quality > model complexity.** A single constant (`5.0` → `4.98866`) had more impact than every architecture change, loss function redesign, and augmentation strategy combined. The model was never the bottleneck — the data was.
+**Data quality > model complexity.** A single constant (`5.0` → `4.98866`) had more impact than every architecture change, loss function redesign, and augmentation strategy combined. The model was never the bottleneck - the data was.
 
-The ~50% accuracy plateau is now understood as the **audio-only ceiling**. The context path and density conditioning are dormant — the model does almost as well with no events as with full context. Breaking past 50% requires activating the context path, which likely means:
+The ~50% accuracy plateau is now understood as the **audio-only ceiling**. The context path and density conditioning are dormant - the model does almost as well with no events as with full context. Breaking past 50% requires activating the context path, which likely means:
 1. Understanding why it's not contributing despite the architecture supporting it
 2. Adding density ablation benchmarks to quantify conditioning impact
 3. Possibly adjusting the aux loss or training schedule to force context engagement
 
-The ray patterns in the scatter (harmonic confusion) are a clear signal that context *should* help — knowing recent beat spacing directly disambiguates 2x vs 1x vs 0.5x intervals. The information is available in the event history; the model just isn't using it.
+The ray patterns in the scatter (harmonic confusion) are a clear signal that context *should* help - knowing recent beat spacing directly disambiguates 2x vs 1x vs 0.5x intervals. The information is available in the event history; the model just isn't using it.

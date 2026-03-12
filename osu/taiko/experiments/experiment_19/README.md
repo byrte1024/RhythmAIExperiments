@@ -6,9 +6,9 @@ Across experiments 15-18, every context path failed to add value for timing pred
 
 Two key insights drive this redesign:
 
-1. **Rhythm is about gaps, not positions.** A sequence of events at bins [-500, -350, -200, -100, -50] is hard to reason about. The gaps [150, 150, 100, 50] immediately reveal a regular rhythm that's accelerating. Candidates should be expressed the same way — "this candidate proposes a 65-bin gap after the last event" instead of "this candidate is at bin 15."
+1. **Rhythm is about gaps, not positions.** A sequence of events at bins [-500, -350, -200, -100, -50] is hard to reason about. The gaps [150, 150, 100, 50] immediately reveal a regular rhythm that's accelerating. Candidates should be expressed the same way - "this candidate proposes a 65-bin gap after the last event" instead of "this candidate is at bin 15."
 
-2. **Context needs its own audio understanding.** Previous context paths either had no audio (exp 15-16), grabbed audio tokens from the shared encoder (exp 17-18), or relied entirely on event positions. But context needs to know *what events sounded like* — "past events were on drum transients, this candidate also has a drum transient" is exactly the signal needed to distinguish good from bad candidates.
+2. **Context needs its own audio understanding.** Previous context paths either had no audio (exp 15-16), grabbed audio tokens from the shared encoder (exp 17-18), or relied entirely on event positions. But context needs to know *what events sounded like* - "past events were on drum transients, this candidate also has a drum transient" is exactly the signal needed to distinguish good from bad candidates.
 
 ### Core changes
 
@@ -28,11 +28,11 @@ Each event and each candidate gets a ~50ms mel spectrogram snippet extracted at 
 - "What does the audio look like at each candidate position?"
 - STOP candidates get a learned embedding instead of a snippet.
 
-Events outside the mel window (>2.5s ago) get zero snippets — they still have gap info, just no audio detail. Natural falloff.
+Events outside the mel window (>2.5s ago) get zero snippets - they still have gap info, just no audio detail. Natural falloff.
 
 **3. Own encoders (no shared encoder dependency)**
 
-Context has its own gap encoder and snippet encoder, both trained directly by selection loss. No detach needed — context doesn't use shared encoder outputs at all. Gradient isolation is structural, not via stop-gradient.
+Context has its own gap encoder and snippet encoder, both trained directly by selection loss. No detach needed - context doesn't use shared encoder outputs at all. Gradient isolation is structural, not via stop-gradient.
 
 - Gap encoder: sinusoidal gap encoding + snippet features → self-attention + FiLM
 - Snippet encoder: Linear(800 → d_ctx → d_ctx), shared across events and candidates
@@ -74,14 +74,14 @@ Same as exp 18:
 
 ### Expected outcomes
 
-1. **Audio HIT ~69%** — context is fully isolated, can't affect audio.
-2. **Context override accuracy > 50%** — gap patterns give explicit rhythm signal that was missing in exp 15-18. When context disagrees, it should have a reason (rhythm mismatch).
-3. **Context delta ≥ 0** — even break-even would be a first. A positive delta proves rhythm patterns are learnable.
-4. **Rescued > damaged** — overrides should be net-positive.
+1. **Audio HIT ~69%** - context is fully isolated, can't affect audio.
+2. **Context override accuracy > 50%** - gap patterns give explicit rhythm signal that was missing in exp 15-18. When context disagrees, it should have a reason (rhythm mismatch).
+3. **Context delta ≥ 0** - even break-even would be a first. A positive delta proves rhythm patterns are learnable.
+4. **Rescued > damaged** - overrides should be net-positive.
 
 ### Risk
 
-- Gap patterns may be too simple to distinguish "audio is wrong" from "audio is right" — both present similar gap histories, the difference is subtle.
+- Gap patterns may be too simple to distinguish "audio is wrong" from "audio is right" - both present similar gap histories, the difference is subtle.
 - Snippet encoder at 191K params may not learn useful audio features. The 800→192 linear is aggressive compression.
 - d_ctx=192 with 6 heads (32 per head) may have insufficient capacity for cross-attention between 128 gap elements and 20 candidates.
 - Class imbalance: audio's #1 pick is correct ~70% of the time, so "always pick 0" remains a strong baseline even with gap features.
@@ -108,19 +108,19 @@ Same as exp 18:
 
 **What worked:**
 - Gap-based representation is the right framing. During training, context consistently beat audio (54.2% vs 52.5% HIT at 58% through E1). First time context ever outperformed audio on any metric.
-- Own encoders with direct gradient signal — context path trained without detach, gradient isolation is structural (no shared encoder outputs used).
+- Own encoders with direct gradient signal - context path trained without detach, gradient isolation is structural (no shared encoder outputs used).
 - Override accuracy (36-40%) is better than exp 18's declining 35%, and E2 hit 40.4%.
-- Delta reached -0.18pp at E2 — closest to break-even any context experiment has achieved.
+- Delta reached -0.18pp at E2 - closest to break-even any context experiment has achieved.
 - New metrics (override F1, decision categories) give clear diagnostic signal.
 
 **What didn't work:**
-- Training advantage didn't fully transfer to validation — context memorized training patterns but didn't generalize.
+- Training advantage didn't fully transfer to validation - context memorized training patterns but didn't generalize.
 - Delta bounced between -0.18pp and -0.89pp rather than converging toward zero.
-- Override F1 slowly declined (14.6% → 12.2%) — context didn't improve at overriding over epochs.
+- Override F1 slowly declined (14.6% → 12.2%) - context didn't improve at overriding over epochs.
 - ~29% false_top1 (kept #1 when it was wrong) shows massive untapped opportunity.
 
 **Key issue: audio instability during training.**
-Context learns to rerank proposals from an audio model that is itself still learning. Early batches have ~15% HIT audio proposals — mostly garbage. Context wastes capacity learning patterns about bad proposals that become irrelevant as audio improves. By E3, audio has stabilized near 67-69% but context has already baked in noisy patterns.
+Context learns to rerank proposals from an audio model that is itself still learning. Early batches have ~15% HIT audio proposals - mostly garbage. Context wastes capacity learning patterns about bad proposals that become irrelevant as audio improves. By E3, audio has stabilized near 67-69% but context has already baked in noisy patterns.
 
 ## Graphs
 
@@ -140,6 +140,6 @@ Context learns to rerank proposals from an audio model that is itself still lear
 
 ## Lesson
 
-- **Gap representation works** — inter-onset intervals + local audio snippets + own encoders is the right architecture for context. First experiment where context showed positive signal during training.
-- **Unstable proposer poisons the selector** — context can't learn to rerank well when the proposals themselves are changing. The ~29% false_top1 rate (missed overrides) suggests context is too conservative, possibly because early noisy overrides were punished.
-- **Next step: warm-start audio from exp 14** — load trained audio weights, freeze them, only train the 2.5M context path against stable high-quality proposals. Also mask selection loss when target isn't in top-K to remove impossible training signal.
+- **Gap representation works** - inter-onset intervals + local audio snippets + own encoders is the right architecture for context. First experiment where context showed positive signal during training.
+- **Unstable proposer poisons the selector** - context can't learn to rerank well when the proposals themselves are changing. The ~29% false_top1 rate (missed overrides) suggests context is too conservative, possibly because early noisy overrides were punished.
+- **Next step: warm-start audio from exp 14** - load trained audio weights, freeze them, only train the 2.5M context path against stable high-quality proposals. Also mask selection loss when target isn't in top-K to remove impossible training signal.

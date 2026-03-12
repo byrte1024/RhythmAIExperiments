@@ -43,7 +43,7 @@ The augmentation rates are deliberately light - the goal is to expose the model 
 
 Compare to exp 11 E1: 36.7% accuracy, 56.3% HIT, 430 unique preds, top-10 95%.
 
-**Prediction distribution** showed severe mode collapse — spiky, concentrated on a handful of "safe" bins (~15, ~25, ~50, ~65) with massive peaks. The scatter plot showed horizontal banding: the model predicted the same few y-values regardless of target.
+**Prediction distribution** showed severe mode collapse - spiky, concentrated on a handful of "safe" bins (~15, ~25, ~50, ~65) with massive peaks. The scatter plot showed horizontal banding: the model predicted the same few y-values regardless of target.
 
 **Benchmarks:**
 
@@ -54,13 +54,13 @@ Compare to exp 11 E1: 36.7% accuracy, 56.3% HIT, 430 unique preds, top-10 95%.
 | ne_na STOP | 99.8% | 90.4% |
 | metronome | 5.6% | 1.6% |
 
-The audio proposer was crippled — it couldn't spread across the output space. Top-10 only reached 65.7% (exp 11 E2 was 95%). With bad candidates, the bigger context path had nothing useful to select from.
+The audio proposer was crippled - it couldn't spread across the output space. Top-10 only reached 65.7% (exp 11 E2 was 95%). With bad candidates, the bigger context path had nothing useful to select from.
 
 ## Lesson
 
 **Don't starve the proposer to feed the selector.** Cutting audio aux from 0.2 to 0.1 halved the direct gradient to the audio path. Combined with splitting the remaining budget to the context path, the audio path couldn't learn to propose diverse candidates. The bigger context path was useless because the candidates were garbage.
 
-The context path improvement needs to come from better architecture or training strategy, not by redistributing gradient away from audio. The audio aux loss (0.2) is load-bearing — it's what forces the audio path to be independently capable.
+The context path improvement needs to come from better architecture or training strategy, not by redistributing gradient away from audio. The audio aux loss (0.2) is load-bearing - it's what forces the audio path to be independently capable.
 
 Key takeaway: the AR augmentations (recency-scaled jitter, insertions, deletions) are good and should be kept, but the architecture/loss changes were harmful and should be reverted.
 

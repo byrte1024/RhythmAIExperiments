@@ -4,7 +4,7 @@
 
 Exp 20 proved warm-start + freeze are solid infrastructure (69.5% HIT from step 1, 2x speed), and that the gap-based context architecture (exp 19) is correct. But context's overrides are net-harmful (delta -1.18pp) despite best-ever override F1 (22%). The bottleneck is the loss function.
 
-**The problem with hard CE on selection:** Hard cross-entropy rewards only exact correctness — "pick the candidate closest to the true target." This creates three failure modes:
+**The problem with hard CE on selection:** Hard cross-entropy rewards only exact correctness - "pick the candidate closest to the true target." This creates three failure modes:
 
 1. **No reward for improvement.** If audio's #1 is 15 frames off and context picks a candidate 3 frames off, hard CE gives the same loss as if context had picked #1. No signal that the override was valuable.
 2. **No extra punishment for regression.** If audio's #1 is 1 frame off and context picks something 50 frames off, hard CE gives the same loss as any other wrong answer. No signal that the override was catastrophic.
@@ -18,25 +18,25 @@ The result: "always pick #1" is a stable local minimum under hard CE, since #1 i
 
 A relative quality loss that operates in the same trapezoid ratio space as OnsetLoss:
 
-**Step 1 — Quality scoring:** For each of K=20 candidates, compute quality = closeness to true target using the trapezoid (1.0 within 3%, linear ramp to 0 at 20%, frame floor ±1).
+**Step 1 - Quality scoring:** For each of K=20 candidates, compute quality = closeness to true target using the trapezoid (1.0 within 3%, linear ramp to 0 at 20%, frame floor ±1).
 
-**Step 2 — Relative soft targets:** Build a probability distribution over K candidates:
+**Step 2 - Relative soft targets:** Build a probability distribution over K candidates:
 - Candidates at or above audio's #1 quality: weight = their quality score
 - Candidates below #1 quality: weight = 0 (suppressed)
 - Normalize to sum to 1
 
 This means: "pick the best available, and any candidate as good as or better than #1 gets some credit." If #1 is already the best, soft target peaks at #1 (reward keeping). If k=5 is closer to target than #1, soft target peaks at k=5 (reward overriding).
 
-**Step 3 — Soft CE:** Standard cross-entropy against the soft target distribution. Context is trained to match the quality-weighted distribution, not a hard one-hot.
+**Step 3 - Soft CE:** Standard cross-entropy against the soft target distribution. Context is trained to match the quality-weighted distribution, not a hard one-hot.
 
-**Step 4 — Asymmetric miss penalty:** After computing per-sample loss, scale up by `miss_penalty` (2.0x) when:
+**Step 4 - Asymmetric miss penalty:** After computing per-sample loss, scale up by `miss_penalty` (2.0x) when:
 - Context chose to keep #1 (no override)
 - #1 was bad (quality < 0.5)
 - A significantly better candidate existed (best quality > #1 quality + 0.1)
 
 This explicitly punishes conservatism when overriding would have helped.
 
-**Step 5 — Skip impossible samples:** If no candidate has any quality (all zero weight), the sample is excluded from the loss. No impossible training signal.
+**Step 5 - Skip impossible samples:** If no candidate has any quality (all zero weight), the sample is excluded from the loss. No impossible training signal.
 
 **2. Same infrastructure as exp 20**
 - Warm-start from exp 14 best checkpoint
@@ -71,18 +71,18 @@ Identical to exp 20 (gap-based context with own encoders).
 
 ### Expected outcomes
 
-1. **Audio HIT = 69.5%** — frozen, identical to exp 20.
-2. **Context delta > 0** — the relative loss directly rewards improvement over #1. Even small positive delta would be a breakthrough.
-3. **Override accuracy > 50%** — context should learn to override only when it has a better candidate, not randomly.
-4. **Fewer false_topK** — suppressing below-baseline candidates should reduce bad overrides.
-5. **More true_topK** — miss_penalty should push context to override when #1 is wrong and a better option exists.
-6. **Override F1 increasing over epochs** — unlike previous experiments where F1 declined or plateaued.
+1. **Audio HIT = 69.5%** - frozen, identical to exp 20.
+2. **Context delta > 0** - the relative loss directly rewards improvement over #1. Even small positive delta would be a breakthrough.
+3. **Override accuracy > 50%** - context should learn to override only when it has a better candidate, not randomly.
+4. **Fewer false_topK** - suppressing below-baseline candidates should reduce bad overrides.
+5. **More true_topK** - miss_penalty should push context to override when #1 is wrong and a better option exists.
+6. **Override F1 increasing over epochs** - unlike previous experiments where F1 declined or plateaued.
 
 ### Risk
 
 - The soft target distribution may be too flat when multiple candidates are near-equal quality, giving weak gradient signal.
 - miss_penalty=2.0 may be too aggressive, causing context to override too often (high false_topK). Or too mild to break the "keep #1" habit.
-- Asymmetric scaling based on argmax (what context "chose") creates a non-differentiable dependency — the scale factor is a step function of the logits. This could cause instability if context is near the decision boundary.
+- Asymmetric scaling based on argmax (what context "chose") creates a non-differentiable dependency - the scale factor is a step function of the logits. This could cause instability if context is near the decision boundary.
 - The quality threshold for "missed opportunity" (baseline < 0.5, best > baseline + 0.1) may not match the actual distribution of override opportunities well.
 
 ### Command
@@ -119,13 +119,13 @@ python detection_train.py \
 **What worked:**
 - Relative quality loss transformed context behavior. Override F1 doubled (22% → 46%), override accuracy above coin flip for the first time (61.4%).
 - Context got progressively bolder (11% → 28% → 37% override rate) with improving accuracy. The loss is clearly giving useful gradient signal.
-- false_top1 dropped from ~30% (exp 19-20) to 17.4% — context is catching more of audio's mistakes.
+- false_top1 dropped from ~30% (exp 19-20) to 17.4% - context is catching more of audio's mistakes.
 - Selection analysis charts looked much healthier than any previous experiment.
 
 **What didn't work:**
-- Delta still negative (-0.77pp to -0.95pp). Context overrides more each epoch but doesn't distinguish "audio is wrong" from "audio is right" well enough — false_topK (23.3%) slightly exceeds true_topK (22.4%).
+- Delta still negative (-0.77pp to -0.95pp). Context overrides more each epoch but doesn't distinguish "audio is wrong" from "audio is right" well enough - false_topK (23.3%) slightly exceeds true_topK (22.4%).
 - The loss design has a conservatism bias: when #1 is correct (70% of the time), all other candidates are suppressed to zero weight. This makes "keep #1" the dominant gradient signal.
-- miss_penalty threshold (baseline_quality < 0.5) is too generous — only fires on obvious failures, misses the ambiguous middle where most override opportunity exists.
+- miss_penalty threshold (baseline_quality < 0.5) is too generous - only fires on obvious failures, misses the ambiguous middle where most override opportunity exists.
 - Context sees audio's scores and ranks in candidate embeddings, so it can learn "k=0 is usually right" instead of independently judging quality.
 
 **The real insight:** Context shouldn't be playing "should I override audio?" (a meta-decision biased toward conservatism). It should be playing "which of these 20 positions is best?" (an independent judgment). Strip audio scores, shuffle candidates, and let context pick purely from rhythm + audio snippets.
@@ -148,7 +148,7 @@ python detection_train.py \
 
 ## Lesson
 
-- **Relative quality loss works** — soft targets weighted by closeness produce much healthier override behavior than hard CE. Override F1 doubled, accuracy crossed 50% for the first time.
-- **But the framing is wrong.** Any loss that references "audio's baseline" creates conservatism. The optimal loss doesn't compare to audio at all — it just asks "which candidate is closest to the target?"
+- **Relative quality loss works** - soft targets weighted by closeness produce much healthier override behavior than hard CE. Override F1 doubled, accuracy crossed 50% for the first time.
+- **But the framing is wrong.** Any loss that references "audio's baseline" creates conservatism. The optimal loss doesn't compare to audio at all - it just asks "which candidate is closest to the target?"
 - **Context should be blind to audio's preferences.** Shuffle candidates, remove score/rank features, make it a pure "pick the best position" task. Override happens implicitly when context's pick differs from audio's #1.
-- **Next: simplified selection loss** — shuffle K candidates, soft CE weighted by trapezoid quality of each candidate, skip when no candidate is a HIT. No baseline comparison, no miss penalty, no asymmetric scaling.
+- **Next: simplified selection loss** - shuffle K candidates, soft CE weighted by trapezoid quality of each candidate, skip when no candidate is a HIT. No baseline comparison, no miss penalty, no asymmetric scaling.

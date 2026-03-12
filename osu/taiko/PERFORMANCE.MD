@@ -1,7 +1,7 @@
 # Performance Comparison: External Onset Detection vs Our Model
 
 > **Important caveat:** This benchmark does **not** measure general-purpose "beat detection" accuracy.
-> These algorithms were designed to detect audio onsets/transients in music — any sharp attack in the waveform.
+> These algorithms were designed to detect audio onsets/transients in music - any sharp attack in the waveform.
 > Our task is fundamentally different: predicting **where an osu! taiko charter would place the next hit object**,
 > which is a *human mapping decision* informed by musical structure, rhythm game conventions, density preferences,
 > and the creative choices of the osu! taiko community. A song may have hundreds of audio transients per minute,
@@ -34,12 +34,12 @@
 Each algorithm was run through the same per-sample evaluation loop as our model's validation pass.
 For each sample: given a cursor position in the audio, find the first detected onset *after* the cursor
 using `np.searchsorted`, convert to a bin offset. If no onset is found or the offset exceeds 499 bins,
-predict STOP (500). This is not testing autoregressive generation — it's the same single-step prediction
+predict STOP (500). This is not testing autoregressive generation - it's the same single-step prediction
 task our model trains on. Baselines ran on 1/40 of the validation set (14,857 samples, 241 audio files).
 
 ---
 
-## Exp 14 — Audio-Only Transformer (Best: Epoch 8)
+## Exp 14 - Audio-Only Transformer (Best: Epoch 8)
 
 Our audio-only detection model (Exp 14) is a mel-spectrogram transformer trained on the taiko_v2 dataset.
 It processes 250 frames of mel-spectrogram context (~1.25s of audio) centered on a cursor position,
@@ -56,7 +56,7 @@ mapped onset. Trained for 8 epochs on ~150k samples.
 
 ![Exp 14 E8 Heatmap](runs/detect_experiment_14/epochs/epoch_008_heatmap.png)
 
-The heatmap shows strong diagonal concentration — predictions cluster tightly around the correct target
+The heatmap shows strong diagonal concentration - predictions cluster tightly around the correct target
 across the full range of bin offsets. The bright diagonal line confirms the model has learned the
 actual mapping between audio content and charter placement decisions. Fan-out rays indicate
 ratio-quantized prediction modes (the model learns common rhythmic ratios like 1x, 2x, 0.5x).
@@ -65,7 +65,7 @@ ratio-quantized prediction modes (the model learns common rhythmic ratios like 1
 
 ![Exp 14 E8 Pred Dist](runs/detect_experiment_14/epochs/epoch_008_pred_dist.png)
 
-The predicted distribution closely mirrors the target distribution shape — peaked around bins 10-40
+The predicted distribution closely mirrors the target distribution shape - peaked around bins 10-40
 with a natural tail. This means the model has learned the overall rhythm density patterns of taiko charts.
 
 **Target vs Predicted scatter (E8):**
@@ -101,7 +101,7 @@ timing (e.g., predicting the next beat vs. the next half-beat).
 
 ---
 
-## librosa_flux — Spectral Flux Onset Detection
+## librosa_flux - Spectral Flux Onset Detection
 
 **Library:** librosa 0.11.0
 **Method:** `librosa.onset.onset_detect` with default spectral flux onset strength function.
@@ -119,12 +119,12 @@ and applies peak-picking to find onset frames.
 ![librosa_flux heatmap](runs/baseline_benchmark/librosa_flux_heatmap.png)
 
 **Analysis:** The heatmap reveals two dominant failure modes. First, a bright horizontal band at
-predicted=500 (STOP) across all target values — the algorithm detects so many onsets that
+predicted=500 (STOP) across all target values - the algorithm detects so many onsets that
 `searchsorted` often finds one almost immediately, but for samples where the cursor is past
 all detected onsets, it defaults to STOP. Second, predictions cluster at very low bin values
 (0-10) regardless of target, creating a bright horizontal band near the bottom. This happens
-because spectral flux detects *every* audio transient — vocals, instrument attacks, percussion,
-harmonic changes — producing an extremely dense onset grid. The next detected onset after any cursor
+because spectral flux detects *every* audio transient - vocals, instrument attacks, percussion,
+harmonic changes - producing an extremely dense onset grid. The next detected onset after any cursor
 position is almost always just a few frames away, even when the actual taiko-mapped onset is
 hundreds of frames ahead.
 
@@ -141,11 +141,11 @@ simply cannot produce the correct distribution because it detects too many onset
 ![librosa_flux scatter](runs/baseline_benchmark/librosa_flux_scatter.png)
 
 Nearly all points are compressed into the bottom strip (predicted < 10) or the top line (predicted = 500).
-No diagonal structure is visible — the algorithm shows zero correlation with the actual targets.
+No diagonal structure is visible - the algorithm shows zero correlation with the actual targets.
 
 ---
 
-## librosa_energy — RMS Energy Onset Detection
+## librosa_energy - RMS Energy Onset Detection
 
 **Library:** librosa 0.11.0
 **Method:** RMS energy computed from the power spectrogram, fed to `librosa.onset.onset_detect`
@@ -162,11 +162,11 @@ as a custom onset envelope. Detects onsets where the overall energy level spikes
 ![librosa_energy heatmap](runs/baseline_benchmark/librosa_energy_heatmap.png)
 
 **Analysis:** Compared to spectral flux, the energy-based detector produces a more spread distribution
-of predictions — the horizontal band is wider and less compressed to the bottom. This is because
+of predictions - the horizontal band is wider and less compressed to the bottom. This is because
 RMS energy is a smoother, less sensitive feature than spectral flux, so it detects fewer onsets overall.
 However, the heatmap still shows no diagonal structure. Predictions cluster in the 0-50 bin range
 for all targets, with a secondary band at 500 (STOP). The slight improvement over spectral flux
-comes from the lower onset density — with fewer detected onsets, predictions are sometimes
+comes from the lower onset density - with fewer detected onsets, predictions are sometimes
 spread far enough apart to accidentally land near the correct target.
 
 **Prediction distribution:**
@@ -180,12 +180,12 @@ and a smaller STOP spike. But still heavily skewed toward small offsets compared
 
 ![librosa_energy scatter](runs/baseline_benchmark/librosa_energy_scatter.png)
 
-Slightly better spread than spectral flux — the point cloud extends up to ~150 in the predicted axis —
+Slightly better spread than spectral flux - the point cloud extends up to ~150 in the predicted axis -
 but still no diagonal correlation. The algorithm predicts small offsets regardless of the true target.
 
 ---
 
-## aubio_hfc — High Frequency Content
+## aubio_hfc - High Frequency Content
 
 **Library:** aubio 0.4.9
 **Method:** High Frequency Content (HFC) onset detection. Weights the magnitude spectrum by frequency,
@@ -202,12 +202,12 @@ consonant attacks) produce strong peaks.
 
 ![aubio_hfc heatmap](runs/baseline_benchmark/aubio_hfc_heatmap.png)
 
-**Analysis:** Very similar pattern to spectral flux — predictions concentrated at low bin offsets
+**Analysis:** Very similar pattern to spectral flux - predictions concentrated at low bin offsets
 with a STOP band at 500. The heatmap shows distinctive fan-out rays from the origin, which are
 caused by the algorithm detecting onsets at regular musical intervals (beat subdivisions) that don't
 match the taiko chart's placement decisions. The slight spread of predictions into the 50-200
 range is from songs where HFC detects fewer onsets (quieter passages, sparse arrangements),
-but these are wrong in a different way — they land on arbitrary audio transients rather than
+but these are wrong in a different way - they land on arbitrary audio transients rather than
 mapped onsets.
 
 **Prediction distribution:**
@@ -226,7 +226,7 @@ predicted values correspond to common inter-onset intervals in the audio.
 
 ---
 
-## aubio_complex — Complex Domain Onset Detection
+## aubio_complex - Complex Domain Onset Detection
 
 **Library:** aubio 0.4.9
 **Method:** Complex domain onset detection. Uses both magnitude and phase information from the STFT,
@@ -243,7 +243,7 @@ More sensitive than energy-based methods, particularly to pitched onsets and sub
 
 ![aubio_complex heatmap](runs/baseline_benchmark/aubio_complex_heatmap.png)
 
-**Analysis:** Shows the widest spread of any aubio method — predictions extend up to ~200 in the
+**Analysis:** Shows the widest spread of any aubio method - predictions extend up to ~200 in the
 low-target region, with more prominent fan-out rays than HFC. The complex domain method detects
 more subtle spectral changes (not just transients), including pitched note transitions and
 harmonic shifts. This gives slightly better GOOD rate (3.8%) since some predictions land
@@ -267,7 +267,7 @@ from the bottom axis.
 
 ---
 
-## aubio_specflux — Spectral Flux (aubio implementation)
+## aubio_specflux - Spectral Flux (aubio implementation)
 
 **Library:** aubio 0.4.9
 **Method:** Spectral flux computed by aubio. Similar principle to librosa's spectral flux but
@@ -284,12 +284,12 @@ difference between consecutive magnitude spectra.
 
 ![aubio_specflux heatmap](runs/baseline_benchmark/aubio_specflux_heatmap.png)
 
-**Analysis:** The most compact prediction distribution of any classical method — almost all
+**Analysis:** The most compact prediction distribution of any classical method - almost all
 predictions fall below bin 100, with very little spread. The heatmap mass is concentrated at
 the bottom-left corner with a tight STOP band. Aubio's spectral flux produces the densest
 onset detection of any method tested (lowest stop rate at 13.9% vs 40-60% for others),
 meaning it finds a nearby onset almost every time. The low frame error (mean 41, best
-among classical methods tied with madmom) is somewhat misleading — it's low because predictions
+among classical methods tied with madmom) is somewhat misleading - it's low because predictions
 are almost always small numbers, and small predictions have bounded maximum error. The very
 low stop recall (13.9%) means it almost never predicts STOP, even when the cursor is in a
 genuine gap between chart sections.
@@ -298,7 +298,7 @@ genuine gap between chart sections.
 
 ![aubio_specflux pred_dist](runs/baseline_benchmark/aubio_specflux_pred_dist.png)
 
-Only 211 unique predicted values — the narrowest range of all methods. Extremely concentrated
+Only 211 unique predicted values - the narrowest range of all methods. Extremely concentrated
 at bins 2-8, with virtually nothing above bin 100. The small STOP spike confirms very low
 stop prediction rate.
 
@@ -306,16 +306,16 @@ stop prediction rate.
 
 ![aubio_specflux scatter](runs/baseline_benchmark/aubio_specflux_scatter.png)
 
-The tightest horizontal band — all points compressed below predicted=50 except for the STOP line.
+The tightest horizontal band - all points compressed below predicted=50 except for the STOP line.
 Demonstrates that aubio's spectral flux is the most aggressive at detecting onsets, always finding
 one within a few frames.
 
 ---
 
-## madmom_rnn — Recurrent Neural Network Onset Detection
+## madmom_rnn - Recurrent Neural Network Onset Detection
 
 **Library:** madmom 0.17.dev0
-**Method:** `madmom.features.onsets.RNNOnsetProcessor` — a pre-trained bidirectional LSTM
+**Method:** `madmom.features.onsets.RNNOnsetProcessor` - a pre-trained bidirectional LSTM
 that outputs an onset activation function from the audio spectrogram. Combined with
 `OnsetPeakPickingProcessor` for peak detection. Trained on a large corpus of general music
 with annotated onsets.
@@ -330,11 +330,11 @@ with annotated onsets.
 
 ![madmom_rnn heatmap](runs/baseline_benchmark/madmom_rnn_heatmap.png)
 
-**Analysis:** Very similar to aubio_specflux — extremely tight prediction cluster at low bins
+**Analysis:** Very similar to aubio_specflux - extremely tight prediction cluster at low bins
 with a compact STOP band. The RNN produces the lowest frame error mean (40.8, tied with CNN)
 but the worst HIT rate (0.8%) and highest miss rate (96.3%). This seeming contradiction exists
 because the RNN detects onsets at musically meaningful positions (it understands musical structure
-better than classical methods), but these positions are almost always *too close* — the next
+better than classical methods), but these positions are almost always *too close* - the next
 audio onset from any cursor is typically just a few frames away, even though the taiko chart
 skips many audio events. The RNN is effectively "too good" at onset detection for our task:
 it finds musically valid onsets that a taiko mapper chose not to map.
@@ -343,7 +343,7 @@ it finds musically valid onsets that a taiko mapper chose not to map.
 
 ![madmom_rnn pred_dist](runs/baseline_benchmark/madmom_rnn_pred_dist.png)
 
-133 unique values — the second narrowest range. Massive spike at bins 2-4 (6,000+ predictions
+133 unique values - the second narrowest range. Massive spike at bins 2-4 (6,000+ predictions
 at the peak), with tiny secondary peaks near bins 20-30. The RNN's onset density is very high,
 giving it almost no spread.
 
@@ -351,15 +351,15 @@ giving it almost no spread.
 
 ![madmom_rnn scatter](runs/baseline_benchmark/madmom_rnn_scatter.png)
 
-Extremely compressed horizontal band at the bottom. Slightly more structured than classical methods —
-faint diagonal traces visible near the origin — but completely unable to predict targets above ~50 bins.
+Extremely compressed horizontal band at the bottom. Slightly more structured than classical methods -
+faint diagonal traces visible near the origin - but completely unable to predict targets above ~50 bins.
 
 ---
 
-## madmom_cnn — Convolutional Neural Network Onset Detection
+## madmom_cnn - Convolutional Neural Network Onset Detection
 
 **Library:** madmom 0.17.dev0
-**Method:** `madmom.features.onsets.CNNOnsetProcessor` — a pre-trained CNN that processes
+**Method:** `madmom.features.onsets.CNNOnsetProcessor` - a pre-trained CNN that processes
 the spectrogram with convolutional layers, producing an onset activation function.
 Combined with `OnsetPeakPickingProcessor` for peak detection.
 
@@ -385,7 +385,7 @@ constitute onsets, producing a lower onset density that sometimes matches the ch
 
 ![madmom_cnn pred_dist](runs/baseline_benchmark/madmom_cnn_pred_dist.png)
 
-125 unique values — the narrowest range of all methods, but the distribution is slightly wider
+125 unique values - the narrowest range of all methods, but the distribution is slightly wider
 than the RNN's. Peak at bins 2-4 is ~6,300 (high), with secondary peaks at bins 8-12 and 20-30.
 The wider secondary peaks are what give the CNN its relative advantage.
 
@@ -393,7 +393,7 @@ The wider secondary peaks are what give the CNN its relative advantage.
 
 ![madmom_cnn scatter](runs/baseline_benchmark/madmom_cnn_scatter.png)
 
-The most structured scatter of any baseline — faint diagonal traces visible for targets up to ~60,
+The most structured scatter of any baseline - faint diagonal traces visible for targets up to ~60,
 and a slightly wider vertical spread than the RNN. Still no useful prediction ability above target ~100.
 
 ---
@@ -407,23 +407,23 @@ Specific failure modes visible across all baselines:
 
 1. **Over-detection (too many onsets):** Every algorithm detects far more onsets than a taiko chart contains.
    A typical song has hundreds of transients per minute (vocals, instruments, percussion, harmonics),
-   but a taiko chart maps only a selective subset — often 2-8 per second during active sections.
+   but a taiko chart maps only a selective subset - often 2-8 per second during active sections.
    This means `searchsorted` almost always finds an onset within a few frames, producing tiny
    predicted offsets regardless of the actual target.
 
-2. **No chart context awareness:** A taiko mapper's decisions depend on the *existing chart pattern* —
+2. **No chart context awareness:** A taiko mapper's decisions depend on the *existing chart pattern* -
    the density, rhythm, spacing, and difficulty context of surrounding notes. External algorithms
    have no concept of this. They'll detect the same audio onset whether the chart is in a dense
    stream section or a calm break.
 
 3. **No STOP understanding:** Predicting "there are no more notes" (STOP) requires understanding
    that the chart has ended or entered a deliberate gap. Onset detectors can only output STOP
-   when there are literally no more transients in the audio — which almost never happens, since
+   when there are literally no more transients in the audio - which almost never happens, since
    even "silent" sections contain background noise, reverb tails, or ambient sounds.
 
 4. **Genre/difficulty blindness:** A mapper creating a Normal difficulty chart maps far fewer notes
    than one creating an Inner Oni. The same audio produces very different charts at different
-   difficulty levels. External algorithms have one fixed sensitivity — they cannot adapt to the
+   difficulty levels. External algorithms have one fixed sensitivity - they cannot adapt to the
    intended mapping density.
 
 The 20x performance gap (3.5% HIT for the best baseline vs 68.9% for Exp 14) confirms that

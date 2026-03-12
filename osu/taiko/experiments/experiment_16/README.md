@@ -2,11 +2,11 @@
 
 ## Hypothesis
 
-Experiment 15 confirmed that standard CE aux loss (0.1) cannot break the context path's rubber-stamping local minimum. After 4 epochs, no_events accuracy never dropped below full accuracy — the context path contributes nothing despite direct gradient pressure.
+Experiment 15 confirmed that standard CE aux loss (0.1) cannot break the context path's rubber-stamping local minimum. After 4 epochs, no_events accuracy never dropped below full accuracy - the context path contributes nothing despite direct gradient pressure.
 
-**Why standard CE fails here:** The context path's optimal lazy strategy is "agree with audio's #1 choice." This is correct ~67% of the time (audio's hit rate). Standard CE treats all wrong answers equally — predicting bin 50 when the target is bin 48 (audio's #2) gets the same gradient as predicting bin 50 when the target is bin 300 (audio's #200). There's no signal saying "audio literally handed you the answer at rank 2 and you ignored it."
+**Why standard CE fails here:** The context path's optimal lazy strategy is "agree with audio's #1 choice." This is correct ~67% of the time (audio's hit rate). Standard CE treats all wrong answers equally - predicting bin 50 when the target is bin 48 (audio's #2) gets the same gradient as predicting bin 50 when the target is bin 300 (audio's #200). There's no signal saying "audio literally handed you the answer at rank 2 and you ignored it."
 
-**The fix — rank-weighted context loss:** Weight each sample's context CE by how highly audio ranked the true target:
+**The fix - rank-weighted context loss:** Weight each sample's context CE by how highly audio ranked the true target:
 
 ```
 weight = clamp(5 / (rank + 4), min=0.1, max=1.0)
@@ -14,7 +14,7 @@ weight = clamp(5 / (rank + 4), min=0.1, max=1.0)
 
 | Audio rank of target | Weight | Meaning |
 |---------------------|--------|---------|
-| 1 | 1.0 | Audio nailed it — context must agree |
+| 1 | 1.0 | Audio nailed it - context must agree |
 | 2 | 0.83 | Very available, strong push |
 | 3 | 0.71 | |
 | 5 | 0.56 | |
@@ -26,10 +26,10 @@ This directly incentivizes "learn to select from audio's candidates" rather than
 
 ### Why this avoids instability
 
-- **Detached**: weights computed from `audio_logits` under `no_grad()` — no feedback loop through context
+- **Detached**: weights computed from `audio_logits` under `no_grad()` - no feedback loop through context
 - **Bounded**: 10x max/min ratio (1.0 vs 0.1), not 500x
 - **Smooth**: `1/(rank+4)` has no cliffs or discontinuities
-- **Floor**: every sample gets at least 0.1x gradient — context still learns on hard samples
+- **Floor**: every sample gets at least 0.1x gradient - context still learns on hard samples
 - **Safe for shared encoders**: mean weight across a batch ~0.3-0.5, same order as the old 0.1 flat weight
 
 ### Changes
@@ -38,7 +38,7 @@ This directly incentivizes "learn to select from audio's candidates" rather than
 - Main loss: unchanged (OnsetLoss on combined logits)
 - Audio aux: 0.2 * OnsetLoss (unchanged, not touched)
 - Context: per-sample `weight * OnsetLoss(context_logits, target)` where weight = `clamp(5/(rank+4), 0.1, 1.0)`
-- No outer multiplier on context — the weighting itself controls magnitude
+- No outer multiplier on context - the weighting itself controls magnitude
 - Reuses OnsetLoss internals (soft targets, hard_alpha mix, STOP weight) for consistency
 
 Everything else identical to exp 14/15: same architecture (~21M params), same dataset (taiko_v2), same AR augmentations, same 10 ablation benchmarks.
@@ -58,7 +58,7 @@ Everything else identical to exp 14/15: same architecture (~21M params), same da
 
 ## Result
 
-**Failed — context actively degraded combined output.** Stopped at E2. Val loss *increased* E1→E2, accuracy dropped to 40%, and top-K curves fell uniformly. The rank-weighted loss forced context to have strong opinions before it had learned anything useful, and those wrong opinions corrupted the combined logits.
+**Failed - context actively degraded combined output.** Stopped at E2. Val loss *increased* E1→E2, accuracy dropped to 40%, and top-K curves fell uniformly. The rank-weighted loss forced context to have strong opinions before it had learned anything useful, and those wrong opinions corrupted the combined logits.
 
 ### Trajectory (2 epochs)
 
@@ -85,7 +85,7 @@ Everything else identical to exp 14/15: same architecture (~21M params), same da
 | Top-3 | 86.0% | 81.5% | **80.6%** |
 | Top-10 | 95.2% | 92.6% | **92.1%** |
 
-The entire top-K curve dropped 3-5pp uniformly and continued falling. Since audio path is unchanged, this confirms context is pulling correct answers *out* of the top-K — wrong opinions are worse than no opinions.
+The entire top-K curve dropped 3-5pp uniformly and continued falling. Since audio path is unchanged, this confirms context is pulling correct answers *out* of the top-K - wrong opinions are worse than no opinions.
 
 ### Density Benchmarks
 
@@ -95,7 +95,7 @@ The entire top-K curve dropped 3-5pp uniformly and continued falling. Since audi
 | random_density | 34.6% | **33.9%** |
 | full − zero gap | 33.1pp | **34.2pp** |
 
-Context leaned heavily into density as a crutch — zero_density crashed to 6% (vs 24% in exp 15). The rank weighting pushed context to find *any* shortcut to differentiate audio's top candidates, and density was the easiest one.
+Context leaned heavily into density as a crutch - zero_density crashed to 6% (vs 24% in exp 15). The rank weighting pushed context to find *any* shortcut to differentiate audio's top candidates, and density was the easiest one.
 
 ![TopK E1](epoch_001_topk_accuracy.png)
 ![TopK E2](epoch_002_topk_accuracy.png)
@@ -111,6 +111,6 @@ Context leaned heavily into density as a crutch — zero_density crashed to 6% (
 
 **You can't loss-function your way out of a structural problem.** Both exp 15 (flat context aux) and exp 16 (rank-weighted context aux) failed to activate the context path. The root cause is architectural: with additive logits (`audio + context`), context's optimal strategy is always to be a no-op or amplify audio. The path of least resistance will always win regardless of loss weighting.
 
-**Wrong opinions are worse than no opinions.** Exp 15's rubber-stamping was at least neutral (matched exp 14). Exp 16's forced opinions were actively harmful — context corrupted audio's correct rankings, dropping top-K by 3-5pp.
+**Wrong opinions are worse than no opinions.** Exp 15's rubber-stamping was at least neutral (matched exp 14). Exp 16's forced opinions were actively harmful - context corrupted audio's correct rankings, dropping top-K by 3-5pp.
 
-**Next direction: architectural change.** The context path needs to be structurally forced into a selector role. Top-K reranking — where audio proposes K candidates and context must pick among them — makes rubber-stamping and no-op architecturally impossible.
+**Next direction: architectural change.** The context path needs to be structurally forced into a selector role. Top-K reranking - where audio proposes K candidates and context must pick among them - makes rubber-stamping and no-op architecturally impossible.

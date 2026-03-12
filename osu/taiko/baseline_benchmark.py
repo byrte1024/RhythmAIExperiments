@@ -230,13 +230,13 @@ def predict_from_onsets(onset_bins, cursor, total_bins):
     # find first onset strictly after cursor
     idx = np.searchsorted(onset_bins, cursor, side="right")
     if idx >= len(onset_bins):
-        return N_CLASSES - 1  # STOP — no more onsets
+        return N_CLASSES - 1  # STOP - no more onsets
 
     offset = int(onset_bins[idx]) - cursor
     if offset < 0:
         offset = 0
     if offset >= B_BINS:
-        return N_CLASSES - 1  # STOP — too far away
+        return N_CLASSES - 1  # STOP - too far away
     return offset
 
 

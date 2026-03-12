@@ -718,14 +718,14 @@ def run_benchmarks(model, val_loader, device, amp_enabled=False):
     results["advanced_metronome"] = run_corrupted(all_batches, advanced_metronome, "advanced_metronome")
     bench_bar.update(1)
 
-    # 9) Zero density — conditioning set to [0, 0, 0]
+    # 9) Zero density - conditioning set to [0, 0, 0]
     def zero_density(mel, evt_off, evt_mask, cond, target):
         cond.zero_()
         return mel, evt_off, evt_mask, cond
     results["zero_density"] = run_corrupted(all_batches, zero_density, "zero_density")
     bench_bar.update(1)
 
-    # 10) Random density — conditioning randomized
+    # 10) Random density - conditioning randomized
     def random_density(mel, evt_off, evt_mask, cond, target):
         B = cond.shape[0]
         cond[:, 0] = torch.FloatTensor(B).uniform_(1.0, 12.0)  # mean density
@@ -1019,7 +1019,7 @@ def save_epoch_graphs(targets, preds, metrics, epoch, run_dir, extra=None):
         np.add.at(counts, (t_idx, p_idx), 1)
 
         # Build RGB image (n_bins x n_bins x 3)
-        # Normalize entropy to [0, 1] — use mean entropy per bin
+        # Normalize entropy to [0, 1] - use mean entropy per bin
         mask = counts > 0
         mean_ent = np.zeros_like(ent_sum)
         mean_ent[mask] = ent_sum[mask] / counts[mask]
@@ -1990,7 +1990,7 @@ def _run_eval(model, val_loader, criterion, args, amp_enabled,
           f"stop_f1={val_metrics['stop_f1']:.3f} | "
           f"score={val_metrics.get('model_score', 0):+.3f} | lr={scheduler.get_last_lr()[0]:.2e}")
 
-    # (no context analysis — unified model has single path)
+    # (no context analysis - unified model has single path)
 
     # ── ablation benchmarks ──
     bench_results = run_benchmarks(model, val_loader, args.device, amp_enabled=amp_enabled)

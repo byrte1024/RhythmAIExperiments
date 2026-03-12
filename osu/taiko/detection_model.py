@@ -1,6 +1,6 @@
 """Onset detection model.
 
-Exp 25+: Unified architecture — audio + gap tokens fused via self-attention.
+Exp 25+: Unified architecture - audio + gap tokens fused via self-attention.
 Exp 24: Additive context logits (AdditiveOnsetDetector).
 Exp 19-23: Gap-based reranker (RerankerOnsetDetector).
 Exp 17-18: Shared encoder rerankers (legacy).
@@ -194,7 +194,7 @@ class GapEncoder(nn.Module):
 
         mel: (B, n_mels, T)
         frame_positions: (B, N) mel frame indices
-        valid_mask: (B, N) bool — True = valid position
+        valid_mask: (B, N) bool - True = valid position
         Returns: (B, N, d_model)
         """
         B, n_mels, T = mel.shape
@@ -217,8 +217,8 @@ class GapEncoder(nn.Module):
 
     def forward(self, event_offsets, event_mask, mel, cond):
         """
-        event_offsets: (B, C) int — bin positions relative to cursor (negative/zero)
-        event_mask: (B, C) bool — True = padded
+        event_offsets: (B, C) int - bin positions relative to cursor (negative/zero)
+        event_mask: (B, C) bool - True = padded
         mel: (B, n_mels, 1000)
         cond: (B, cond_dim)
         Returns: (gap_tokens: (B, C, d_model), gap_mask: (B, C) bool)
@@ -593,7 +593,7 @@ class Exp18ContextPath(nn.Module):
                         tgt_key_padding_mask=tgt_pad_mask)
             seq = film(seq, cond)
 
-        query_out = seq[:, -1, :]  # (B, d_model) — consensus from all events
+        query_out = seq[:, -1, :]  # (B, d_model) - consensus from all events
 
         # ── 5. Score candidates via scaled dot product → K-way logits ──
         q = self.q_proj(query_out)  # (B, d_score)
@@ -606,12 +606,12 @@ class Exp18ContextPath(nn.Module):
 class RerankerContextPath(nn.Module):
     """Gap-based K-way reranker with own encoders (exp 19-23, legacy).
 
-    Context operates entirely in "gap space" — inter-onset intervals rather than
+    Context operates entirely in "gap space" - inter-onset intervals rather than
     absolute positions. Each event is characterized by (gap_before, local_audio_snippet).
     Each candidate is characterized by (proposed_next_gap, local_audio_snippet, audio_score).
 
     Own encoders: gap encoder + snippet encoder, both trained by selection loss.
-    No shared encoder dependencies — fully gradient-isolated by design.
+    No shared encoder dependencies - fully gradient-isolated by design.
 
     Architecture:
       1. Compute gaps from raw event offsets (diff of consecutive positions)
@@ -637,7 +637,7 @@ class RerankerContextPath(nn.Module):
             nn.GELU(),
             nn.Linear(d_ctx, d_ctx),
         )
-        # STOP has no meaningful audio — learned embedding
+        # STOP has no meaningful audio - learned embedding
         self.stop_snippet_emb = nn.Parameter(torch.randn(d_ctx) * 0.02)
 
         # ── Gap encoder (processes rhythm pattern) ──
@@ -688,7 +688,7 @@ class RerankerContextPath(nn.Module):
 
         mel: (B, n_mels, T)
         frame_positions: (B, N) mel frame indices
-        valid_mask: (B, N) bool — True = valid position, False = skip (gets zeros)
+        valid_mask: (B, N) bool - True = valid position, False = skip (gets zeros)
         Returns: (B, N, d_ctx)
         """
         B, n_mels, T = mel.shape
@@ -717,11 +717,11 @@ class RerankerContextPath(nn.Module):
 
     def forward(self, event_offsets, event_mask, mel, cond, audio_logits):
         """
-        event_offsets: (B, C) int — bin positions relative to cursor (negative/zero)
-        event_mask: (B, C) bool — True = padded
-        mel: (B, n_mels, 1000) — raw mel spectrogram
-        cond: (B, cond_dim) — conditioning (detached by caller)
-        audio_logits: (B, n_classes) — from AudioPath
+        event_offsets: (B, C) int - bin positions relative to cursor (negative/zero)
+        event_mask: (B, C) bool - True = padded
+        mel: (B, n_mels, 1000) - raw mel spectrogram
+        cond: (B, cond_dim) - conditioning (detached by caller)
+        audio_logits: (B, n_classes) - from AudioPath
         Returns: (selection_logits: (B, K), top_k_indices: (B, K))
         """
         B, C = event_offsets.shape
@@ -752,7 +752,7 @@ class RerankerContextPath(nn.Module):
         gap_valid = event_valid[:, 1:] & event_valid[:, :-1]  # (B, C-1)
 
         # Time since last event (cursor gap)
-        has_events = event_valid[:, -1]  # (B,) — last position is valid if any events
+        has_events = event_valid[:, -1]  # (B,) - last position is valid if any events
         time_since_last = (-event_offsets[:, -1]).unsqueeze(1)  # (B, 1) always >= 0
 
         # Build full gap sequence: [gap_before_event1, ..., gap_before_eventN, cursor_gap]
@@ -817,7 +817,7 @@ class RerankerContextPath(nn.Module):
         cand_gap_emb = self.gap_emb(proposed_gaps.abs())  # (B, K, d_ctx)
 
         # Audio snippets at candidate positions
-        cand_mel_frames = 500 + top_k_indices  # (B, K) — candidates are future bins
+        cand_mel_frames = 500 + top_k_indices  # (B, K) - candidates are future bins
         is_stop = (top_k_indices == stop_idx)  # (B, K)
         cand_snippet_valid = ~is_stop & (cand_mel_frames < mel.size(2))
 
@@ -872,7 +872,7 @@ class ContextPath(nn.Module):
     """Additive context path with own encoders (exp 24+).
 
     Produces 501-way logits from rhythm patterns (gaps + mel snippets).
-    Added to audio logits before softmax — soft influence, not hard override.
+    Added to audio logits before softmax - soft influence, not hard override.
 
     Keeps the proven gap encoder from exp 19-23 but replaces the K-way
     selection head with a simple output projection to n_classes logits.
@@ -928,7 +928,7 @@ class ContextPath(nn.Module):
 
         mel: (B, n_mels, T)
         frame_positions: (B, N) mel frame indices
-        valid_mask: (B, N) bool — True = valid position, False = skip (gets zeros)
+        valid_mask: (B, N) bool - True = valid position, False = skip (gets zeros)
         Returns: (B, N, d_ctx)
         """
         B, n_mels, T = mel.shape
@@ -952,10 +952,10 @@ class ContextPath(nn.Module):
 
     def forward(self, event_offsets, event_mask, mel, cond):
         """
-        event_offsets: (B, C) int — bin positions relative to cursor (negative/zero)
-        event_mask: (B, C) bool — True = padded
-        mel: (B, n_mels, 1000) — raw mel spectrogram
-        cond: (B, cond_dim) — conditioning (detached by caller)
+        event_offsets: (B, C) int - bin positions relative to cursor (negative/zero)
+        event_mask: (B, C) bool - True = padded
+        mel: (B, n_mels, 1000) - raw mel spectrogram
+        cond: (B, cond_dim) - conditioning (detached by caller)
         Returns: context_logits (B, n_classes)
         """
         B, C = event_offsets.shape
@@ -1034,7 +1034,7 @@ class OnsetDetector(nn.Module):
     """Unified onset detector (exp 25+).
 
     Single path: AudioEncoder → GapEncoder → Fusion self-attention → 501 logits.
-    Audio and gap tokens concatenated and jointly attended — no separate paths.
+    Audio and gap tokens concatenated and jointly attended - no separate paths.
 
     Architecture:
       1. AudioEncoder: mel → 250 audio tokens (d_model)
@@ -1075,7 +1075,7 @@ class OnsetDetector(nn.Module):
             n_heads=n_heads, cond_dim=cond_dim, dropout=dropout,
         )
 
-        # gap encoder (replaces EventEncoder — proven gap representation)
+        # gap encoder (replaces EventEncoder - proven gap representation)
         self.gap_encoder = GapEncoder(
             n_mels=n_mels, d_model=d_model, n_layers=gap_enc_layers,
             n_heads=n_heads, max_events=max_events, cond_dim=cond_dim,
@@ -1121,7 +1121,7 @@ class OnsetDetector(nn.Module):
             event_offsets, event_mask, mel, cond
         )  # (B, C, d_model), (B, C)
 
-        # concatenate [audio; gap] — audio first so cursor stays at position 125
+        # concatenate [audio; gap] - audio first so cursor stays at position 125
         x = torch.cat([audio_tokens, gap_tokens], dim=1)  # (B, 250+C, d_model)
 
         # padding mask: audio tokens are never masked, gap tokens use gap_mask
