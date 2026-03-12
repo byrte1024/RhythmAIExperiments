@@ -16,7 +16,7 @@ osu/taiko/metadata.csv
 mels/
 
 # Outputs - generated per-run
-osu/taiko/runs/
+osu/taiko/runs/*
 !osu/taiko/runs/baseline_benchmark/
 osu/taiko/graphs/
 osu/taiko/*_predicted.csv

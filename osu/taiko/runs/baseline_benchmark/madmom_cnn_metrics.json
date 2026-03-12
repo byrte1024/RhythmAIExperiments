@@ -1,0 +1,19 @@
+{
+  "accuracy": 0.010230867604496197,
+  "stop_precision": 0.036231884057971016,
+  "stop_recall": 0.2777777777777778,
+  "stop_f1": 0.0641025641025641,
+  "frame_error_mean": 40.84434248701167,
+  "frame_error_median": 26.0,
+  "frame_error_p90": 74.0,
+  "frame_error_p99": 473.0,
+  "rel_error_mean": 1.8195673513061978,
+  "rel_error_median": 1.9042374526547452,
+  "hit_rate": 0.03488293637406383,
+  "good_rate": 0.07759260508737602,
+  "miss_rate": 0.8921800148438027,
+  "exact_match": 0.009580999932528169,
+  "within_1_frame": 0.034343161729977735,
+  "within_3pct": 0.01531610552594292,
+  "model_score": -0.7689267681110475
+}
