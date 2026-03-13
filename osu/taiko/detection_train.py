@@ -8,6 +8,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import math
+from collections import deque
 from torch.utils.data import Dataset, DataLoader, WeightedRandomSampler
 from tqdm import tqdm
 
@@ -1719,7 +1720,7 @@ def train(args):
     )
     val_loader = DataLoader(
         val_ds, batch_size=args.batch_size, shuffle=False,
-        num_workers=nw, pin_memory=True, persistent_workers=nw > 0,
+        num_workers=nw, pin_memory=False, persistent_workers=nw > 0,
         prefetch_factor=4 if nw > 0 else None,
     )
 
@@ -1869,6 +1870,10 @@ def train(args):
                        desc=f"  → {seg_label} [{seg_idx+1}/{evals_per_epoch}]",
                        position=1, leave=False) if evals_per_epoch > 1 else None
 
+        # rolling window for recent-batch stats
+        RECENT_N = 50
+        recent_buf = deque(maxlen=RECENT_N)  # (loss*bs, bs, ns, hit, miss, score_sum)
+
         for batch_idx, (mel, evt_off, evt_mask, cond, target) in enumerate(train_loader):
             mel = mel.to(args.device, non_blocking=True)
             evt_off = evt_off.to(args.device, non_blocking=True)
@@ -1894,6 +1899,9 @@ def train(args):
             train_total += bs
 
             # batch metrics for tqdm
+            b_loss_x_bs = loss.item() * bs
+            b_bs = bs
+            b_ns = 0; b_hit = 0; b_miss = 0; b_score = 0.0
             with torch.no_grad():
                 pred = logits.argmax(1)
                 ns = target < (N_CLASSES - 1)
@@ -1903,11 +1911,14 @@ def train(args):
                     p_ns = pred[ns].float()
                     frame_err = (p_ns - t_ns).abs()
                     pct_err = ((p_ns + 1) / (t_ns + 1) - 1.0).abs()
-                    train_ns_total += ns_count.item()
-                    train_miss_sum += (pct_err > 0.20).sum().item()
-                    train_w10_sum += ((pct_err <= 0.10) | (frame_err <= 2)).sum().item()
+                    b_ns = ns_count.item()
+                    b_hit = ((pct_err <= 0.10) | (frame_err <= 2)).sum().item()
+                    b_miss = (pct_err > 0.20).sum().item()
+                    train_ns_total += b_ns
+                    train_miss_sum += b_miss
+                    train_w10_sum += b_hit
                     train_w3_sum += ((pct_err <= 0.03) | (frame_err <= 1)).sum().item()
-                    train_hit_sum += ((pct_err <= 0.10) | (frame_err <= 2)).sum().item()
+                    train_hit_sum += b_hit
 
                     # model score: continuous [-1, +1]
                     # 0%→+1, 3%→0, 200%→-1, ±1 frame→+1
@@ -1922,7 +1933,10 @@ def train(args):
                         -(((abs_lr - thr) / pen_range).clamp(max=1.0)),
                     )
                     batch_scores[frame_err <= 1] = r_at_zero
-                    train_score_sum += batch_scores.sum().item()
+                    b_score = batch_scores.sum().item()
+                    train_score_sum += b_score
+
+            recent_buf.append((b_loss_x_bs, b_bs, b_ns, b_hit, b_miss, b_score))
 
             # update bars
             epoch_bar.update(1)
@@ -1931,14 +1945,24 @@ def train(args):
 
             if (batch_idx + 1) % 50 == 0 or batch_idx in eval_at:
                 avg_loss = train_loss / train_total if train_total > 0 else 0
-                if train_ns_total > 0:
+                # recent window stats
+                r_loss_sum = sum(r[0] for r in recent_buf)
+                r_bs_sum = sum(r[1] for r in recent_buf)
+                r_ns_sum = sum(r[2] for r in recent_buf)
+                r_loss = r_loss_sum / r_bs_sum if r_bs_sum > 0 else 0
+                if train_ns_total > 0 and r_ns_sum > 0:
                     hit = train_hit_sum / train_ns_total
                     miss = train_miss_sum / train_ns_total
-                    w3 = train_w3_sum / train_ns_total
                     score = train_score_sum / train_ns_total
-                    stats = f"L={avg_loss:.3f} HIT={hit:.1%} miss={miss:.1%} score={score:+.3f}"
+                    r_hit = sum(r[3] for r in recent_buf) / r_ns_sum
+                    r_miss = sum(r[4] for r in recent_buf) / r_ns_sum
+                    r_score = sum(r[5] for r in recent_buf) / r_ns_sum
+                    stats = (f"L={avg_loss:.3f}|{r_loss:.3f} "
+                             f"HIT={hit:.1%}|{r_hit:.1%} "
+                             f"miss={miss:.1%}|{r_miss:.1%} "
+                             f"score={score:+.3f}|{r_score:+.3f}")
                 else:
-                    stats = f"L={avg_loss:.3f}"
+                    stats = f"L={avg_loss:.3f}|{r_loss:.3f}"
                 epoch_bar.set_postfix_str(stats)
 
             # ── mid-epoch eval checkpoint ──
@@ -2017,6 +2041,7 @@ def _run_eval(model, val_loader, criterion, args, amp_enabled,
     # (no context analysis - unified model has single path)
 
     # ── ablation benchmarks ──
+    torch.cuda.empty_cache()
     bench_results = run_benchmarks(model, val_loader, args.device, amp_enabled=amp_enabled)
     print_benchmarks(bench_results)
     save_benchmark_data(bench_results, eval_step, run_dir)
