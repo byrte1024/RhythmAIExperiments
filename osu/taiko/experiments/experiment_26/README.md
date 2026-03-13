@@ -43,8 +43,60 @@ Exp 25 showed the unified fusion architecture matches exp 14 (~68.6% HIT) but ov
 
 ## Result
 
-*Pending*
+**Augmentation reduced overfitting but did not raise the ceiling or improve context usage.** Killed after E8.
+
+| Metric | E1 | E2 | E3 | E4 | E5 | E6 | E7 (best) | E8 |
+|--------|-----|-----|-----|-----|-----|-----|-----------|-----|
+| HIT | 65.8% | 67.0% | 67.6% | 68.5% | 68.7% | 68.1% | **68.8%** | 68.9% |
+| GOOD | 66.3% | 67.4% | 67.9% | 68.8% | 68.9% | 68.4% | **69.2%** | 69.2% |
+| Miss | 33.5% | 32.4% | 31.9% | 31.0% | 30.9% | 31.5% | **30.7%** | 30.7% |
+| Score | 0.297 | 0.311 | 0.317 | 0.327 | 0.330 | 0.323 | **0.332** | 0.332 |
+| Accuracy | 47.3% | 48.8% | 49.3% | 49.8% | 50.3% | 49.9% | **50.5%** | 50.3% |
+| Frame err | 13.7 | 13.2 | 13.0 | 12.1 | 11.6 | 12.3 | **11.6** | 11.8 |
+| Stop F1 | 0.441 | 0.449 | 0.467 | 0.481 | **0.505** | 0.437 | 0.480 | 0.470 |
+| Train loss | 3.488 | 3.113 | 2.959 | 2.861 | 2.793 | 2.741 | 2.699 | 2.667 |
+| Val loss | 2.709 | 2.640 | 2.645 | **2.627** | 2.628 | 2.649 | 2.641 | 2.663 |
+| no_events acc | 40.0% | 46.2% | 46.9% | 47.3% | 48.9% | 47.6% | 48.5% | 48.6% |
+| Context delta | 7.3% | 2.6% | 2.4% | 2.5% | 1.4% | 2.3% | 2.0% | 1.7% |
+
+**What worked:**
+- **Overfitting delayed by ~3 epochs.** Val loss plateaued around 2.63-2.66 for E4-E8 instead of climbing steadily from E2 like exp 25. The augmentation successfully made training harder (train loss 2.67 at E8 vs exp 25's 2.69 at E5).
+- **Slightly higher ceiling on some metrics.** Accuracy broke 50% for the first time (50.5% at E7 vs exp 25's 49.8%). Frame error matched exp 14's best (11.6).
+- **Slower, steadier convergence.** Metrics improved monotonically through E5 instead of peaking at E2 like exp 25. More useful training epochs before diminishing returns.
+
+**What didn't work:**
+- **Same HIT ceiling.** Best HIT 68.8% (E7) — essentially identical to exp 25 (68.6%) and exp 14 (68.9%). The augmentation bought more training time but the model converged to the same place.
+- **Context contribution still collapsed.** Delta shrank from 7.3% (E1) to 1.4-2.5% (E4+), same pattern as exp 25. Noisier audio did not push the model toward gap tokens — it just learned to be robust to audio noise while still ignoring context.
+- **Val loss eventually crept up.** E8 val loss (2.663) rising from E4 best (2.627). The overfitting is slower but the same fundamental dynamic plays out.
+
+**Comparison with exp 25 (same architecture, lighter augmentation):**
+
+| | Exp 25 (light aug) | Exp 26 (heavy aug) |
+|---|---|---|
+| Best HIT | 68.6% (E5) | 68.8% (E7) |
+| Best score | 0.330 (E5) | 0.332 (E7) |
+| Val loss best | 2.623 (E2) | 2.627 (E4) |
+| Overfitting onset | E2 | E5 |
+| Final context delta | 2.3% | 1.7% |
+| Useful training epochs | ~3 | ~6 |
+
+Augmentation doubled the useful training window but did not change the outcome.
+
+## Graphs
+
+![Loss](loss.png)
+![Accuracy](accuracy.png)
+![Hit/Good/Miss](hit_good_miss.png)
+![Frame Error](frame_error.png)
+![Frame Tiers](frame_tiers.png)
+![Ratio Tiers](ratio_tiers.png)
+![Relative Error](relative_error.png)
+![Stop F1](stop_f1.png)
+![Model Score](model_score.png)
 
 ## Lesson
 
-*Pending*
+- **Audio augmentation is effective regularization** — it delayed overfitting by ~3 epochs and allowed the model to train longer productively. Worth keeping for future experiments.
+- **Augmentation does not change the ceiling** — the model converges to the same ~69% HIT regardless of augmentation strength. The bottleneck is not overfitting; it's what the model can learn from the available signal.
+- **Context usage is orthogonal to audio augmentation** — noisier audio does not force context reliance. The model adapts to noise within the audio pathway rather than routing through gap tokens. Context collapse is an architectural problem, not a regularization problem.
+- **The ~69% HIT ceiling is robust** — three experiments (14, 25, 26) with different architectures and augmentation levels all converge to the same range. This may represent a fundamental limit of the current approach (cursor extraction, dataset size, or task formulation) rather than a tuning issue.

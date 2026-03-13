@@ -60,7 +60,7 @@ The 20x gap between the best external algorithm (3.5% HIT) and our model (68.9% 
 | `viewer.py` | Pygame onset visualizer with audio playback |
 | `parse_osu_taiko.py` | .osz → onset CSV extraction |
 | `create_dataset.py` | Audio → mel spectrogram preprocessing |
-| `experiments/` | [25 experiments](experiments/) - hypotheses, results, and graphs |
+| `experiments/` | [26 experiments](experiments/) - hypotheses, results, and graphs |
 | `PERFORMANCE.MD` | [Detailed baseline comparison](PERFORMANCE.MD) with per-algorithm graphs |
 
 
