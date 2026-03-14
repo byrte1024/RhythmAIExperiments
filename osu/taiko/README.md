@@ -38,7 +38,7 @@ analysis with graphs.
 
 | Algorithm | Type | HIT | GOOD | Miss | Score | Frame Err |
 |---|---|---|---|---|---|---|
-| **[Exp 14](experiments/experiment_14) (best, E8)** | **Trained model** | **68.9%** | **69.5%** | **30.3%** | **+0.337** | **11.6** |
+| **[Exp 27](experiments/experiment_27) (best, eval 8)** | **Trained model** | **69.8%** | **70.2%** | **29.8%** | **+0.343** | **11.5** |
 | madmom_cnn | Neural (CNN) | 3.5% | 7.8% | 89.2% | -0.769 | 40.8 |
 | librosa_energy | Classical (RMS) | 2.2% | 4.5% | 90.6% | -0.563 | 58.8 |
 | aubio_specflux | Classical (SpecFlux) | 1.3% | 3.0% | 92.9% | -0.701 | 41.0 |
@@ -47,7 +47,7 @@ analysis with graphs.
 | aubio_hfc | Classical (HFC) | 0.7% | 2.4% | 93.0% | -0.682 | 69.4 |
 | librosa_flux | Classical (Spec Flux) | 0.7% | 1.6% | 96.0% | -0.713 | 136.8 |
 
-The 20x gap between the best external algorithm (3.5% HIT) and our model (68.9% HIT) confirms that taiko onset prediction is fundamentally different from audio onset detection - it requires learned knowledge of mapping conventions, chart context, and community preferences.
+The 20x gap between the best external algorithm (3.5% HIT) and our model (69.8% HIT) confirms that taiko onset prediction is fundamentally different from audio onset detection - it requires learned knowledge of mapping conventions, chart context, and community preferences.
 
 ## Key Files
 
@@ -60,7 +60,7 @@ The 20x gap between the best external algorithm (3.5% HIT) and our model (68.9% 
 | `viewer.py` | Pygame onset visualizer with audio playback |
 | `parse_osu_taiko.py` | .osz → onset CSV extraction |
 | `create_dataset.py` | Audio → mel spectrogram preprocessing |
-| `experiments/` | [26 experiments](experiments/) - hypotheses, results, and graphs |
+| `experiments/` | [27 experiments](experiments/) - hypotheses, results, and graphs |
 | `PERFORMANCE.MD` | [Detailed baseline comparison](PERFORMANCE.MD) with per-algorithm graphs |
 
 

@@ -820,12 +820,12 @@ def save_benchmark_data(results, epoch, run_dir):
         # ── prediction distribution ──
         fig, axes = plt.subplots(2, 1, figsize=(10, 6))
         axes[0].hist(t_ns, bins=200, range=(0, 500), color="#4a90d9", alpha=0.8)
-        axes[0].set_title(f"{name} - Epoch {epoch}: Original Targets (non-STOP)")
+        axes[0].set_title(f"{name} - Eval {epoch}: Original Targets (non-STOP)")
         axes[0].set_ylabel("Count")
         axes[1].hist(p_ns, bins=200, range=(0, 500), color="#e8834a", alpha=0.8)
         n_stop = (preds == stop).sum()
         axes[1].set_title(
-            f"{name} - Epoch {epoch}: Predictions "
+            f"{name} - Eval {epoch}: Predictions "
             f"({len(np.unique(p_ns))} unique, {n_stop} STOP [{r['stop_rate']:.1%}])"
         )
         axes[1].set_xlabel("Bin offset")
@@ -849,7 +849,7 @@ def save_benchmark_data(results, epoch, run_dir):
             ax.plot([0, 500], [0, 500], "r--", alpha=0.4, linewidth=1)
             ax.set_xlabel("Target", color="white")
             ax.set_ylabel("Predicted", color="white")
-            ax.set_title(f"{name} - Epoch {epoch}: Heatmap", color="white")
+            ax.set_title(f"{name} - Eval {epoch}: Heatmap", color="white")
             ax.tick_params(colors="white")
             fig.tight_layout()
             fig.savefig(f"{prefix}_heatmap.png", dpi=100, facecolor="black")
@@ -914,7 +914,7 @@ def _save_benchmark_history_graphs(bench_root, run_dir):
         ax = axes[1, 0]
         ax.plot(epochs, [d["mean_pred"] for d in hist], "o-", color="#50b050")
         ax.set_ylabel("Mean predicted bin")
-        ax.set_xlabel("Epoch")
+        ax.set_xlabel("Eval Step")
         ax.set_title("Mean prediction (non-STOP)")
         ax.grid(True, alpha=0.3)
 
@@ -922,7 +922,7 @@ def _save_benchmark_history_graphs(bench_root, run_dir):
         ax = axes[1, 1]
         ax.plot(epochs, [d["unique_preds"] for d in hist], "o-", color="#b050b0")
         ax.set_ylabel("Unique values")
-        ax.set_xlabel("Epoch")
+        ax.set_xlabel("Eval Step")
         ax.set_title("Prediction diversity")
         ax.grid(True, alpha=0.3)
 
@@ -982,12 +982,12 @@ def save_epoch_graphs(targets, preds, metrics, epoch, run_dir, extra=None):
     fig, axes = plt.subplots(2, 1, figsize=(12, 8))
     # target distribution
     axes[0].hist(t_ns, bins=250, range=(0, 500), color="#4a90d9", alpha=0.8)
-    axes[0].set_title(f"Epoch {epoch}: Target Distribution (non-STOP)")
+    axes[0].set_title(f"Eval {epoch}: Target Distribution (non-STOP)")
     axes[0].set_xlabel("Bin offset")
     axes[0].set_ylabel("Count")
     # predicted distribution
     axes[1].hist(p_ns, bins=250, range=(0, 500), color="#e8834a", alpha=0.8)
-    axes[1].set_title(f"Epoch {epoch}: Predicted Distribution - {len(np.unique(p_ns))} unique values")
+    axes[1].set_title(f"Eval {epoch}: Predicted Distribution - {len(np.unique(p_ns))} unique values")
     axes[1].set_xlabel("Bin offset")
     axes[1].set_ylabel("Count")
     fig.tight_layout()
@@ -1000,7 +1000,7 @@ def save_epoch_graphs(targets, preds, metrics, epoch, run_dir, extra=None):
     ax.plot([0, 500], [0, 500], "r--", alpha=0.5, linewidth=1)
     ax.set_xlabel("Target bin offset")
     ax.set_ylabel("Predicted bin offset")
-    ax.set_title(f"Epoch {epoch}: Target vs Predicted")
+    ax.set_title(f"Eval {epoch}: Target vs Predicted")
     ax.set_xlim(0, 500)
     ax.set_ylim(0, 500)
     fig.tight_layout()
@@ -1019,7 +1019,7 @@ def save_epoch_graphs(targets, preds, metrics, epoch, run_dir, extra=None):
     ax.plot([0, 500], [0, 500], "r--", alpha=0.5, linewidth=1)
     ax.set_xlabel("Target bin offset", color="white")
     ax.set_ylabel("Predicted bin offset", color="white")
-    ax.set_title(f"Epoch {epoch}: Prediction Density", color="white")
+    ax.set_title(f"Eval {epoch}: Prediction Density", color="white")
     ax.tick_params(colors="white")
     fig.tight_layout()
     fig.savefig(f"{prefix}_heatmap.png", dpi=150)
@@ -1086,7 +1086,7 @@ def save_epoch_graphs(targets, preds, metrics, epoch, run_dir, extra=None):
         ax.plot([0, 500], [0, 500], "w--", alpha=0.4, linewidth=1)
         ax.set_xlabel("Target bin offset", color="white")
         ax.set_ylabel("Predicted bin offset", color="white")
-        ax.set_title(f"Epoch {epoch}: Entropy Heatmap (R=entropy, G=count, B=confident)", color="white")
+        ax.set_title(f"Eval {epoch}: Entropy Heatmap (R=entropy, G=count, B=confident)", color="white")
         ax.tick_params(colors="white")
         fig.tight_layout()
         fig.savefig(f"{prefix}_entropy_heatmap.png", dpi=150)
@@ -1102,7 +1102,7 @@ def save_epoch_graphs(targets, preds, metrics, epoch, run_dir, extra=None):
         ax.axhline(1.0, color="red", linestyle="--", alpha=0.5)
         ax.set_xlabel("Target bin offset")
         ax.set_ylabel("Ratio (predicted+1)/(target+1)")
-        ax.set_title(f"Epoch {epoch}: Relative Error")
+        ax.set_title(f"Eval {epoch}: Relative Error")
         ax.set_ylim(0.1, 10.0)
         ax.set_yscale("log")
         ax.set_xlim(0, 500)
@@ -1127,7 +1127,7 @@ def save_epoch_graphs(targets, preds, metrics, epoch, run_dir, extra=None):
         ax.axhline(0.0, color="white", linestyle="--", alpha=0.5)
         ax.set_xlabel("Target bin offset", color="white")
         ax.set_ylabel("log10(ratio)", color="white")
-        ax.set_title(f"Epoch {epoch}: Relative Error Density", color="white")
+        ax.set_title(f"Eval {epoch}: Relative Error Density", color="white")
         ax.set_yticks([-1, -0.5, 0, 0.5, 1])
         ax.set_yticklabels(["0.1x", "0.3x", "1.0x", "3.2x", "10x"])
         ax.tick_params(colors="white")
@@ -1149,7 +1149,7 @@ def save_epoch_graphs(targets, preds, metrics, epoch, run_dir, extra=None):
         ax.scatter(fe_clip, re_clip, alpha=0.02, s=1, color="#4a90d9")
         ax.set_xlabel("Absolute frame error |pred - target|")
         ax.set_ylabel("Absolute ratio error |ratio - 1|")
-        ax.set_title(f"Epoch {epoch}: Frame Error vs Ratio Error")
+        ax.set_title(f"Eval {epoch}: Frame Error vs Ratio Error")
         ax.set_xlim(0, 200)
         ax.set_ylim(0, 5.0)
         fig.tight_layout()
@@ -1168,7 +1168,7 @@ def save_epoch_graphs(targets, preds, metrics, epoch, run_dir, extra=None):
                   norm=LogNorm(vmin=1), cmap="magma")
         ax.set_xlabel("Absolute frame error", color="white")
         ax.set_ylabel("Absolute ratio error", color="white")
-        ax.set_title(f"Epoch {epoch}: Frame vs Ratio Error Density", color="white")
+        ax.set_title(f"Eval {epoch}: Frame vs Ratio Error Density", color="white")
         ax.tick_params(colors="white")
         fig.tight_layout()
         fig.savefig(f"{prefix}_frame_vs_ratio_heatmap.png", dpi=150)
@@ -1197,7 +1197,7 @@ def save_epoch_graphs(targets, preds, metrics, epoch, run_dir, extra=None):
         fig.colorbar(sc, ax=ax, label="|log-ratio| error")
         ax.set_xlabel("Mean density (events/sec)")
         ax.set_ylabel("Peak density (events/sec)")
-        ax.set_title(f"Epoch {epoch}: Error by Chart Density")
+        ax.set_title(f"Eval {epoch}: Error by Chart Density")
         fig.tight_layout()
         fig.savefig(f"{prefix}_ratio_in_density_scatter.png", dpi=120)
         plt.close(fig)
@@ -1218,7 +1218,7 @@ def save_epoch_graphs(targets, preds, metrics, epoch, run_dir, extra=None):
                   vmin=0, vmax=1.0, cmap="RdYlGn_r")
         ax.set_xlabel("Mean density (events/sec)", color="white")
         ax.set_ylabel("Peak density (events/sec)", color="white")
-        ax.set_title(f"Epoch {epoch}: Mean |log-ratio| Error by Density", color="white")
+        ax.set_title(f"Eval {epoch}: Mean |log-ratio| Error by Density", color="white")
         ax.tick_params(colors="white")
         fig.tight_layout()
         fig.savefig(f"{prefix}_ratio_in_density_heatmap.png", dpi=150)
@@ -1251,7 +1251,7 @@ def save_epoch_graphs(targets, preds, metrics, epoch, run_dir, extra=None):
                 ax.axvline(r, color="white", alpha=0.15, linewidth=0.5)
             ax.set_xlabel("Predicted gap / prev gap")
             ax.set_ylabel("Target gap / prev gap")
-            ax.set_title(f"Epoch {epoch}: Gap Ratio Continuity")
+            ax.set_title(f"Eval {epoch}: Gap Ratio Continuity")
             ax.set_xlim(0, 8)
             ax.set_ylim(0, 8)
             fig.tight_layout()
@@ -1274,7 +1274,7 @@ def save_epoch_graphs(targets, preds, metrics, epoch, run_dir, extra=None):
                 ax.axvline(r, color="white", alpha=0.2, linewidth=0.5)
             ax.set_xlabel("Predicted gap / prev gap", color="white")
             ax.set_ylabel("Target gap / prev gap", color="white")
-            ax.set_title(f"Epoch {epoch}: Gap Ratio Continuity Density", color="white")
+            ax.set_title(f"Eval {epoch}: Gap Ratio Continuity Density", color="white")
             ax.tick_params(colors="white")
             fig.tight_layout()
             fig.savefig(f"{prefix}_forward_error_heatmap.png", dpi=150)
@@ -1302,7 +1302,7 @@ def save_epoch_graphs(targets, preds, metrics, epoch, run_dir, extra=None):
                         bbox=dict(boxstyle="round,pad=0.2", fc="black", alpha=0.7))
             ax.set_xlabel("log₂(pred/target)  - musical ratio")
             ax.set_ylabel("Count")
-            ax.set_title(f"Epoch {epoch}: Ratio Confusion (misses only, n={misses.sum()})")
+            ax.set_title(f"Eval {epoch}: Ratio Confusion (misses only, n={misses.sum()})")
             ax.set_xticks([-3, -2, -1, 0, 1, 2, 3])
             ax.set_xticklabels(["⅛", "¼", "½", "1", "2", "4", "8"])
             fig.tight_layout()
@@ -1347,7 +1347,7 @@ def save_epoch_graphs(targets, preds, metrics, epoch, run_dir, extra=None):
         ax2.set_ylim(0, 1)
 
         ax1.set_xlabel("Number of past events in context")
-        ax1.set_title(f"Epoch {epoch}: Accuracy by Context Length")
+        ax1.set_title(f"Eval {epoch}: Accuracy by Context Length")
         fig.tight_layout()
         fig.savefig(f"{prefix}_accuracy_by_context.png", dpi=120)
         plt.close(fig)
@@ -1384,7 +1384,7 @@ def save_epoch_graphs(targets, preds, metrics, epoch, run_dir, extra=None):
         ax.set_xticklabels([f"Top-{k}" for k in ks])
         ax.set_ylabel("Accuracy")
         ax.set_ylim(0, 1)
-        ax.set_title(f"Epoch {epoch}: Top-K Accuracy")
+        ax.set_title(f"Eval {epoch}: Top-K Accuracy")
         ax.legend()
         ax.grid(True, alpha=0.3, axis="y")
         for i, (e, w1, h) in enumerate(zip(exact_topk, within1_topk, hit_topk)):
@@ -1415,7 +1415,7 @@ def save_epoch_graphs(targets, preds, metrics, epoch, run_dir, extra=None):
             ax.hist(ent_ns[between], bins=bins, alpha=0.4, color="#fcb71e", label=f"GOOD (n={between.sum()})", density=True)
         ax.set_xlabel("Softmax entropy (nats)")
         ax.set_ylabel("Density")
-        ax.set_title(f"Epoch {epoch}: Model Confidence - HIT vs MISS")
+        ax.set_title(f"Eval {epoch}: Model Confidence - HIT vs MISS")
         ax.legend()
         ax.grid(True, alpha=0.3)
 
@@ -1456,7 +1456,7 @@ def save_epoch_graphs(targets, preds, metrics, epoch, run_dir, extra=None):
         ax.set_xticklabels([f"Top-{k}" for k in ks])
         ax.set_ylabel("HIT Rate")
         ax.set_ylim(0, 1)
-        ax.set_title(f"Epoch {epoch}: Top-K HIT Rate")
+        ax.set_title(f"Eval {epoch}: Top-K HIT Rate")
         ax.grid(True, alpha=0.3, axis="y")
         for i, h in enumerate(hit_topk):
             ax.text(i, h + 0.02, f"{h:.1%}", ha="center", va="bottom", fontsize=8)
@@ -1471,13 +1471,13 @@ def save_training_curves(history, run_dir):
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
 
-    epochs = [h["epoch"] for h in history]
+    epochs = [h["eval_step"] for h in history]
 
     # ── loss ──
     fig, ax = plt.subplots(figsize=(10, 5))
     ax.plot(epochs, [h["train_loss"] for h in history], label="Train", linewidth=2)
     ax.plot(epochs, [h["val_loss"] for h in history], label="Val", linewidth=2)
-    ax.set_xlabel("Epoch")
+    ax.set_xlabel("Eval Step")
     ax.set_ylabel("Loss")
     ax.set_title("Training Loss")
     ax.legend()
@@ -1490,7 +1490,7 @@ def save_training_curves(history, run_dir):
     fig, ax = plt.subplots(figsize=(10, 5))
     ax.plot(epochs, [h["val_metrics"].get("accuracy", 0) for h in history],
             label="Val Accuracy", linewidth=2, color="#4a90d9")
-    ax.set_xlabel("Epoch")
+    ax.set_xlabel("Eval Step")
     ax.set_ylabel("Accuracy")
     ax.set_title("Overall Accuracy (argmax == target)")
     ax.legend()
@@ -1509,7 +1509,7 @@ def save_training_curves(history, run_dir):
     ]:
         vals = [h["val_metrics"].get(key, 0) for h in history]
         ax.plot(epochs, vals, label=label, linewidth=2, color=color)
-    ax.set_xlabel("Epoch")
+    ax.set_xlabel("Eval Step")
     ax.set_ylabel("Score")
     ax.set_title("STOP Class (500): F1 / Precision / Recall")
     ax.legend()
@@ -1527,7 +1527,7 @@ def save_training_curves(history, run_dir):
             label="Median", linewidth=2, color="#6bc46d")
     ax.plot(epochs, [h["val_metrics"].get("frame_error_p90", 0) for h in history],
             label="P90", linewidth=2, color="#e8834a", linestyle="--")
-    ax.set_xlabel("Epoch")
+    ax.set_xlabel("Eval Step")
     ax.set_ylabel("Frame Error (bins)")
     ax.set_title("Frame Error Over Training")
     ax.legend()
@@ -1545,7 +1545,7 @@ def save_training_curves(history, run_dir):
     ]:
         vals = [h["val_metrics"].get(key, 0) for h in history]
         ax.plot(epochs, vals, label=label, linewidth=2, color=color)
-    ax.set_xlabel("Epoch")
+    ax.set_xlabel("Eval Step")
     ax.set_ylabel("Rate")
     ax.set_title("HIT / GOOD / MISS Rates")
     ax.legend()
@@ -1565,7 +1565,7 @@ def save_training_curves(history, run_dir):
     ]:
         vals = [h["val_metrics"].get(key, 0) for h in history]
         ax.plot(epochs, vals, label=label, linewidth=2, color=color)
-    ax.set_xlabel("Epoch")
+    ax.set_xlabel("Eval Step")
     ax.set_ylabel("Rate")
     ax.set_title("Frame Accuracy Tiers")
     ax.legend()
@@ -1584,7 +1584,7 @@ def save_training_curves(history, run_dir):
     ]:
         vals = [h["val_metrics"].get(key, 0) for h in history]
         ax.plot(epochs, vals, label=label, linewidth=2, color=color)
-    ax.set_xlabel("Epoch")
+    ax.set_xlabel("Eval Step")
     ax.set_ylabel("Rate")
     ax.set_title("Ratio Accuracy Tiers")
     ax.legend()
@@ -1600,7 +1600,7 @@ def save_training_curves(history, run_dir):
             label="Mean |log-ratio|", linewidth=2, color="#c76dba")
     ax.plot(epochs, [h["val_metrics"].get("rel_error_median", 0) for h in history],
             label="Median |log-ratio|", linewidth=2, color="#4a90d9")
-    ax.set_xlabel("Epoch")
+    ax.set_xlabel("Eval Step")
     ax.set_ylabel("|log((pred+1)/(target+1))|")
     ax.set_title("Relative Error Over Training")
     ax.legend()
@@ -1616,7 +1616,7 @@ def save_training_curves(history, run_dir):
     ax.axhline(y=0, color="gray", linestyle="--", alpha=0.5)
     ax.fill_between(epochs, scores, 0, alpha=0.2,
                      color="#4a90d9" if all(s >= 0 for s in scores) else "#c76dba")
-    ax.set_xlabel("Epoch")
+    ax.set_xlabel("Eval Step")
     ax.set_ylabel("Model Score")
     ax.set_title("Model Score (0%=+0.68, 3%=0, 200%=-0.68, 400%=-1)")
     ax.set_ylim(-1, 1)
