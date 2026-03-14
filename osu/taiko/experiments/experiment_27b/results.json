@@ -1,0 +1,19 @@
+{
+  "predictions_file": "runs/detect_experiment_27/predictions_epoch_008_sub8.npz",
+  "min_pattern_len": 4,
+  "n_total": 74283,
+  "n_hit": 51937,
+  "n_miss": 22094,
+  "n_other": 252,
+  "n_stop_target": 208,
+  "pattern_found": 36091,
+  "pattern_correct": 23187,
+  "pattern_correct_on_hit": 18179,
+  "pattern_correct_on_miss": 4973,
+  "pattern_wrong_on_hit": 7874,
+  "pattern_wrong_on_miss": 4994,
+  "miss_no_pattern": 12050,
+  "miss_insufficient_context": 11,
+  "current_hit_rate": 0.6991774699460173,
+  "potential_hit_rate": 0.766124146843827
+}
