@@ -783,14 +783,14 @@ def _serializable(results):
     return out
 
 
-def save_benchmark_data(results, epoch, run_dir):
-    """Save per-benchmark epoch JSON + per-epoch prediction distribution graph.
+def save_benchmark_data(results, eval_step, run_dir):
+    """Save per-benchmark eval JSON + per-eval prediction distribution graph.
 
     Folder structure:
-      run_dir/benchmarks/<bench_name>/epoch_001.json
-      run_dir/benchmarks/<bench_name>/epoch_001_pred_dist.png
-      run_dir/benchmarks/<bench_name>/epoch_001_heatmap.png
-      run_dir/benchmarks/<bench_name>/history.png  (updated each epoch)
+      run_dir/benchmarks/<bench_name>/eval_001.json
+      run_dir/benchmarks/<bench_name>/eval_001_pred_dist.png
+      run_dir/benchmarks/<bench_name>/eval_001_heatmap.png
+      run_dir/benchmarks/<bench_name>/history.png  (updated each eval)
     """
     import matplotlib
     matplotlib.use("Agg")
@@ -803,11 +803,11 @@ def save_benchmark_data(results, epoch, run_dir):
     for name, r in results.items():
         bench_dir = os.path.join(bench_root, name)
         os.makedirs(bench_dir, exist_ok=True)
-        prefix = os.path.join(bench_dir, f"epoch_{epoch:03d}")
+        prefix = os.path.join(bench_dir, f"eval_{eval_step:03d}")
 
-        # save epoch JSON (no arrays)
+        # save eval JSON (no arrays)
         json_data = {k: v for k, v in r.items() if k not in ("preds", "targets")}
-        json_data["epoch"] = epoch
+        json_data["eval_step"] = eval_step
         with open(f"{prefix}.json", "w") as f:
             json.dump(json_data, f, indent=2)
 
@@ -820,12 +820,12 @@ def save_benchmark_data(results, epoch, run_dir):
         # ── prediction distribution ──
         fig, axes = plt.subplots(2, 1, figsize=(10, 6))
         axes[0].hist(t_ns, bins=200, range=(0, 500), color="#4a90d9", alpha=0.8)
-        axes[0].set_title(f"{name} - Eval {epoch}: Original Targets (non-STOP)")
+        axes[0].set_title(f"{name} - Eval {eval_step}: Original Targets (non-STOP)")
         axes[0].set_ylabel("Count")
         axes[1].hist(p_ns, bins=200, range=(0, 500), color="#e8834a", alpha=0.8)
         n_stop = (preds == stop).sum()
         axes[1].set_title(
-            f"{name} - Eval {epoch}: Predictions "
+            f"{name} - Eval {eval_step}: Predictions "
             f"({len(np.unique(p_ns))} unique, {n_stop} STOP [{r['stop_rate']:.1%}])"
         )
         axes[1].set_xlabel("Bin offset")
@@ -849,18 +849,18 @@ def save_benchmark_data(results, epoch, run_dir):
             ax.plot([0, 500], [0, 500], "r--", alpha=0.4, linewidth=1)
             ax.set_xlabel("Target", color="white")
             ax.set_ylabel("Predicted", color="white")
-            ax.set_title(f"{name} - Eval {epoch}: Heatmap", color="white")
+            ax.set_title(f"{name} - Eval {eval_step}: Heatmap", color="white")
             ax.tick_params(colors="white")
             fig.tight_layout()
             fig.savefig(f"{prefix}_heatmap.png", dpi=100, facecolor="black")
             plt.close(fig)
 
-    # ── history curves (one per benchmark, updated every epoch) ──
+    # ── history curves (one per benchmark, updated every eval) ──
     _save_benchmark_history_graphs(bench_root, run_dir)
 
 
 def _save_benchmark_history_graphs(bench_root, run_dir):
-    """Read all epoch JSONs per benchmark and generate history line plots."""
+    """Read all eval JSONs per benchmark and generate history line plots."""
     import matplotlib
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
@@ -877,20 +877,20 @@ def _save_benchmark_history_graphs(bench_root, run_dir):
     all_history = {}
     for name in bench_names:
         bench_dir = os.path.join(bench_root, name)
-        epochs_data = []
+        evals_data = []
         for fn in sorted(os.listdir(bench_dir)):
             if fn.endswith(".json"):
                 with open(os.path.join(bench_dir, fn)) as f:
-                    epochs_data.append(json.load(f))
-        if epochs_data:
-            all_history[name] = epochs_data
+                    evals_data.append(json.load(f))
+        if evals_data:
+            all_history[name] = evals_data
 
     if not all_history:
         return
 
-    # ── per-benchmark history graph (stop_rate + accuracy over epochs) ──
+    # ── per-benchmark history graph (stop_rate + accuracy over evals) ──
     for name, hist in all_history.items():
-        epochs = [d["epoch"] for d in hist]
+        epochs = [d.get("eval_step", i + 1) for i, d in enumerate(hist)]
         fig, axes = plt.subplots(2, 2, figsize=(12, 8))
         fig.suptitle(f"Benchmark: {name}", fontsize=14)
 
@@ -936,7 +936,7 @@ def _save_benchmark_history_graphs(bench_root, run_dir):
 
     colors = plt.cm.tab10(np.linspace(0, 1, len(all_history)))
     for i, (name, hist) in enumerate(all_history.items()):
-        epochs = [d["epoch"] for d in hist]
+        epochs = [d.get("eval_step", j + 1) for j, d in enumerate(hist)]
         axes[0].plot(epochs, [d["stop_rate"] for d in hist], "o-",
                      color=colors[i], label=name, markersize=4)
         axes[1].plot(epochs, [d["accuracy"] for d in hist], "o-",
@@ -944,14 +944,14 @@ def _save_benchmark_history_graphs(bench_root, run_dir):
 
     axes[0].set_title("STOP rate")
     axes[0].set_ylabel("STOP rate")
-    axes[0].set_xlabel("Epoch")
+    axes[0].set_xlabel("Eval Step")
     axes[0].set_ylim(-0.05, 1.05)
     axes[0].legend(fontsize=8, loc="best")
     axes[0].grid(True, alpha=0.3)
 
     axes[1].set_title("Accuracy")
     axes[1].set_ylabel("Accuracy")
-    axes[1].set_xlabel("Epoch")
+    axes[1].set_xlabel("Eval Step")
     axes[1].set_ylim(-0.05, 1.05)
     axes[1].legend(fontsize=8, loc="best")
     axes[1].grid(True, alpha=0.3)
@@ -961,17 +961,17 @@ def _save_benchmark_history_graphs(bench_root, run_dir):
     plt.close(fig)
 
 
-def save_epoch_graphs(targets, preds, metrics, epoch, run_dir, extra=None):
-    """Generate and save all graphs for this epoch."""
+def save_eval_graphs(targets, preds, metrics, eval_step, run_dir, extra=None):
+    """Generate and save all graphs for this eval."""
     import matplotlib
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
     from matplotlib.colors import LogNorm
     from scipy.ndimage import gaussian_filter
 
-    epoch_dir = os.path.join(run_dir, "epochs")
-    os.makedirs(epoch_dir, exist_ok=True)
-    prefix = os.path.join(epoch_dir, f"epoch_{epoch:03d}")
+    eval_dir = os.path.join(run_dir, "evals")
+    os.makedirs(eval_dir, exist_ok=True)
+    prefix = os.path.join(eval_dir, f"eval_{eval_step:03d}")
 
     stop = N_CLASSES - 1
     ns = targets < stop
@@ -982,12 +982,12 @@ def save_epoch_graphs(targets, preds, metrics, epoch, run_dir, extra=None):
     fig, axes = plt.subplots(2, 1, figsize=(12, 8))
     # target distribution
     axes[0].hist(t_ns, bins=250, range=(0, 500), color="#4a90d9", alpha=0.8)
-    axes[0].set_title(f"Eval {epoch}: Target Distribution (non-STOP)")
+    axes[0].set_title(f"Eval {eval_step}: Target Distribution (non-STOP)")
     axes[0].set_xlabel("Bin offset")
     axes[0].set_ylabel("Count")
     # predicted distribution
     axes[1].hist(p_ns, bins=250, range=(0, 500), color="#e8834a", alpha=0.8)
-    axes[1].set_title(f"Eval {epoch}: Predicted Distribution - {len(np.unique(p_ns))} unique values")
+    axes[1].set_title(f"Eval {eval_step}: Predicted Distribution - {len(np.unique(p_ns))} unique values")
     axes[1].set_xlabel("Bin offset")
     axes[1].set_ylabel("Count")
     fig.tight_layout()
@@ -1000,7 +1000,7 @@ def save_epoch_graphs(targets, preds, metrics, epoch, run_dir, extra=None):
     ax.plot([0, 500], [0, 500], "r--", alpha=0.5, linewidth=1)
     ax.set_xlabel("Target bin offset")
     ax.set_ylabel("Predicted bin offset")
-    ax.set_title(f"Eval {epoch}: Target vs Predicted")
+    ax.set_title(f"Eval {eval_step}: Target vs Predicted")
     ax.set_xlim(0, 500)
     ax.set_ylim(0, 500)
     fig.tight_layout()
@@ -1019,7 +1019,7 @@ def save_epoch_graphs(targets, preds, metrics, epoch, run_dir, extra=None):
     ax.plot([0, 500], [0, 500], "r--", alpha=0.5, linewidth=1)
     ax.set_xlabel("Target bin offset", color="white")
     ax.set_ylabel("Predicted bin offset", color="white")
-    ax.set_title(f"Eval {epoch}: Prediction Density", color="white")
+    ax.set_title(f"Eval {eval_step}: Prediction Density", color="white")
     ax.tick_params(colors="white")
     fig.tight_layout()
     fig.savefig(f"{prefix}_heatmap.png", dpi=150)
@@ -1086,7 +1086,7 @@ def save_epoch_graphs(targets, preds, metrics, epoch, run_dir, extra=None):
         ax.plot([0, 500], [0, 500], "w--", alpha=0.4, linewidth=1)
         ax.set_xlabel("Target bin offset", color="white")
         ax.set_ylabel("Predicted bin offset", color="white")
-        ax.set_title(f"Eval {epoch}: Entropy Heatmap (R=entropy, G=count, B=confident)", color="white")
+        ax.set_title(f"Eval {eval_step}: Entropy Heatmap (R=entropy, G=count, B=confident)", color="white")
         ax.tick_params(colors="white")
         fig.tight_layout()
         fig.savefig(f"{prefix}_entropy_heatmap.png", dpi=150)
@@ -1102,7 +1102,7 @@ def save_epoch_graphs(targets, preds, metrics, epoch, run_dir, extra=None):
         ax.axhline(1.0, color="red", linestyle="--", alpha=0.5)
         ax.set_xlabel("Target bin offset")
         ax.set_ylabel("Ratio (predicted+1)/(target+1)")
-        ax.set_title(f"Eval {epoch}: Relative Error")
+        ax.set_title(f"Eval {eval_step}: Relative Error")
         ax.set_ylim(0.1, 10.0)
         ax.set_yscale("log")
         ax.set_xlim(0, 500)
@@ -1127,7 +1127,7 @@ def save_epoch_graphs(targets, preds, metrics, epoch, run_dir, extra=None):
         ax.axhline(0.0, color="white", linestyle="--", alpha=0.5)
         ax.set_xlabel("Target bin offset", color="white")
         ax.set_ylabel("log10(ratio)", color="white")
-        ax.set_title(f"Eval {epoch}: Relative Error Density", color="white")
+        ax.set_title(f"Eval {eval_step}: Relative Error Density", color="white")
         ax.set_yticks([-1, -0.5, 0, 0.5, 1])
         ax.set_yticklabels(["0.1x", "0.3x", "1.0x", "3.2x", "10x"])
         ax.tick_params(colors="white")
@@ -1149,7 +1149,7 @@ def save_epoch_graphs(targets, preds, metrics, epoch, run_dir, extra=None):
         ax.scatter(fe_clip, re_clip, alpha=0.02, s=1, color="#4a90d9")
         ax.set_xlabel("Absolute frame error |pred - target|")
         ax.set_ylabel("Absolute ratio error |ratio - 1|")
-        ax.set_title(f"Eval {epoch}: Frame Error vs Ratio Error")
+        ax.set_title(f"Eval {eval_step}: Frame Error vs Ratio Error")
         ax.set_xlim(0, 200)
         ax.set_ylim(0, 5.0)
         fig.tight_layout()
@@ -1168,7 +1168,7 @@ def save_epoch_graphs(targets, preds, metrics, epoch, run_dir, extra=None):
                   norm=LogNorm(vmin=1), cmap="magma")
         ax.set_xlabel("Absolute frame error", color="white")
         ax.set_ylabel("Absolute ratio error", color="white")
-        ax.set_title(f"Eval {epoch}: Frame vs Ratio Error Density", color="white")
+        ax.set_title(f"Eval {eval_step}: Frame vs Ratio Error Density", color="white")
         ax.tick_params(colors="white")
         fig.tight_layout()
         fig.savefig(f"{prefix}_frame_vs_ratio_heatmap.png", dpi=150)
@@ -1197,7 +1197,7 @@ def save_epoch_graphs(targets, preds, metrics, epoch, run_dir, extra=None):
         fig.colorbar(sc, ax=ax, label="|log-ratio| error")
         ax.set_xlabel("Mean density (events/sec)")
         ax.set_ylabel("Peak density (events/sec)")
-        ax.set_title(f"Eval {epoch}: Error by Chart Density")
+        ax.set_title(f"Eval {eval_step}: Error by Chart Density")
         fig.tight_layout()
         fig.savefig(f"{prefix}_ratio_in_density_scatter.png", dpi=120)
         plt.close(fig)
@@ -1218,7 +1218,7 @@ def save_epoch_graphs(targets, preds, metrics, epoch, run_dir, extra=None):
                   vmin=0, vmax=1.0, cmap="RdYlGn_r")
         ax.set_xlabel("Mean density (events/sec)", color="white")
         ax.set_ylabel("Peak density (events/sec)", color="white")
-        ax.set_title(f"Eval {epoch}: Mean |log-ratio| Error by Density", color="white")
+        ax.set_title(f"Eval {eval_step}: Mean |log-ratio| Error by Density", color="white")
         ax.tick_params(colors="white")
         fig.tight_layout()
         fig.savefig(f"{prefix}_ratio_in_density_heatmap.png", dpi=150)
@@ -1251,7 +1251,7 @@ def save_epoch_graphs(targets, preds, metrics, epoch, run_dir, extra=None):
                 ax.axvline(r, color="white", alpha=0.15, linewidth=0.5)
             ax.set_xlabel("Predicted gap / prev gap")
             ax.set_ylabel("Target gap / prev gap")
-            ax.set_title(f"Eval {epoch}: Gap Ratio Continuity")
+            ax.set_title(f"Eval {eval_step}: Gap Ratio Continuity")
             ax.set_xlim(0, 8)
             ax.set_ylim(0, 8)
             fig.tight_layout()
@@ -1274,7 +1274,7 @@ def save_epoch_graphs(targets, preds, metrics, epoch, run_dir, extra=None):
                 ax.axvline(r, color="white", alpha=0.2, linewidth=0.5)
             ax.set_xlabel("Predicted gap / prev gap", color="white")
             ax.set_ylabel("Target gap / prev gap", color="white")
-            ax.set_title(f"Eval {epoch}: Gap Ratio Continuity Density", color="white")
+            ax.set_title(f"Eval {eval_step}: Gap Ratio Continuity Density", color="white")
             ax.tick_params(colors="white")
             fig.tight_layout()
             fig.savefig(f"{prefix}_forward_error_heatmap.png", dpi=150)
@@ -1302,7 +1302,7 @@ def save_epoch_graphs(targets, preds, metrics, epoch, run_dir, extra=None):
                         bbox=dict(boxstyle="round,pad=0.2", fc="black", alpha=0.7))
             ax.set_xlabel("log₂(pred/target)  - musical ratio")
             ax.set_ylabel("Count")
-            ax.set_title(f"Eval {epoch}: Ratio Confusion (misses only, n={misses.sum()})")
+            ax.set_title(f"Eval {eval_step}: Ratio Confusion (misses only, n={misses.sum()})")
             ax.set_xticks([-3, -2, -1, 0, 1, 2, 3])
             ax.set_xticklabels(["⅛", "¼", "½", "1", "2", "4", "8"])
             fig.tight_layout()
@@ -1347,7 +1347,7 @@ def save_epoch_graphs(targets, preds, metrics, epoch, run_dir, extra=None):
         ax2.set_ylim(0, 1)
 
         ax1.set_xlabel("Number of past events in context")
-        ax1.set_title(f"Eval {epoch}: Accuracy by Context Length")
+        ax1.set_title(f"Eval {eval_step}: Accuracy by Context Length")
         fig.tight_layout()
         fig.savefig(f"{prefix}_accuracy_by_context.png", dpi=120)
         plt.close(fig)
@@ -1384,7 +1384,7 @@ def save_epoch_graphs(targets, preds, metrics, epoch, run_dir, extra=None):
         ax.set_xticklabels([f"Top-{k}" for k in ks])
         ax.set_ylabel("Accuracy")
         ax.set_ylim(0, 1)
-        ax.set_title(f"Eval {epoch}: Top-K Accuracy")
+        ax.set_title(f"Eval {eval_step}: Top-K Accuracy")
         ax.legend()
         ax.grid(True, alpha=0.3, axis="y")
         for i, (e, w1, h) in enumerate(zip(exact_topk, within1_topk, hit_topk)):
@@ -1415,7 +1415,7 @@ def save_epoch_graphs(targets, preds, metrics, epoch, run_dir, extra=None):
             ax.hist(ent_ns[between], bins=bins, alpha=0.4, color="#fcb71e", label=f"GOOD (n={between.sum()})", density=True)
         ax.set_xlabel("Softmax entropy (nats)")
         ax.set_ylabel("Density")
-        ax.set_title(f"Eval {epoch}: Model Confidence - HIT vs MISS")
+        ax.set_title(f"Eval {eval_step}: Model Confidence - HIT vs MISS")
         ax.legend()
         ax.grid(True, alpha=0.3)
 
@@ -1456,7 +1456,7 @@ def save_epoch_graphs(targets, preds, metrics, epoch, run_dir, extra=None):
         ax.set_xticklabels([f"Top-{k}" for k in ks])
         ax.set_ylabel("HIT Rate")
         ax.set_ylim(0, 1)
-        ax.set_title(f"Eval {epoch}: Top-K HIT Rate")
+        ax.set_title(f"Eval {eval_step}: Top-K HIT Rate")
         ax.grid(True, alpha=0.3, axis="y")
         for i, h in enumerate(hit_topk):
             ax.text(i, h + 0.02, f"{h:.1%}", ha="center", va="bottom", fontsize=8)
@@ -1466,7 +1466,7 @@ def save_epoch_graphs(targets, preds, metrics, epoch, run_dir, extra=None):
 
 
 def save_training_curves(history, run_dir):
-    """Save loss and metric curves across all epochs."""
+    """Save loss and metric curves across all evals."""
     import matplotlib
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
@@ -1660,7 +1660,7 @@ def train(args):
     run_dir = os.path.join(SCRIPT_DIR, "runs", args.run_name)
     ckpt_dir = os.path.join(run_dir, "checkpoints")
     os.makedirs(ckpt_dir, exist_ok=True)
-    os.makedirs(os.path.join(run_dir, "epochs"), exist_ok=True)
+    os.makedirs(os.path.join(run_dir, "evals"), exist_ok=True)
 
     print(f"Dataset: {args.dataset} ({manifest['total_charts']} charts)")
     print(f"Run: {args.run_name} → {run_dir}")
@@ -1790,7 +1790,7 @@ def train(args):
     if args.resume:
         # find latest checkpoint in the run
         ckpt_files = sorted(
-            [f for f in os.listdir(ckpt_dir) if f.startswith("epoch_") and f.endswith(".pt")]
+            [f for f in os.listdir(ckpt_dir) if (f.startswith("eval_") or f.startswith("epoch_")) and f.endswith(".pt") and f != "best.pt"]
         )
         if ckpt_files:
             resume_path = os.path.join(ckpt_dir, ckpt_files[-1])
@@ -1863,7 +1863,7 @@ def train(args):
         seg_idx = 0  # which segment we're in
         seg_label = f"eval {eval_step + 1}" if evals_per_epoch > 1 else ""
 
-        epoch_bar = tqdm(total=n_batches, desc=f"Epoch {epoch}/{args.epochs}",
+        epoch_bar = tqdm(total=n_batches, desc=f"Epoch {epoch}/{args.epochs} (eval {eval_step+1}+)",
                          position=0, leave=True)
         seg_size = seg_boundaries[seg_idx + 1] - seg_boundaries[seg_idx]
         seg_bar = tqdm(total=seg_size,
@@ -2047,8 +2047,8 @@ def _run_eval(model, val_loader, criterion, args, amp_enabled,
     save_benchmark_data(bench_results, eval_step, run_dir)
 
     # save eval graphs (before JSON so selection_stats gets populated)
-    save_epoch_graphs(val_targets, val_preds, val_metrics, eval_step, run_dir,
-                      extra=val_extra)
+    save_eval_graphs(val_targets, val_preds, val_metrics, eval_step, run_dir,
+                     extra=val_extra)
 
     # ── save eval data ──
     epoch_data = {
@@ -2065,7 +2065,7 @@ def _run_eval(model, val_loader, criterion, args, amp_enabled,
     history.append(epoch_data)
 
     # save eval JSON
-    with open(os.path.join(run_dir, "epochs", f"epoch_{eval_step:03d}.json"), "w") as f:
+    with open(os.path.join(run_dir, "evals", f"eval_{eval_step:03d}.json"), "w") as f:
         json.dump(epoch_data, f, indent=2)
 
     # save model checkpoint
@@ -2082,7 +2082,7 @@ def _run_eval(model, val_loader, criterion, args, amp_enabled,
         "best_val_loss": best_val_loss,
         "args": vars(args),
     }
-    torch.save(ckpt, os.path.join(ckpt_dir, f"epoch_{eval_step:03d}.pt"))
+    torch.save(ckpt, os.path.join(ckpt_dir, f"eval_{eval_step:03d}.pt"))
     if val_loss < best_val_loss:
         torch.save(ckpt, os.path.join(ckpt_dir, "best.pt"))
         print(f"  → New best val_loss: {val_loss:.4f}")
