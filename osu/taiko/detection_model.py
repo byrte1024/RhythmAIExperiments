@@ -1103,13 +1103,22 @@ class OnsetDetector(nn.Module):
             nn.Conv1d(8, 1, kernel_size=5, padding=2),
         )
 
+        # auxiliary context head: predicts from gap tokens only (no audio)
+        # forces gap encoder to learn useful representations
+        self.ctx_head_attn = nn.MultiheadAttention(
+            d_model, n_heads, dropout=dropout, batch_first=True,
+        )
+        self.ctx_head_query = nn.Parameter(torch.randn(1, 1, d_model))
+        self.ctx_head_norm = nn.LayerNorm(d_model)
+        self.ctx_head_proj = nn.Linear(d_model, n_classes)
+
     def forward(self, mel, event_offsets, event_mask, conditioning):
         """
         mel: (B, n_mels, 1000)
         event_offsets: (B, C) past event bin positions relative to cursor
         event_mask: (B, C) bool, True = padding
         conditioning: (B, 3) [mean_density, peak_density, density_std]
-        Returns: logits (B, 501)
+        Returns: logits (B, 501) or (logits, ctx_logits) if training
         """
         cond = self.cond_mlp(conditioning)
 
@@ -1120,6 +1129,17 @@ class OnsetDetector(nn.Module):
         gap_tokens, gap_mask = self.gap_encoder(
             event_offsets, event_mask, mel, cond
         )  # (B, C, d_model), (B, C)
+
+        # auxiliary context prediction (from gap tokens only, before fusion)
+        ctx_logits = None
+        if self.training:
+            B = mel.size(0)
+            query = self.ctx_head_query.expand(B, -1, -1)  # (B, 1, d_model)
+            ctx_out, _ = self.ctx_head_attn(
+                query, gap_tokens, gap_tokens,
+                key_padding_mask=gap_mask,
+            )  # (B, 1, d_model)
+            ctx_logits = self.ctx_head_proj(self.ctx_head_norm(ctx_out.squeeze(1)))  # (B, 501)
 
         # concatenate [audio; gap] - audio first so cursor stays at position 125
         x = torch.cat([audio_tokens, gap_tokens], dim=1)  # (B, 250+C, d_model)
@@ -1139,6 +1159,9 @@ class OnsetDetector(nn.Module):
 
         logits = self.head_proj(self.head_norm(cursor))
         logits = logits + self.head_smooth(logits.unsqueeze(1)).squeeze(1)
+
+        if ctx_logits is not None:
+            return logits, ctx_logits
         return logits
 
 

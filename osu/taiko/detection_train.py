@@ -1840,6 +1840,7 @@ def train(args):
         # ── train ──
         model.train()
         train_loss = 0.0
+        train_ctx_loss = 0.0
         train_total = 0
         # running metric accumulators (non-stop samples only)
         train_ns_total = 0
@@ -1882,10 +1883,18 @@ def train(args):
             target = target.to(args.device, non_blocking=True)
 
             with torch.autocast("cuda", enabled=amp_enabled):
-                logits = model(mel, evt_off, evt_mask, cond)
-                if isinstance(logits, tuple):
-                    logits = logits[0]
-                loss = criterion(logits, target)
+                out = model(mel, evt_off, evt_mask, cond)
+                if isinstance(out, tuple):
+                    logits, ctx_logits = out
+                else:
+                    logits, ctx_logits = out, None
+                main_loss = criterion(logits, target)
+                if ctx_logits is not None and args.ctx_loss_weight > 0:
+                    ctx_loss_val = criterion(ctx_logits, target)
+                    loss = main_loss + args.ctx_loss_weight * ctx_loss_val
+                else:
+                    ctx_loss_val = None
+                    loss = main_loss
 
             optimizer.zero_grad(set_to_none=True)
             scaler.scale(loss).backward()
@@ -1895,7 +1904,9 @@ def train(args):
             scaler.update()
 
             bs = target.size(0)
-            train_loss += loss.item() * bs
+            train_loss += main_loss.item() * bs
+            if ctx_loss_val is not None:
+                train_ctx_loss += ctx_loss_val.item() * bs
             train_total += bs
 
             # batch metrics for tqdm
@@ -1957,12 +1968,20 @@ def train(args):
                     r_hit = sum(r[3] for r in recent_buf) / r_ns_sum
                     r_miss = sum(r[4] for r in recent_buf) / r_ns_sum
                     r_score = sum(r[5] for r in recent_buf) / r_ns_sum
-                    stats = (f"L={avg_loss:.3f}|{r_loss:.3f} "
+                    ctx_str = ""
+                    if train_ctx_loss > 0:
+                        avg_ctx = train_ctx_loss / train_total
+                        ctx_str = f" ctxL={avg_ctx:.3f}"
+                    stats = (f"L={avg_loss:.3f}|{r_loss:.3f}{ctx_str} "
                              f"HIT={hit:.1%}|{r_hit:.1%} "
                              f"miss={miss:.1%}|{r_miss:.1%} "
                              f"score={score:+.3f}|{r_score:+.3f}")
                 else:
-                    stats = f"L={avg_loss:.3f}|{r_loss:.3f}"
+                    ctx_str = ""
+                    if train_ctx_loss > 0:
+                        avg_ctx = train_ctx_loss / train_total
+                        ctx_str = f" ctxL={avg_ctx:.3f}"
+                    stats = f"L={avg_loss:.3f}|{r_loss:.3f}{ctx_str}"
                 epoch_bar.set_postfix_str(stats)
 
             # ── mid-epoch eval checkpoint ──
@@ -1971,12 +1990,13 @@ def train(args):
                     seg_bar.close()
                 sub_frac = (batch_idx + 1) / n_batches
                 sub_train_loss = train_loss / train_total
+                sub_ctx_loss = train_ctx_loss / train_total if train_ctx_loss > 0 else 0.0
                 eval_step += 1
                 _run_eval(
                     model, val_loader, criterion, args, amp_enabled,
                     eval_step, epoch + sub_frac, sub_train_loss,
                     run_dir, ckpt_dir, history, scheduler, optimizer,
-                    scaler, best_val_loss,
+                    scaler, best_val_loss, train_ctx_loss=sub_ctx_loss,
                 )
                 if history and history[-1]["val_loss"] < best_val_loss:
                     best_val_loss = history[-1]["val_loss"]
@@ -1996,6 +2016,7 @@ def train(args):
 
         scheduler.step()
         train_loss /= train_total
+        end_ctx_loss = train_ctx_loss / train_total if train_ctx_loss > 0 else 0.0
 
         # ── end-of-epoch eval ──
         eval_step += 1
@@ -2003,7 +2024,7 @@ def train(args):
             model, val_loader, criterion, args, amp_enabled,
             eval_step, float(epoch), train_loss,
             run_dir, ckpt_dir, history, scheduler, optimizer,
-            scaler, best_val_loss,
+            scaler, best_val_loss, train_ctx_loss=end_ctx_loss,
         )
         if history and history[-1]["val_loss"] < best_val_loss:
             best_val_loss = history[-1]["val_loss"]
@@ -2015,7 +2036,7 @@ def train(args):
 def _run_eval(model, val_loader, criterion, args, amp_enabled,
               eval_step, epoch_frac, train_loss,
               run_dir, ckpt_dir, history, scheduler, optimizer,
-              scaler, best_val_loss):
+              scaler, best_val_loss, train_ctx_loss=0.0):
     """Run validation, benchmarks, save graphs/checkpoints/history."""
     val_loss, val_extra = validate_and_collect(
         model, val_loader, criterion, args.device, amp_enabled=amp_enabled,
@@ -2028,7 +2049,8 @@ def _run_eval(model, val_loader, criterion, args, amp_enabled,
 
     tag = f"{epoch_frac:.2f}" if epoch_frac != int(epoch_frac) else f"{int(epoch_frac)}"
     audio_hit_str = f" audio_HIT={audio_metrics['hit_rate']:.1%}" if audio_metrics else ""
-    print(f"  Eval {eval_step} (epoch {tag}): loss={train_loss:.4f}/{val_loss:.4f} | "
+    ctx_loss_str = f" ctx_loss={train_ctx_loss:.4f}" if train_ctx_loss > 0 else ""
+    print(f"  Eval {eval_step} (epoch {tag}): loss={train_loss:.4f}/{val_loss:.4f}{ctx_loss_str} | "
           f"HIT={val_metrics.get('hit_rate', 0):.1%}{audio_hit_str} "
           f"GOOD={val_metrics.get('good_rate', 0):.1%} "
           f"MISS={val_metrics.get('miss_rate', 1):.1%} | "
@@ -2062,6 +2084,8 @@ def _run_eval(model, val_loader, criterion, args, amp_enabled,
     }
     if audio_metrics is not None:
         epoch_data["audio_metrics"] = audio_metrics
+    if train_ctx_loss > 0:
+        epoch_data["train_ctx_loss"] = train_ctx_loss
     history.append(epoch_data)
 
     # save eval JSON
@@ -2114,6 +2138,7 @@ if __name__ == "__main__":
     parser.add_argument("--hard-alpha", type=float, default=0.5, help="Weight of hard CE in mixed loss (0=pure soft, 1=pure hard)")
     parser.add_argument("--frame-tolerance", type=int, default=2, help="±N frame floor for soft targets (default 2 = ±10ms)")
     parser.add_argument("--stop-weight", type=float, default=1.5, help="Extra loss multiplier when target is STOP (default 1.5)")
+    parser.add_argument("--ctx-loss-weight", type=float, default=0.0, help="Auxiliary context loss weight (0=disabled, default 0)")
     parser.add_argument("--balanced", action="store_true", default=True, help="Balanced sampling (default on)")
     parser.add_argument("--no-balanced", dest="balanced", action="store_false", help="Disable balanced sampling")
     parser.add_argument("--weight-mode", default="log", choices=["log", "sqrt", "none"], help="Class weight mode (only when --no-balanced)")
