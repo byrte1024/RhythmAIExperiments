@@ -44,8 +44,25 @@ The context head is lightweight (~0.3M params): one cross-attention layer + Laye
 
 ## Result
 
-*Pending*
+**Aux weight 0.2 too low — context delta collapsed as usual, aux head barely learned.** Killed after eval 4 (~1 epoch).
+
+| eval | epoch | HIT | Miss | Score | Acc | Val loss | Ctx loss | no_events | Ctx Δ |
+|------|-------|-----|------|-------|-----|----------|----------|-----------|-------|
+| 1 | 1.25 | 66.4% | 33.0% | 0.305 | 48.5% | 2.685 | 4.195 | 42.5% | 6.0% |
+| 2 | 1.50 | 66.6% | 32.9% | 0.305 | 48.6% | 2.670 | 4.144 | 45.4% | 3.2% |
+| 3 | 1.75 | 68.0% | 31.5% | 0.322 | 50.0% | 2.616 | 4.114 | 48.2% | 1.8% |
+| 4 | 1.00 | 68.2% | 31.3% | 0.323 | 50.0% | 2.618 | 4.096 | 48.6% | 1.5% |
+
+**What happened:**
+- **Context delta collapsed identically** — 6.0% → 1.5% over 4 evals. Same pattern as exp 25-28.
+- **Aux head barely learned** — ctx loss dropped from 4.195 to 4.096 over 4 evals (~2% reduction). Random 501-class loss is ~6.2, so 4.1 is barely above random. The gap encoder isn't producing useful standalone representations.
+- **Main pathway unaffected** — HIT tracked exp 27 closely (68.2% vs 68.6% at eval 4). The aux loss didn't hurt but didn't help either.
+
+**Why it failed:**
+At weight 0.2, the aux gradient is ~20% of the gap encoder's total gradient. The other ~80% comes from the fusion pathway, which still tells the gap encoder "be quiet, let audio handle it." The aux head can't overcome fusion's dominance at this weight — it's a whisper in a shouting match.
 
 ## Lesson
 
-*Pending*
+- **0.2 aux weight is insufficient.** The gradient from the aux head is too small relative to fusion's gradient on the gap encoder. The gap encoder optimizes for fusion (which wants silence) and the aux head gets leftover capacity.
+- **Ctx loss as a diagnostic is valuable.** Tracking the aux head's loss independently shows whether the gap encoder is learning useful representations. At 4.1 (barely above random), we know it isn't.
+- **Need stronger forcing.** Next: increase weight to 1.0 so the aux gradient matches or exceeds fusion's gradient on the gap encoder. The gap encoder should feel equal pressure from both heads.

@@ -28,7 +28,8 @@ Each folder contains a README with hypothesis, results, and key graphs.
 | 27 | [Full Dataset (No Subsample)](experiment_27/) | **New best** | **69.8% HIT** — broke ~69% ceiling. Top-10 acc 96%, but context delta still 1.5%. Overfitting delayed further. Data diversity helps but doesn't fix context |
 | 27-B | [Context Pattern Analysis](experiment_27b/) | Diagnostic | 95% of misses have target in context. Strict pattern matching catches 22.5%, but manual inspection shows far more are solvable. Context has the answer — model doesn't use it |
 | 28 | [Focal Loss](experiment_28/) | Better calibration | Best entropy separation ever, Stop F1 0.552, but HIT ceiling 68.6% (~1pp below exp 27). Context delta zero. Loss reweighting doesn't force context usage |
-| 29 | [Auxiliary Context Loss](experiment_29/) | Pending | Second prediction head on gap tokens only (ctx_loss_weight=0.2). Forces gap encoder to learn useful representations independently |
+| 29 | [Auxiliary Context Loss](experiment_29/) | Weight too low | ctx_loss_weight=0.2 too weak — aux head barely learned (loss 4.2→4.1), context delta collapsed as usual. Gradient dominated by fusion |
+| 29-B | [Aux Context Loss (Weight 1.0)](experiment_29b/) | Pending | Same as exp 29 but ctx_loss_weight=1.0 — equal gradient pressure from aux head and fusion |
 
 ## Key Lessons
 
