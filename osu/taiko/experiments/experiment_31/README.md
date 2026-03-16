@@ -41,7 +41,7 @@ events (B, C)      → GapEncoder (4 layers)   → C gap tokens (d=384)
 | CrossAttentionFusion (2 bidirectional layers) | ~5.0M | Replaces 4-layer concat self-attention (~7.5M) |
 | Output head (norm + proj + smoothing) | ~0.2M | Same as before |
 | cond_mlp | ~8K | Same |
-| **Total** | **~18M** | Similar to exp 25-30 (~19M) |
+| **Total** | **~23.3M** | Larger than exp 25-30 (~19M) due to deeper GapEncoder + dual FFN in cross-attn |
 
 ### Changes from exp 27
 
@@ -53,7 +53,7 @@ events (B, C)      → GapEncoder (4 layers)   → C gap tokens (d=384)
 1. **Context delta should stay higher** — gap tokens have dedicated processing and can't be drowned out in early self-attention. Cross-attention forces audio to look at gap features.
 2. **Slightly lower HIT initially** — the model has to learn cross-modal attention from scratch, and audio can't freely self-attend through gap tokens. May take more training to converge.
 3. **no_events benchmark should drop** — if the model truly learns to use context, removing events should hurt significantly more than the ~0-1.5% delta we've seen.
-4. **Similar total params** (~18M vs ~19M) — fair comparison to exp 27.
+4. **Slightly more params** (~23.3M vs ~19M) — extra capacity from deeper GapEncoder and dual FFN in cross-attention.
 
 ### Risk
 
