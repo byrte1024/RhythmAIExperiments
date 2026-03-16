@@ -59,8 +59,29 @@ events → GapEncoder (4 layers) → C gap tokens     │
 
 ## Result
 
-*Pending*
+**Banding fixed but context killed — skip connection becomes audio shortcut.** Killed after eval 1.
+
+| eval | epoch | HIT | Miss | Score | Acc | Val loss | Unique | no_events | Ctx Δ |
+|------|-------|-----|------|-------|-----|----------|--------|-----------|-------|
+| 1 | 1.25 | 64.1% | 34.4% | 0.279 | 43.5% | 2.835 | **363** | 45.3% | **-1.8%** |
+
+**What worked:**
+- **Banding completely eliminated** — 363 unique predictions, matching the unified model. The skip connection restores fine-grained audio resolution.
+- **Much faster convergence** — 64.1% HIT at eval 1 vs exp 31's 44.9%. The direct audio gradient path bootstraps fast.
+
+**What didn't work:**
+- **Context delta is negative (-1.8%)** — the model performs WORSE with context than without. The skip connection gives audio a direct shortcut to the output head, bypassing cross-attention entirely.
+- **Predicted risk materialized** — the model learned to route through the skip connection (pre-fusion audio) and ignore the cross-attention contribution (post-fusion audio).
+
+![Heatmap](eval_001_heatmap.png)
+
+**The tradeoff:**
+- Exp 31 (no skip): 18.8% context delta but banding (53 unique)
+- Exp 32 (with skip): -1.8% context delta but no banding (363 unique)
+
+The skip connection and context usage are in direct tension. The model needs fine-grained audio (from skip) AND context awareness (from cross-attention) but a simple additive skip lets it choose one or the other.
 
 ## Lesson
 
-*Pending*
+- **Skip connection solves banding but kills context** — a direct audio path to the output head is always preferred by gradient descent over the indirect cross-attention path. Same audio-dominance problem as unified fusion, just through a different mechanism.
+- **The solution must weave context into audio processing, not bolt it on** — interleaved self-attention + cross-attention layers, where audio consolidates its own features between each context injection. No skip needed because audio self-attention preserves fine-grained features naturally.

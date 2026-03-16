@@ -15,7 +15,7 @@ import librosa
 from tqdm import tqdm
 from collections import Counter
 
-from detection_model import OnsetDetector, DualStreamOnsetDetector, AdditiveOnsetDetector, RerankerOnsetDetector, LegacyOnsetDetector, Exp17OnsetDetector, Exp18OnsetDetector
+from detection_model import OnsetDetector, DualStreamOnsetDetector, InterleavedOnsetDetector, AdditiveOnsetDetector, RerankerOnsetDetector, LegacyOnsetDetector, Exp17OnsetDetector, Exp18OnsetDetector
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 
@@ -494,9 +494,12 @@ def main():
     is_legacy = "top_k" not in ckpt_args and not has_fusion_layers and not has_gap_encoder
 
     has_cross_attn_fusion = any("cross_attn_fusion." in k for k in state_keys)
+    has_interleaved = any("audio_self_layers." in k for k in state_keys)
 
-    if has_cross_attn_fusion:
-        ModelClass = DualStreamOnsetDetector  # exp 31+ (dual stream)
+    if has_interleaved:
+        ModelClass = InterleavedOnsetDetector  # exp 33+ (interleaved)
+    elif has_cross_attn_fusion:
+        ModelClass = DualStreamOnsetDetector  # exp 31-32 (dual stream)
     elif has_fusion_layers or has_gap_encoder:
         ModelClass = OnsetDetector  # exp 25-30 (unified fusion)
     elif is_legacy:
@@ -511,8 +514,19 @@ def main():
         ModelClass = Exp17OnsetDetector  # exp 17
 
     # Build model kwargs based on checkpoint era
-    if ModelClass == DualStreamOnsetDetector:
-        # exp 31+: dual stream with cross-attention fusion
+    if ModelClass == InterleavedOnsetDetector:
+        # exp 33+: interleaved self+cross attention
+        model_kwargs = dict(
+            n_mels=N_MELS,
+            d_model=ckpt_args.get("d_model", 384),
+            n_blocks=ckpt_args.get("n_blocks", 4),
+            n_heads=ckpt_args.get("n_heads", 8),
+            n_classes=N_CLASSES,
+            max_events=C_EVENTS,
+            snippet_frames=ckpt_args.get("snippet_frames", 10),
+        )
+    elif ModelClass == DualStreamOnsetDetector:
+        # exp 31-32: dual stream with cross-attention fusion
         model_kwargs = dict(
             n_mels=N_MELS,
             d_model=ckpt_args.get("d_model", 384),
@@ -585,8 +599,10 @@ def main():
             model.load_state_dict(state)
     else:
         model.load_state_dict(state)
-    if ModelClass == DualStreamOnsetDetector:
-        print("  (exp 31+ checkpoint - dual stream cross-attention fusion)")
+    if ModelClass == InterleavedOnsetDetector:
+        print("  (exp 33+ checkpoint - interleaved self+cross attention)")
+    elif ModelClass == DualStreamOnsetDetector:
+        print("  (exp 31-32 checkpoint - dual stream cross-attention fusion)")
     elif ModelClass == OnsetDetector:
         print("  (exp 25-30 checkpoint - unified audio+gap fusion)")
     elif ModelClass == AdditiveOnsetDetector:

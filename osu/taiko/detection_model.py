@@ -1320,6 +1320,220 @@ class DualStreamOnsetDetector(nn.Module):
         return logits
 
 
+class InterleavedOnsetDetector(nn.Module):
+    """Interleaved dual-stream onset detector (exp 33+).
+
+    Audio and context tokens are processed with alternating self-attention
+    and cross-attention layers. Each cycle:
+      1. Audio self-attention (audio attends to audio)
+      2. Gap self-attention (gap attends to gap)
+      3. Bidirectional cross-attention (audio↔gap)
+
+    This weaves context into audio processing at every stage — audio never
+    goes more than 1 layer without seeing context, AND it consolidates its
+    own fine-grained features between each cross-attention injection.
+
+    Architecture:
+      1. Audio conv stem: mel → 250 tokens (d_model)
+      2. GapEncoder feature extraction: gaps + snippets → C tokens (d_model)
+      3. N interleaved blocks of [audio-self, gap-self, cross-attn]
+      4. Extract cursor at position 125 from audio stream → output head
+    """
+
+    def __init__(
+        self,
+        n_mels=80,
+        d_model=384,
+        n_blocks=4,
+        n_heads=8,
+        n_classes=501,
+        max_events=128,
+        dropout=0.1,
+        cond_dim=64,
+        snippet_frames=10,
+    ):
+        super().__init__()
+        self.n_classes = n_classes
+        self.d_model = d_model
+
+        # conditioning MLP
+        self.cond_mlp = nn.Sequential(
+            nn.Linear(3, cond_dim),
+            nn.GELU(),
+            nn.Linear(cond_dim, cond_dim),
+        )
+
+        # audio conv stem (from AudioEncoder, without transformer layers)
+        self.audio_conv = nn.Sequential(
+            nn.Conv1d(n_mels, d_model // 2, kernel_size=7, stride=2, padding=3),
+            nn.GELU(),
+            nn.GroupNorm(1, d_model // 2),
+            nn.Conv1d(d_model // 2, d_model, kernel_size=7, stride=2, padding=3),
+            nn.GELU(),
+        )
+        self.audio_conv_norm = nn.LayerNorm(d_model)
+        self.audio_pos_emb = SinusoidalPosEmb(d_model)
+        self.audio_conv_film = FiLM(cond_dim, d_model)
+
+        # gap feature extraction (from GapEncoder, without transformer layers)
+        self.gap_snippet_encoder = nn.Sequential(
+            nn.Linear(n_mels * snippet_frames, d_model),
+            nn.GELU(),
+            nn.Linear(d_model, d_model),
+        )
+        self.gap_emb = SinusoidalPosEmb(d_model)
+        self.gap_seq_pos_emb = nn.Embedding(max_events + 1, d_model)
+        self.snippet_frames = snippet_frames
+        self.max_events = max_events
+
+        # interleaved blocks: [audio-self, gap-self, cross-attn] × N
+        self.audio_self_layers = nn.ModuleList()
+        self.audio_self_film = nn.ModuleList()
+        self.gap_self_layers = nn.ModuleList()
+        self.gap_self_film = nn.ModuleList()
+        self.cross_attn_layers = nn.ModuleList()
+
+        for _ in range(n_blocks):
+            self.audio_self_layers.append(
+                nn.TransformerEncoderLayer(
+                    d_model=d_model, nhead=n_heads, dim_feedforward=d_model * 4,
+                    dropout=dropout, activation="gelu", batch_first=True, norm_first=True,
+                )
+            )
+            self.audio_self_film.append(FiLM(cond_dim, d_model))
+
+            self.gap_self_layers.append(
+                nn.TransformerEncoderLayer(
+                    d_model=d_model, nhead=n_heads, dim_feedforward=d_model * 4,
+                    dropout=dropout, activation="gelu", batch_first=True, norm_first=True,
+                )
+            )
+            self.gap_self_film.append(FiLM(cond_dim, d_model))
+
+            self.cross_attn_layers.append(
+                CrossAttentionFusionLayer(d_model, n_heads, dropout, cond_dim)
+            )
+
+        # output head
+        self.head_norm = nn.LayerNorm(d_model)
+        self.head_proj = nn.Linear(d_model, n_classes)
+        self.head_smooth = nn.Sequential(
+            nn.Conv1d(1, 8, kernel_size=5, padding=2),
+            nn.GELU(),
+            nn.Conv1d(8, 1, kernel_size=5, padding=2),
+        )
+
+    def _extract_snippets(self, mel, frame_positions, valid_mask):
+        """Extract mel snippets at given positions (same as GapEncoder)."""
+        B, n_mels, T = mel.shape
+        N = frame_positions.size(1)
+        half = self.snippet_frames // 2
+
+        centers = frame_positions.clamp(half, T - half - 1)
+        offsets = torch.arange(-half, half, device=mel.device)
+        frame_idx = centers.unsqueeze(-1) + offsets
+        frame_idx = frame_idx.clamp(0, T - 1)
+
+        flat_idx = frame_idx.reshape(B, -1)
+        flat_idx = flat_idx.unsqueeze(1).expand(-1, n_mels, -1)
+        snippets = mel.gather(2, flat_idx)
+        snippets = snippets.reshape(B, n_mels, N, self.snippet_frames)
+        snippets = snippets.permute(0, 2, 1, 3).reshape(B, N, -1)
+        snippets = snippets * valid_mask.unsqueeze(-1).float()
+
+        return self.gap_snippet_encoder(snippets)
+
+    def _prepare_gap_tokens(self, event_offsets, event_mask, mel, cond):
+        """Build gap token representations (same logic as GapEncoder.forward)."""
+        B, C = event_offsets.shape
+        event_valid = ~event_mask
+
+        # compute gap sequence
+        gap_before = event_offsets[:, 1:] - event_offsets[:, :-1]
+        gap_valid = event_valid[:, 1:] & event_valid[:, :-1]
+        has_events = event_valid[:, -1]
+        time_since_last = (-event_offsets[:, -1]).unsqueeze(1)
+
+        all_gaps = torch.cat([gap_before, time_since_last], dim=1)
+        all_gap_valid = torch.cat([gap_valid, has_events.unsqueeze(1)], dim=1)
+        all_gap_mask = ~all_gap_valid
+
+        # gap features + snippets
+        gap_features = self.gap_emb(all_gaps.abs())
+
+        event_mel_frames = 500 + event_offsets
+        snippet_valid_events = event_valid & (event_mel_frames >= 0) & (event_mel_frames < mel.size(2))
+
+        snippet_frames_for_gaps = torch.cat([
+            event_mel_frames[:, 1:],
+            torch.full((B, 1), 500, device=mel.device, dtype=event_mel_frames.dtype),
+        ], dim=1)
+        snippet_valid_for_gaps = torch.cat([
+            snippet_valid_events[:, 1:],
+            has_events.unsqueeze(1),
+        ], dim=1)
+
+        snippet_feat = self._extract_snippets(mel, snippet_frames_for_gaps, snippet_valid_for_gaps)
+        x = gap_features + snippet_feat
+
+        seq_pos = torch.arange(C, device=x.device).unsqueeze(0).expand(B, -1)
+        x = x + self.gap_seq_pos_emb(seq_pos)
+
+        # NaN guard
+        all_masked = all_gap_mask.all(dim=1)
+        if all_masked.any():
+            safe_mask = all_gap_mask.clone()
+            safe_mask[all_masked, -1] = False
+        else:
+            safe_mask = all_gap_mask
+
+        return x, safe_mask
+
+    def forward(self, mel, event_offsets, event_mask, conditioning):
+        """
+        mel: (B, n_mels, 1000)
+        event_offsets: (B, C) past event bin positions relative to cursor
+        event_mask: (B, C) bool, True = padding
+        conditioning: (B, 3) [mean_density, peak_density, density_std]
+        Returns: logits (B, 501)
+        """
+        cond = self.cond_mlp(conditioning)
+
+        # audio stem: conv → 250 tokens
+        audio = self.audio_conv(mel).transpose(1, 2)
+        audio = self.audio_conv_norm(audio)
+        positions = torch.arange(audio.size(1), device=audio.device).unsqueeze(0).expand(audio.size(0), -1)
+        audio = audio + self.audio_pos_emb(positions)
+        audio = self.audio_conv_film(audio, cond)
+
+        # gap stem: feature extraction → C tokens
+        gap, gap_mask = self._prepare_gap_tokens(event_offsets, event_mask, mel, cond)
+
+        # interleaved blocks: [audio-self, gap-self, cross-attn] × N
+        for a_self, a_film, g_self, g_film, cross in zip(
+            self.audio_self_layers, self.audio_self_film,
+            self.gap_self_layers, self.gap_self_film,
+            self.cross_attn_layers,
+        ):
+            # audio self-attention
+            audio = a_self(audio)
+            audio = a_film(audio, cond)
+
+            # gap self-attention
+            gap = g_self(gap, src_key_padding_mask=gap_mask)
+            gap = g_film(gap, cond)
+
+            # bidirectional cross-attention
+            audio, gap = cross(audio, gap, gap_mask, cond)
+
+        # extract cursor (center of audio window, position 125)
+        cursor = audio[:, 125, :]
+
+        logits = self.head_proj(self.head_norm(cursor))
+        logits = logits + self.head_smooth(logits.unsqueeze(1)).squeeze(1)
+        return logits
+
+
 class AdditiveOnsetDetector(nn.Module):
     """Two-path additive onset detector (exp 24).
 

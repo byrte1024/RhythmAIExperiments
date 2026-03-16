@@ -33,7 +33,8 @@ Each folder contains a README with hypothesis, results, and key graphs.
 | 30 | [Cursor-Region Audio Masking](experiment_30/) | Killed early | Masking works as regularization but context delta still collapsing (6.8%→3.3%). Model detects zeroed mel as a mode switch. 16 experiments confirm: training tricks can't overcome architectural audio dominance |
 | 31 | [Dual-Stream Cross-Attention](experiment_31/) | Context works, bottleneck | 18.8% context delta (highest ever!) but only ~80 unique predictions — 2 cross-attention layers too narrow for fine-grained info flow |
 | 31-B | [Dual-Stream 4x Cross-Attention](experiment_31b/) | Worse + NaN | 4 layers too deep — 18.6% HIT, 37 unique preds, NaN instability. Gap activations (±20) overwhelm audio (±7) through residual path |
-| 32 | [Dual-Stream + Audio Skip Connection](experiment_32/) | Pending | Skip connection preserves pre-fusion audio cursor. Should fix banding while keeping context dependence |
+| 32 | [Dual-Stream + Audio Skip Connection](experiment_32/) | Banding fixed, ctx killed | 363 unique preds (banding gone) but -1.8% context delta — skip connection becomes audio shortcut bypassing cross-attention |
+| 33 | [Interleaved Self+Cross Attention](experiment_33/) | Pending | Alternating [audio-self, gap-self, cross-attn] × 4 blocks. Context woven into every layer — no skip needed, no bypass possible |
 
 ## Key Lessons
 
