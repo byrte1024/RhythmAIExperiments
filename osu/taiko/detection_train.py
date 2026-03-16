@@ -466,6 +466,14 @@ def compute_metrics(targets, preds):
 
     # accuracy
     m["accuracy"] = (targets == preds).mean().item()
+    m["unique_preds"] = int(len(np.unique(preds)))
+
+    # per-class prediction counts (how often each class is predicted)
+    pred_counts = {}
+    vals, counts = np.unique(preds, return_counts=True)
+    for v, c in zip(vals, counts):
+        pred_counts[int(v)] = int(c)
+    m["pred_class_counts"] = pred_counts
 
     # STOP class (500) F1/precision/recall
     stop = N_CLASSES - 1
@@ -2047,7 +2055,8 @@ def _run_eval(model, val_loader, criterion, args, amp_enabled,
           f"±2f={val_metrics.get('within_2_frames', 0):.1%} | "
           f"≤3%={val_metrics.get('within_3pct', 0):.1%} ≤10%={val_metrics.get('within_10pct', 0):.1%} | "
           f"stop_f1={val_metrics['stop_f1']:.3f} | "
-          f"score={val_metrics.get('model_score', 0):+.3f} | lr={scheduler.get_last_lr()[0]:.2e}")
+          f"score={val_metrics.get('model_score', 0):+.3f} | "
+          f"uniq={val_metrics.get('unique_preds', 0)} | lr={scheduler.get_last_lr()[0]:.2e}")
 
     # (no context analysis - unified model has single path)
 

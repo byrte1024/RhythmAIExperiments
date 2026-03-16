@@ -64,8 +64,32 @@ events (B, C)      → GapEncoder (4 layers)   → C gap tokens (d=384)
 
 ## Result
 
-*Pending*
+**Unprecedented context dependence (18.8% delta) but cross-attention bottleneck limits prediction diversity.** Killed after eval 2 (~1.5 epochs).
+
+| eval | epoch | HIT | Miss | Score | Acc | Val loss | no_events | Unique (metronome) | Ctx Δ |
+|------|-------|-----|------|-------|-----|----------|-----------|-------------------|-------|
+| 1 | 1.25 | 44.9% | 47.8% | 0.097 | 24.7% | 3.421 | 10.1% | 53 | **14.5%** |
+| 2 | 1.50 | 50.8% | 40.8% | 0.166 | 28.7% | 3.222 | 9.8% | 82 | **18.8%** |
+
+**What worked:**
+- **Context delta 14.5% → 18.8%** — the highest ever across all experiments, and INCREASING not collapsing. The model genuinely depends on gap tokens.
+- **no_events accuracy at ~10%** — audio alone is nearly useless, confirming the architecture forces context dependence.
+- **Learned the gap vocabulary** — the model quickly identified ~20 common gap values (visible as horizontal bands in the heatmap) and began placing them more accurately.
+
+**What didn't work:**
+- **Prediction diversity bottleneck** — only 82 unique predictions (metronome benchmark) vs exp 27's ~350. The model snaps to a small codebook of common gap values rather than predicting the full continuous range.
+- **HIT far behind** — 50.8% at eval 2 vs exp 27's 67.5%. The cross-attention bottleneck limits fine-grained information flow.
+- **Horizontal bands in heatmap** — predictions cluster at fixed gap values regardless of target, getting more accurate but not more diverse over training.
+- **Cross-attention is too narrow** — 2 layers of cross-attention can only communicate coarse information ("which common gap") not fine-grained details ("exactly how many bins"). The unified model's 4 layers of full self-attention allowed richer information exchange.
+
+## Graphs
+
+![Scatter](eval_002_scatter.png)
+![Heatmap](eval_002_heatmap.png)
+![Entropy Heatmap](eval_002_entropy_heatmap.png)
 
 ## Lesson
 
-*Pending*
+- **Dual-stream architecture successfully forces context dependence** — the 18.8% context delta proves that separating streams prevents audio from drowning out context. This is the architectural solution to the context issue.
+- **2 cross-attention layers is insufficient** — fine-grained onset prediction requires richer information exchange between streams. The model can communicate "which gap bucket" but not "exactly which bin."
+- **Next: increase cross-attention layers to 4** — double the fusion capacity while keeping the dual-stream separation that forces context dependence.

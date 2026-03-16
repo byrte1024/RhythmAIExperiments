@@ -31,7 +31,8 @@ Each folder contains a README with hypothesis, results, and key graphs.
 | 29 | [Auxiliary Context Loss](experiment_29/) | Weight too low | ctx_loss_weight=0.2 too weak — aux head barely learned (loss 4.2→4.1), context delta collapsed as usual. Gradient dominated by fusion |
 | 29-B | [Aux Context Loss (Weight 1.0)](experiment_29b/) | Same failure | Weight 1.0 still can't teach aux head — 501-class gap-only prediction is unsolvable. Ctx loss barely dropped |
 | 30 | [Cursor-Region Audio Masking](experiment_30/) | Killed early | Masking works as regularization but context delta still collapsing (6.8%→3.3%). Model detects zeroed mel as a mode switch. 16 experiments confirm: training tricks can't overcome architectural audio dominance |
-| 31 | [Dual-Stream Cross-Attention](experiment_31/) | Pending | New architecture: separate audio/context streams with late bidirectional cross-attention. GapEncoder 2→4 layers. No shared self-attention — context can't be drowned out |
+| 31 | [Dual-Stream Cross-Attention](experiment_31/) | Context works, bottleneck | 18.8% context delta (highest ever!) but only ~80 unique predictions — 2 cross-attention layers too narrow for fine-grained info flow |
+| 31-B | [Dual-Stream 4x Cross-Attention](experiment_31b/) | Pending | Same as exp 31 but cross_attn_layers 2→4. More fusion capacity for finer-grained information exchange |
 
 ## Key Lessons
 
