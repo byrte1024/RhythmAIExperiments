@@ -37,8 +37,24 @@ All other augmentations unchanged (heavy audio aug from exp 26 + full dataset fr
 
 ## Result
 
-*Pending*
+**Killed early after 2 evals — pivoting to architectural rebalancing instead of augmentation tricks.** Context delta showed same collapse pattern.
+
+| eval | epoch | HIT | Miss | Score | Acc | Val loss | no_events | Ctx Δ |
+|------|-------|-----|------|-------|-----|----------|-----------|-------|
+| 1 | 1.25 | 67.0% | 32.3% | 0.313 | 48.3% | 2.670 | 41.5% | 6.8% |
+| 2 | 1.50 | 67.9% | 31.6% | 0.322 | 49.3% | 2.628 | 46.1% | 3.3% |
+
+**Observations:**
+- Context delta 6.8% → 3.3% — collapsing, same as every prior experiment. Higher than exp 27 at eval 2 (2.3%) but the trend is clear.
+- HIT slightly ahead of exp 27 (67.9% vs 67.5% at eval 2) — masking works as regularization but not as context forcing.
+- no_audio benchmark was 0.4% accuracy despite 20% of training having masked audio. The model learned "zeroed mel = use context" as a detectable mode, not "always consider context."
+- Val loss lower than exp 27 (2.628 vs 2.635) — better generalization from harder training.
+
+**Why it was stopped early:**
+After 16 experiments (14-30) trying augmentation, loss, and training tricks, the conclusion is clear: **the problem is architectural, not training-related.** The model has 250 audio tokens vs ~128 gap tokens, 4 audio encoder layers vs 2 gap encoder layers. Audio dominates fusion by design. No training trick can overcome a 2:1 architectural advantage. The next step is rebalancing the architecture itself.
 
 ## Lesson
 
-*Pending*
+- **Cursor-region masking works as regularization** (lower val loss, slightly higher HIT) but doesn't force persistent context usage on unmasked samples.
+- **Zero-masking is detectable** — the model switches to "context mode" when it sees zeroed mel, not when it genuinely needs context. Noise-based corruption would remove this shortcut but likely still won't overcome the architectural imbalance.
+- **16 experiments confirm: training tricks cannot overcome architectural audio dominance.** Augmentation, focal loss, aux heads, audio masking — none change the ~1.5% context delta endpoint. The architecture must be rebalanced.
