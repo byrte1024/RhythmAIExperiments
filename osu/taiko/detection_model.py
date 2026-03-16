@@ -1183,10 +1183,22 @@ class CrossAttentionFusionLayer(nn.Module):
         cond: (B, cond_dim)
         Returns: (audio_out, gap_out)
         """
+        # NaN guard: if all gap tokens are masked for a sample, unmask the last one
+        all_masked = gap_mask.all(dim=1)
+        if all_masked.any():
+            safe_mask = gap_mask.clone()
+            safe_mask[all_masked, -1] = False
+        else:
+            safe_mask = gap_mask
+
+        # zero out padded gap tokens so they don't contribute garbage
+        gap_valid_mask = (~safe_mask).unsqueeze(-1).float()  # (B, Ng, 1)
+        gap = gap * gap_valid_mask
+
         # audio cross-attends to gap (pre-norm)
         a_norm = self.audio_cross_norm(audio)
         a_cross, _ = self.audio_cross_attn(
-            a_norm, gap, gap, key_padding_mask=gap_mask,
+            a_norm, gap, gap, key_padding_mask=safe_mask,
         )
         audio = audio + a_cross
         audio = audio + self.audio_ffn(audio)
@@ -1195,9 +1207,13 @@ class CrossAttentionFusionLayer(nn.Module):
         # gap cross-attends to audio (pre-norm, no mask needed for audio)
         g_norm = self.gap_cross_norm(gap)
         g_cross, _ = self.gap_cross_attn(g_norm, audio, audio)
-        gap = gap + g_cross
-        gap = gap + self.gap_ffn(gap)
+        gap = gap + g_cross * gap_valid_mask
+        gap = gap + self.gap_ffn(gap) * gap_valid_mask
         gap = self.gap_film(gap, cond)
+
+        # clamp to prevent rare activation explosion after many training steps
+        audio = audio.clamp(-1e4, 1e4)
+        gap = gap.clamp(-1e4, 1e4)
 
         return audio, gap
 
@@ -1288,12 +1304,16 @@ class DualStreamOnsetDetector(nn.Module):
             event_offsets, event_mask, mel, cond
         )  # (B, C, d_model), (B, C)
 
+        # save pre-fusion audio cursor (fine-grained temporal features)
+        audio_pre_cursor = audio[:, 125, :]  # (B, d_model)
+
         # late fusion: bidirectional cross-attention
         for layer in self.cross_attn_fusion:
             audio, gap = layer(audio, gap, gap_mask, cond)
 
         # extract cursor (center of audio window, position 125)
-        cursor = audio[:, 125, :]  # (B, d_model)
+        # skip connection: add pre-fusion audio to preserve fine-grained features
+        cursor = audio[:, 125, :] + audio_pre_cursor  # (B, d_model)
 
         logits = self.head_proj(self.head_norm(cursor))
         logits = logits + self.head_smooth(logits.unsqueeze(1)).squeeze(1)

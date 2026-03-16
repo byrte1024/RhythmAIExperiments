@@ -1906,6 +1906,36 @@ def train(args):
                     logits = logits[0]
                 loss = criterion(logits, target)
 
+            # NaN safety: skip batch if loss or logits are NaN
+            if loss.isnan().item() or logits.isnan().any().item():
+                # debug: dump batch info to find the trigger
+                nan_logits = logits.isnan().any(dim=1)  # which samples have NaN
+                n_nan = nan_logits.sum().item()
+                print(f"\n  WARNING: NaN at batch {batch_idx} ({n_nan}/{bs} samples)")
+                print(f"    evt_mask all-True per sample: {evt_mask.all(dim=1).tolist()}")
+                print(f"    evt_mask valid counts: {(~evt_mask).sum(dim=1).tolist()}")
+                print(f"    evt_off range: [{evt_off.min().item()}, {evt_off.max().item()}]")
+                print(f"    mel range: [{mel.min().item():.2f}, {mel.max().item():.2f}]")
+                print(f"    targets: {target.tolist()}")
+                if n_nan < bs:
+                    print(f"    NaN sample indices: {nan_logits.nonzero().squeeze(-1).tolist()}")
+                    for si in nan_logits.nonzero().squeeze(-1).tolist()[:3]:
+                        n_valid = (~evt_mask[si]).sum().item()
+                        print(f"    sample {si}: valid_events={n_valid}, target={target[si].item()}, "
+                              f"evt_off_valid={evt_off[si][~evt_mask[si]][:8].tolist()}")
+                # save problematic batch for offline analysis
+                torch.save({
+                    "mel": mel.cpu(), "evt_off": evt_off.cpu(),
+                    "evt_mask": evt_mask.cpu(), "cond": cond.cpu(),
+                    "target": target.cpu(), "batch_idx": batch_idx,
+                }, os.path.join(run_dir, "nan_batch_debug.pt"))
+                print(f"    Saved debug batch to {run_dir}/nan_batch_debug.pt")
+                optimizer.zero_grad(set_to_none=True)
+                epoch_bar.update(1)
+                if seg_bar is not None:
+                    seg_bar.update(1)
+                continue
+
             optimizer.zero_grad(set_to_none=True)
             scaler.scale(loss).backward()
             scaler.unscale_(optimizer)
