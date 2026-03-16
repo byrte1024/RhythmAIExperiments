@@ -24,7 +24,7 @@ sys.path.insert(0, SCRIPT_DIR)
 from detection_train import (
     OnsetDataset, N_CLASSES, C_EVENTS, split_by_song,
 )
-from detection_model import OnsetDetector
+from detection_model import OnsetDetector, DualStreamOnsetDetector
 
 
 def main():
@@ -52,15 +52,28 @@ def main():
     # load model
     ckpt = torch.load(args.checkpoint, map_location=args.device, weights_only=False)
     ckpt_args = ckpt["args"]
-    model = OnsetDetector(
-        d_model=ckpt_args["d_model"],
-        n_heads=ckpt_args["n_heads"],
-        enc_layers=ckpt_args["enc_layers"],
-        gap_enc_layers=ckpt_args.get("gap_enc_layers", 2),
-        fusion_layers=ckpt_args.get("fusion_layers", 4),
-        snippet_frames=ckpt_args.get("snippet_frames", 10),
-        dropout=0.0,
-    ).to(args.device)
+    # detect model type from checkpoint
+    state_keys = set(ckpt["model"].keys())
+    if any("cross_attn_fusion." in k for k in state_keys):
+        model = DualStreamOnsetDetector(
+            d_model=ckpt_args["d_model"],
+            n_heads=ckpt_args["n_heads"],
+            enc_layers=ckpt_args["enc_layers"],
+            gap_enc_layers=ckpt_args.get("gap_enc_layers", 4),
+            cross_attn_layers=ckpt_args.get("cross_attn_layers", 2),
+            snippet_frames=ckpt_args.get("snippet_frames", 10),
+            dropout=0.0,
+        ).to(args.device)
+    else:
+        model = OnsetDetector(
+            d_model=ckpt_args["d_model"],
+            n_heads=ckpt_args["n_heads"],
+            enc_layers=ckpt_args["enc_layers"],
+            gap_enc_layers=ckpt_args.get("gap_enc_layers", 2),
+            fusion_layers=ckpt_args.get("fusion_layers", 4),
+            snippet_frames=ckpt_args.get("snippet_frames", 10),
+            dropout=0.0,
+        ).to(args.device)
     model.load_state_dict(ckpt["model"])
     model.eval()
     print(f"Loaded: {args.checkpoint}")

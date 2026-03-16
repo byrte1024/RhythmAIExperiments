@@ -15,7 +15,7 @@ import librosa
 from tqdm import tqdm
 from collections import Counter
 
-from detection_model import OnsetDetector, AdditiveOnsetDetector, RerankerOnsetDetector, LegacyOnsetDetector, Exp17OnsetDetector, Exp18OnsetDetector
+from detection_model import OnsetDetector, DualStreamOnsetDetector, AdditiveOnsetDetector, RerankerOnsetDetector, LegacyOnsetDetector, Exp17OnsetDetector, Exp18OnsetDetector
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 
@@ -493,8 +493,12 @@ def main():
     has_exp18_event_layers = any("context_path.event_layers" in k for k in state_keys)
     is_legacy = "top_k" not in ckpt_args and not has_fusion_layers and not has_gap_encoder
 
-    if has_fusion_layers or has_gap_encoder:
-        ModelClass = OnsetDetector  # exp 25+ (unified fusion)
+    has_cross_attn_fusion = any("cross_attn_fusion." in k for k in state_keys)
+
+    if has_cross_attn_fusion:
+        ModelClass = DualStreamOnsetDetector  # exp 31+ (dual stream)
+    elif has_fusion_layers or has_gap_encoder:
+        ModelClass = OnsetDetector  # exp 25-30 (unified fusion)
     elif is_legacy:
         ModelClass = LegacyOnsetDetector  # exp 11-16
     elif has_gap_layers and has_output_head:
@@ -507,8 +511,21 @@ def main():
         ModelClass = Exp17OnsetDetector  # exp 17
 
     # Build model kwargs based on checkpoint era
-    if ModelClass == OnsetDetector:
-        # exp 25+: unified fusion
+    if ModelClass == DualStreamOnsetDetector:
+        # exp 31+: dual stream with cross-attention fusion
+        model_kwargs = dict(
+            n_mels=N_MELS,
+            d_model=ckpt_args.get("d_model", 384),
+            enc_layers=ckpt_args.get("enc_layers", 4),
+            gap_enc_layers=ckpt_args.get("gap_enc_layers", 4),
+            cross_attn_layers=ckpt_args.get("cross_attn_layers", 2),
+            n_heads=ckpt_args.get("n_heads", 8),
+            n_classes=N_CLASSES,
+            max_events=C_EVENTS,
+            snippet_frames=ckpt_args.get("snippet_frames", 10),
+        )
+    elif ModelClass == OnsetDetector:
+        # exp 25-30: unified fusion
         model_kwargs = dict(
             n_mels=N_MELS,
             d_model=ckpt_args.get("d_model", 384),
@@ -568,8 +585,10 @@ def main():
             model.load_state_dict(state)
     else:
         model.load_state_dict(state)
-    if ModelClass == OnsetDetector:
-        print("  (exp 25+ checkpoint - unified audio+gap fusion)")
+    if ModelClass == DualStreamOnsetDetector:
+        print("  (exp 31+ checkpoint - dual stream cross-attention fusion)")
+    elif ModelClass == OnsetDetector:
+        print("  (exp 25-30 checkpoint - unified audio+gap fusion)")
     elif ModelClass == AdditiveOnsetDetector:
         print("  (exp 24 checkpoint - additive context logits)")
     elif ModelClass == LegacyOnsetDetector:

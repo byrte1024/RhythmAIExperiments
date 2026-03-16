@@ -1142,6 +1142,164 @@ class OnsetDetector(nn.Module):
         return logits
 
 
+class CrossAttentionFusionLayer(nn.Module):
+    """Bidirectional cross-attention: audio attends to gap, gap attends to audio."""
+
+    def __init__(self, d_model, n_heads, dropout=0.1, cond_dim=64):
+        super().__init__()
+        # audio → gap cross-attention
+        self.audio_cross_attn = nn.MultiheadAttention(
+            d_model, n_heads, dropout=dropout, batch_first=True,
+        )
+        self.audio_cross_norm = nn.LayerNorm(d_model)
+        self.audio_ffn = nn.Sequential(
+            nn.LayerNorm(d_model),
+            nn.Linear(d_model, d_model * 4),
+            nn.GELU(),
+            nn.Linear(d_model * 4, d_model),
+            nn.Dropout(dropout),
+        )
+        self.audio_film = FiLM(cond_dim, d_model)
+
+        # gap → audio cross-attention
+        self.gap_cross_attn = nn.MultiheadAttention(
+            d_model, n_heads, dropout=dropout, batch_first=True,
+        )
+        self.gap_cross_norm = nn.LayerNorm(d_model)
+        self.gap_ffn = nn.Sequential(
+            nn.LayerNorm(d_model),
+            nn.Linear(d_model, d_model * 4),
+            nn.GELU(),
+            nn.Linear(d_model * 4, d_model),
+            nn.Dropout(dropout),
+        )
+        self.gap_film = FiLM(cond_dim, d_model)
+
+    def forward(self, audio, gap, gap_mask, cond):
+        """
+        audio: (B, Na, d_model)
+        gap: (B, Ng, d_model)
+        gap_mask: (B, Ng) bool - True = padded
+        cond: (B, cond_dim)
+        Returns: (audio_out, gap_out)
+        """
+        # audio cross-attends to gap (pre-norm)
+        a_norm = self.audio_cross_norm(audio)
+        a_cross, _ = self.audio_cross_attn(
+            a_norm, gap, gap, key_padding_mask=gap_mask,
+        )
+        audio = audio + a_cross
+        audio = audio + self.audio_ffn(audio)
+        audio = self.audio_film(audio, cond)
+
+        # gap cross-attends to audio (pre-norm, no mask needed for audio)
+        g_norm = self.gap_cross_norm(gap)
+        g_cross, _ = self.gap_cross_attn(g_norm, audio, audio)
+        gap = gap + g_cross
+        gap = gap + self.gap_ffn(gap)
+        gap = self.gap_film(gap, cond)
+
+        return audio, gap
+
+
+class DualStreamOnsetDetector(nn.Module):
+    """Dual-stream onset detector with late cross-attention fusion (exp 31+).
+
+    Two independent streams process audio and context in parallel, each
+    developing strong representations before exchanging information via
+    cross-attention in the final layers. This prevents audio tokens from
+    drowning out gap tokens in early self-attention.
+
+    Architecture:
+      1. AudioEncoder: mel → 250 audio tokens (d_model), 4 self-attn layers
+      2. GapEncoder: event gaps + snippets → C gap tokens (d_model), 4 self-attn layers
+      3. Cross-attention fusion: N layers of bidirectional cross-attention
+      4. Extract cursor at position 125 from audio stream → output head → 501 logits
+    """
+
+    def __init__(
+        self,
+        n_mels=80,
+        d_model=384,
+        enc_layers=4,
+        gap_enc_layers=4,
+        cross_attn_layers=2,
+        n_heads=8,
+        n_classes=501,
+        max_events=128,
+        dropout=0.1,
+        cond_dim=64,
+        snippet_frames=10,
+    ):
+        super().__init__()
+        self.n_classes = n_classes
+        self.d_model = d_model
+
+        # conditioning MLP
+        self.cond_mlp = nn.Sequential(
+            nn.Linear(3, cond_dim),
+            nn.GELU(),
+            nn.Linear(cond_dim, cond_dim),
+        )
+
+        # audio stream: AudioEncoder with enc_layers self-attention layers
+        self.audio_encoder = AudioEncoder(
+            n_mels=n_mels, d_model=d_model, n_layers=enc_layers,
+            n_heads=n_heads, cond_dim=cond_dim, dropout=dropout,
+        )
+
+        # context stream: GapEncoder with gap_enc_layers self-attention layers
+        self.gap_encoder = GapEncoder(
+            n_mels=n_mels, d_model=d_model, n_layers=gap_enc_layers,
+            n_heads=n_heads, max_events=max_events, cond_dim=cond_dim,
+            dropout=dropout, snippet_frames=snippet_frames,
+        )
+
+        # late fusion: bidirectional cross-attention
+        self.cross_attn_fusion = nn.ModuleList([
+            CrossAttentionFusionLayer(d_model, n_heads, dropout, cond_dim)
+            for _ in range(cross_attn_layers)
+        ])
+
+        # output head (same as OnsetDetector)
+        self.head_norm = nn.LayerNorm(d_model)
+        self.head_proj = nn.Linear(d_model, n_classes)
+        self.head_smooth = nn.Sequential(
+            nn.Conv1d(1, 8, kernel_size=5, padding=2),
+            nn.GELU(),
+            nn.Conv1d(8, 1, kernel_size=5, padding=2),
+        )
+
+    def forward(self, mel, event_offsets, event_mask, conditioning):
+        """
+        mel: (B, n_mels, 1000)
+        event_offsets: (B, C) past event bin positions relative to cursor
+        event_mask: (B, C) bool, True = padding
+        conditioning: (B, 3) [mean_density, peak_density, density_std]
+        Returns: logits (B, 501)
+        """
+        cond = self.cond_mlp(conditioning)
+
+        # stream 1: encode audio → 250 tokens
+        audio = self.audio_encoder(mel, cond)  # (B, 250, d_model)
+
+        # stream 2: encode gaps → C tokens
+        gap, gap_mask = self.gap_encoder(
+            event_offsets, event_mask, mel, cond
+        )  # (B, C, d_model), (B, C)
+
+        # late fusion: bidirectional cross-attention
+        for layer in self.cross_attn_fusion:
+            audio, gap = layer(audio, gap, gap_mask, cond)
+
+        # extract cursor (center of audio window, position 125)
+        cursor = audio[:, 125, :]  # (B, d_model)
+
+        logits = self.head_proj(self.head_norm(cursor))
+        logits = logits + self.head_smooth(logits.unsqueeze(1)).squeeze(1)
+        return logits
+
+
 class AdditiveOnsetDetector(nn.Module):
     """Two-path additive onset detector (exp 24).
 

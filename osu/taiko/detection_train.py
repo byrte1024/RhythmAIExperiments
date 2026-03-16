@@ -12,7 +12,7 @@ from collections import deque
 from torch.utils.data import Dataset, DataLoader, WeightedRandomSampler
 from tqdm import tqdm
 
-from detection_model import OnsetDetector
+from detection_model import OnsetDetector, DualStreamOnsetDetector
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 
@@ -187,16 +187,6 @@ class OnsetDataset(Dataset):
         # context truncation (5%)
         elif len(past_bins) > 1 and rng.random() < 0.05:
             past_bins = past_bins[-rng.integers(1, len(past_bins)):]
-
-        # cursor-region audio masking (20%): zero out the mel around the cursor
-        # (positions 400-600 of the 1000-frame window, centered on cursor at 500)
-        # forces the model to rely on context when local audio is unavailable
-        if rng.random() < 0.20:
-            mask_half = rng.integers(50, 151)  # mask 100-300 frames centered on cursor
-            center = mel_window.shape[1] // 2
-            lo = max(0, center - mask_half)
-            hi = min(mel_window.shape[1], center + mask_half)
-            mel_window[:, lo:hi] = 0
 
         # audio fade-in (10%)
         if rng.random() < 0.10:
@@ -1735,15 +1725,26 @@ def train(args):
     )
 
     # model
-    model = OnsetDetector(
-        n_mels=80, d_model=args.d_model,
-        enc_layers=args.enc_layers,
-        gap_enc_layers=args.gap_enc_layers,
-        fusion_layers=args.fusion_layers,
-        n_heads=args.n_heads,
-        n_classes=N_CLASSES, max_events=C_EVENTS, dropout=args.dropout,
-        snippet_frames=args.snippet_frames,
-    ).to(args.device)
+    if args.model_type == "dual_stream":
+        model = DualStreamOnsetDetector(
+            n_mels=80, d_model=args.d_model,
+            enc_layers=args.enc_layers,
+            gap_enc_layers=args.gap_enc_layers,
+            cross_attn_layers=args.cross_attn_layers,
+            n_heads=args.n_heads,
+            n_classes=N_CLASSES, max_events=C_EVENTS, dropout=args.dropout,
+            snippet_frames=args.snippet_frames,
+        ).to(args.device)
+    else:
+        model = OnsetDetector(
+            n_mels=80, d_model=args.d_model,
+            enc_layers=args.enc_layers,
+            gap_enc_layers=args.gap_enc_layers,
+            fusion_layers=args.fusion_layers,
+            n_heads=args.n_heads,
+            n_classes=N_CLASSES, max_events=C_EVENTS, dropout=args.dropout,
+            snippet_frames=args.snippet_frames,
+        ).to(args.device)
 
     n_params = sum(p.numel() for p in model.parameters())
     print(f"Model: {n_params / 1e6:.1f}M parameters")
@@ -2112,8 +2113,11 @@ if __name__ == "__main__":
     parser.add_argument("--lr", type=float, default=3e-4)
     parser.add_argument("--wd", type=float, default=0.01)
     parser.add_argument("--d-model", type=int, default=384)
+    parser.add_argument("--model-type", default="unified", choices=["unified", "dual_stream"],
+                        help="Model architecture: unified (exp 25-30) or dual_stream (exp 31+)")
     parser.add_argument("--enc-layers", type=int, default=4, help="AudioEncoder transformer layers")
     parser.add_argument("--gap-enc-layers", type=int, default=2, help="GapEncoder self-attention layers")
+    parser.add_argument("--cross-attn-layers", type=int, default=2, help="Cross-attention fusion layers (dual_stream only)")
     parser.add_argument("--fusion-layers", type=int, default=4, help="Fusion self-attention layers over [audio+gap] tokens")
     parser.add_argument("--snippet-frames", type=int, default=10, help="Mel frames per audio snippet (~5ms each, default 10 = ~50ms)")
     parser.add_argument("--n-heads", type=int, default=8)
