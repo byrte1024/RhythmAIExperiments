@@ -29,7 +29,8 @@ Each folder contains a README with hypothesis, results, and key graphs.
 | 27-B | [Context Pattern Analysis](experiment_27b/) | Diagnostic | 95% of misses have target in context. Strict pattern matching catches 22.5%, but manual inspection shows far more are solvable. Context has the answer — model doesn't use it |
 | 28 | [Focal Loss](experiment_28/) | Better calibration | Best entropy separation ever, Stop F1 0.552, but HIT ceiling 68.6% (~1pp below exp 27). Context delta zero. Loss reweighting doesn't force context usage |
 | 29 | [Auxiliary Context Loss](experiment_29/) | Weight too low | ctx_loss_weight=0.2 too weak — aux head barely learned (loss 4.2→4.1), context delta collapsed as usual. Gradient dominated by fusion |
-| 29-B | [Aux Context Loss (Weight 1.0)](experiment_29b/) | Pending | Same as exp 29 but ctx_loss_weight=1.0 — equal gradient pressure from aux head and fusion |
+| 29-B | [Aux Context Loss (Weight 1.0)](experiment_29b/) | Same failure | Weight 1.0 still can't teach aux head — 501-class gap-only prediction is unsolvable. Ctx loss barely dropped |
+| 30 | [Cursor-Region Audio Masking](experiment_30/) | Pending | Zero out 100-300 mel frames around cursor for 20% of training. Forces context usage when audio is unavailable |
 
 ## Key Lessons
 
