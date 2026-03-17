@@ -1103,6 +1103,88 @@ class OnsetDetector(nn.Module):
             nn.Conv1d(8, 1, kernel_size=5, padding=2),
         )
 
+    def _embed_events_in_mel(self, mel, event_offsets, event_mask):
+        """Embed event positions as gradient ramps in reserved mel bands.
+
+        Encodes sawtooth ramps between consecutive events in the top and bottom
+        mel bands. The ramp value at any frame encodes "time since last event"
+        — steep slope = short gap, shallow slope = long gap. Ramps from events
+        older than the mel window still show their gradient entering from the left.
+
+        Bands 0-2 (bottom) and 77-79 (top) are used, with intensity fading inward:
+          Band 0/79: 100%, Band 1/78: 50%, Band 2/77: 25%
+        """
+        B, n_mels, T = mel.shape  # (B, 80, 1000)
+        cursor_frame = T // 2  # 500
+
+        # work on a clone so we don't modify the original
+        mel = mel.clone()
+
+        # convert event offsets to mel frame positions
+        # event_offsets are bin positions relative to cursor (negative = past)
+        # mel frame = cursor_frame + offset
+        frame_pos = cursor_frame + event_offsets  # (B, C)
+        valid = ~event_mask  # (B, C) True = real event
+
+        # build ramp signal for each sample
+        for b in range(B):
+            valid_b = valid[b]
+            if not valid_b.any():
+                continue
+
+            # get sorted frame positions of valid events
+            frames_b = frame_pos[b][valid_b].float()
+            frames_b, _ = frames_b.sort()
+
+            # add cursor position as the "end" of the last ramp
+            positions = torch.cat([frames_b, torch.tensor([cursor_frame], device=mel.device, dtype=torch.float32)])
+
+            # build ramp signal across T frames
+            ramp = torch.zeros(T, device=mel.device)
+
+            for i in range(len(positions) - 1):
+                start = positions[i]
+                end = positions[i + 1]
+                gap = end - start
+                if gap <= 0:
+                    continue
+
+                # ramp from 1.0 at start to 0.0 at end
+                frame_lo = max(0, int(start.item()))
+                frame_hi = min(T, int(end.item()) + 1)
+                if frame_lo >= frame_hi:
+                    continue
+
+                t = torch.arange(frame_lo, frame_hi, device=mel.device).float()
+                ramp[frame_lo:frame_hi] = torch.clamp(1.0 - (t - start) / gap, 0.0, 1.0)
+
+            # handle ramp from events before the mel window
+            # the first visible event's ramp may have started before frame 0
+            if frames_b[0] < 0 and len(frames_b) > 0:
+                # find the first event inside or the one just before the window
+                first_in = frames_b[0]
+                if len(positions) > 1:
+                    next_pos = positions[1] if positions[0] == first_in else positions[0]
+                    gap = next_pos - first_in
+                    if gap > 0:
+                        frame_hi = min(T, int(next_pos.item()) + 1)
+                        t = torch.arange(0, frame_hi, device=mel.device).float()
+                        ramp[0:frame_hi] = torch.clamp(1.0 - (t - first_in) / gap, 0.0, 1.0)
+
+            # scale ramp to reasonable mel-spectrogram range
+            ramp = ramp * 10.0  # ~10 dB signal in reserved bands
+
+            # embed in reserved bands with fading intensity
+            # bottom: bands 0-2, top: bands 77-79
+            mel[b, 0, :] += ramp * 1.00
+            mel[b, 1, :] += ramp * 0.50
+            mel[b, 2, :] += ramp * 0.25
+            mel[b, 79, :] += ramp * 1.00
+            mel[b, 78, :] += ramp * 0.50
+            mel[b, 77, :] += ramp * 0.25
+
+        return mel
+
     def forward(self, mel, event_offsets, event_mask, conditioning):
         """
         mel: (B, n_mels, 1000)
@@ -1112,6 +1194,9 @@ class OnsetDetector(nn.Module):
         Returns: logits (B, 501)
         """
         cond = self.cond_mlp(conditioning)
+
+        # embed event ramps into mel before audio encoding
+        mel = self._embed_events_in_mel(mel, event_offsets, event_mask)
 
         # encode audio → 250 tokens
         audio_tokens = self.audio_encoder(mel, cond)  # (B, 250, d_model)

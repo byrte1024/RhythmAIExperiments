@@ -64,8 +64,23 @@ cursor = audio[125] → output head → 501 logits
 
 ## Result
 
-*Pending*
+**Clean architecture, fast convergence, but context delta too low (4.2%).** Killed after eval 1 — pivoting to mel-embedded event ramps.
+
+| eval | epoch | HIT | Miss | Score | Acc | Unique | Val loss | no_events | Ctx Δ |
+|------|-------|-----|------|-------|-----|--------|----------|-----------|-------|
+| 1 | 1.25 | 66.5% | 32.8% | 0.305 | 47.7% | 467 | 2.699 | 43.6% | 4.2% |
+
+**What worked:**
+- **No banding, no cold start** — 467 unique predictions, 66.5% HIT at eval 1, matching exp 27 exactly. The architecture is clean and trains normally.
+- **Context FiLM is non-destructive** — audio pathway bootstraps identically to exp 27, FiLM adds context on top without interfering.
+
+**What didn't work:**
+- **4.2% context delta is too low** — while positive (better than exp 32's -1.8%), it's well below exp 31's 18.8%. FiLM conditioning is too weak a mechanism to force meaningful context usage.
+- **cond_dim=64 bottleneck** — compressing 128 gap tokens into a 64-dim vector loses most of the pattern information. FiLM can modulate "generally shorter/longer predictions" but can't encode "the pattern is 150 150 75 75 at position 3."
+- **Global modulation is too coarse** — FiLM applies the same scale+shift to all 250 audio tokens. It can't target specific positions, which is what pattern disambiguation requires.
 
 ## Lesson
 
-*Pending*
+- **FiLM is proven for scalar conditioning but insufficient for sequential patterns.** Density FiLM works because density is 3 numbers. Rhythm patterns are sequences that need temporal precision.
+- **The information bottleneck is the real issue** — 128 tokens → 1 vector → 64 dims loses the pattern structure. Any approach that summarizes context into a single vector will face this.
+- **Context needs to be visible at the temporal level** — the model needs to see where events are in time, not just an abstract summary. This motivates embedding events directly into the mel spectrogram.
