@@ -59,8 +59,15 @@ python detection_train.py taiko_v2 --run-name detect_experiment_35 --epochs 50 -
 
 ## Result
 
-*Pending*
+**Context delta 5.0% — better than FiLM but still low. Ramps in edge bands only too subtle.** Killed after eval 1.
+
+| eval | epoch | HIT | Miss | Score | Acc | Unique | Val loss | no_events | Ctx Δ | no_audio |
+|------|-------|-----|------|-------|-----|--------|----------|-----------|-------|----------|
+| 1 | 1.25 | 65.7% | 33.7% | 0.298 | 47.7% | 449 | 2.674 | 42.8% | 5.0% | 0.4% |
+
+Ramps in reserved edge bands (0-2, 77-79) are too easy for the conv to filter out. Next: apply ramps to ALL bands with halved audio.
 
 ## Lesson
 
-*Pending*
+- **Edge-band ramps provide some signal** (5.0% delta, better than FiLM's 4.2%) but the conv learns to ignore specific bands.
+- **Ramps need to be everywhere** — the model must process them alongside audio features, not in separable frequency bands.

@@ -1166,16 +1166,10 @@ class OnsetDetector(nn.Module):
         # zero out ramp where no valid events exist (last_event == -1e6)
         ramp = torch.where(last_event > -1e5, ramp, torch.zeros_like(ramp))
 
-        # scale to mel range
+        # scale audio down and add ramps to ALL bands
+        mel = mel * 0.5
         ramp = ramp * 10.0  # (B, T)
-
-        # embed in reserved bands with fading intensity
-        mel[:, 0, :] += ramp * 1.00
-        mel[:, 1, :] += ramp * 0.50
-        mel[:, 2, :] += ramp * 0.25
-        mel[:, 79, :] += ramp * 1.00
-        mel[:, 78, :] += ramp * 0.50
-        mel[:, 77, :] += ramp * 0.25
+        mel = mel + ramp.unsqueeze(1)  # broadcast (B, 1, T) across all mel bands
 
         return mel
 
