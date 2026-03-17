@@ -1106,82 +1106,76 @@ class OnsetDetector(nn.Module):
     def _embed_events_in_mel(self, mel, event_offsets, event_mask):
         """Embed event positions as gradient ramps in reserved mel bands.
 
-        Encodes sawtooth ramps between consecutive events in the top and bottom
-        mel bands. The ramp value at any frame encodes "time since last event"
-        — steep slope = short gap, shallow slope = long gap. Ramps from events
-        older than the mel window still show their gradient entering from the left.
+        Fully vectorized — no Python loops over batch or events.
 
-        Bands 0-2 (bottom) and 77-79 (top) are used, with intensity fading inward:
-          Band 0/79: 100%, Band 1/78: 50%, Band 2/77: 25%
+        For each frame t, computes "time since last event" as a normalized ramp:
+        ramp(t) = clamp(1 - (t - last_event_before_t) / gap_to_next_event, 0, 1)
+
+        Bands 0-2 (bottom) and 77-79 (top), with fading intensity inward.
         """
-        B, n_mels, T = mel.shape  # (B, 80, 1000)
+        B, n_mels, T = mel.shape
         cursor_frame = T // 2  # 500
 
-        # work on a clone so we don't modify the original
         mel = mel.clone()
 
-        # convert event offsets to mel frame positions
-        # event_offsets are bin positions relative to cursor (negative = past)
-        # mel frame = cursor_frame + offset
-        frame_pos = cursor_frame + event_offsets  # (B, C)
-        valid = ~event_mask  # (B, C) True = real event
+        # frame positions of events: (B, C)
+        frame_pos = (cursor_frame + event_offsets).float()  # (B, C)
+        valid = ~event_mask  # (B, C)
 
-        # build ramp signal for each sample
-        for b in range(B):
-            valid_b = valid[b]
-            if not valid_b.any():
-                continue
+        # replace invalid positions with large negative so they sort to the front
+        # and don't affect the ramp computation
+        frame_pos = torch.where(valid, frame_pos, torch.full_like(frame_pos, -1e6))
 
-            # get sorted frame positions of valid events
-            frames_b = frame_pos[b][valid_b].float()
-            frames_b, _ = frames_b.sort()
+        # sort events by position for each sample
+        frame_pos_sorted, _ = frame_pos.sort(dim=1)  # (B, C)
 
-            # add cursor position as the "end" of the last ramp
-            positions = torch.cat([frames_b, torch.tensor([cursor_frame], device=mel.device, dtype=torch.float32)])
+        # append cursor frame as final position: (B, C+1)
+        cursor_col = torch.full((B, 1), cursor_frame, device=mel.device, dtype=frame_pos.dtype)
+        positions = torch.cat([frame_pos_sorted, cursor_col], dim=1)  # (B, C+1)
 
-            # build ramp signal across T frames
-            ramp = torch.zeros(T, device=mel.device)
+        # for each frame t in [0, T), find which event interval it falls in
+        # t_grid: (1, 1, T)
+        t_grid = torch.arange(T, device=mel.device, dtype=torch.float32).view(1, 1, T)
+        # positions: (B, C+1, 1)
+        pos_exp = positions.unsqueeze(2)  # (B, C+1, 1)
 
-            for i in range(len(positions) - 1):
-                start = positions[i]
-                end = positions[i + 1]
-                gap = end - start
-                if gap <= 0:
-                    continue
+        # for each frame, find the last event at or before it
+        # mask: (B, C+1, T) — True if position <= t
+        before_mask = pos_exp <= t_grid  # (B, C+1, T)
+        # also exclude the dummy -1e6 positions
+        real_mask = (pos_exp > -1e5) & before_mask
 
-                # ramp from 1.0 at start to 0.0 at end
-                frame_lo = max(0, int(start.item()))
-                frame_hi = min(T, int(end.item()) + 1)
-                if frame_lo >= frame_hi:
-                    continue
+        # last event position before each frame: take max of valid positions
+        neg_inf = torch.full_like(pos_exp, -1e6)
+        masked_pos = torch.where(real_mask, pos_exp, neg_inf)  # (B, C+1, T)
+        last_event, last_idx = masked_pos.max(dim=1)  # (B, T)
 
-                t = torch.arange(frame_lo, frame_hi, device=mel.device).float()
-                ramp[frame_lo:frame_hi] = torch.clamp(1.0 - (t - start) / gap, 0.0, 1.0)
+        # next event position after last_event: positions[last_idx + 1]
+        # clamp index to valid range
+        next_idx = (last_idx + 1).clamp(max=positions.size(1) - 1)  # (B, T)
+        next_event = positions.gather(1, next_idx)  # (B, T)
 
-            # handle ramp from events before the mel window
-            # the first visible event's ramp may have started before frame 0
-            if frames_b[0] < 0 and len(frames_b) > 0:
-                # find the first event inside or the one just before the window
-                first_in = frames_b[0]
-                if len(positions) > 1:
-                    next_pos = positions[1] if positions[0] == first_in else positions[0]
-                    gap = next_pos - first_in
-                    if gap > 0:
-                        frame_hi = min(T, int(next_pos.item()) + 1)
-                        t = torch.arange(0, frame_hi, device=mel.device).float()
-                        ramp[0:frame_hi] = torch.clamp(1.0 - (t - first_in) / gap, 0.0, 1.0)
+        # gap between consecutive events
+        gap = next_event - last_event  # (B, T)
+        gap = gap.clamp(min=1.0)  # avoid div by zero
 
-            # scale ramp to reasonable mel-spectrogram range
-            ramp = ramp * 10.0  # ~10 dB signal in reserved bands
+        # ramp: 1 at last_event, 0 at next_event
+        t_flat = torch.arange(T, device=mel.device, dtype=torch.float32).unsqueeze(0)  # (1, T)
+        ramp = torch.clamp(1.0 - (t_flat - last_event) / gap, 0.0, 1.0)  # (B, T)
 
-            # embed in reserved bands with fading intensity
-            # bottom: bands 0-2, top: bands 77-79
-            mel[b, 0, :] += ramp * 1.00
-            mel[b, 1, :] += ramp * 0.50
-            mel[b, 2, :] += ramp * 0.25
-            mel[b, 79, :] += ramp * 1.00
-            mel[b, 78, :] += ramp * 0.50
-            mel[b, 77, :] += ramp * 0.25
+        # zero out ramp where no valid events exist (last_event == -1e6)
+        ramp = torch.where(last_event > -1e5, ramp, torch.zeros_like(ramp))
+
+        # scale to mel range
+        ramp = ramp * 10.0  # (B, T)
+
+        # embed in reserved bands with fading intensity
+        mel[:, 0, :] += ramp * 1.00
+        mel[:, 1, :] += ramp * 0.50
+        mel[:, 2, :] += ramp * 0.25
+        mel[:, 79, :] += ramp * 1.00
+        mel[:, 78, :] += ramp * 0.50
+        mel[:, 77, :] += ramp * 0.25
 
         return mel
 
