@@ -35,6 +35,7 @@ Each folder contains a README with hypothesis, results, and key graphs.
 | 31-B | [Dual-Stream 4x Cross-Attention](experiment_31b/) | Worse + NaN | 4 layers too deep — 18.6% HIT, 37 unique preds, NaN instability. Gap activations (±20) overwhelm audio (±7) through residual path |
 | 32 | [Dual-Stream + Audio Skip Connection](experiment_32/) | Banding fixed, ctx killed | 363 unique preds (banding gone) but -1.8% context delta — skip connection becomes audio shortcut bypassing cross-attention |
 | 33 | [Interleaved Self+Cross Attention](experiment_33/) | Cold start failure | 19% HIT after 5 evals — model can't bootstrap. Cross-attn between random streams at every layer prevents learning. Cross-attention is the wrong fusion mechanism |
+| 34 | [Context as FiLM Conditioning](experiment_34/) | Pending | Gap tokens → attention pool → context vector → FiLM modulation on audio fusion. No gap tokens in attention. Proven FiLM mechanism, no cross-attention |
 
 ## Key Lessons
 

@@ -12,7 +12,7 @@ from collections import deque
 from torch.utils.data import Dataset, DataLoader, WeightedRandomSampler
 from tqdm import tqdm
 
-from detection_model import OnsetDetector, DualStreamOnsetDetector, InterleavedOnsetDetector
+from detection_model import OnsetDetector, DualStreamOnsetDetector, InterleavedOnsetDetector, ContextFiLMDetector
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 
@@ -1733,7 +1733,17 @@ def train(args):
     )
 
     # model
-    if args.model_type == "interleaved":
+    if args.model_type == "context_film":
+        model = ContextFiLMDetector(
+            n_mels=80, d_model=args.d_model,
+            enc_layers=args.enc_layers,
+            gap_enc_layers=args.gap_enc_layers,
+            fusion_layers=args.fusion_layers,
+            n_heads=args.n_heads,
+            n_classes=N_CLASSES, max_events=C_EVENTS, dropout=args.dropout,
+            snippet_frames=args.snippet_frames,
+        ).to(args.device)
+    elif args.model_type == "interleaved":
         model = InterleavedOnsetDetector(
             n_mels=80, d_model=args.d_model,
             n_blocks=args.n_blocks,
@@ -2160,8 +2170,8 @@ if __name__ == "__main__":
     parser.add_argument("--lr", type=float, default=3e-4)
     parser.add_argument("--wd", type=float, default=0.01)
     parser.add_argument("--d-model", type=int, default=384)
-    parser.add_argument("--model-type", default="unified", choices=["unified", "dual_stream", "interleaved"],
-                        help="Model architecture: unified (exp 25-30), dual_stream (exp 31-32), or interleaved (exp 33+)")
+    parser.add_argument("--model-type", default="unified", choices=["unified", "dual_stream", "interleaved", "context_film"],
+                        help="Model architecture: unified (exp 25-30), dual_stream (exp 31-32), interleaved (exp 33), or context_film (exp 34+)")
     parser.add_argument("--enc-layers", type=int, default=4, help="AudioEncoder transformer layers")
     parser.add_argument("--gap-enc-layers", type=int, default=2, help="GapEncoder self-attention layers")
     parser.add_argument("--cross-attn-layers", type=int, default=2, help="Cross-attention fusion layers (dual_stream only)")

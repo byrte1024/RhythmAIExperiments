@@ -24,7 +24,7 @@ sys.path.insert(0, SCRIPT_DIR)
 from detection_train import (
     OnsetDataset, N_CLASSES, C_EVENTS, split_by_song,
 )
-from detection_model import OnsetDetector, DualStreamOnsetDetector, InterleavedOnsetDetector
+from detection_model import OnsetDetector, DualStreamOnsetDetector, InterleavedOnsetDetector, ContextFiLMDetector
 
 
 def main():
@@ -54,7 +54,17 @@ def main():
     ckpt_args = ckpt["args"]
     # detect model type from checkpoint
     state_keys = set(ckpt["model"].keys())
-    if any("audio_self_layers." in k for k in state_keys):
+    if any("fusion_context_film." in k for k in state_keys):
+        model = ContextFiLMDetector(
+            d_model=ckpt_args["d_model"],
+            enc_layers=ckpt_args.get("enc_layers", 4),
+            gap_enc_layers=ckpt_args.get("gap_enc_layers", 2),
+            fusion_layers=ckpt_args.get("fusion_layers", 4),
+            n_heads=ckpt_args["n_heads"],
+            snippet_frames=ckpt_args.get("snippet_frames", 10),
+            dropout=0.0,
+        ).to(args.device)
+    elif any("audio_self_layers." in k for k in state_keys):
         model = InterleavedOnsetDetector(
             d_model=ckpt_args["d_model"],
             n_blocks=ckpt_args.get("n_blocks", 4),

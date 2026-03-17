@@ -1142,6 +1142,148 @@ class OnsetDetector(nn.Module):
         return logits
 
 
+class ContextFiLMDetector(nn.Module):
+    """Audio-only self-attention with context FiLM conditioning (exp 34+).
+
+    Gap tokens are summarized into a conditioning vector via attention pooling,
+    then applied as FiLM modulation on the audio fusion layers. Context does not
+    compete with audio for attention — it modulates HOW audio features are
+    interpreted, like density conditioning but learned from gap patterns.
+
+    Architecture:
+      1. AudioEncoder: mel → 250 audio tokens (d_model)
+      2. GapEncoder: event gaps + snippets → C gap tokens (d_model)
+      3. Context pooling: learned query attends to gap tokens → context vector
+      4. Audio fusion: N self-attention layers over 250 audio tokens only,
+         with FiLM from density + context at each layer
+      5. Extract cursor at position 125 → output head → 501 logits
+    """
+
+    def __init__(
+        self,
+        n_mels=80,
+        d_model=384,
+        enc_layers=4,
+        gap_enc_layers=2,
+        fusion_layers=4,
+        n_heads=8,
+        n_classes=501,
+        max_events=128,
+        dropout=0.1,
+        cond_dim=64,
+        snippet_frames=10,
+    ):
+        super().__init__()
+        self.n_classes = n_classes
+        self.d_model = d_model
+
+        # conditioning MLP (density → cond_dim)
+        self.cond_mlp = nn.Sequential(
+            nn.Linear(3, cond_dim),
+            nn.GELU(),
+            nn.Linear(cond_dim, cond_dim),
+        )
+
+        # audio encoder
+        self.audio_encoder = AudioEncoder(
+            n_mels=n_mels, d_model=d_model, n_layers=enc_layers,
+            n_heads=n_heads, cond_dim=cond_dim, dropout=dropout,
+        )
+
+        # gap encoder
+        self.gap_encoder = GapEncoder(
+            n_mels=n_mels, d_model=d_model, n_layers=gap_enc_layers,
+            n_heads=n_heads, max_events=max_events, cond_dim=cond_dim,
+            dropout=dropout, snippet_frames=snippet_frames,
+        )
+
+        # context pooling: learned query → attention over gap tokens → context vector
+        self.ctx_pool_query = nn.Parameter(torch.randn(1, 1, d_model))
+        self.ctx_pool_attn = nn.MultiheadAttention(
+            d_model, n_heads, dropout=dropout, batch_first=True,
+        )
+        self.ctx_pool_norm = nn.LayerNorm(d_model)
+        # project context to cond_dim for FiLM
+        self.ctx_proj = nn.Sequential(
+            nn.Linear(d_model, cond_dim),
+            nn.GELU(),
+            nn.Linear(cond_dim, cond_dim),
+        )
+
+        # audio-only fusion: self-attention over 250 audio tokens
+        # FiLM from BOTH density cond AND context cond at each layer
+        self.fusion_layers = nn.ModuleList([
+            nn.TransformerEncoderLayer(
+                d_model=d_model, nhead=n_heads, dim_feedforward=d_model * 4,
+                dropout=dropout, activation="gelu", batch_first=True, norm_first=True,
+            )
+            for _ in range(fusion_layers)
+        ])
+        self.fusion_density_film = nn.ModuleList(
+            [FiLM(cond_dim, d_model) for _ in range(fusion_layers)]
+        )
+        self.fusion_context_film = nn.ModuleList(
+            [FiLM(cond_dim, d_model) for _ in range(fusion_layers)]
+        )
+
+        # output head
+        self.head_norm = nn.LayerNorm(d_model)
+        self.head_proj = nn.Linear(d_model, n_classes)
+        self.head_smooth = nn.Sequential(
+            nn.Conv1d(1, 8, kernel_size=5, padding=2),
+            nn.GELU(),
+            nn.Conv1d(8, 1, kernel_size=5, padding=2),
+        )
+
+    def forward(self, mel, event_offsets, event_mask, conditioning):
+        """
+        mel: (B, n_mels, 1000)
+        event_offsets: (B, C) past event bin positions relative to cursor
+        event_mask: (B, C) bool, True = padding
+        conditioning: (B, 3) [mean_density, peak_density, density_std]
+        Returns: logits (B, 501)
+        """
+        cond = self.cond_mlp(conditioning)
+
+        # encode audio → 250 tokens
+        audio = self.audio_encoder(mel, cond)  # (B, 250, d_model)
+
+        # encode gaps → C tokens
+        gap_tokens, gap_mask = self.gap_encoder(
+            event_offsets, event_mask, mel, cond
+        )  # (B, C, d_model), (B, C)
+
+        # context pooling: summarize gap tokens → single context vector
+        B = mel.size(0)
+        query = self.ctx_pool_query.expand(B, -1, -1)  # (B, 1, d_model)
+        # NaN guard
+        all_masked = gap_mask.all(dim=1)
+        if all_masked.any():
+            safe_mask = gap_mask.clone()
+            safe_mask[all_masked, -1] = False
+        else:
+            safe_mask = gap_mask
+        ctx_out, _ = self.ctx_pool_attn(
+            query, gap_tokens, gap_tokens, key_padding_mask=safe_mask,
+        )  # (B, 1, d_model)
+        ctx_vec = self.ctx_proj(self.ctx_pool_norm(ctx_out.squeeze(1)))  # (B, cond_dim)
+
+        # audio-only fusion with dual FiLM conditioning
+        for layer, d_film, c_film in zip(
+            self.fusion_layers, self.fusion_density_film, self.fusion_context_film,
+        ):
+            audio = layer(audio)           # audio self-attention (250 tokens only)
+            audio = d_film(audio, cond)    # density FiLM
+            audio = c_film(audio, ctx_vec) # context FiLM
+
+        # extract cursor
+        cursor = audio[:, 125, :]
+
+        logits = self.head_proj(self.head_norm(cursor))
+        logits = logits + self.head_smooth(logits.unsqueeze(1)).squeeze(1)
+        return logits
+
+
 class CrossAttentionFusionLayer(nn.Module):
     """Bidirectional cross-attention: audio attends to gap, gap attends to audio."""
 

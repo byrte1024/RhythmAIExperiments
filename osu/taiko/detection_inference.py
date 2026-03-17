@@ -15,7 +15,7 @@ import librosa
 from tqdm import tqdm
 from collections import Counter
 
-from detection_model import OnsetDetector, DualStreamOnsetDetector, InterleavedOnsetDetector, AdditiveOnsetDetector, RerankerOnsetDetector, LegacyOnsetDetector, Exp17OnsetDetector, Exp18OnsetDetector
+from detection_model import OnsetDetector, DualStreamOnsetDetector, InterleavedOnsetDetector, ContextFiLMDetector, AdditiveOnsetDetector, RerankerOnsetDetector, LegacyOnsetDetector, Exp17OnsetDetector, Exp18OnsetDetector
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 
@@ -495,9 +495,12 @@ def main():
 
     has_cross_attn_fusion = any("cross_attn_fusion." in k for k in state_keys)
     has_interleaved = any("audio_self_layers." in k for k in state_keys)
+    has_context_film = any("fusion_context_film." in k for k in state_keys)
 
-    if has_interleaved:
-        ModelClass = InterleavedOnsetDetector  # exp 33+ (interleaved)
+    if has_context_film:
+        ModelClass = ContextFiLMDetector  # exp 34+ (context FiLM)
+    elif has_interleaved:
+        ModelClass = InterleavedOnsetDetector  # exp 33 (interleaved)
     elif has_cross_attn_fusion:
         ModelClass = DualStreamOnsetDetector  # exp 31-32 (dual stream)
     elif has_fusion_layers or has_gap_encoder:
@@ -514,8 +517,21 @@ def main():
         ModelClass = Exp17OnsetDetector  # exp 17
 
     # Build model kwargs based on checkpoint era
-    if ModelClass == InterleavedOnsetDetector:
-        # exp 33+: interleaved self+cross attention
+    if ModelClass == ContextFiLMDetector:
+        # exp 34+: context FiLM conditioning
+        model_kwargs = dict(
+            n_mels=N_MELS,
+            d_model=ckpt_args.get("d_model", 384),
+            enc_layers=ckpt_args.get("enc_layers", 4),
+            gap_enc_layers=ckpt_args.get("gap_enc_layers", 2),
+            fusion_layers=ckpt_args.get("fusion_layers", 4),
+            n_heads=ckpt_args.get("n_heads", 8),
+            n_classes=N_CLASSES,
+            max_events=C_EVENTS,
+            snippet_frames=ckpt_args.get("snippet_frames", 10),
+        )
+    elif ModelClass == InterleavedOnsetDetector:
+        # exp 33: interleaved self+cross attention
         model_kwargs = dict(
             n_mels=N_MELS,
             d_model=ckpt_args.get("d_model", 384),
@@ -599,8 +615,10 @@ def main():
             model.load_state_dict(state)
     else:
         model.load_state_dict(state)
-    if ModelClass == InterleavedOnsetDetector:
-        print("  (exp 33+ checkpoint - interleaved self+cross attention)")
+    if ModelClass == ContextFiLMDetector:
+        print("  (exp 34+ checkpoint - context FiLM conditioning)")
+    elif ModelClass == InterleavedOnsetDetector:
+        print("  (exp 33 checkpoint - interleaved self+cross attention)")
     elif ModelClass == DualStreamOnsetDetector:
         print("  (exp 31-32 checkpoint - dual stream cross-attention fusion)")
     elif ModelClass == OnsetDetector:
