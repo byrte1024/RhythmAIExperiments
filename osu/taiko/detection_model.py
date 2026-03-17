@@ -1159,15 +1159,23 @@ class OnsetDetector(nn.Module):
         gap = next_event - last_event  # (B, T)
         gap = gap.clamp(min=1.0)  # avoid div by zero
 
-        # ramp: 1 at last_event, 0 at next_event
+        # exponential decay ramp: sharp spike at event, fast falloff
+        # at 3% of the gap, signal decays to 50% → half_life = 0.03 * gap
+        # ramp(t) = exp(-ln(2) * (t - last_event) / half_life)
         t_flat = torch.arange(T, device=mel.device, dtype=torch.float32).unsqueeze(0)  # (1, T)
-        ramp = torch.clamp(1.0 - (t_flat - last_event) / gap, 0.0, 1.0)  # (B, T)
+        elapsed = (t_flat - last_event).clamp(min=0.0)  # time since last event
+        half_life = (gap * 0.03).clamp(min=0.5)  # 3% of gap, min 0.5 frames
+        ramp = torch.exp(-0.693147 * elapsed / half_life)  # ln(2) ≈ 0.693147
 
         # zero out ramp where no valid events exist (last_event == -1e6)
         ramp = torch.where(last_event > -1e5, ramp, torch.zeros_like(ramp))
 
-        # scale audio down and add ramps to ALL bands
-        mel = mel * 0.5
+        # amplitude jitter: random scaling of audio (0.25-0.75) per sample during training
+        if self.training:
+            audio_scale = 0.25 + 0.5 * torch.rand(B, 1, 1, device=mel.device)
+        else:
+            audio_scale = 0.5
+        mel = mel * audio_scale
         ramp = ramp * 10.0  # (B, T)
         mel = mel + ramp.unsqueeze(1)  # broadcast (B, 1, T) across all mel bands
 

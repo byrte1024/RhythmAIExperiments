@@ -37,7 +37,8 @@ Each folder contains a README with hypothesis, results, and key graphs.
 | 33 | [Interleaved Self+Cross Attention](experiment_33/) | Cold start failure | 19% HIT after 5 evals — model can't bootstrap. Cross-attn between random streams at every layer prevents learning. Cross-attention is the wrong fusion mechanism |
 | 34 | [Context as FiLM Conditioning](experiment_34/) | Too weak | Clean architecture (467 unique, 66.5% HIT) but 4.2% context delta — FiLM bottleneck (64-dim) can't encode sequential patterns. Context needs temporal embedding |
 | 35 | [Mel-Embedded Event Ramps](experiment_35/) | Subtle | 5.0% context delta — edge-band ramps too easy for conv to filter. Ramps need to be everywhere |
-| 35-B | [Full-Band Mel Ramps (Nuclear)](experiment_35b/) | Pending | Audio × 0.5 + ramps across ALL 80 bands. Conv can't separate ramps from audio |
+| 35-B | [Full-Band Mel Ramps (Nuclear)](experiment_35b/) | Best sustained Δ | 3.5-5% context delta (best non-cross-attn). Linear ramps too gradual, high entropy from fixed 0.5x audio |
+| 35-C | [Exponential Ramps + Amplitude Jitter](experiment_35c/) | Pending | Spike + fast decay (half-life 3% of gap). Audio jitter 0.25-0.75x. Sharper beats, robust confidence |
 
 ## Key Lessons
 
