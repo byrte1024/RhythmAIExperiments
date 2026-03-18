@@ -1232,6 +1232,40 @@ def save_eval_graphs(targets, preds, metrics, eval_step, run_dir, extra=None):
         fig.savefig(f"{prefix}_ratio_in_density_heatmap.png", dpi=150)
         plt.close(fig)
 
+    # ── 6b. Density-colored scatter: target vs predicted, R=high density, B=low ──
+    if conds is not None and len(t_ns) > 0:
+        conds_ns_ds = conds[ns]
+        d_mean = conds_ns_ds[:, 0]
+        r_ch = np.clip(d_mean / 12.0, 0, 1)
+        b_ch = np.clip((20 - d_mean) / 20.0, 0, 1)
+        g_ch = np.zeros_like(r_ch)
+        d_colors = np.stack([r_ch, g_ch, b_ch], axis=1)
+
+        max_pts = 5000
+        if len(t_ns) > max_pts:
+            ds_idx = np.random.default_rng(42).choice(len(t_ns), max_pts, replace=False)
+        else:
+            ds_idx = np.arange(len(t_ns))
+
+        fig, ax = plt.subplots(figsize=(10, 10))
+        ax.set_facecolor("black")
+        ax.scatter(t_ns[ds_idx], p_ns[ds_idx], c=d_colors[ds_idx], s=2, alpha=0.5, rasterized=True)
+        ax.plot([0, 500], [0, 500], color="gray", linewidth=0.5, alpha=0.5)
+        ax.set_xlabel("Target bin offset")
+        ax.set_ylabel("Predicted bin offset")
+        ax.set_title(f"Eval {eval_step}: Density Scatter (Red=dense chart, Blue=sparse chart)")
+        ax.set_xlim(0, 500)
+        ax.set_ylim(0, 500)
+        from matplotlib.patches import Patch
+        ax.legend(handles=[
+            Patch(facecolor="red", label="High density"),
+            Patch(facecolor="purple", label="Medium density"),
+            Patch(facecolor="blue", label="Low density"),
+        ], fontsize=8, loc="upper left", framealpha=0.7)
+        fig.tight_layout()
+        fig.savefig(f"{prefix}_density_scatter.png", dpi=120)
+        plt.close(fig)
+
     # ── 7. Forward error: gap ratio continuity (scatter + heatmap) ──
     # X = predicted_gap / prev_gap, Y = target_gap / prev_gap
     if prev_gaps is not None and len(t_ns) > 0:
@@ -1470,6 +1504,178 @@ def save_eval_graphs(targets, preds, metrics, eval_step, run_dir, extra=None):
             ax.text(i, h + 0.02, f"{h:.1%}", ha="center", va="bottom", fontsize=8)
         fig.tight_layout()
         fig.savefig(f"{prefix}_topk_quality.png", dpi=120)
+        plt.close(fig)
+
+        # ── 13. Top-K scatter: each prediction as a group of K candidates ──
+        # subsample to avoid overcrowding
+        max_points = 2000
+        if len(t_ns) > max_points:
+            idx = np.random.default_rng(42).choice(len(t_ns), max_points, replace=False)
+        else:
+            idx = np.arange(len(t_ns))
+        t_sub = t_ns[idx]
+        topk_sub = topk_ns_data[idx]  # (M, 10)
+
+        k_colors = plt.cm.viridis(np.linspace(0, 1, 10))
+        fig, ax = plt.subplots(figsize=(10, 10))
+        ax.set_facecolor("black")
+
+        # plot thin lines connecting top-K candidates for each sample
+        for j in range(len(t_sub)):
+            target_val = t_sub[j]
+            candidates = topk_sub[j]  # (10,)
+            # vertical line from lowest to highest candidate
+            xs = np.full(10, target_val)
+            ax.plot(xs, candidates, color="white", alpha=0.08, linewidth=0.3)
+
+        # plot each K rank as its own scatter layer
+        for k_idx in range(9, -1, -1):  # plot K=10 first (background), K=1 last (foreground)
+            ax.scatter(
+                t_sub, topk_sub[:, k_idx],
+                c=[k_colors[k_idx]], s=1.0 if k_idx > 0 else 3.0,
+                alpha=0.4 if k_idx > 0 else 0.8,
+                label=f"K={k_idx+1}" if k_idx in [0, 2, 4, 9] else None,
+                rasterized=True,
+            )
+
+        # diagonal
+        ax.plot([0, 500], [0, 500], color="gray", linewidth=0.5, alpha=0.5)
+        ax.set_xlabel("Target bin offset")
+        ax.set_ylabel("Predicted bin offset (top-K)")
+        ax.set_title(f"Eval {eval_step}: Top-K Candidate Scatter (n={len(t_sub)})")
+        ax.set_xlim(0, 500)
+        ax.set_ylim(0, 500)
+        ax.legend(fontsize=8, loc="upper left", framealpha=0.7)
+        fig.tight_layout()
+        fig.savefig(f"{prefix}_topk_scatter.png", dpi=120)
+        plt.close(fig)
+
+    # ── 14. Ratio pointer field: grid of average error directions ──
+    if len(t_ns) > 0:
+        log_ratio = np.log2((p_ns.astype(np.float64) + 1) / (t_ns.astype(np.float64) + 1))
+        dx_all = p_ns.astype(np.float64) - t_ns.astype(np.float64)
+        dy_all = -log_ratio
+
+        x_bins_rpf = np.linspace(0, 500, 76)  # 75 bins
+        y_bins_rpf = np.linspace(-3, 3, 73)   # 72 bins
+        x_centers_rpf = (x_bins_rpf[:-1] + x_bins_rpf[1:]) / 2
+        y_centers_rpf = (y_bins_rpf[:-1] + y_bins_rpf[1:]) / 2
+
+        x_idx_rpf = np.clip(np.digitize(t_ns, x_bins_rpf) - 1, 0, len(x_centers_rpf) - 1)
+        y_idx_rpf = np.clip(np.digitize(log_ratio, y_bins_rpf) - 1, 0, len(y_centers_rpf) - 1)
+
+        grid_dx = np.zeros((len(y_centers_rpf), len(x_centers_rpf)))
+        grid_dy = np.zeros((len(y_centers_rpf), len(x_centers_rpf)))
+        grid_count = np.zeros((len(y_centers_rpf), len(x_centers_rpf)))
+
+        col_dx = np.zeros(len(x_centers_rpf))
+        col_dy = np.zeros(len(x_centers_rpf))
+        col_count = np.zeros(len(x_centers_rpf))
+
+        for i in range(len(t_ns)):
+            xi, yi = x_idx_rpf[i], y_idx_rpf[i]
+            grid_dx[yi, xi] += dx_all[i]
+            grid_dy[yi, xi] += dy_all[i]
+            grid_count[yi, xi] += 1
+            col_dx[xi] += dx_all[i]
+            col_dy[xi] += dy_all[i]
+            col_count[xi] += 1
+
+        gmask = grid_count > 0
+        grid_dx[gmask] /= grid_count[gmask]
+        grid_dy[gmask] /= grid_count[gmask]
+        cmask = col_count > 0
+        col_dx[cmask] /= col_count[cmask]
+        col_dy[cmask] /= col_count[cmask]
+
+        magnitude = np.sqrt(grid_dx**2 + grid_dy**2)
+        max_mag = np.percentile(magnitude[grid_count >= 3], 95) if (grid_count >= 3).sum() > 0 else 1.0
+        cell_w = x_bins_rpf[1] - x_bins_rpf[0]
+        cell_h = y_bins_rpf[1] - y_bins_rpf[0]
+
+        def _rpf_color(lr_val):
+            if abs(lr_val) <= 0.3:
+                return "#6bc46d"
+            return "#eb4528" if lr_val > 0 else "#4a90d9"
+
+        # ── 14a. Column-wise average direction (top bar only) ──
+        fig, ax = plt.subplots(figsize=(14, 3))
+        ax.set_facecolor("#111111")
+
+        col_max_dy = np.abs(col_dy[cmask]).max() if cmask.sum() > 0 else 1.0
+        for xi in range(len(x_centers_rpf)):
+            if col_count[xi] < 3:
+                continue
+            x0 = x_centers_rpf[xi]
+            adx = col_dx[xi]
+            ady = col_dy[xi]
+            if abs(adx) < 0.01 and abs(ady) < 0.01:
+                continue
+
+            avg_lr = -col_dy[xi]
+            c = _rpf_color(avg_lr)
+            alpha = min(0.9, 0.3 + 0.6 * min(col_count[xi] / 100, 1.0))
+            scale = 2.0 / max(col_max_dy, 1e-6)
+            ax.annotate("",
+                xy=(x0 + adx * 0.15, ady * scale),
+                xytext=(x0, 0),
+                arrowprops=dict(arrowstyle="->", color=c, alpha=alpha, linewidth=2.0),
+            )
+
+        ax.axhline(0, color="white", linewidth=0.5, alpha=0.5)
+        ax.set_xlabel("Target bin offset")
+        ax.set_ylabel("Avg dir")
+        ax.set_title(f"Eval {eval_step}: Column-wise Average Error Direction (red=over, blue=under, green=correct)")
+        ax.set_xlim(0, 500)
+        ax.set_ylim(-3, 3)
+        ax.set_yticks([])
+        fig.tight_layout()
+        fig.savefig(f"{prefix}_ratio_pointer_bar.png", dpi=120)
+        plt.close(fig)
+
+        # ── 14b. Full ratio pointer field ──
+        fig, ax = plt.subplots(figsize=(14, 10))
+        ax.set_facecolor("#111111")
+
+        count_plot = np.where(grid_count > 0, np.log10(grid_count + 1), np.nan)
+        ax.imshow(count_plot, aspect="auto", origin="lower", cmap="magma", alpha=0.5,
+                  extent=[0, 500, -3, 3], interpolation="nearest")
+
+        arrow_scale = min(cell_w * 0.4, cell_h * 0.4) / max(max_mag, 1e-6)
+        for yi_idx in range(len(y_centers_rpf)):
+            for xi_idx in range(len(x_centers_rpf)):
+                if grid_count[yi_idx, xi_idx] < 3:
+                    continue
+                x0 = x_centers_rpf[xi_idx]
+                y0 = y_centers_rpf[yi_idx]
+                adx = grid_dx[yi_idx, xi_idx]
+                ady = grid_dy[yi_idx, xi_idx]
+                mag = np.sqrt(adx**2 + ady**2)
+                if mag < 0.01:
+                    continue
+
+                c = _rpf_color(y_centers_rpf[yi_idx])
+                n = int(grid_count[yi_idx, xi_idx])
+                alpha = min(0.9, 0.2 + 0.7 * min(n / 30, 1.0))
+
+                ax.annotate("",
+                    xy=(x0 + adx * arrow_scale, y0 + ady * arrow_scale),
+                    xytext=(x0, y0),
+                    arrowprops=dict(arrowstyle="->", color=c, alpha=alpha, linewidth=0.8),
+                )
+
+        ax.axhline(0, color="white", linewidth=0.8, alpha=0.5)
+        ax.axhline(1, color="gray", linewidth=0.3, alpha=0.3, linestyle="--")
+        ax.axhline(-1, color="gray", linewidth=0.3, alpha=0.3, linestyle="--")
+        ax.set_xlabel("Target bin offset")
+        ax.set_ylabel("log2(prediction / target)")
+        ax.set_title(f"Eval {eval_step}: Ratio Pointer Field (avg direction per cell, min 3 samples)")
+        ax.set_xlim(0, 500)
+        ax.set_ylim(-3, 3)
+        ax.set_yticks([-3, -2, -1, 0, 1, 2, 3])
+        ax.set_yticklabels(["0.125x", "0.25x", "0.5x", "1x", "2x", "4x", "8x"])
+        fig.tight_layout()
+        fig.savefig(f"{prefix}_ratio_pointer_field.png", dpi=120)
         plt.close(fig)
 
 
