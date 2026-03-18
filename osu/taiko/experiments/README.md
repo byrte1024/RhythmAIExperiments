@@ -39,7 +39,7 @@ Each folder contains a README with hypothesis, results, and key graphs.
 | 35 | [Mel-Embedded Event Ramps](experiment_35/) | Subtle | 5.0% context delta — edge-band ramps too easy for conv to filter. Ramps need to be everywhere |
 | 35-B | [Full-Band Mel Ramps (Nuclear)](experiment_35b/) | Best sustained Δ | 3.5-5% context delta (best non-cross-attn). Linear ramps too gradual, high entropy from fixed 0.5x audio |
 | 35-C | [Exponential Ramps + Amplitude Jitter](experiment_35c/) | **BREAKTHROUGH** | **71.6% HIT** (new ATH), sustained 4.5-5.7% context delta. First to break 70% AND keep context. Entropy/2.0x errors remain |
-| 35-D | [Exponential Ramps + Focal γ=3](experiment_35d/) | Pending | Same as 35-C + focal_gamma=3.0. Focus gradient on hard 2.0x disambiguation cases where context is most useful |
+| 35-D | [Exponential Ramps + Focal γ=3](experiment_35d/) | Too aggressive | 64.0% HIT (-2.2pp vs 35-C). Focal gamma=3 suppressed easy-sample gradients too early, decreased entropy globally (not just hard cases). 2.0x band is structural, not a loss problem |
 
 ## Key Lessons
 
