@@ -53,8 +53,31 @@ The AudioEncoder and GapEncoder representations should transfer (they encode aud
 
 ## Result
 
-*Pending*
+**Nearest-target HIT matches 35-C (66.2%), but multi-target metrics very poor. Threshold sweep bottleneck killed training.** Stopped after eval 1.
+
+| Metric | Value | vs 35-C eval1 |
+|--------|-------|---------------|
+| Nearest HIT | 66.2% | = |
+| Nearest Miss | 33.4% | +0.3pp |
+| Event recall (HIT) | 8.2% | — |
+| Event miss | 84.4% | — |
+| Pred precision (HIT) | 52.4% | — |
+| Hallucination rate | 1.0% | — |
+| F1 | 0.142 | — |
+| Preds/window | 2.6 | — |
+| Context Δ | ~4.1% | -5.7pp |
+| no_events | 44.4% | +6.4pp |
+
+**Technical issue:** The threshold sweep (42 thresholds × 60K samples × per-sample greedy matching) took 20+ minutes and froze training. Fixed by reducing to 11 thresholds + 4x subsampling (~150x speedup).
+
+**Core problem: loss doesn't penalize missing onsets.**
+- Hard CE (30%): only penalizes for nearest target. Missing other onsets costs nothing.
+- Soft CE (70%): normalized distribution means each of N onsets gets 1/N weight. Missing one of 5 onsets costs only 1/5 of soft loss.
+- empty_weight=1.5 penalizes hallucinations in empty windows, but NO equivalent penalty for missing real onsets.
+- Result: model rationally learns to be conservative — 8.2% event recall, 2.6 preds/window but most don't match.
 
 ## Lesson
 
-*Pending*
+- **Multi-target training paradigm is sound** — nearest-target HIT matches 35-C, proving the multi-target loss doesn't hurt single-prediction quality.
+- **The loss must directly penalize missing individual onsets.** Normalized soft targets dilute the per-onset gradient. Need per-onset recall loss: `-log(prob[real_onset_bin])` for each real onset independently.
+- **Threshold sweep must be fast.** Reduced from 42→11 thresholds with 4x subsampling for future experiments.

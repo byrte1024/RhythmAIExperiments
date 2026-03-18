@@ -388,7 +388,8 @@ class MultiTargetOnsetLoss(nn.Module):
     """
 
     def __init__(self, gamma=0.0, good_pct=0.03, fail_pct=0.20,
-                 hard_alpha=0.3, frame_tolerance=2, empty_weight=1.5):
+                 hard_alpha=0.3, frame_tolerance=2, empty_weight=1.5,
+                 recall_weight=1.0):
         super().__init__()
         self.gamma = gamma
         self.good_pct = good_pct
@@ -396,6 +397,7 @@ class MultiTargetOnsetLoss(nn.Module):
         self.hard_alpha = hard_alpha
         self.frame_tolerance = frame_tolerance
         self.empty_weight = empty_weight
+        self.recall_weight = recall_weight
         self.log_good = math.log(1 + good_pct)
         self.log_fail = math.log(1 + fail_pct)
 
@@ -467,8 +469,23 @@ class MultiTargetOnsetLoss(nn.Module):
         soft_targets = self._make_multi_soft_targets(targets_padded, n_targets, n_classes)
         soft_ce = -(soft_targets * log_probs).sum(dim=-1)
 
+        # ── per-onset recall loss: -log(prob[target_bin]) for each real onset ──
+        recall_loss = torch.zeros(logits.size(0), device=logits.device)
+        if self.recall_weight > 0:
+            valid_mask = targets_padded >= 0  # (B, M)
+            if valid_mask.any():
+                # clamp indices for gather (invalid positions use 0, masked out later)
+                safe_targets = targets_padded.clamp(0, n_classes - 1)  # (B, M)
+                # -log(prob) at each target bin
+                per_onset_nll = -log_probs.gather(1, safe_targets)  # (B, M)
+                per_onset_nll = per_onset_nll * valid_mask.float()  # zero out padding
+                # mean over valid onsets per sample (avoid /0 for empty windows)
+                n_valid = valid_mask.float().sum(dim=1).clamp(min=1.0)
+                recall_loss = per_onset_nll.sum(dim=1) / n_valid
+
         # ── mix ──
         ce = self.hard_alpha * hard_ce + (1 - self.hard_alpha) * soft_ce
+        ce = ce + self.recall_weight * recall_loss
 
         # extra weight on empty windows
         if self.empty_weight > 1.0:
@@ -481,6 +498,114 @@ class MultiTargetOnsetLoss(nn.Module):
             ce = ((1 - pt) ** self.gamma) * ce
 
         return ce.mean()
+
+
+class SigmoidMultiTargetLoss(nn.Module):
+    """Per-bin sigmoid loss for multi-target onset detection.
+
+    Each of the 500 onset bins is an independent binary classifier:
+    P(onset at bin k) = sigmoid(logit_k). No competition between bins.
+
+    Targets are log-ratio trapezoid soft labels (same shape as OnsetLoss)
+    but used as per-bin targets for BCE, not as a probability distribution.
+
+    Bin 500 (STOP) uses a separate binary target: 1 if no onsets in window.
+    """
+
+    def __init__(self, good_pct=0.03, fail_pct=0.20, frame_tolerance=2,
+                 empty_weight=1.5, pos_weight=5.0, focal_gamma=2.0):
+        super().__init__()
+        self.good_pct = good_pct
+        self.fail_pct = fail_pct
+        self.frame_tolerance = frame_tolerance
+        self.empty_weight = empty_weight
+        self.pos_weight = pos_weight  # upweight positive bins (onsets are sparse)
+        self.focal_gamma = focal_gamma
+        self.log_good = math.log(1 + good_pct)
+        self.log_fail = math.log(1 + fail_pct)
+
+    def _make_sigmoid_targets(self, targets_padded, n_targets, n_classes):
+        """Build per-bin soft targets for sigmoid BCE.
+
+        For each real onset, bins within good_pct get target=1.0, bins within
+        fail_pct get linearly interpolated targets, bins outside get target=0.0.
+        Multiple onsets: take max across all onsets per bin.
+
+        Returns: (B, n_classes) targets in [0, 1]
+        """
+        B, M = targets_padded.shape
+        stop = n_classes - 1
+        device = targets_padded.device
+
+        bins = torch.arange(stop, device=device, dtype=torch.float32)  # (500,)
+        targets = torch.zeros(B, n_classes, device=device)
+
+        valid_mask = targets_padded >= 0  # (B, M)
+
+        if valid_mask.any():
+            t_float = targets_padded.float().clamp(min=0)  # (B, M)
+
+            # log-ratio distance: |log((bin+1)/(target+1))|
+            abs_log_ratio = torch.abs(
+                torch.log((bins + 1).view(1, 1, -1) / (t_float + 1).unsqueeze(-1))
+            )  # (B, M, 500)
+
+            # trapezoid: 1.0 within good_pct, linear ramp to 0.0 at fail_pct
+            ramp_width = self.log_fail - self.log_good
+            ratio_weights = ((self.log_fail - abs_log_ratio) / ramp_width).clamp(0, 1)
+
+            # frame distance floor for small targets
+            frame_dist = torch.abs(bins.view(1, 1, -1) - t_float.unsqueeze(-1))
+            frame_weights = ((self.frame_tolerance + 1 - frame_dist) /
+                             (self.frame_tolerance + 1)).clamp(0, 1)
+
+            weights = torch.max(ratio_weights, frame_weights)  # (B, M, 500)
+            weights = weights * valid_mask.unsqueeze(-1).float()
+
+            # max across onsets (not sum — sigmoid targets should be in [0,1])
+            targets[:, :stop] = weights.max(dim=1).values  # (B, 500)
+
+        # STOP bin: 1.0 if no onsets
+        empty = (n_targets == 0)
+        targets[empty, stop] = 1.0
+
+        return targets
+
+    def forward(self, logits, targets_padded, n_targets):
+        """
+        logits: (B, 501) raw logits (sigmoid applied internally)
+        targets_padded: (B, MAX_TARGETS) int64, -1 = padding
+        n_targets: (B,) int64
+        """
+        n_classes = logits.size(1)
+
+        # build per-bin soft targets
+        bin_targets = self._make_sigmoid_targets(targets_padded, n_targets, n_classes)
+
+        # weighted BCE: upweight positive bins since onsets are sparse
+        # (most of 500 bins are negative for any given sample)
+        pos_w = torch.where(bin_targets > 0.5,
+                            torch.full_like(bin_targets, self.pos_weight),
+                            torch.ones_like(bin_targets))
+
+        bce = F.binary_cross_entropy_with_logits(
+            logits, bin_targets, weight=pos_w, reduction="none"
+        )  # (B, 501)
+
+        # focal modulation: downweight easy negatives, focus on hard cases
+        if self.focal_gamma > 0:
+            p = torch.sigmoid(logits)
+            # pt = p for positive targets, 1-p for negative targets
+            pt = bin_targets * p + (1 - bin_targets) * (1 - p)
+            focal_weight = (1 - pt) ** self.focal_gamma
+            bce = bce * focal_weight
+
+        # extra weight on STOP bin for empty windows
+        if self.empty_weight > 1.0:
+            empty = (n_targets == 0)
+            bce[:, -1] = bce[:, -1] * torch.where(empty, self.empty_weight, 1.0)
+
+        return bce.mean()
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -524,7 +649,7 @@ def compute_class_weights(dataset, mode="log"):
 
 
 @torch.no_grad()
-def validate_and_collect(model, loader, criterion, device, amp_enabled=False,
+def validate_and_collect(model, loader, criterion, device, amp_enabled=False, sigmoid_mode=False,
                          multi_target=False):
     """Single pass: compute val loss AND collect predictions + extra data for graphs."""
     model.eval()
@@ -568,7 +693,10 @@ def validate_and_collect(model, loader, criterion, device, amp_enabled=False,
         total_loss += loss.item() * B
         total_n += B
 
-        probs = torch.softmax(logits.float(), dim=-1)
+        if sigmoid_mode:
+            probs = torch.sigmoid(logits.float())
+        else:
+            probs = torch.softmax(logits.float(), dim=-1)
         all_preds.append(logits.argmax(1).cpu().numpy())
         all_cond.append(cond.cpu().numpy())
 
@@ -803,17 +931,17 @@ def compute_multi_target_metrics(targets_padded, n_targets, probs, threshold=0.0
         # greedy nearest-neighbor matching (one-to-one)
         pred_bins_f = pred_indices_ranked.astype(np.float64)
         dist = np.abs(real_bins.reshape(-1, 1) - pred_bins_f.reshape(1, -1))
-        used_real = set()
-        used_pred = set()
+        used_real = np.zeros(n_real, dtype=bool)
+        used_pred = np.zeros(n_pred, dtype=bool)
 
         flat_order = np.argsort(dist.ravel())
         for flat_idx in flat_order:
             ri = flat_idx // n_pred
             pi = flat_idx % n_pred
-            if ri in used_real or pi in used_pred:
+            if used_real[ri] or used_pred[pi]:
                 continue
-            used_real.add(ri)
-            used_pred.add(pi)
+            used_real[ri] = True
+            used_pred[pi] = True
 
             r_bin = float(real_bins[ri])
             p_bin = float(pred_bins_f[pi])
@@ -834,12 +962,12 @@ def compute_multi_target_metrics(targets_padded, n_targets, probs, threshold=0.0
             all_match_rank.append(int(pi))  # rank by confidence
             all_match_frame_err.append(fe)
 
-            if len(used_real) == n_real or len(used_pred) == n_pred:
+            if used_real.sum() == n_real or used_pred.sum() == n_pred:
                 break
 
         # unmatched real → event misses
         for ri in range(n_real):
-            if ri not in used_real:
+            if not used_real[ri]:
                 all_match_real.append(float(real_bins[ri]))
                 all_match_pred.append(stop + 1)
                 all_match_conf.append(0.0)
@@ -848,7 +976,7 @@ def compute_multi_target_metrics(targets_padded, n_targets, probs, threshold=0.0
 
         # unmatched pred → hallucinations
         for pi in range(n_pred):
-            if pi not in used_pred:
+            if not used_pred[pi]:
                 all_match_real.append(stop + 1)
                 all_match_pred.append(float(pred_bins_f[pi]))
                 all_match_conf.append(float(pred_confs_ranked[pi]))
@@ -889,18 +1017,100 @@ def compute_multi_target_metrics(targets_padded, n_targets, probs, threshold=0.0
     return m
 
 
+def _fast_threshold_metrics(targets_padded, n_targets, probs, threshold):
+    """Fast aggregate-only multi-target metrics (no per-match details).
+
+    Uses vectorized ops where possible, falling back to minimal per-sample
+    loop only for greedy matching.
+    """
+    N = len(n_targets)
+    stop = N_CLASSES - 1
+    p_onset = probs[:, :stop]  # (N, 500)
+
+    # predictions above threshold per sample
+    above = p_onset >= threshold  # (N, 500)
+    n_preds = above.sum(axis=1)  # (N,)
+    total_pred = int(n_preds.sum())
+    total_real = int(n_targets.sum())
+
+    if total_real == 0 or total_pred == 0:
+        return {
+            "event_recall_hit": 0.0, "pred_precision_hit": 0.0,
+            "f1_hit": 0.0, "avg_preds_per_window": total_pred / max(N, 1),
+        }
+
+    event_hit = 0
+    pred_hit = 0
+    event_matched = 0
+    pred_matched = 0
+
+    for i in range(N):
+        nt = int(n_targets[i])
+        if nt == 0 and n_preds[i] == 0:
+            continue
+
+        pred_idx = np.where(above[i])[0]
+        np_i = len(pred_idx)
+
+        if nt == 0 or np_i == 0:
+            continue
+
+        real_bins = targets_padded[i, :nt].astype(np.float64)
+        pred_bins = pred_idx.astype(np.float64)
+
+        # greedy matching: closest pairs first
+        dist = np.abs(real_bins.reshape(-1, 1) - pred_bins.reshape(1, -1))
+        used_r = np.zeros(nt, dtype=bool)
+        used_p = np.zeros(np_i, dtype=bool)
+
+        for flat_idx in np.argsort(dist.ravel()):
+            ri = flat_idx // np_i
+            pi = flat_idx % np_i
+            if used_r[ri] or used_p[pi]:
+                continue
+            used_r[ri] = True
+            used_p[pi] = True
+
+            event_matched += 1
+            pred_matched += 1
+
+            r, p = real_bins[ri], pred_bins[pi]
+            fe = abs(r - p)
+            pe = abs((p + 1) / (r + 1) - 1.0)
+            if pe <= 0.03 or fe <= 1:
+                event_hit += 1
+                pred_hit += 1
+
+            if used_r.sum() == nt or used_p.sum() == np_i:
+                break
+
+    rh = event_hit / max(total_real, 1)
+    ph = pred_hit / max(total_pred, 1)
+    return {
+        "event_recall_hit": rh,
+        "pred_precision_hit": ph,
+        "f1_hit": 2 * rh * ph / (rh + ph) if (rh + ph) > 0 else 0.0,
+        "avg_preds_per_window": total_pred / max(N, 1),
+    }
+
+
 def threshold_sweep(targets_padded, n_targets, probs,
-                    thresholds=None):
-    """Sweep thresholds and compute multi-target metrics at each."""
+                    thresholds=None, subsample=4):
+    """Sweep thresholds on a subsample for speed."""
     if thresholds is None:
-        thresholds = np.concatenate([
-            np.arange(0.002, 0.01, 0.002),
-            np.arange(0.01, 0.10, 0.005),
-            np.arange(0.10, 0.50, 0.02),
-        ])
+        thresholds = np.array([0.005, 0.01, 0.02, 0.03, 0.05, 0.08, 0.10, 0.15, 0.20, 0.30, 0.40])
+
+    # subsample for speed
+    N = len(n_targets)
+    if subsample > 1 and N > 1000:
+        idx = np.arange(0, N, subsample)
+        targets_padded = targets_padded[idx]
+        n_targets = n_targets[idx]
+        probs = probs[idx]
+
     results = []
-    for t in thresholds:
-        m = compute_multi_target_metrics(targets_padded, n_targets, probs, threshold=float(t))
+    for t in tqdm(thresholds, desc="Threshold sweep", leave=False):
+        m = _fast_threshold_metrics(targets_padded, n_targets, probs, threshold=float(t))
         results.append(m)
     return thresholds, results
 
@@ -2470,14 +2680,24 @@ def train(args):
         ws_metrics = ws_ckpt.get("val_metrics", {})
         print(f"  Source: epoch {ws_epoch}, HIT={ws_metrics.get('hit_rate', 0):.1%}")
 
-    if use_multi_target:
+    if use_multi_target and args.sigmoid_loss:
+        criterion = SigmoidMultiTargetLoss(
+            good_pct=args.good_pct, fail_pct=args.fail_pct,
+            frame_tolerance=args.frame_tolerance,
+            empty_weight=args.empty_weight,
+            pos_weight=args.pos_weight,
+            focal_gamma=args.focal_gamma,
+        ).to(args.device)
+        print(f"Loss: SigmoidMultiTargetLoss (pos_weight={args.pos_weight}, empty_weight={args.empty_weight}, focal_gamma={args.focal_gamma})")
+    elif use_multi_target:
         criterion = MultiTargetOnsetLoss(
             gamma=args.focal_gamma,
             good_pct=args.good_pct, fail_pct=args.fail_pct,
             hard_alpha=args.hard_alpha, frame_tolerance=args.frame_tolerance,
             empty_weight=args.empty_weight,
+            recall_weight=args.recall_weight,
         ).to(args.device)
-        print(f"Loss: MultiTargetOnsetLoss (hard_alpha={args.hard_alpha}, empty_weight={args.empty_weight})")
+        print(f"Loss: MultiTargetOnsetLoss (hard_alpha={args.hard_alpha}, empty_weight={args.empty_weight}, recall_weight={args.recall_weight})")
     else:
         criterion = OnsetLoss(
             weight=loss_weights, gamma=args.focal_gamma,
@@ -2761,9 +2981,10 @@ def _run_eval(model, val_loader, criterion, args, amp_enabled,
               scaler, best_val_loss):
     """Run validation, benchmarks, save graphs/checkpoints/history."""
     use_mt = args.multi_target
+    use_sigmoid = getattr(args, 'sigmoid_loss', False)
     val_loss, val_extra = validate_and_collect(
         model, val_loader, criterion, args.device, amp_enabled=amp_enabled,
-        multi_target=use_mt,
+        sigmoid_mode=use_sigmoid, multi_target=use_mt,
     )
     # backward-compat: nearest-target metrics (always computed)
     val_targets = val_extra["targets"]
@@ -2916,7 +3137,13 @@ if __name__ == "__main__":
                         help="Multi-target training: predict all onsets in forward window")
     parser.add_argument("--empty-weight", type=float, default=1.5,
                         help="Loss multiplier for empty windows (multi-target, default 1.5)")
+    parser.add_argument("--recall-weight", type=float, default=1.0,
+                        help="Per-onset recall loss weight (multi-target, default 1.0)")
+    parser.add_argument("--sigmoid-loss", action="store_true",
+                        help="Use per-bin sigmoid BCE instead of softmax CE (multi-target)")
+    parser.add_argument("--pos-weight", type=float, default=5.0,
+                        help="Positive class weight for sigmoid BCE (default 5.0)")
     parser.add_argument("--threshold", type=float, default=0.05,
-                        help="Softmax threshold for peak extraction (multi-target, default 0.05)")
+                        help="Threshold for peak extraction (multi-target, default 0.05)")
     args = parser.parse_args()
     train(args)
