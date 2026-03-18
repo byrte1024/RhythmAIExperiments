@@ -38,7 +38,8 @@ Each folder contains a README with hypothesis, results, and key graphs.
 | 34 | [Context as FiLM Conditioning](experiment_34/) | Too weak | Clean architecture (467 unique, 66.5% HIT) but 4.2% context delta — FiLM bottleneck (64-dim) can't encode sequential patterns. Context needs temporal embedding |
 | 35 | [Mel-Embedded Event Ramps](experiment_35/) | Subtle | 5.0% context delta — edge-band ramps too easy for conv to filter. Ramps need to be everywhere |
 | 35-B | [Full-Band Mel Ramps (Nuclear)](experiment_35b/) | Best sustained Δ | 3.5-5% context delta (best non-cross-attn). Linear ramps too gradual, high entropy from fixed 0.5x audio |
-| 35-C | [Exponential Ramps + Amplitude Jitter](experiment_35c/) | Pending | Spike + fast decay (half-life 3% of gap). Audio jitter 0.25-0.75x. Sharper beats, robust confidence |
+| 35-C | [Exponential Ramps + Amplitude Jitter](experiment_35c/) | **BREAKTHROUGH** | **71.6% HIT** (new ATH), sustained 4.5-5.7% context delta. First to break 70% AND keep context. Entropy/2.0x errors remain |
+| 35-D | [Exponential Ramps + Focal γ=3](experiment_35d/) | Pending | Same as 35-C + focal_gamma=3.0. Focus gradient on hard 2.0x disambiguation cases where context is most useful |
 
 ## Key Lessons
 
