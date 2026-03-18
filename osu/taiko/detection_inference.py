@@ -70,7 +70,8 @@ def extract_mel_window(mel, cursor):
 
 
 @torch.no_grad()
-def run_inference(model, mel, conditioning, device, hop_bins=20, max_events=10000):
+def run_inference(model, mel, conditioning, device, hop_bins=20, max_events=10000,
+                  threshold=None):
     """Autoregressive inference: predict events one at a time.
 
     Returns (events, run_stats) where run_stats has detailed inference metrics.
@@ -126,7 +127,17 @@ def run_inference(model, mel, conditioning, device, hop_bins=20, max_events=1000
 
         output = model(mel_tensor, evt_tensor, mask_tensor, cond_tensor)
         logits = output[0] if isinstance(output, tuple) else output
-        pred = logits.argmax(dim=1).item()
+
+        if threshold is not None:
+            # multi-target: threshold scan — take earliest bin above threshold
+            prob = torch.softmax(logits, dim=-1).squeeze(0).cpu().numpy()
+            above = np.where(prob[:N_CLASSES - 1] >= threshold)[0]
+            if len(above) == 0 or above[0] == 0:
+                pred = N_CLASSES - 1  # no onset → hop forward
+            else:
+                pred = int(above[0])
+        else:
+            pred = logits.argmax(dim=1).item()
 
         cursor_history.append((total_calls, cursor, pred))
 

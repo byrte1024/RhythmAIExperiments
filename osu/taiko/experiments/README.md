@@ -41,6 +41,8 @@ Each folder contains a README with hypothesis, results, and key graphs.
 | 35-C | [Exponential Ramps + Amplitude Jitter](experiment_35c/) | **BREAKTHROUGH** | **71.6% HIT** (new ATH), sustained 4.5-5.7% context delta. First to break 70% AND keep context. Entropy/2.0x errors remain |
 | 35-D | [Exponential Ramps + Focal γ=3](experiment_35d/) | Too aggressive | 64.0% HIT (-2.2pp vs 35-C). Focal gamma=3 suppressed easy-sample gradients too early, decreased entropy globally (not just hard cases). 2.0x band is structural, not a loss problem |
 
+| 36 | [Multi-Target + Threshold Inference](experiment_36/) | Pending | AR asymmetry fix: predict all onsets in window, take earliest above threshold. Same model, different loss/targets/inference |
+
 ## Key Lessons
 
 - **Data quality > model complexity** - fixing BIN_MS (5.0→4.9887) had more impact than every architecture/loss/augmentation change combined (exp 14)

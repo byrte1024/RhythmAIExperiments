@@ -23,6 +23,7 @@ C_EVENTS = 128      # past event context
 N_CLASSES = 501     # 0-499 bin offsets + 500=STOP
 WINDOW = A_BINS + B_BINS
 MIN_CURSOR_BIN = 6000  # only train where cursor >= 30s
+MAX_TARGETS = 64        # max onsets per forward window for multi-target training
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -32,10 +33,12 @@ MIN_CURSOR_BIN = 6000  # only train where cursor >= 30s
 class OnsetDataset(Dataset):
     """Yields (mel_window, event_offsets, event_mask, conditioning, target) samples."""
 
-    def __init__(self, manifest, ds_dir, chart_indices, augment=False, subsample=1):
+    def __init__(self, manifest, ds_dir, chart_indices, augment=False, subsample=1,
+                 multi_target=False):
         self.mel_dir = os.path.join(ds_dir, "mels")
         self.charts = [manifest["charts"][i] for i in chart_indices]
         self.augment = augment
+        self.multi_target = multi_target
 
         self.events = []
         evt_dir = os.path.join(ds_dir, "events")
@@ -97,7 +100,7 @@ class OnsetDataset(Dataset):
         else:
             cursor = int(evt[ei - 1])
 
-        # target
+        # target(s)
         if ei < len(evt):
             offset = max(0, int(evt[ei]) - cursor)
             target = N_CLASSES - 1 if offset >= B_BINS else offset
@@ -143,6 +146,29 @@ class OnsetDataset(Dataset):
             chart.get("density_peak", 8),
             chart.get("density_std", 1.5),
         ], dtype=np.float32) * cond_jitter
+
+        # multi-target: all onsets in forward window
+        if self.multi_target:
+            future_mask = (evt > cursor) & (evt <= cursor + B_BINS)
+            future_bins = (evt[future_mask].astype(np.int64) - cursor)
+            future_bins = np.clip(future_bins, 0, B_BINS - 1)
+
+            n_targets = len(future_bins)
+            targets_padded = np.full(MAX_TARGETS, -1, dtype=np.int64)
+            if n_targets > MAX_TARGETS:
+                future_bins = future_bins[:MAX_TARGETS]
+                n_targets = MAX_TARGETS
+            if n_targets > 0:
+                targets_padded[:n_targets] = future_bins
+
+            return (
+                torch.from_numpy(mel_window),
+                torch.from_numpy(event_offsets),
+                torch.from_numpy(event_mask),
+                torch.from_numpy(cond),
+                torch.from_numpy(targets_padded),
+                torch.tensor(n_targets, dtype=torch.long),
+            )
 
         return (
             torch.from_numpy(mel_window),
@@ -350,6 +376,112 @@ class OnsetLoss(nn.Module):
         return ce.mean()
 
 
+class MultiTargetOnsetLoss(nn.Module):
+    """Multi-target trapezoid soft-target loss.
+
+    Same proportional log-ratio trapezoid as OnsetLoss, but targets are ALL onsets
+    in the forward window, not just the nearest one. Soft target is the normalized
+    sum of trapezoids centered on each real onset.
+
+    When n_targets == 0 (no onsets in window), all mass goes to bin 500 (STOP).
+    Hard CE component uses the nearest target (first onset in window).
+    """
+
+    def __init__(self, gamma=0.0, good_pct=0.03, fail_pct=0.20,
+                 hard_alpha=0.3, frame_tolerance=2, empty_weight=1.5):
+        super().__init__()
+        self.gamma = gamma
+        self.good_pct = good_pct
+        self.fail_pct = fail_pct
+        self.hard_alpha = hard_alpha
+        self.frame_tolerance = frame_tolerance
+        self.empty_weight = empty_weight
+        self.log_good = math.log(1 + good_pct)
+        self.log_fail = math.log(1 + fail_pct)
+
+    def _make_multi_soft_targets(self, targets_padded, n_targets, n_classes):
+        """Build summed-trapezoid soft targets for multiple onsets per sample.
+
+        targets_padded: (B, MAX_TARGETS) int64, -1 = padding
+        n_targets: (B,) int64
+        Returns: (B, n_classes) normalized probability distribution
+        """
+        B, M = targets_padded.shape
+        stop = n_classes - 1
+        device = targets_padded.device
+
+        bins = torch.arange(stop, device=device, dtype=torch.float32)  # (500,)
+        soft = torch.zeros(B, n_classes, device=device)
+
+        valid_mask = targets_padded >= 0  # (B, M)
+
+        if valid_mask.any():
+            t_float = targets_padded.float().clamp(min=0)  # (B, M)
+
+            # |log((bin+1)/(target+1))| → (B, M, 500)
+            abs_log_ratio = torch.abs(
+                torch.log((bins + 1).view(1, 1, -1) / (t_float + 1).unsqueeze(-1))
+            )
+
+            # trapezoid ramp in log-ratio space
+            ramp_width = self.log_fail - self.log_good
+            ratio_weights = ((self.log_fail - abs_log_ratio) / ramp_width).clamp(0, 1)
+
+            # frame distance floor for small targets
+            frame_dist = torch.abs(bins.view(1, 1, -1) - t_float.unsqueeze(-1))
+            frame_weights = ((self.frame_tolerance + 1 - frame_dist) /
+                             (self.frame_tolerance + 1)).clamp(0, 1)
+
+            weights = torch.max(ratio_weights, frame_weights)  # (B, M, 500)
+            weights = weights * valid_mask.unsqueeze(-1).float()
+
+            # sum across all targets per sample
+            soft[:, :stop] = weights.sum(dim=1)  # (B, 500)
+
+        # empty windows: all mass on STOP
+        empty = (n_targets == 0)
+        soft[empty, stop] = 1.0
+
+        # normalize
+        total = soft.sum(dim=1, keepdim=True).clamp(min=1e-8)
+        soft = soft / total
+
+        return soft
+
+    def forward(self, logits, targets_padded, n_targets):
+        """
+        logits: (B, 501)
+        targets_padded: (B, MAX_TARGETS) int64, -1 = padding
+        n_targets: (B,) int64
+        """
+        n_classes = logits.size(1)
+        log_probs = F.log_softmax(logits, dim=-1).clamp(min=-100)
+
+        # ── hard CE against nearest target (first valid) ──
+        nearest = targets_padded[:, 0].clone()
+        nearest[n_targets == 0] = n_classes - 1  # empty → STOP
+        nearest = nearest.clamp(0, n_classes - 1)
+        hard_ce = F.cross_entropy(logits, nearest, reduction="none")
+
+        # ── soft CE against multi-target distribution ──
+        soft_targets = self._make_multi_soft_targets(targets_padded, n_targets, n_classes)
+        soft_ce = -(soft_targets * log_probs).sum(dim=-1)
+
+        # ── mix ──
+        ce = self.hard_alpha * hard_ce + (1 - self.hard_alpha) * soft_ce
+
+        # extra weight on empty windows
+        if self.empty_weight > 1.0:
+            empty = (n_targets == 0)
+            ce = ce * torch.where(empty, self.empty_weight, 1.0)
+
+        # focal modulation
+        if self.gamma > 0:
+            pt = (soft_targets * torch.softmax(logits, dim=-1)).sum(dim=-1)
+            ce = ((1 - pt) ** self.gamma) * ce
+
+        return ce.mean()
+
 
 # ═══════════════════════════════════════════════════════════════
 #  Metrics & Graphs
@@ -392,45 +524,70 @@ def compute_class_weights(dataset, mode="log"):
 
 
 @torch.no_grad()
-def validate_and_collect(model, loader, criterion, device, amp_enabled=False):
+def validate_and_collect(model, loader, criterion, device, amp_enabled=False,
+                         multi_target=False):
     """Single pass: compute val loss AND collect predictions + extra data for graphs."""
     model.eval()
-    all_targets = []
+    all_targets = []       # single-target: (N,), multi-target: not used
     all_preds = []
     all_cond = []
     all_prev_gap = []
     all_ctx_len = []
-    all_topk = []       # top-10 predictions per sample
-    all_entropy = []    # logit entropy per sample
+    all_topk = []          # top-10 predictions per sample (legacy mode only)
+    all_entropy = []       # logit entropy per sample
+    all_probs = []         # full softmax (multi-target only)
+    all_targets_padded = []  # (N, MAX_TARGETS) (multi-target only)
+    all_n_targets = []     # (N,) (multi-target only)
     total_loss = 0.0
     total_n = 0
-    for mel, evt_off, evt_mask, cond, target in tqdm(loader, desc="Validating", leave=False):
+
+    for batch in tqdm(loader, desc="Validating", leave=False):
+        if multi_target:
+            mel, evt_off, evt_mask, cond, targets_padded, n_tgt = batch
+            targets_padded = targets_padded.to(device, non_blocking=True)
+            n_tgt = n_tgt.to(device, non_blocking=True)
+        else:
+            mel, evt_off, evt_mask, cond, target = batch
+            target = target.to(device, non_blocking=True)
+
         mel = mel.to(device, non_blocking=True)
         evt_off = evt_off.to(device, non_blocking=True)
         evt_mask = evt_mask.to(device, non_blocking=True)
         cond = cond.to(device, non_blocking=True)
-        target = target.to(device, non_blocking=True)
 
         with torch.autocast("cuda", enabled=amp_enabled):
             logits = model(mel, evt_off, evt_mask, cond)
-            # Handle both unified (single tensor) and legacy (tuple) model outputs
             if isinstance(logits, tuple):
                 logits = logits[0]
-            loss = criterion(logits, target)
+            if multi_target:
+                loss = criterion(logits, targets_padded, n_tgt)
+            else:
+                loss = criterion(logits, target)
 
-        total_loss += loss.item() * target.size(0)
-        total_n += target.size(0)
+        B = mel.size(0)
+        total_loss += loss.item() * B
+        total_n += B
+
+        probs = torch.softmax(logits.float(), dim=-1)
         all_preds.append(logits.argmax(1).cpu().numpy())
-        all_targets.append(target.cpu().numpy())
         all_cond.append(cond.cpu().numpy())
 
-        # top-10 predictions
-        all_topk.append(logits.topk(10, dim=1).indices.cpu().numpy())
-
-        # entropy of softmax distribution
-        probs = torch.softmax(logits.float(), dim=-1)
+        # entropy
         ent = -(probs * (probs + 1e-10).log()).sum(dim=-1)
         all_entropy.append(ent.cpu().numpy())
+
+        if multi_target:
+            all_probs.append(probs.cpu().numpy())
+            all_targets_padded.append(targets_padded.cpu().numpy())
+            all_n_targets.append(n_tgt.cpu().numpy())
+            # nearest target for backward-compat metrics
+            nearest = targets_padded[:, 0].clone()
+            nearest[n_tgt == 0] = N_CLASSES - 1
+            nearest = nearest.clamp(0, N_CLASSES - 1)
+            all_targets.append(nearest.cpu().numpy())
+        else:
+            all_targets.append(target.cpu().numpy())
+            all_topk.append(logits.topk(10, dim=1).indices.cpu().numpy())
 
         # context length + prev_gap from event mask
         em = evt_mask.cpu().numpy()
@@ -438,7 +595,6 @@ def validate_and_collect(model, loader, criterion, device, amp_enabled=False):
         all_ctx_len.append(ctx_lens)
 
         eo = evt_off.cpu().numpy()
-        B = eo.shape[0]
         prev_gaps = np.full(B, np.nan, dtype=np.float64)
         for b in range(B):
             valid = ~em[b]
@@ -454,9 +610,14 @@ def validate_and_collect(model, loader, criterion, device, amp_enabled=False):
         "conds": np.concatenate(all_cond),
         "prev_gaps": np.concatenate(all_prev_gap),
         "ctx_len": np.concatenate(all_ctx_len),
-        "topk": np.concatenate(all_topk),
         "entropy": np.concatenate(all_entropy),
     }
+    if multi_target:
+        extra["probs"] = np.concatenate(all_probs)
+        extra["targets_padded"] = np.concatenate(all_targets_padded)
+        extra["n_targets"] = np.concatenate(all_n_targets)
+    else:
+        extra["topk"] = np.concatenate(all_topk)
     return val_loss, extra
 
 
@@ -561,12 +722,195 @@ def compute_metrics(targets, preds):
     return m
 
 
+def _classify_match(r_bin, p_bin):
+    """Classify a matched (real, pred) pair as HIT/GOOD/MISS."""
+    frame_err = abs(p_bin - r_bin)
+    pct_err = abs((p_bin + 1) / (r_bin + 1) - 1.0)
+    is_hit = pct_err <= 0.03 or frame_err <= 1
+    is_good = pct_err <= 0.10 or frame_err <= 2
+    is_miss = pct_err > 0.20
+    return is_hit, is_good, is_miss, frame_err, pct_err
+
+
+def compute_multi_target_metrics(targets_padded, n_targets, probs, threshold=0.05):
+    """Bidirectional matching metrics between real onsets and thresholded predictions.
+
+    For each sample: extract predicted peaks above threshold, match greedily to real
+    onsets (one-to-one, closest first). Compute event-side (recall) and prediction-side
+    (precision) HIT/GOOD/MISS rates.
+
+    Returns dict with metrics + internal arrays for graphs (prefixed with _).
+    """
+    N = len(n_targets)
+    stop = N_CLASSES - 1
+
+    # aggregate counters
+    total_real = 0
+    total_pred = 0
+    event_hit = 0
+    event_good = 0
+    event_matched = 0
+    pred_hit = 0
+    pred_good = 0
+    pred_matched = 0
+
+    # for graphs: matched pairs (501 = unmatched sentinel)
+    all_match_real = []
+    all_match_pred = []
+    all_match_conf = []
+    all_match_rank = []  # peak rank within window (0-based)
+    all_match_frame_err = []
+
+    for i in range(N):
+        nt = int(n_targets[i])
+        real_bins = targets_padded[i, :nt].astype(np.float64) if nt > 0 else np.array([], dtype=np.float64)
+        p = probs[i, :stop]
+        pred_indices = np.where(p >= threshold)[0]
+        # sort by confidence descending for rank assignment
+        pred_confs = p[pred_indices]
+        rank_order = np.argsort(-pred_confs)
+        pred_indices_ranked = pred_indices[rank_order]
+        pred_confs_ranked = pred_confs[rank_order]
+
+        n_real = len(real_bins)
+        n_pred = len(pred_indices_ranked)
+        total_real += n_real
+        total_pred += n_pred
+
+        if n_real == 0 and n_pred == 0:
+            continue
+
+        # unmatched predictions (hallucinations) when no real onsets
+        if n_real == 0:
+            for pi in range(n_pred):
+                all_match_real.append(stop + 1)  # 501 sentinel
+                all_match_pred.append(float(pred_indices_ranked[pi]))
+                all_match_conf.append(float(pred_confs_ranked[pi]))
+                all_match_rank.append(pi)
+                all_match_frame_err.append(np.nan)
+            continue
+
+        # unmatched real onsets when no predictions
+        if n_pred == 0:
+            for ri in range(n_real):
+                all_match_real.append(float(real_bins[ri]))
+                all_match_pred.append(stop + 1)  # 501 sentinel
+                all_match_conf.append(0.0)
+                all_match_rank.append(-1)
+                all_match_frame_err.append(np.nan)
+            continue
+
+        # greedy nearest-neighbor matching (one-to-one)
+        pred_bins_f = pred_indices_ranked.astype(np.float64)
+        dist = np.abs(real_bins.reshape(-1, 1) - pred_bins_f.reshape(1, -1))
+        used_real = set()
+        used_pred = set()
+
+        flat_order = np.argsort(dist.ravel())
+        for flat_idx in flat_order:
+            ri = flat_idx // n_pred
+            pi = flat_idx % n_pred
+            if ri in used_real or pi in used_pred:
+                continue
+            used_real.add(ri)
+            used_pred.add(pi)
+
+            r_bin = float(real_bins[ri])
+            p_bin = float(pred_bins_f[pi])
+            is_hit, is_good, is_miss, fe, pe = _classify_match(r_bin, p_bin)
+
+            event_matched += 1
+            pred_matched += 1
+            if is_hit:
+                event_hit += 1
+                pred_hit += 1
+            if is_good:
+                event_good += 1
+                pred_good += 1
+
+            all_match_real.append(r_bin)
+            all_match_pred.append(p_bin)
+            all_match_conf.append(float(pred_confs_ranked[pi]))
+            all_match_rank.append(int(pi))  # rank by confidence
+            all_match_frame_err.append(fe)
+
+            if len(used_real) == n_real or len(used_pred) == n_pred:
+                break
+
+        # unmatched real → event misses
+        for ri in range(n_real):
+            if ri not in used_real:
+                all_match_real.append(float(real_bins[ri]))
+                all_match_pred.append(stop + 1)
+                all_match_conf.append(0.0)
+                all_match_rank.append(-1)
+                all_match_frame_err.append(np.nan)
+
+        # unmatched pred → hallucinations
+        for pi in range(n_pred):
+            if pi not in used_pred:
+                all_match_real.append(stop + 1)
+                all_match_pred.append(float(pred_bins_f[pi]))
+                all_match_conf.append(float(pred_confs_ranked[pi]))
+                all_match_rank.append(int(pi))
+                all_match_frame_err.append(np.nan)
+
+    m = {}
+    m["threshold"] = threshold
+    m["total_real_onsets"] = total_real
+    m["total_predictions"] = total_pred
+
+    # event-side (recall)
+    m["event_recall_hit"] = event_hit / max(total_real, 1)
+    m["event_recall_good"] = event_good / max(total_real, 1)
+    m["event_recall_matched"] = event_matched / max(total_real, 1)
+    m["event_miss_rate"] = 1.0 - event_matched / max(total_real, 1)
+
+    # prediction-side (precision)
+    m["pred_precision_hit"] = pred_hit / max(total_pred, 1)
+    m["pred_precision_good"] = pred_good / max(total_pred, 1)
+    m["hallucination_rate"] = 1.0 - pred_matched / max(total_pred, 1)
+
+    # F1
+    rh = m["event_recall_hit"]
+    ph = m["pred_precision_hit"]
+    m["f1_hit"] = 2 * rh * ph / (rh + ph) if (rh + ph) > 0 else 0.0
+
+    m["avg_preds_per_window"] = total_pred / max(N, 1)
+    m["avg_real_per_window"] = total_real / max(N, 1)
+
+    # arrays for graphs (not JSON-serializable — strip before saving)
+    m["_matched_real"] = np.array(all_match_real)
+    m["_matched_pred"] = np.array(all_match_pred)
+    m["_matched_conf"] = np.array(all_match_conf)
+    m["_matched_rank"] = np.array(all_match_rank)
+    m["_matched_frame_err"] = np.array(all_match_frame_err)
+
+    return m
+
+
+def threshold_sweep(targets_padded, n_targets, probs,
+                    thresholds=None):
+    """Sweep thresholds and compute multi-target metrics at each."""
+    if thresholds is None:
+        thresholds = np.concatenate([
+            np.arange(0.002, 0.01, 0.002),
+            np.arange(0.01, 0.10, 0.005),
+            np.arange(0.10, 0.50, 0.02),
+        ])
+    results = []
+    for t in thresholds:
+        m = compute_multi_target_metrics(targets_padded, n_targets, probs, threshold=float(t))
+        results.append(m)
+    return thresholds, results
+
+
 # ═══════════════════════════════════════════════════════════════
 #  Ablation Benchmarks
 # ═══════════════════════════════════════════════════════════════
 
 @torch.no_grad()
-def run_benchmarks(model, val_loader, device, amp_enabled=False):
+def run_benchmarks(model, val_loader, device, amp_enabled=False, multi_target=False):
     """Run ablation benchmarks on corrupted validation data.
 
     Returns dict of benchmark_name -> {stop_rate, mean_pred, pred_std, n_samples}.
@@ -591,7 +935,16 @@ def run_benchmarks(model, val_loader, device, amp_enabled=False):
         """Run model on corrupted batches, return full arrays + summary stats."""
         all_preds = []
         all_targets = []
-        for mel, evt_off, evt_mask, cond, target in batches:
+        for batch in batches:
+            if multi_target:
+                mel, evt_off, evt_mask, cond, targets_padded, n_tgt = batch
+                # nearest target for benchmark metrics
+                target = targets_padded[:, 0].clone()
+                target[n_tgt == 0] = stop
+                target = target.clamp(0, stop)
+            else:
+                mel, evt_off, evt_mask, cond, target = batch
+
             mel, evt_off, evt_mask, cond = corrupt_fn(
                 mel.clone(), evt_off.clone(), evt_mask.clone(), cond.clone(), target
             )
@@ -969,7 +1322,7 @@ def _save_benchmark_history_graphs(bench_root, run_dir):
     plt.close(fig)
 
 
-def save_eval_graphs(targets, preds, metrics, eval_step, run_dir, extra=None):
+def save_eval_graphs(targets, preds, metrics, eval_step, run_dir, extra=None, mt_metrics=None):
     """Generate and save all graphs for this eval."""
     import matplotlib
     matplotlib.use("Agg")
@@ -1678,6 +2031,109 @@ def save_eval_graphs(targets, preds, metrics, eval_step, run_dir, extra=None):
         fig.savefig(f"{prefix}_ratio_pointer_field.png", dpi=120)
         plt.close(fig)
 
+    # ── Multi-target graphs ──
+    if mt_metrics is not None:
+        import matplotlib
+        matplotlib.use("Agg")
+        import matplotlib.pyplot as plt
+
+        mr = mt_metrics.get("_matched_real", np.array([]))
+        mp = mt_metrics.get("_matched_pred", np.array([]))
+        mc = mt_metrics.get("_matched_conf", np.array([]))
+        mfe = mt_metrics.get("_matched_frame_err", np.array([]))
+
+        if len(mr) > 0:
+            # ── MT1: Matched-pair heatmap (501 = unmatched) ──
+            from scipy.ndimage import gaussian_filter
+            from matplotlib.colors import LogNorm
+            fig, ax = plt.subplots(figsize=(8, 8))
+            fig.patch.set_facecolor("black")
+            ax.set_facecolor("black")
+            # clip to 502 range (0-500 = normal, 501 = unmatched sentinel)
+            h, xe, ye = np.histogram2d(
+                np.clip(mr, 0, 501), np.clip(mp, 0, 501),
+                bins=251, range=[[0, 502], [0, 502]])
+            h = gaussian_filter(h.astype(np.float64), sigma=1.0)
+            h[h < 0.5] = np.nan
+            ax.imshow(h.T, origin="lower", aspect="auto", extent=[0, 502, 0, 502],
+                      norm=LogNorm(vmin=1), cmap="viridis")
+            ax.plot([0, 500], [0, 500], "r--", alpha=0.5, linewidth=1)
+            ax.axhline(501, color="yellow", alpha=0.3, linewidth=0.5)
+            ax.axvline(501, color="yellow", alpha=0.3, linewidth=0.5)
+            ax.set_xlabel("Real onset bin (501=hallucination)", color="white")
+            ax.set_ylabel("Predicted bin (501=missed event)", color="white")
+            ax.set_title(f"Eval {eval_step}: Matched-Pair Heatmap", color="white")
+            ax.tick_params(colors="white")
+            fig.tight_layout()
+            fig.savefig(f"{prefix}_mt_heatmap.png", dpi=150)
+            plt.close(fig)
+
+            # ── MT2: Confidence histogram by outcome ──
+            # matched pairs where both are real (not 501)
+            both_valid = (mr < 501) & (mp < 501)
+            valid_fe = mfe[both_valid]
+            valid_conf = mc[both_valid]
+            valid_r = mr[both_valid]
+            valid_p = mp[both_valid]
+
+            if len(valid_r) > 0:
+                pct_err = np.abs((valid_p + 1) / (valid_r + 1) - 1.0)
+                fe = np.abs(valid_p - valid_r)
+                is_hit = (pct_err <= 0.03) | (fe <= 1)
+                is_miss = pct_err > 0.20
+
+                hallucination_conf = mc[(mr >= 501) & (mp < 501)]
+
+                fig, ax = plt.subplots(figsize=(10, 5))
+                bins_h = np.linspace(0, max(0.5, np.percentile(mc[mc > 0], 99) if (mc > 0).any() else 0.5), 80)
+                if is_hit.sum() > 0:
+                    ax.hist(valid_conf[is_hit], bins=bins_h, alpha=0.6, color="#6bc46d",
+                            label=f"Matched HIT (n={is_hit.sum()})", density=True)
+                if is_miss.sum() > 0:
+                    ax.hist(valid_conf[is_miss], bins=bins_h, alpha=0.6, color="#eb4528",
+                            label=f"Matched MISS (n={is_miss.sum()})", density=True)
+                if len(hallucination_conf) > 0:
+                    ax.hist(hallucination_conf, bins=bins_h, alpha=0.4, color="#fcb71e",
+                            label=f"Hallucination (n={len(hallucination_conf)})", density=True)
+                ax.set_xlabel("Softmax confidence")
+                ax.set_ylabel("Density")
+                ax.set_title(f"Eval {eval_step}: Confidence by Outcome")
+                ax.legend()
+                ax.grid(True, alpha=0.3)
+                fig.tight_layout()
+                fig.savefig(f"{prefix}_mt_confidence.png", dpi=120)
+                plt.close(fig)
+
+            # ── MT3: Threshold sweep ──
+            if "probs" in (extra or {}):
+                sweep_t, sweep_r = threshold_sweep(
+                    extra["targets_padded"], extra["n_targets"], extra["probs"])
+                fig, ax1 = plt.subplots(figsize=(10, 5))
+                ax1.plot(sweep_t, [r["event_recall_hit"] for r in sweep_r],
+                         color="#6bc46d", linewidth=2, label="Event recall (HIT)")
+                ax1.plot(sweep_t, [r["pred_precision_hit"] for r in sweep_r],
+                         color="#4a90d9", linewidth=2, label="Pred precision (HIT)")
+                ax1.plot(sweep_t, [r["f1_hit"] for r in sweep_r],
+                         color="#eb4528", linewidth=2, label="F1 (HIT)")
+                ax1.axvline(mt_metrics["threshold"], color="white", linestyle="--", alpha=0.5,
+                            label=f"threshold={mt_metrics['threshold']}")
+                ax1.set_xlabel("Threshold")
+                ax1.set_ylabel("Rate")
+                ax1.set_ylim(0, 1)
+                ax1.legend(loc="upper right")
+                ax1.grid(True, alpha=0.3)
+
+                ax2 = ax1.twinx()
+                ax2.plot(sweep_t, [r["avg_preds_per_window"] for r in sweep_r],
+                         color="#c76dba", linewidth=1, linestyle=":", label="preds/window")
+                ax2.set_ylabel("Preds per window", color="#c76dba")
+                ax2.tick_params(axis="y", labelcolor="#c76dba")
+
+                ax1.set_title(f"Eval {eval_step}: Threshold Sweep")
+                fig.tight_layout()
+                fig.savefig(f"{prefix}_mt_threshold_sweep.png", dpi=120)
+                plt.close(fig)
+
 
 def save_training_curves(history, run_dir):
     """Save loss and metric curves across all evals."""
@@ -1895,9 +2351,12 @@ def train(args):
     train_idx, val_idx = split_by_song(manifest, val_ratio=0.1)
     print(f"Train: {len(train_idx)} charts, Val: {len(val_idx)} charts")
 
+    use_multi_target = args.multi_target
     sub = args.subsample
-    train_ds = OnsetDataset(manifest, ds_dir, train_idx, augment=True, subsample=sub)
-    val_ds = OnsetDataset(manifest, ds_dir, val_idx, augment=False, subsample=sub)
+    train_ds = OnsetDataset(manifest, ds_dir, train_idx, augment=True, subsample=sub,
+                            multi_target=use_multi_target)
+    val_ds = OnsetDataset(manifest, ds_dir, val_idx, augment=False, subsample=sub,
+                          multi_target=use_multi_target)
     if sub > 1:
         print(f"Subsample: 1/{sub}")
     print(f"Train samples: {len(train_ds)}, Val samples: {len(val_ds)}")
@@ -2011,12 +2470,21 @@ def train(args):
         ws_metrics = ws_ckpt.get("val_metrics", {})
         print(f"  Source: epoch {ws_epoch}, HIT={ws_metrics.get('hit_rate', 0):.1%}")
 
-    criterion = OnsetLoss(
-        weight=loss_weights, gamma=args.focal_gamma,
-        good_pct=args.good_pct, fail_pct=args.fail_pct,
-        hard_alpha=args.hard_alpha, frame_tolerance=args.frame_tolerance,
-        stop_weight=args.stop_weight,
-    ).to(args.device)
+    if use_multi_target:
+        criterion = MultiTargetOnsetLoss(
+            gamma=args.focal_gamma,
+            good_pct=args.good_pct, fail_pct=args.fail_pct,
+            hard_alpha=args.hard_alpha, frame_tolerance=args.frame_tolerance,
+            empty_weight=args.empty_weight,
+        ).to(args.device)
+        print(f"Loss: MultiTargetOnsetLoss (hard_alpha={args.hard_alpha}, empty_weight={args.empty_weight})")
+    else:
+        criterion = OnsetLoss(
+            weight=loss_weights, gamma=args.focal_gamma,
+            good_pct=args.good_pct, fail_pct=args.fail_pct,
+            hard_alpha=args.hard_alpha, frame_tolerance=args.frame_tolerance,
+            stop_weight=args.stop_weight,
+        ).to(args.device)
     # Only pass trainable params to optimizer
     optimizer = torch.optim.AdamW(
         [p for p in model.parameters() if p.requires_grad],
@@ -2117,37 +2585,42 @@ def train(args):
         RECENT_N = 50
         recent_buf = deque(maxlen=RECENT_N)  # (loss*bs, bs, ns, hit, miss, score_sum)
 
-        for batch_idx, (mel, evt_off, evt_mask, cond, target) in enumerate(train_loader):
+        for batch_idx, batch in enumerate(train_loader):
+            if use_multi_target:
+                mel, evt_off, evt_mask, cond, targets_padded, n_tgt = batch
+                targets_padded = targets_padded.to(args.device, non_blocking=True)
+                n_tgt = n_tgt.to(args.device, non_blocking=True)
+                # nearest target for batch metrics
+                target = targets_padded[:, 0].clone()
+                target[n_tgt == 0] = N_CLASSES - 1
+                target = target.clamp(0, N_CLASSES - 1)
+            else:
+                mel, evt_off, evt_mask, cond, target = batch
+                target = target.to(args.device, non_blocking=True)
+
             mel = mel.to(args.device, non_blocking=True)
             evt_off = evt_off.to(args.device, non_blocking=True)
             evt_mask = evt_mask.to(args.device, non_blocking=True)
             cond = cond.to(args.device, non_blocking=True)
-            target = target.to(args.device, non_blocking=True)
 
             with torch.autocast("cuda", enabled=amp_enabled):
                 logits = model(mel, evt_off, evt_mask, cond)
                 if isinstance(logits, tuple):
                     logits = logits[0]
-                loss = criterion(logits, target)
+                if use_multi_target:
+                    loss = criterion(logits, targets_padded, n_tgt)
+                else:
+                    loss = criterion(logits, target)
 
             # NaN safety: skip batch if loss or logits are NaN
+            bs = mel.size(0)
             if loss.isnan().item() or logits.isnan().any().item():
-                # debug: dump batch info to find the trigger
-                nan_logits = logits.isnan().any(dim=1)  # which samples have NaN
+                nan_logits = logits.isnan().any(dim=1)
                 n_nan = nan_logits.sum().item()
                 print(f"\n  WARNING: NaN at batch {batch_idx} ({n_nan}/{bs} samples)")
-                print(f"    evt_mask all-True per sample: {evt_mask.all(dim=1).tolist()}")
                 print(f"    evt_mask valid counts: {(~evt_mask).sum(dim=1).tolist()}")
                 print(f"    evt_off range: [{evt_off.min().item()}, {evt_off.max().item()}]")
                 print(f"    mel range: [{mel.min().item():.2f}, {mel.max().item():.2f}]")
-                print(f"    targets: {target.tolist()}")
-                if n_nan < bs:
-                    print(f"    NaN sample indices: {nan_logits.nonzero().squeeze(-1).tolist()}")
-                    for si in nan_logits.nonzero().squeeze(-1).tolist()[:3]:
-                        n_valid = (~evt_mask[si]).sum().item()
-                        print(f"    sample {si}: valid_events={n_valid}, target={target[si].item()}, "
-                              f"evt_off_valid={evt_off[si][~evt_mask[si]][:8].tolist()}")
-                # save problematic batch for offline analysis
                 torch.save({
                     "mel": mel.cpu(), "evt_off": evt_off.cpu(),
                     "evt_mask": evt_mask.cpu(), "cond": cond.cpu(),
@@ -2167,11 +2640,10 @@ def train(args):
             scaler.step(optimizer)
             scaler.update()
 
-            bs = target.size(0)
             train_loss += loss.item() * bs
             train_total += bs
 
-            # batch metrics for tqdm
+            # batch metrics for tqdm (uses nearest target as proxy)
             b_loss_x_bs = loss.item() * bs
             b_bs = bs
             b_ns = 0; b_hit = 0; b_miss = 0; b_score = 0.0
@@ -2193,8 +2665,6 @@ def train(args):
                     train_w3_sum += ((pct_err <= 0.03) | (frame_err <= 1)).sum().item()
                     train_hit_sum += b_hit
 
-                    # model score: continuous [-1, +1]
-                    # 0%→+1, 3%→0, 200%→-1, ±1 frame→+1
                     abs_lr = ((p_ns + 1).log() - (t_ns + 1).log()).abs()
                     thr = math.log(1.03)
                     max_p = math.log(5.0)
@@ -2290,41 +2760,76 @@ def _run_eval(model, val_loader, criterion, args, amp_enabled,
               run_dir, ckpt_dir, history, scheduler, optimizer,
               scaler, best_val_loss):
     """Run validation, benchmarks, save graphs/checkpoints/history."""
+    use_mt = args.multi_target
     val_loss, val_extra = validate_and_collect(
         model, val_loader, criterion, args.device, amp_enabled=amp_enabled,
+        multi_target=use_mt,
     )
+    # backward-compat: nearest-target metrics (always computed)
     val_targets = val_extra["targets"]
     val_preds = val_extra["preds"]
     val_metrics = compute_metrics(val_targets, val_preds)
 
+    # multi-target metrics
+    mt_metrics = None
+    if use_mt and "probs" in val_extra:
+        mt_metrics = compute_multi_target_metrics(
+            val_extra["targets_padded"], val_extra["n_targets"],
+            val_extra["probs"], threshold=args.threshold,
+        )
+        # merge key mt metrics into val_metrics for history
+        val_metrics["event_recall_hit"] = mt_metrics["event_recall_hit"]
+        val_metrics["event_miss_rate"] = mt_metrics["event_miss_rate"]
+        val_metrics["pred_precision_hit"] = mt_metrics["pred_precision_hit"]
+        val_metrics["hallucination_rate"] = mt_metrics["hallucination_rate"]
+        val_metrics["f1_hit"] = mt_metrics["f1_hit"]
+        val_metrics["avg_preds_per_window"] = mt_metrics["avg_preds_per_window"]
+        val_metrics["threshold"] = mt_metrics["threshold"]
+
     audio_metrics = None  # unified model has no separate audio path
 
     tag = f"{epoch_frac:.2f}" if epoch_frac != int(epoch_frac) else f"{int(epoch_frac)}"
-    audio_hit_str = f" audio_HIT={audio_metrics['hit_rate']:.1%}" if audio_metrics else ""
-    print(f"  Eval {eval_step} (epoch {tag}): loss={train_loss:.4f}/{val_loss:.4f} | "
-          f"HIT={val_metrics.get('hit_rate', 0):.1%}{audio_hit_str} "
-          f"GOOD={val_metrics.get('good_rate', 0):.1%} "
-          f"MISS={val_metrics.get('miss_rate', 1):.1%} | "
-          f"exact={val_metrics.get('exact_match', 0):.1%} ±1f={val_metrics.get('within_1_frame', 0):.1%} "
-          f"±2f={val_metrics.get('within_2_frames', 0):.1%} | "
-          f"≤3%={val_metrics.get('within_3pct', 0):.1%} ≤10%={val_metrics.get('within_10pct', 0):.1%} | "
-          f"stop_f1={val_metrics['stop_f1']:.3f} | "
-          f"score={val_metrics.get('model_score', 0):+.3f} | "
-          f"uniq={val_metrics.get('unique_preds', 0)} | lr={scheduler.get_last_lr()[0]:.2e}")
-
-    # (no context analysis - unified model has single path)
+    if mt_metrics:
+        print(f"  Eval {eval_step} (epoch {tag}): loss={train_loss:.4f}/{val_loss:.4f} | "
+              f"eHIT={mt_metrics['event_recall_hit']:.1%} "
+              f"eMISS={mt_metrics['event_miss_rate']:.1%} | "
+              f"pHIT={mt_metrics['pred_precision_hit']:.1%} "
+              f"pHALL={mt_metrics['hallucination_rate']:.1%} | "
+              f"F1={mt_metrics['f1_hit']:.3f} "
+              f"preds/win={mt_metrics['avg_preds_per_window']:.1f} | "
+              f"(nearest: HIT={val_metrics.get('hit_rate', 0):.1%} "
+              f"MISS={val_metrics.get('miss_rate', 1):.1%}) | "
+              f"score={val_metrics.get('model_score', 0):+.3f} | "
+              f"lr={scheduler.get_last_lr()[0]:.2e}")
+    else:
+        audio_hit_str = f" audio_HIT={audio_metrics['hit_rate']:.1%}" if audio_metrics else ""
+        print(f"  Eval {eval_step} (epoch {tag}): loss={train_loss:.4f}/{val_loss:.4f} | "
+              f"HIT={val_metrics.get('hit_rate', 0):.1%}{audio_hit_str} "
+              f"GOOD={val_metrics.get('good_rate', 0):.1%} "
+              f"MISS={val_metrics.get('miss_rate', 1):.1%} | "
+              f"exact={val_metrics.get('exact_match', 0):.1%} ±1f={val_metrics.get('within_1_frame', 0):.1%} "
+              f"±2f={val_metrics.get('within_2_frames', 0):.1%} | "
+              f"≤3%={val_metrics.get('within_3pct', 0):.1%} ≤10%={val_metrics.get('within_10pct', 0):.1%} | "
+              f"stop_f1={val_metrics['stop_f1']:.3f} | "
+              f"score={val_metrics.get('model_score', 0):+.3f} | "
+              f"uniq={val_metrics.get('unique_preds', 0)} | lr={scheduler.get_last_lr()[0]:.2e}")
 
     # ── ablation benchmarks ──
     torch.cuda.empty_cache()
-    bench_results = run_benchmarks(model, val_loader, args.device, amp_enabled=amp_enabled)
+    bench_results = run_benchmarks(model, val_loader, args.device, amp_enabled=amp_enabled,
+                                   multi_target=use_mt)
     print_benchmarks(bench_results)
     save_benchmark_data(bench_results, eval_step, run_dir)
 
-    # save eval graphs (before JSON so selection_stats gets populated)
+    # save eval graphs
     save_eval_graphs(val_targets, val_preds, val_metrics, eval_step, run_dir,
-                     extra=val_extra)
+                     extra=val_extra, mt_metrics=mt_metrics)
 
     # ── save eval data ──
+    # strip non-serializable arrays from mt_metrics before saving
+    mt_save = None
+    if mt_metrics:
+        mt_save = {k: v for k, v in mt_metrics.items() if not k.startswith("_")}
     epoch_data = {
         "eval_step": eval_step,
         "epoch": epoch_frac,
@@ -2334,6 +2839,8 @@ def _run_eval(model, val_loader, criterion, args, amp_enabled,
         "val_metrics": val_metrics,
         "benchmarks": _serializable(bench_results),
     }
+    if mt_save is not None:
+        epoch_data["multi_target_metrics"] = mt_save
     if audio_metrics is not None:
         epoch_data["audio_metrics"] = audio_metrics
     history.append(epoch_data)
@@ -2404,5 +2911,12 @@ if __name__ == "__main__":
     parser.add_argument("--no-compile", action="store_true", help="Disable torch.compile")
     parser.add_argument("--amp", action="store_true", help="Enable mixed precision (experimental on Windows)")
     parser.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
+    # multi-target training (exp 36+)
+    parser.add_argument("--multi-target", action="store_true", default=False,
+                        help="Multi-target training: predict all onsets in forward window")
+    parser.add_argument("--empty-weight", type=float, default=1.5,
+                        help="Loss multiplier for empty windows (multi-target, default 1.5)")
+    parser.add_argument("--threshold", type=float, default=0.05,
+                        help="Softmax threshold for peak extraction (multi-target, default 0.05)")
     args = parser.parse_args()
     train(args)
