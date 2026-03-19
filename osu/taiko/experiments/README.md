@@ -46,7 +46,9 @@ Each folder contains a README with hypothesis, results, and key graphs.
 | 37-B | [Sigmoid (pos_weight=1.0)](experiment_37b/) | Same overprediction | 460 preds/win even at pos_weight=1.0. Soft targets + sigmoid BCE fundamentally broken — doesn't incentivize sparsity |
 | 37-C | [Focal Dice Multi-Target](experiment_37c/) | Slow, architecture wrong | Dice avoids extremes but 5.4% HIT. Single cursor → 501 logits is wrong for multi-target. Need architectural redesign |
 | 38 | [Framewise Onset Detection](experiment_38/) | Dice degenerate | Dice smooth term → all-zero predictions (0% recall). Dice wrong for sparse binary detection |
-| 38-B | [Framewise + Weighted BCE](experiment_38b/) | Pending | pos_weight=7x on onset tokens. Direct per-token penalty for missing onsets |
+| 38-B | [Framewise + Weighted BCE](experiment_38b/) | Overpredicts | 24% recall (model learns!) but 46.7 preds/win (3x real). Fixed causal mask bug. pos_weight=7 too aggressive |
+| 38-C | [Framewise + Unweighted BCE](experiment_38c/) | F1 too low | Better precision (11.7% vs 8.4%) but F1=0.156 still impractical. Framewise approach exhausted — returning to single-target (35-C) |
+| 39 | [Overprediction Analysis](experiment_39/) | Pending | Diagnostic: do overpredictions match real future onsets? Are 2.0x errors valid onsets, just not the nearest? |
 
 ## Key Lessons
 

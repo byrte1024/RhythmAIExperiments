@@ -784,12 +784,8 @@ def validate_and_collect(model, loader, criterion, device, amp_enabled=False, si
                 valid_mask_fw = targets_padded >= 0
                 idx = token_idx * valid_mask_fw.long()
                 fw_target.scatter_(1, idx, valid_mask_fw.float())
-                # weighted BCE (same as training)
-                pos_weight = torch.where(fw_target > 0.5,
-                                        torch.tensor(7.0, device=device),
-                                        torch.tensor(1.0, device=device))
-                loss = F.binary_cross_entropy(onset_probs, fw_target,
-                                            weight=pos_weight)
+                # BCE (same as training — no pos_weight)
+                loss = F.binary_cross_entropy(onset_probs, fw_target)
                 # create compat logits for legacy metrics
                 logits = torch.zeros(B_fw, N_CLASSES, device=device)
                 logits[:, :500:4] = onset_probs * 10
@@ -2970,13 +2966,8 @@ def train(args):
                     # framewise: model returns (B, 125) onset probs
                     # no teacher forcing — model must learn from audio + ramps
                     onset_probs = model(mel, evt_off, evt_mask, cond)
-                    # BCE loss with positive class weighting
-                    # ~13% positive tokens → weight positives ~7x to balance
-                    pos_weight = torch.where(fw_target > 0.5,
-                                            torch.tensor(7.0, device=mel.device),
-                                            torch.tensor(1.0, device=mel.device))
-                    loss = F.binary_cross_entropy(onset_probs, fw_target,
-                                                weight=pos_weight)
+                    # BCE loss — no pos_weight, let natural 13% ratio guide learning
+                    loss = F.binary_cross_entropy(onset_probs, fw_target)
                     # for tqdm metrics, use argmax-based nearest target
                     logits = torch.zeros(mel.size(0), N_CLASSES, device=mel.device)
                     # put onset_probs into first 125 positions scaled up
