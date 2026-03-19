@@ -229,8 +229,15 @@ def main():
 
     # save
     out_dir = os.path.join(SCRIPT_DIR, "experiments", "experiment_41")
+    # convert numpy types for JSON
+    def to_json(obj):
+        if isinstance(obj, (np.integer,)): return int(obj)
+        if isinstance(obj, (np.floating,)): return float(obj)
+        if isinstance(obj, np.ndarray): return obj.tolist()
+        return obj
+    clean = json.loads(json.dumps(all_results, default=to_json))
     with open(os.path.join(out_dir, "progression_results.json"), "w") as f:
-        json.dump(all_results, f, indent=2)
+        json.dump(clean, f, indent=2)
     print(f"\n  Saved to {out_dir}/progression_results.json")
 
 
