@@ -53,7 +53,8 @@ Each folder contains a README with hypothesis, results, and key graphs.
 | 39-C | [Entropy-Weighted Reranking](experiment_39c/) | +1.0pp ceiling | Entropy weight adds negligible gain. Post-hoc reranking of model's own top-K limited to ~+1pp |
 | 39-D | [Top-K Depth Analysis](experiment_39d/) | Key data | 3 HITs per sample (74.5%), correct at rank 1-2 (73.8%) but 2.3x less confident. Confidence gap too large for reranking |
 | 39-E | [Audio Analysis of Failures](experiment_39e/) | Saliency bias | Mel energy identical (50/50) but 78-81% of overpredictions have sharper transients at the wrong position. Model picks sharpest, not nearest |
-| 40 | [Stronger Balanced Sampling](experiment_40/) | Pending | balance_power 0.5→0.7. Distant bins get 26.5% exposure (was 11.5%). Build confidence for long-range predictions |
+| 40 | [Stronger Balanced Sampling](experiment_40/) | Worse | power=0.7 hurt common predictions (-2.8pp HIT) without helping rare. Distant predictions are inherently ambiguous, not undertrained |
+| 41 | [Deep Entropy Analysis](experiment_41/) | Pending | Why is entropy higher for distant predictions? Onset density vs model weakness. Correlations with distance, onset count, audio features |
 
 ## Key Lessons
 

@@ -32,8 +32,19 @@ python detection_train.py taiko_v2 --run-name detect_experiment_40 --epochs 50 -
 
 ## Result
 
-*Pending*
+**Worse performance — stronger balancing hurts common predictions without helping rare ones.** Killed after eval 1.
+
+| Metric | Exp 40 eval1 | 35-C eval1 |
+|--------|-------------|------------|
+| HIT | 63.4% | 66.2% |
+| Miss | 35.9% | 33.1% |
+| Frame err | 16.6 | 13.6 |
+| Ctx Δ | 10.1% | 9.8% |
+
+More sampling of distant bins didn't improve distant predictions — it just degraded short-range performance. The distant predictions are inherently ambiguous (multiple valid onsets, uncertain patterns), not undertrained.
 
 ## Lesson
 
-*Pending*
+- **Distant predictions are hard, not undertrained.** More exposure doesn't make them easier — the ambiguity is fundamental to the task at longer time horizons.
+- **Stronger balancing hurts the common cases** — reducing short-range training from 21% to 12% visibly degrades the model's strongest predictions.
+- **The entropy-distance correlation is a property of the task, not the training.** At longer distances, more valid onsets exist in the window, creating genuine uncertainty that no single-target model can resolve.
