@@ -51,7 +51,8 @@ Each folder contains a README with hypothesis, results, and key graphs.
 | 39 | [Overprediction Analysis](experiment_39/) | **Key insight** | **83.2% of overpredictions match real future onsets.** Model sees onset landscape but picks wrong one. Theoretical ceiling: 86.5% (+14.9pp) |
 | 39-B | [Top-K Reranking Sweep](experiment_39b/) | +0.9pp only | Global proximity bias too blunt — 1,299 regressions per 1,994 improvements. Needs confidence-aware reranking |
 | 39-C | [Entropy-Weighted Reranking](experiment_39c/) | +1.0pp ceiling | Entropy weight adds negligible gain. Post-hoc reranking of model's own top-K limited to ~+1pp |
-| 39-D | [Top-K Depth Analysis](experiment_39d/) | Pending | How many HITs per sample in top-K? When wrong, how far in confidence is the correct answer? |
+| 39-D | [Top-K Depth Analysis](experiment_39d/) | Key data | 3 HITs per sample (74.5%), correct at rank 1-2 (73.8%) but 2.3x less confident. Confidence gap too large for reranking |
+| 39-E | [Audio Analysis of Failures](experiment_39e/) | Pending | Compare mel energy/flux at target vs predicted position. Theory: they'll be nearly identical (both real onsets) |
 
 ## Key Lessons
 
