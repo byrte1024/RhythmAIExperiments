@@ -1,0 +1,18 @@
+{
+  "n_failures": 17991,
+  "energy": {
+    "target_mean": 22.21067704212621,
+    "pred_mean": 22.166467832727005,
+    "pred_higher_pct": 0.4999722083263854
+  },
+  "flux": {
+    "target_mean": 35.157439650798025,
+    "pred_mean": 45.23852369106934,
+    "pred_higher_pct": 0.6059140681451837
+  },
+  "onset_strength": {
+    "target_mean": 49.96763763440456,
+    "pred_mean": 62.32041667138654,
+    "pred_higher_pct": 0.6120838196876216
+  }
+}

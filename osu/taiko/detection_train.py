@@ -2689,13 +2689,14 @@ def train(args):
         sample_weights = np.zeros(len(train_ds), dtype=np.float64)
         for i, (ci, ei) in enumerate(train_ds.samples):
             target = train_ds._get_target(ci, ei)
-            sample_weights[i] = 1.0 / np.sqrt(counts[target] + 1)
+            w = 1.0 / (counts[target] + 1) ** args.balance_power
+            sample_weights[i] = min(w, 1.0)  # cap to prevent extreme weights on empty classes
         sampler = WeightedRandomSampler(
             weights=sample_weights,
             num_samples=len(train_ds),
             replacement=True,
         )
-        print(f"Balanced sampling: ON (1/sqrt(count) weights, replacement=True)")
+        print(f"Balanced sampling: ON (1/count^{args.balance_power} weights, replacement=True)")
         loss_weights = None  # sampling handles imbalance, no need for loss weights
     else:
         sampler = None
@@ -3273,6 +3274,7 @@ if __name__ == "__main__":
     parser.add_argument("--ctx-loss-weight", type=float, default=0.0, help="Auxiliary context loss weight (0=disabled, default 0)")
     parser.add_argument("--balanced", action="store_true", default=True, help="Balanced sampling (default on)")
     parser.add_argument("--no-balanced", dest="balanced", action="store_false", help="Disable balanced sampling")
+    parser.add_argument("--balance-power", type=float, default=0.5, help="Balanced sampling exponent: 1/count^power (default 0.5=sqrt, 0.2=fifth root, 1.0=inverse)")
     parser.add_argument("--weight-mode", default="log", choices=["log", "sqrt", "none"], help="Class weight mode (only when --no-balanced)")
     parser.add_argument("--workers", type=int, default=4)
     parser.add_argument("--subsample", type=int, default=1, help="Train on every Nth sample (e.g. 4 = 4x less data)")

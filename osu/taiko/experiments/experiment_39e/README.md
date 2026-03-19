@@ -20,8 +20,34 @@ For each failure case where the correct answer is in top-K:
 
 ## Result
 
-*Pending*
+**Mel energy is identical (50/50) but spectral flux is biased toward the predicted position — for overpredictions, 78-81% have sharper transients at the wrong pick.**
+
+| Metric | At target | At predicted | Pred higher |
+|--------|-----------|-------------|-------------|
+| Mel energy | 22.21 | 22.17 | 50.0% (equal) |
+| Spectral flux | 35.16 | 45.24 | 60.6% |
+| Onset strength | 49.97 | 62.32 | 61.2% |
+
+**Overpredictions specifically (63.3% of failures):**
+- Pred energy > target: 47.8% (equal)
+- Pred flux > target: **77.8%**
+- Pred onset strength > target: **81.0%**
+
+**Underpredictions (36.7% of failures):**
+- Pred energy > target: 53.9% (equal)
+- Pred flux > target: 31.0% (target is sharper)
+
+### Interpretation
+
+- **Raw energy is identical** — the model isn't picking louder sounds. Both positions are real onsets with similar loudness.
+- **But the further onset often has sharper transients** — 78-81% of overpredictions land on a position with stronger spectral flux. The model picks the most "onset-like" audio event, not the nearest one.
+- **This is NOT universal** — ~20% of overpredictions have WEAKER transients at the predicted position, and underpredictions show the opposite pattern (target is sharper). The transient-saliency bias explains a significant portion of failures but not all.
+- **The further onset is often the start of a new rhythmic group** — in patterns like `75 75 150`, the onset at 150 (new group) tends to have a harder attack than the continuation at 75.
 
 ## Lesson
 
-*Pending*
+- **The model confuses audio saliency with temporal order** — it picks the sharpest transient, not the nearest onset. This is rational for a model that learned "sharp transient = onset" but wasn't taught "prefer nearer."
+- **~80% of overpredictions are saliency-driven** — the model isn't randomly wrong, it's systematically picking the more prominent audio event.
+- **~20% of failures have other causes** — not all errors are from transient saliency. Some may be context/pattern errors, noise, or genuinely ambiguous cases.
+- **Context ramps partially address this** (5% delta) — they encode "there's an onset nearer" — but the saliency signal overwhelms the ramp signal for ~80% of failures.
+- **A training fix needs to either**: (1) reduce the model's reliance on transient sharpness for ordering, or (2) amplify the proximity signal to compete with saliency.
