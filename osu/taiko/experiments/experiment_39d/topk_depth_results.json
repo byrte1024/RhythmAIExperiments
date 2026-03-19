@@ -1,0 +1,23 @@
+{
+  "n_samples": 74075,
+  "mean_hits_per_sample": 2.8581977725278436,
+  "hit_count_distribution": {
+    "0": 3048,
+    "1": 3147,
+    "2": 7041,
+    "3": 55212,
+    "4": 1058,
+    "5": 3522,
+    "6": 507,
+    "7": 392,
+    "8": 108,
+    "9": 36,
+    "10": 4
+  },
+  "n_wrong": 21037,
+  "n_wrong_correct_in_topk": 17989,
+  "n_wrong_correct_absent": 3048,
+  "correct_rank_mean": 2.3117460670409695,
+  "conf_gap_mean": 0.17568182979318753,
+  "conf_ratio_mean": 0.4354442208857322
+}
