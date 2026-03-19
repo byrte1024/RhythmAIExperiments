@@ -40,7 +40,6 @@ Each folder contains a README with hypothesis, results, and key graphs.
 | 35-B | [Full-Band Mel Ramps (Nuclear)](experiment_35b/) | Best sustained Δ | 3.5-5% context delta (best non-cross-attn). Linear ramps too gradual, high entropy from fixed 0.5x audio |
 | 35-C | [Exponential Ramps + Amplitude Jitter](experiment_35c/) | **BREAKTHROUGH** | **71.6% HIT** (new ATH), sustained 4.5-5.7% context delta. First to break 70% AND keep context. Entropy/2.0x errors remain |
 | 35-D | [Exponential Ramps + Focal γ=3](experiment_35d/) | Too aggressive | 64.0% HIT (-2.2pp vs 35-C). Focal gamma=3 suppressed easy-sample gradients too early, decreased entropy globally (not just hard cases). 2.0x band is structural, not a loss problem |
-
 | 36 | [Multi-Target + Threshold Inference](experiment_36/) | Threshold bottleneck | Nearest HIT=66.2% (=35-C) but event recall 8.2%. Normalized soft targets dilute per-onset gradient |
 | 36-B | [Multi-Target + Recall Loss](experiment_36b/) | Softmax bottleneck | Precision +10.8pp but recall still 9.5%. Softmax competition prevents multi-target — needs per-bin sigmoid |
 | 37 | [Per-Bin Sigmoid Multi-Target](experiment_37/) | Over/underprediction | Focal γ=2 → nothing (3% HIT). No focal + pos_weight=5 → everything (468 preds/win). Soft targets + pos_weight too aggressive |
