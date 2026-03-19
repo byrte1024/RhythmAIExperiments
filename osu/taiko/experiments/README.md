@@ -48,7 +48,8 @@ Each folder contains a README with hypothesis, results, and key graphs.
 | 38 | [Framewise Onset Detection](experiment_38/) | Dice degenerate | Dice smooth term → all-zero predictions (0% recall). Dice wrong for sparse binary detection |
 | 38-B | [Framewise + Weighted BCE](experiment_38b/) | Overpredicts | 24% recall (model learns!) but 46.7 preds/win (3x real). Fixed causal mask bug. pos_weight=7 too aggressive |
 | 38-C | [Framewise + Unweighted BCE](experiment_38c/) | F1 too low | Better precision (11.7% vs 8.4%) but F1=0.156 still impractical. Framewise approach exhausted — returning to single-target (35-C) |
-| 39 | [Overprediction Analysis](experiment_39/) | Pending | Diagnostic: do overpredictions match real future onsets? Are 2.0x errors valid onsets, just not the nearest? |
+| 39 | [Overprediction Analysis](experiment_39/) | **Key insight** | **83.2% of overpredictions match real future onsets.** Model sees onset landscape but picks wrong one. Theoretical ceiling: 86.5% (+14.9pp) |
+| 39-B | [Top-K Reranking Sweep](experiment_39b/) | Pending | Rerank top-K by confidence × proximity. Find weight combo that maximizes HIT without breaking existing hits |
 
 ## Key Lessons
 
