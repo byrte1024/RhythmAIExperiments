@@ -55,7 +55,7 @@ Each folder contains a README with hypothesis, results, and key graphs.
 | 39-E | [Audio Analysis of Failures](experiment_39e/) | Saliency bias | Mel energy identical (50/50) but 78-81% of overpredictions have sharper transients at the wrong position. Model picks sharpest, not nearest |
 | 40 | [Stronger Balanced Sampling](experiment_40/) | Worse | power=0.7 hurt common predictions (-2.8pp HIT) without helping rare. Distant predictions are inherently ambiguous, not undertrained |
 | 41 | [Deep Entropy Analysis](experiment_41/) | **Key insight** | Skip 0=93.7% HIT, skip 1+=0% (11.2% of samples). Underpred=46.5% HIT (19.3%). Context helps (r=-0.21). Fixing skip-1 → ~83% HIT |
-| 41-B | [Entropy Progression](experiment_41b/) | Pending | Compare skip/entropy across eval 1→4→8. Does training naturally improve skip-1 HIT and reduce entropy? |
+| 41-B | [Entropy Progression](experiment_41b/) | Skip rate structural | Entropy/confidence improve with training but overpred rate stuck at ~28%, skip-1 at ~11%. Can't train away — need context or inference fix |
 
 ## Key Lessons
 
