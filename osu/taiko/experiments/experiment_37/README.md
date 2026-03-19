@@ -40,13 +40,34 @@ Identical model (OnsetDetector with mel ramps). The output head still produces (
 ### Launch
 
 ```bash
-python detection_train.py taiko_v2 --run-name detect_experiment_37 --model-type unified --multi-target --sigmoid-loss --focal-gamma 2.0 --epochs 50 --batch-size 48 --subsample 1 --evals-per-epoch 4 --pos-weight 5.0 --workers 3
+python detection_train.py taiko_v2 --run-name detect_experiment_37 --model-type unified --multi-target --sigmoid-loss --focal-gamma 0.0 --epochs 50 --batch-size 48 --subsample 1 --evals-per-epoch 4 --pos-weight 5.0 --workers 3
 ```
 
 ## Result
 
-*Pending*
+**Massive overprediction — model fires 468 of 500 bins per window.** Killed early.
+
+First attempt with focal_gamma=2.0 predicted nothing (3.2% HIT). Restarted with focal_gamma=0.0:
+
+| Metric | Value |
+|--------|-------|
+| Nearest HIT | 1.4% |
+| Event recall | 99.9% |
+| Pred precision | 3.5% |
+| Hallucination | 96.5% |
+| F1 | 0.067 |
+| Preds/window | 468.5 |
+| Real/window | 16.2 |
+
+The model activates almost every bin. The pred distribution shows massive spike at bins 400-500 (end of window) where few real onsets exist. The scatter shows near-universal overprediction.
+
+**Root cause**: pos_weight=5.0 combined with soft trapezoid targets that give partial positive labels to ~20-30 bins per onset. With 16 onsets, ~300 bins have nonzero targets. The model learns "activate everything" to minimize the positive-weighted loss.
+
+![Scatter](eval_001_scatter.png)
+![Prediction Distribution](eval_001_pred_dist.png)
 
 ## Lesson
 
-*Pending*
+- **Focal + sigmoid was too aggressive** — focal γ=2 made the model predict nothing (all easy negatives, no gradient). Without focal, pos_weight=5 makes it predict everything.
+- **Soft trapezoid targets are problematic for sigmoid** — they create too many partial positives. Sigmoid needs sharper targets (hard positive at exact onset bin, 0 everywhere else) or much lower pos_weight.
+- **Next: pos_weight=1.0** (no upweighting) to find the natural balance point.

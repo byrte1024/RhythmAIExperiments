@@ -608,6 +608,98 @@ class SigmoidMultiTargetLoss(nn.Module):
         return bce.mean()
 
 
+class FocalDiceMultiTargetLoss(nn.Module):
+    """Focal dice loss for multi-target onset detection.
+
+    Dice loss measures set overlap between predicted and target onset distributions.
+    Unlike BCE, it naturally handles class imbalance — predicting everything gives
+    low dice (huge denominator), predicting nothing gives zero dice (zero numerator).
+
+    Loss = 1 - (2 * sum(pred * target) + smooth) / (sum(pred) + sum(target) + smooth)
+
+    Combined with a small BCE component for stable gradients at onset positions.
+    """
+
+    def __init__(self, good_pct=0.03, fail_pct=0.20, frame_tolerance=2,
+                 empty_weight=1.5, bce_weight=0.1, dice_weight=1.0):
+        super().__init__()
+        self.good_pct = good_pct
+        self.fail_pct = fail_pct
+        self.frame_tolerance = frame_tolerance
+        self.empty_weight = empty_weight
+        self.bce_weight = bce_weight
+        self.dice_weight = dice_weight
+        self.log_good = math.log(1 + good_pct)
+        self.log_fail = math.log(1 + fail_pct)
+
+    def _make_sigmoid_targets(self, targets_padded, n_targets, n_classes):
+        """Same soft trapezoid targets as SigmoidMultiTargetLoss."""
+        B, M = targets_padded.shape
+        stop = n_classes - 1
+        device = targets_padded.device
+
+        bins = torch.arange(stop, device=device, dtype=torch.float32)
+        targets = torch.zeros(B, n_classes, device=device)
+
+        valid_mask = targets_padded >= 0
+
+        if valid_mask.any():
+            t_float = targets_padded.float().clamp(min=0)
+
+            abs_log_ratio = torch.abs(
+                torch.log((bins + 1).view(1, 1, -1) / (t_float + 1).unsqueeze(-1))
+            )
+
+            ramp_width = self.log_fail - self.log_good
+            ratio_weights = ((self.log_fail - abs_log_ratio) / ramp_width).clamp(0, 1)
+
+            frame_dist = torch.abs(bins.view(1, 1, -1) - t_float.unsqueeze(-1))
+            frame_weights = ((self.frame_tolerance + 1 - frame_dist) /
+                             (self.frame_tolerance + 1)).clamp(0, 1)
+
+            weights = torch.max(ratio_weights, frame_weights)
+            weights = weights * valid_mask.unsqueeze(-1).float()
+
+            targets[:, :stop] = weights.max(dim=1).values
+
+        empty = (n_targets == 0)
+        targets[empty, stop] = 1.0
+
+        return targets
+
+    def forward(self, logits, targets_padded, n_targets):
+        """
+        logits: (B, 501) raw logits
+        targets_padded: (B, MAX_TARGETS) int64, -1 = padding
+        n_targets: (B,) int64
+        """
+        n_classes = logits.size(1)
+        bin_targets = self._make_sigmoid_targets(targets_padded, n_targets, n_classes)
+        pred = torch.sigmoid(logits)
+
+        # dice loss per sample
+        smooth = 1.0
+        intersection = (pred * bin_targets).sum(dim=1)
+        union = pred.sum(dim=1) + bin_targets.sum(dim=1)
+        dice = (2.0 * intersection + smooth) / (union + smooth)
+        dice_loss = 1.0 - dice  # (B,)
+
+        # small BCE component for stable per-bin gradients
+        bce = F.binary_cross_entropy_with_logits(
+            logits, bin_targets, reduction="none"
+        ).mean(dim=1)  # (B,)
+
+        # extra weight on empty windows
+        if self.empty_weight > 1.0:
+            empty = (n_targets == 0)
+            weight = torch.where(empty, self.empty_weight, 1.0)
+            dice_loss = dice_loss * weight
+            bce = bce * weight
+
+        loss = self.dice_weight * dice_loss + self.bce_weight * bce
+        return loss.mean()
+
+
 # ═══════════════════════════════════════════════════════════════
 #  Metrics & Graphs
 # ═══════════════════════════════════════════════════════════════
@@ -2680,7 +2772,14 @@ def train(args):
         ws_metrics = ws_ckpt.get("val_metrics", {})
         print(f"  Source: epoch {ws_epoch}, HIT={ws_metrics.get('hit_rate', 0):.1%}")
 
-    if use_multi_target and args.sigmoid_loss:
+    if use_multi_target and args.dice_loss:
+        criterion = FocalDiceMultiTargetLoss(
+            good_pct=args.good_pct, fail_pct=args.fail_pct,
+            frame_tolerance=args.frame_tolerance,
+            empty_weight=args.empty_weight,
+        ).to(args.device)
+        print(f"Loss: FocalDiceMultiTargetLoss (empty_weight={args.empty_weight})")
+    elif use_multi_target and args.sigmoid_loss:
         criterion = SigmoidMultiTargetLoss(
             good_pct=args.good_pct, fail_pct=args.fail_pct,
             frame_tolerance=args.frame_tolerance,
@@ -2981,7 +3080,7 @@ def _run_eval(model, val_loader, criterion, args, amp_enabled,
               scaler, best_val_loss):
     """Run validation, benchmarks, save graphs/checkpoints/history."""
     use_mt = args.multi_target
-    use_sigmoid = getattr(args, 'sigmoid_loss', False)
+    use_sigmoid = getattr(args, 'sigmoid_loss', False) or getattr(args, 'dice_loss', False)
     val_loss, val_extra = validate_and_collect(
         model, val_loader, criterion, args.device, amp_enabled=amp_enabled,
         sigmoid_mode=use_sigmoid, multi_target=use_mt,
@@ -3141,6 +3240,8 @@ if __name__ == "__main__":
                         help="Per-onset recall loss weight (multi-target, default 1.0)")
     parser.add_argument("--sigmoid-loss", action="store_true",
                         help="Use per-bin sigmoid BCE instead of softmax CE (multi-target)")
+    parser.add_argument("--dice-loss", action="store_true",
+                        help="Use focal dice loss instead of softmax CE (multi-target)")
     parser.add_argument("--pos-weight", type=float, default=5.0,
                         help="Positive class weight for sigmoid BCE (default 5.0)")
     parser.add_argument("--threshold", type=float, default=0.05,

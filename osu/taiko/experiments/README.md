@@ -43,7 +43,9 @@ Each folder contains a README with hypothesis, results, and key graphs.
 
 | 36 | [Multi-Target + Threshold Inference](experiment_36/) | Threshold bottleneck | Nearest HIT=66.2% (=35-C) but event recall 8.2%. Normalized soft targets dilute per-onset gradient |
 | 36-B | [Multi-Target + Recall Loss](experiment_36b/) | Softmax bottleneck | Precision +10.8pp but recall still 9.5%. Softmax competition prevents multi-target — needs per-bin sigmoid |
-| 37 | [Per-Bin Sigmoid Multi-Target](experiment_37/) | Pending | 501 independent sigmoids + focal γ=2. Each bin predicts P(onset) independently. BCE + log-ratio trapezoid targets + focal for sparse detection |
+| 37 | [Per-Bin Sigmoid Multi-Target](experiment_37/) | Over/underprediction | Focal γ=2 → nothing (3% HIT). No focal + pos_weight=5 → everything (468 preds/win). Soft targets + pos_weight too aggressive |
+| 37-B | [Sigmoid (pos_weight=1.0)](experiment_37b/) | Same overprediction | 460 preds/win even at pos_weight=1.0. Soft targets + sigmoid BCE fundamentally broken — doesn't incentivize sparsity |
+| 37-C | [Focal Dice Multi-Target](experiment_37c/) | Slow, architecture wrong | Dice avoids extremes but 5.4% HIT. Single cursor → 501 logits is wrong for multi-target. Need architectural redesign |
 
 ## Key Lessons
 
