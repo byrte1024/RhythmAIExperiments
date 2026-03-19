@@ -741,7 +741,7 @@ def compute_class_weights(dataset, mode="log"):
 
 
 @torch.no_grad()
-def validate_and_collect(model, loader, criterion, device, amp_enabled=False, sigmoid_mode=False,
+def validate_and_collect(model, loader, criterion, device, amp_enabled=False, sigmoid_mode=False, framewise=False,
                          multi_target=False):
     """Single pass: compute val loss AND collect predictions + extra data for graphs."""
     model.eval()
@@ -773,20 +773,41 @@ def validate_and_collect(model, loader, criterion, device, amp_enabled=False, si
         cond = cond.to(device, non_blocking=True)
 
         with torch.autocast("cuda", enabled=amp_enabled):
-            logits = model(mel, evt_off, evt_mask, cond)
-            if isinstance(logits, tuple):
-                logits = logits[0]
-            if multi_target:
-                loss = criterion(logits, targets_padded, n_tgt)
+            if framewise:
+                # framewise: model returns (B, 125) onset probs
+                onset_probs = model(mel, evt_off, evt_mask, cond)
+                # build target for loss
+                B_fw = onset_probs.size(0)
+                fw_target = torch.zeros(B_fw, 125, device=device)
+                safe_bins = targets_padded.clamp(min=0)
+                token_idx = (safe_bins // 4).clamp(max=124)
+                valid_mask_fw = targets_padded >= 0
+                idx = token_idx * valid_mask_fw.long()
+                fw_target.scatter_(1, idx, valid_mask_fw.float())
+                # weighted BCE (same as training)
+                pos_weight = torch.where(fw_target > 0.5,
+                                        torch.tensor(7.0, device=device),
+                                        torch.tensor(1.0, device=device))
+                loss = F.binary_cross_entropy(onset_probs, fw_target,
+                                            weight=pos_weight)
+                # create compat logits for legacy metrics
+                logits = torch.zeros(B_fw, N_CLASSES, device=device)
+                logits[:, :500:4] = onset_probs * 10
             else:
-                loss = criterion(logits, target)
+                logits = model(mel, evt_off, evt_mask, cond)
+                if isinstance(logits, tuple):
+                    logits = logits[0]
+                if multi_target:
+                    loss = criterion(logits, targets_padded, n_tgt)
+                else:
+                    loss = criterion(logits, target)
 
         B = mel.size(0)
         total_loss += loss.item() * B
         total_n += B
 
-        if sigmoid_mode:
-            probs = torch.sigmoid(logits.float())
+        if sigmoid_mode or framewise:
+            probs = torch.sigmoid(logits.float()) if not framewise else onset_probs
         else:
             probs = torch.softmax(logits.float(), dim=-1)
         all_preds.append(logits.argmax(1).cpu().numpy())
@@ -2947,16 +2968,15 @@ def train(args):
                     fw_target.scatter_(1, idx, valid_mask_fw.float())
 
                     # framewise: model returns (B, 125) onset probs
-                    onset_probs = model(mel, evt_off, evt_mask, cond,
-                                       future_onsets=fw_target)
-                    # focal dice + BCE loss
-                    smooth = 1.0
-                    intersection = (onset_probs * fw_target).sum(dim=1)
-                    union = onset_probs.sum(dim=1) + fw_target.sum(dim=1)
-                    dice = (2.0 * intersection + smooth) / (union + smooth)
-                    dice_loss = (1.0 - dice).mean()
-                    bce_loss = F.binary_cross_entropy(onset_probs, fw_target)
-                    loss = dice_loss + 0.1 * bce_loss
+                    # no teacher forcing — model must learn from audio + ramps
+                    onset_probs = model(mel, evt_off, evt_mask, cond)
+                    # BCE loss with positive class weighting
+                    # ~13% positive tokens → weight positives ~7x to balance
+                    pos_weight = torch.where(fw_target > 0.5,
+                                            torch.tensor(7.0, device=mel.device),
+                                            torch.tensor(1.0, device=mel.device))
+                    loss = F.binary_cross_entropy(onset_probs, fw_target,
+                                                weight=pos_weight)
                     # for tqdm metrics, use argmax-based nearest target
                     logits = torch.zeros(mel.size(0), N_CLASSES, device=mel.device)
                     # put onset_probs into first 125 positions scaled up
@@ -3118,11 +3138,12 @@ def _run_eval(model, val_loader, criterion, args, amp_enabled,
               run_dir, ckpt_dir, history, scheduler, optimizer,
               scaler, best_val_loss):
     """Run validation, benchmarks, save graphs/checkpoints/history."""
-    use_mt = args.multi_target
-    use_sigmoid = getattr(args, 'sigmoid_loss', False) or getattr(args, 'dice_loss', False)
+    use_mt = args.multi_target or args.model_type == "framewise"
+    use_sigmoid = getattr(args, 'sigmoid_loss', False) or getattr(args, 'dice_loss', False) or args.model_type == "framewise"
+    is_framewise = args.model_type == "framewise"
     val_loss, val_extra = validate_and_collect(
         model, val_loader, criterion, args.device, amp_enabled=amp_enabled,
-        sigmoid_mode=use_sigmoid, multi_target=use_mt,
+        sigmoid_mode=use_sigmoid, multi_target=use_mt, framewise=is_framewise,
     )
     # backward-compat: nearest-target metrics (always computed)
     val_targets = val_extra["targets"]

@@ -1447,14 +1447,18 @@ class FramewiseOnsetDetector(nn.Module):
         self._register_causal_mask()
 
     def _register_causal_mask(self):
-        """Build attention mask: past tokens bidirectional, future tokens causal."""
+        """Build attention mask: past bidirectional within past, future causal."""
         n = self.n_past_tokens + self.n_future_tokens  # 250
+        np = self.n_past_tokens  # 125
         mask = torch.zeros(n, n, dtype=torch.bool)
 
-        # future tokens (125-249) can only attend to:
-        # - all past tokens (0-124): always visible
-        # - previous and current future tokens: causal
-        for i in range(self.n_past_tokens, n):
+        # past tokens (0-124): can only see other past tokens
+        # block past → future attention
+        for i in range(np):
+            mask[i, np:] = True
+
+        # future tokens (125-249): can see all past + causal within future
+        for i in range(np, n):
             # block attention to future tokens beyond current position
             mask[i, i + 1:] = True
 

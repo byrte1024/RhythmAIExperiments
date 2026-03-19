@@ -67,8 +67,18 @@ python detection_train.py taiko_v2 --run-name detect_experiment_38 --model-type 
 
 ## Result
 
-*Pending*
+**Model predicts nothing — dice loss minimized by all-zero predictions.** Killed after eval 1.
+
+| Metric | Value |
+|--------|-------|
+| HIT | 0.0% |
+| Event recall | 0.0% |
+| Preds/window | 0.0 |
+| Train loss | 0.073 |
+
+Dice with smooth=1.0 allows the model to minimize loss by predicting all zeros: `dice = smooth / (0 + target_sum + smooth)` is a small constant. The 0.1 BCE weight isn't strong enough to counter this.
 
 ## Lesson
 
-*Pending*
+- **Dice smooth term creates a degenerate minimum at all-zero predictions.** The smooth constant (needed to avoid NaN) makes "predict nothing" a valid low-loss strategy.
+- **BCE should be the primary loss for framewise** — it directly penalizes each positive token that the model misses.

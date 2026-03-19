@@ -45,7 +45,8 @@ Each folder contains a README with hypothesis, results, and key graphs.
 | 37 | [Per-Bin Sigmoid Multi-Target](experiment_37/) | Over/underprediction | Focal γ=2 → nothing (3% HIT). No focal + pos_weight=5 → everything (468 preds/win). Soft targets + pos_weight too aggressive |
 | 37-B | [Sigmoid (pos_weight=1.0)](experiment_37b/) | Same overprediction | 460 preds/win even at pos_weight=1.0. Soft targets + sigmoid BCE fundamentally broken — doesn't incentivize sparsity |
 | 37-C | [Focal Dice Multi-Target](experiment_37c/) | Slow, architecture wrong | Dice avoids extremes but 5.4% HIT. Single cursor → 501 logits is wrong for multi-target. Need architectural redesign |
-| 38 | [Framewise Onset Detection](experiment_38/) | Pending | Paradigm shift: predict onset probability at every future token. Causal mask + onset feedback. Sliding window inference with accumulation |
+| 38 | [Framewise Onset Detection](experiment_38/) | Dice degenerate | Dice smooth term → all-zero predictions (0% recall). Dice wrong for sparse binary detection |
+| 38-B | [Framewise + Weighted BCE](experiment_38b/) | Pending | pos_weight=7x on onset tokens. Direct per-token penalty for missing onsets |
 
 ## Key Lessons
 
