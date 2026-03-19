@@ -149,13 +149,23 @@ def main():
         _, _, _, _, tp, nt = val_ds_multi[i]
         n_future_onsets[i] = nt.item()
 
-        # count onsets between cursor and PREDICTED position (skipped onsets)
+        # count onsets SKIPPED: real onsets between target and prediction
+        # skip=1 means: target is at 75, prediction is at 150, and 150 is a real onset
+        # (the model jumped 1 onset ahead in the event sequence)
         p = preds[i]
         t = targets[i]
-        if t < stop and nt.item() > 0 and p > t:  # only for overpredictions
+        if t < stop and nt.item() > 0:
             future_bins = tp[:nt.item()].numpy()
-            # onsets that exist between cursor (bin 0) and prediction
-            n_skipped_onsets[i] = np.sum((future_bins > 0) & (future_bins < p))
+            if p > t:
+                # overprediction: count real onsets between target and prediction (inclusive of pred)
+                # skip=0 means prediction doesn't match any onset beyond target
+                # skip=1 means prediction matches the 2nd onset (skipped the 1st/target)
+                onsets_beyond_target = future_bins[future_bins > t]
+                # how many of those are at or before the prediction?
+                n_skipped_onsets[i] = np.sum(onsets_beyond_target <= p)
+            elif p < t:
+                # underprediction: predicted before the target (negative skip)
+                n_skipped_onsets[i] = -1  # mark as underprediction
 
         # single-target: get mel, context info
         mel, evt_off, evt_mask, cond, _ = val_ds_single[i]
@@ -236,14 +246,27 @@ def main():
               f"{conf_ns[mask].mean():7.3f}  {hit_ns[mask].mean():5.1%}  "
               f"{t_ns[mask].mean():8.1f}")
 
-    # entropy by n_skipped_onsets (onsets between cursor and PREDICTION)
-    print(f"\n  Entropy by onsets SKIPPED (between cursor and prediction, overpredictions only):")
-    print(f"    {'Between':>8s}  {'Samples':>8s}  {'Entropy':>8s}  {'Conf':>7s}  {'HIT':>6s}  {'TargDist':>8s}")
-    for n in [0, 1, 2, 3, 5, 10]:
+    # entropy by skip count
+    print(f"\n  Entropy by skip count (how many real onsets ahead of target did we predict?):")
+    print(f"    {'Skip':>8s}  {'Samples':>8s}  {'Entropy':>8s}  {'Conf':>7s}  {'HIT':>6s}  {'TargDist':>8s}")
+
+    # underpredictions (skip = -1)
+    mask = nso_ns == -1
+    if mask.sum() > 0:
+        print(f"    {'under':>8s}  {mask.sum():8d}  {ent_ns[mask].mean():8.3f}  "
+              f"{conf_ns[mask].mean():7.3f}  {hit_ns[mask].mean():5.1%}  "
+              f"{t_ns[mask].mean():8.1f}")
+
+    # exact/hits (skip = 0)
+    mask = nso_ns == 0
+    if mask.sum() > 0:
+        print(f"    {'0 (hit)':>8s}  {mask.sum():8d}  {ent_ns[mask].mean():8.3f}  "
+              f"{conf_ns[mask].mean():7.3f}  {hit_ns[mask].mean():5.1%}  "
+              f"{t_ns[mask].mean():8.1f}")
+
+    for n in [1, 2, 3, 5, 10]:
         if n < 10:
             mask = nso_ns == n
-        else:
-            mask = nso_ns >= n
         if mask.sum() < 50:
             continue
         label = str(n) if n < 10 else f"{n}+"
