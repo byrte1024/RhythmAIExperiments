@@ -138,7 +138,7 @@ def main():
     stop = N_CLASSES - 1
 
     n_future_onsets = np.zeros(N)
-    n_onsets_before_target = np.zeros(N)
+    n_skipped_onsets = np.zeros(N)  # onsets between cursor and PREDICTED position
     ctx_length = np.zeros(N)
     density_mean = np.zeros(N)
     target_energy = np.zeros(N)
@@ -149,11 +149,13 @@ def main():
         _, _, _, _, tp, nt = val_ds_multi[i]
         n_future_onsets[i] = nt.item()
 
-        # count onsets between cursor and target
+        # count onsets between cursor and PREDICTED position (skipped onsets)
+        p = preds[i]
         t = targets[i]
-        if t < stop and nt.item() > 0:
+        if t < stop and nt.item() > 0 and p > t:  # only for overpredictions
             future_bins = tp[:nt.item()].numpy()
-            n_onsets_before_target[i] = np.sum(future_bins < t)
+            # onsets that exist between cursor (bin 0) and prediction
+            n_skipped_onsets[i] = np.sum((future_bins > 0) & (future_bins < p))
 
         # single-target: get mel, context info
         mel, evt_off, evt_mask, cond, _ = val_ds_single[i]
@@ -172,7 +174,7 @@ def main():
     ent_ns = entropy[ns]
     conf_ns = top1_conf[ns]
     nfo_ns = n_future_onsets[ns]
-    nobt_ns = n_onsets_before_target[ns]
+    nso_ns = n_skipped_onsets[ns]
     ctx_ns = ctx_length[ns]
     dens_ns = density_mean[ns]
     te_ns = target_energy[ns]
@@ -189,7 +191,7 @@ def main():
     features = {
         "target_distance": t_ns.astype(float),
         "n_future_onsets": nfo_ns,
-        "n_onsets_before_target": nobt_ns,
+        "n_skipped_onsets": nso_ns,
         "context_length": ctx_ns,
         "density_mean": dens_ns,
         "target_mel_energy": te_ns,
@@ -210,14 +212,14 @@ def main():
     # entropy by target distance bins
     print(f"\n  Entropy by target distance:")
     dist_bins = [(0, 15), (15, 30), (30, 60), (60, 100), (100, 200), (200, 500)]
-    print(f"    {'Range':>10s}  {'N':>7s}  {'Entropy':>8s}  {'Conf':>7s}  {'HIT':>6s}  {'FutOnsets':>9s}  {'Between':>8s}")
+    print(f"    {'Range':>10s}  {'N':>7s}  {'Entropy':>8s}  {'Conf':>7s}  {'HIT':>6s}  {'FutOnsets':>9s}  {'Skipped':>8s}")
     for lo, hi in dist_bins:
         mask = (t_ns >= lo) & (t_ns < hi)
         if mask.sum() == 0:
             continue
         print(f"    {lo:3d}-{hi:3d}  {mask.sum():7d}  {ent_ns[mask].mean():8.3f}  "
               f"{conf_ns[mask].mean():7.3f}  {hit_ns[mask].mean():5.1%}  "
-              f"{nfo_ns[mask].mean():9.1f}  {nobt_ns[mask].mean():8.1f}")
+              f"{nfo_ns[mask].mean():9.1f}  {nso_ns[mask].mean():8.1f}")
 
     # entropy by n_future_onsets
     print(f"\n  Entropy by number of future onsets in window:")
@@ -234,14 +236,14 @@ def main():
               f"{conf_ns[mask].mean():7.3f}  {hit_ns[mask].mean():5.1%}  "
               f"{t_ns[mask].mean():8.1f}")
 
-    # entropy by n_onsets_between cursor and target
-    print(f"\n  Entropy by onsets BETWEEN cursor and target:")
+    # entropy by n_skipped_onsets (onsets between cursor and PREDICTION)
+    print(f"\n  Entropy by onsets SKIPPED (between cursor and prediction, overpredictions only):")
     print(f"    {'Between':>8s}  {'Samples':>8s}  {'Entropy':>8s}  {'Conf':>7s}  {'HIT':>6s}  {'TargDist':>8s}")
     for n in [0, 1, 2, 3, 5, 10]:
         if n < 10:
-            mask = nobt_ns == n
+            mask = nso_ns == n
         else:
-            mask = nobt_ns >= n
+            mask = nso_ns >= n
         if mask.sum() < 50:
             continue
         label = str(n) if n < 10 else f"{n}+"

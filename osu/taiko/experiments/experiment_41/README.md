@@ -15,7 +15,7 @@ If entropy correlates more strongly with `n_onsets_between_cursor_and_target` th
 Measure correlations between entropy and:
 - Target distance (bin offset)
 - Number of future onsets in window
-- Number of onsets BETWEEN cursor and target (the "obstacle" onsets)
+- Number of onsets SKIPPED (between cursor and the PREDICTED position, for overpredictions)
 - Context length (past events)
 - Density conditioning
 - Audio features at target (mel energy, spectral flux)
