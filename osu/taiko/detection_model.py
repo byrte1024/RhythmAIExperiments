@@ -1365,6 +1365,202 @@ class ContextFiLMDetector(nn.Module):
         return logits
 
 
+class FramewiseOnsetDetector(nn.Module):
+    """Framewise onset detector with causal future prediction (exp 38+).
+
+    Predicts onset probability at every position in the future audio window.
+    Past tokens have full bidirectional attention (with mel-embedded ramps as context).
+    Future tokens use causal masking — each position conditions on all past
+    context + all previous future predictions.
+
+    Architecture:
+      1. Conv stem: mel (80, 1000) → 250 tokens (d_model), 4x downsample
+         Past frames (0-499) have exponential ramps embedded in the mel.
+         Future frames (500-999) are clean audio.
+      2. Self-attention with causal mask on future tokens:
+         - Tokens 0-124 (past): full bidirectional attention
+         - Tokens 125-249 (future): causal (each sees past + previous future)
+      3. Per-token onset head: each future token → sigmoid P(onset)
+
+    Input: mel (B, 80, 1000) with ramps + event_offsets/mask for ramp computation
+    Output: (B, 125) onset probabilities for the future window
+    """
+
+    def __init__(
+        self,
+        n_mels=80,
+        d_model=384,
+        n_layers=6,
+        n_heads=8,
+        dropout=0.1,
+        cond_dim=64,
+    ):
+        super().__init__()
+        self.d_model = d_model
+        self.n_past_tokens = 125
+        self.n_future_tokens = 125
+
+        # conditioning MLP
+        self.cond_mlp = nn.Sequential(
+            nn.Linear(3, cond_dim),
+            nn.GELU(),
+            nn.Linear(cond_dim, cond_dim),
+        )
+
+        # conv stem: mel → 250 tokens
+        self.conv = nn.Sequential(
+            nn.Conv1d(n_mels, d_model // 2, kernel_size=7, stride=2, padding=3),
+            nn.GELU(),
+            nn.GroupNorm(1, d_model // 2),
+            nn.Conv1d(d_model // 2, d_model, kernel_size=7, stride=2, padding=3),
+            nn.GELU(),
+        )
+        self.conv_norm = nn.LayerNorm(d_model)
+        self.pos_emb = SinusoidalPosEmb(d_model)
+        self.film_conv = FiLM(cond_dim, d_model)
+
+        # self-attention layers with FiLM
+        self.layers = nn.ModuleList([
+            nn.TransformerEncoderLayer(
+                d_model=d_model, nhead=n_heads, dim_feedforward=d_model * 4,
+                dropout=dropout, activation="gelu", batch_first=True, norm_first=True,
+            )
+            for _ in range(n_layers)
+        ])
+        self.film_layers = nn.ModuleList(
+            [FiLM(cond_dim, d_model) for _ in range(n_layers)]
+        )
+
+        # per-token onset prediction head (future tokens only)
+        self.onset_head = nn.Sequential(
+            nn.LayerNorm(d_model),
+            nn.Linear(d_model, d_model // 2),
+            nn.GELU(),
+            nn.Linear(d_model // 2, 1),
+        )
+
+        # onset feedback: learned embedding added to future tokens
+        # where the PREVIOUS token had an onset (shifted by 1)
+        self.onset_feedback_emb = nn.Parameter(torch.randn(1, 1, d_model) * 0.02)
+
+        # register causal mask as buffer
+        self._register_causal_mask()
+
+    def _register_causal_mask(self):
+        """Build attention mask: past tokens bidirectional, future tokens causal."""
+        n = self.n_past_tokens + self.n_future_tokens  # 250
+        mask = torch.zeros(n, n, dtype=torch.bool)
+
+        # future tokens (125-249) can only attend to:
+        # - all past tokens (0-124): always visible
+        # - previous and current future tokens: causal
+        for i in range(self.n_past_tokens, n):
+            # block attention to future tokens beyond current position
+            mask[i, i + 1:] = True
+
+        self.register_buffer("causal_mask", mask)
+
+    def _embed_events_in_mel(self, mel, event_offsets, event_mask):
+        """Embed exponential decay ramps at past event positions in the mel.
+
+        Same vectorized implementation as OnsetDetector._embed_events_in_mel.
+        Only embeds in the past half (frames 0-499). Future half stays clean.
+        """
+        B, n_mels, T = mel.shape
+        cursor_frame = T // 2  # 500
+
+        mel = mel.clone()
+
+        frame_pos = (cursor_frame + event_offsets).float()
+        valid = ~event_mask
+
+        frame_pos = torch.where(valid, frame_pos, torch.full_like(frame_pos, -1e6))
+        frame_pos_sorted, _ = frame_pos.sort(dim=1)
+
+        cursor_col = torch.full((B, 1), cursor_frame, device=mel.device, dtype=frame_pos.dtype)
+        positions = torch.cat([frame_pos_sorted, cursor_col], dim=1)
+
+        t_grid = torch.arange(T, device=mel.device, dtype=torch.float32).view(1, 1, T)
+        pos_exp = positions.unsqueeze(2)
+
+        before_mask = pos_exp <= t_grid
+        real_mask = (pos_exp > -1e5) & before_mask
+
+        neg_inf = torch.full_like(pos_exp, -1e6)
+        masked_pos = torch.where(real_mask, pos_exp, neg_inf)
+        last_event, last_idx = masked_pos.max(dim=1)
+
+        next_idx = (last_idx + 1).clamp(max=positions.size(1) - 1)
+        next_event = positions.gather(1, next_idx)
+
+        gap = (next_event - last_event).clamp(min=1.0)
+
+        t_flat = torch.arange(T, device=mel.device, dtype=torch.float32).unsqueeze(0)
+        elapsed = (t_flat - last_event).clamp(min=0.0)
+        half_life = (gap * 0.03).clamp(min=0.5)
+        ramp = torch.exp(-0.693147 * elapsed / half_life)
+
+        ramp = torch.where(last_event > -1e5, ramp, torch.zeros_like(ramp))
+
+        # only embed in past half (frames 0-499)
+        ramp[:, cursor_frame:] = 0.0
+
+        # amplitude jitter during training
+        if self.training:
+            audio_scale = 0.25 + 0.5 * torch.rand(B, 1, 1, device=mel.device)
+        else:
+            audio_scale = 0.5
+        mel = mel * audio_scale
+        ramp = ramp * 10.0
+        mel = mel + ramp.unsqueeze(1)
+
+        return mel
+
+    def forward(self, mel, event_offsets, event_mask, conditioning,
+                future_onsets=None):
+        """
+        mel: (B, 80, 1000)
+        event_offsets: (B, C) past event bin positions relative to cursor
+        event_mask: (B, C) bool, True = padding
+        conditioning: (B, 3) [mean_density, peak_density, density_std]
+        future_onsets: (B, 125) binary ground truth for teacher forcing (training only)
+                       If None during training, no onset feedback is applied.
+        Returns: onset_probs (B, 125) sigmoid probabilities for future tokens
+        """
+        cond = self.cond_mlp(conditioning)
+
+        # embed past event ramps into mel
+        mel = self._embed_events_in_mel(mel, event_offsets, event_mask)
+
+        # conv stem → 250 tokens
+        x = self.conv(mel).transpose(1, 2)
+        x = self.conv_norm(x)
+        positions = torch.arange(x.size(1), device=x.device).unsqueeze(0).expand(x.size(0), -1)
+        x = x + self.pos_emb(positions)
+        x = self.film_conv(x, cond)
+
+        # onset feedback: add onset embedding to future tokens where
+        # the PREVIOUS position had an onset (teacher forcing during training)
+        if future_onsets is not None:
+            # shift right by 1: token i gets feedback from onset at token i-1
+            shifted = torch.zeros_like(future_onsets)
+            shifted[:, 1:] = future_onsets[:, :-1]
+            # add onset embedding scaled by onset presence
+            feedback = shifted.unsqueeze(-1) * self.onset_feedback_emb  # (B, 125, d_model)
+            x[:, self.n_past_tokens:, :] = x[:, self.n_past_tokens:, :] + feedback
+
+        # self-attention with causal mask on future tokens
+        for layer, film in zip(self.layers, self.film_layers):
+            x = layer(x, src_mask=self.causal_mask)
+            x = film(x, cond)
+
+        # onset prediction from future tokens only (125-249)
+        future_tokens = x[:, self.n_past_tokens:, :]  # (B, 125, d_model)
+        onset_logits = self.onset_head(future_tokens).squeeze(-1)  # (B, 125)
+
+        return torch.sigmoid(onset_logits)
+
+
 class CrossAttentionFusionLayer(nn.Module):
     """Bidirectional cross-attention: audio attends to gap, gap attends to audio."""
 

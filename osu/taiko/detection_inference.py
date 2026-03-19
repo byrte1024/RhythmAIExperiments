@@ -15,7 +15,7 @@ import librosa
 from tqdm import tqdm
 from collections import Counter
 
-from detection_model import OnsetDetector, DualStreamOnsetDetector, InterleavedOnsetDetector, ContextFiLMDetector, AdditiveOnsetDetector, RerankerOnsetDetector, LegacyOnsetDetector, Exp17OnsetDetector, Exp18OnsetDetector
+from detection_model import OnsetDetector, DualStreamOnsetDetector, InterleavedOnsetDetector, ContextFiLMDetector, FramewiseOnsetDetector, AdditiveOnsetDetector, RerankerOnsetDetector, LegacyOnsetDetector, Exp17OnsetDetector, Exp18OnsetDetector
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 
@@ -166,6 +166,149 @@ def run_inference(model, mel, conditioning, device, hop_bins=20, max_events=1000
         events, event_offsets, stop_count, stop_positions,
         total_calls, cursor_history, total_frames, duration_s, inference_time
     )
+
+    return events, run_stats
+
+
+def run_framewise_inference(model, mel, conditioning, device,
+                           slide_frames=200, threshold=0.3, merge_method="max",
+                           merge_window=4):
+    """Sliding window framewise inference with accumulation.
+
+    Slides the window across the song, collects onset probabilities at every
+    position from multiple overlapping windows, merges them, and extracts
+    final onset positions.
+
+    Args:
+        slide_frames: how many mel frames to advance per step
+        threshold: minimum merged probability to count as an onset
+        merge_method: how to combine overlapping predictions ("max", "avg", "vote")
+        merge_window: NMS window in tokens — suppress nearby peaks
+    """
+    model.eval()
+    total_frames = mel.shape[1]
+    cursor_frame = 500  # center of 1000-frame window
+
+    # accumulator: for each mel frame, collect all onset probabilities
+    # at token resolution (4x downsampled), the future window covers 500 frames = 125 tokens
+    n_tokens_total = total_frames // 4 + 1
+    accum_sum = np.zeros(n_tokens_total, dtype=np.float64)
+    accum_count = np.zeros(n_tokens_total, dtype=np.int32)
+
+    cond_tensor = torch.tensor(conditioning, dtype=torch.float32).unsqueeze(0).to(device)
+    duration_s = total_frames * BIN_MS / 1000
+
+    # track past events for ramp embedding (starts empty)
+    detected_events = []  # mel frame positions of detected onsets
+
+    n_windows = max(1, (total_frames - cursor_frame) // slide_frames + 1)
+    pbar = tqdm(total=n_windows, desc="Framewise inference", unit="window")
+
+    t_start = time.perf_counter()
+
+    cursor = 0  # left edge of the 1000-frame window (so center = cursor + 500)
+    window_idx = 0
+
+    while cursor + cursor_frame < total_frames:
+        pbar.update(1)
+        window_center = cursor + cursor_frame
+        pbar.set_postfix_str(
+            f"{window_center * BIN_MS / 1000:.1f}s/{duration_s:.1f}s, "
+            f"{len(detected_events)} events"
+        )
+
+        # extract mel window
+        mel_window = extract_mel_window(mel, window_center)
+        mel_tensor = torch.from_numpy(mel_window).unsqueeze(0).to(device)
+
+        # past events as offsets from window center
+        if len(detected_events) > 0:
+            past = np.array(detected_events[-C_EVENTS:], dtype=np.int64) - window_center
+            n_past = len(past)
+        else:
+            past = np.array([], dtype=np.int64)
+            n_past = 0
+
+        evt_offsets = np.zeros(C_EVENTS, dtype=np.int64)
+        evt_mask = np.ones(C_EVENTS, dtype=bool)
+        if n_past > 0:
+            evt_offsets[-n_past:] = past
+            evt_mask[-n_past:] = False
+
+        evt_tensor = torch.from_numpy(evt_offsets).unsqueeze(0).to(device)
+        mask_tensor = torch.from_numpy(evt_mask).unsqueeze(0).to(device)
+
+        with torch.no_grad():
+            # no teacher forcing during inference — onset feedback uses own predictions
+            onset_probs = model(mel_tensor, evt_tensor, mask_tensor, cond_tensor)
+            probs = onset_probs.squeeze(0).cpu().numpy()  # (125,)
+
+        # map future tokens to global token positions
+        # future tokens cover frames [window_center, window_center + 500)
+        # → global tokens [window_center // 4, window_center // 4 + 125)
+        global_token_start = window_center // 4
+        for ti in range(125):
+            gt = global_token_start + ti
+            if 0 <= gt < n_tokens_total:
+                accum_sum[gt] += probs[ti]
+                accum_count[gt] += 1
+
+        # detect onsets from THIS window for ramp feedback in subsequent windows
+        # (greedy: take peaks above threshold in this window)
+        for ti in range(125):
+            if probs[ti] >= threshold:
+                # check if it's a local max (simple NMS)
+                lo = max(0, ti - merge_window // 2)
+                hi = min(125, ti + merge_window // 2 + 1)
+                if probs[ti] == probs[lo:hi].max():
+                    event_frame = window_center + ti * 4
+                    # avoid duplicates near existing events
+                    if not detected_events or abs(event_frame - detected_events[-1]) > merge_window * 4:
+                        detected_events.append(event_frame)
+
+        cursor += slide_frames
+        window_idx += 1
+
+    pbar.close()
+    t_end = time.perf_counter()
+
+    # merge accumulated probabilities
+    merged = np.zeros(n_tokens_total)
+    valid = accum_count > 0
+    if merge_method == "max":
+        merged[valid] = accum_sum[valid] / accum_count[valid]  # avg for max approx
+    elif merge_method == "avg":
+        merged[valid] = accum_sum[valid] / accum_count[valid]
+    elif merge_method == "vote":
+        # fraction of windows that predicted above threshold
+        merged[valid] = accum_sum[valid] / accum_count[valid]
+
+    # extract final onsets: threshold + NMS
+    final_events = []
+    for ti in range(n_tokens_total):
+        if merged[ti] < threshold:
+            continue
+        # NMS: is this a local maximum?
+        lo = max(0, ti - merge_window)
+        hi = min(n_tokens_total, ti + merge_window + 1)
+        if merged[ti] == merged[lo:hi].max():
+            event_frame = ti * 4  # convert token back to mel frame
+            final_events.append(event_frame)
+
+    # convert to bin positions (same as mel frames in our setup)
+    events = [int(e) for e in final_events]
+
+    run_stats = {
+        "total_events": len(events),
+        "total_frames": int(total_frames),
+        "duration_s": round(duration_s, 2),
+        "inference_time_s": round(t_end - t_start, 3),
+        "n_windows": window_idx,
+        "slide_frames": slide_frames,
+        "threshold": threshold,
+        "merge_method": merge_method,
+        "events_per_second": round(len(events) / duration_s, 2) if duration_s > 0 else 0,
+    }
 
     return events, run_stats
 
@@ -468,6 +611,9 @@ def main():
     parser.add_argument("--density-peak", type=float, default=8.0, help="Target peak density")
     parser.add_argument("--density-std", type=float, default=1.5, help="Target density std")
     parser.add_argument("--hop-ms", type=float, default=100, help="Cursor hop on STOP prediction (ms, default 100)")
+    parser.add_argument("--slide-frames", type=int, default=200, help="Slide step for framewise inference (mel frames, default 200)")
+    parser.add_argument("--fw-threshold", type=float, default=0.3, help="Onset threshold for framewise inference (default 0.3)")
+    parser.add_argument("--fw-merge", default="max", choices=["max", "avg", "vote"], help="Merge method for overlapping framewise windows")
     parser.add_argument("--andlaunch", action="store_true", help="Launch viewer after inference")
     parser.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
     args = parser.parse_args()
@@ -507,8 +653,13 @@ def main():
     has_cross_attn_fusion = any("cross_attn_fusion." in k for k in state_keys)
     has_interleaved = any("audio_self_layers." in k for k in state_keys)
     has_context_film = any("fusion_context_film." in k for k in state_keys)
+    has_framewise = any("onset_head." in k and "onset_feedback_emb" in str(state_keys) for k in state_keys)
+    # simpler check: framewise has onset_feedback_emb
+    has_framewise = "onset_feedback_emb" in state_keys
 
-    if has_context_film:
+    if has_framewise:
+        ModelClass = FramewiseOnsetDetector  # exp 38+ (framewise)
+    elif has_context_film:
         ModelClass = ContextFiLMDetector  # exp 34+ (context FiLM)
     elif has_interleaved:
         ModelClass = InterleavedOnsetDetector  # exp 33 (interleaved)
@@ -528,7 +679,15 @@ def main():
         ModelClass = Exp17OnsetDetector  # exp 17
 
     # Build model kwargs based on checkpoint era
-    if ModelClass == ContextFiLMDetector:
+    if ModelClass == FramewiseOnsetDetector:
+        # exp 38+: framewise onset detection
+        model_kwargs = dict(
+            n_mels=N_MELS,
+            d_model=ckpt_args.get("d_model", 384),
+            n_layers=ckpt_args.get("enc_layers", 4) + ckpt_args.get("fusion_layers", 4),
+            n_heads=ckpt_args.get("n_heads", 8),
+        )
+    elif ModelClass == ContextFiLMDetector:
         # exp 34+: context FiLM conditioning
         model_kwargs = dict(
             n_mels=N_MELS,
@@ -626,7 +785,9 @@ def main():
             model.load_state_dict(state)
     else:
         model.load_state_dict(state)
-    if ModelClass == ContextFiLMDetector:
+    if ModelClass == FramewiseOnsetDetector:
+        print("  (exp 38+ checkpoint - framewise onset detection)")
+    elif ModelClass == ContextFiLMDetector:
         print("  (exp 34+ checkpoint - context FiLM conditioning)")
     elif ModelClass == InterleavedOnsetDetector:
         print("  (exp 33 checkpoint - interleaved self+cross attention)")
@@ -656,9 +817,18 @@ def main():
     conditioning = [args.density_mean, args.density_peak, args.density_std]
     print(f"  Conditioning: mean={conditioning[0]}, peak={conditioning[1]}, std={conditioning[2]}")
 
-    hop_bins = max(1, int(args.hop_ms / BIN_MS))
-    print(f"  STOP hop: {args.hop_ms}ms = {hop_bins} bins")
-    events, run_stats = run_inference(model, mel, conditioning, args.device, hop_bins=hop_bins)
+    if ModelClass == FramewiseOnsetDetector:
+        print(f"  Framewise mode: slide={args.slide_frames}frames, threshold={args.fw_threshold}, merge={args.fw_merge}")
+        events, run_stats = run_framewise_inference(
+            model, mel, conditioning, args.device,
+            slide_frames=args.slide_frames,
+            threshold=args.fw_threshold,
+            merge_method=args.fw_merge,
+        )
+    else:
+        hop_bins = max(1, int(args.hop_ms / BIN_MS))
+        print(f"  STOP hop: {args.hop_ms}ms = {hop_bins} bins")
+        events, run_stats = run_inference(model, mel, conditioning, args.device, hop_bins=hop_bins)
     print(f"  Predicted {len(events)} events ({len(events) / duration:.1f}/s)")
 
     # Add extra info to stats

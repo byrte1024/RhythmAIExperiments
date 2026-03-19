@@ -12,7 +12,7 @@ from collections import deque
 from torch.utils.data import Dataset, DataLoader, WeightedRandomSampler
 from tqdm import tqdm
 
-from detection_model import OnsetDetector, DualStreamOnsetDetector, InterleavedOnsetDetector, ContextFiLMDetector
+from detection_model import OnsetDetector, DualStreamOnsetDetector, InterleavedOnsetDetector, ContextFiLMDetector, FramewiseOnsetDetector
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 
@@ -2653,7 +2653,7 @@ def train(args):
     train_idx, val_idx = split_by_song(manifest, val_ratio=0.1)
     print(f"Train: {len(train_idx)} charts, Val: {len(val_idx)} charts")
 
-    use_multi_target = args.multi_target
+    use_multi_target = args.multi_target or args.model_type == "framewise"
     sub = args.subsample
     train_ds = OnsetDataset(manifest, ds_dir, train_idx, augment=True, subsample=sub,
                             multi_target=use_multi_target)
@@ -2700,7 +2700,14 @@ def train(args):
     )
 
     # model
-    if args.model_type == "context_film":
+    if args.model_type == "framewise":
+        model = FramewiseOnsetDetector(
+            n_mels=80, d_model=args.d_model,
+            n_layers=args.enc_layers + args.fusion_layers,  # total transformer depth
+            n_heads=args.n_heads,
+            dropout=args.dropout,
+        ).to(args.device)
+    elif args.model_type == "context_film":
         model = ContextFiLMDetector(
             n_mels=80, d_model=args.d_model,
             enc_layers=args.enc_layers,
@@ -2772,7 +2779,13 @@ def train(args):
         ws_metrics = ws_ckpt.get("val_metrics", {})
         print(f"  Source: epoch {ws_epoch}, HIT={ws_metrics.get('hit_rate', 0):.1%}")
 
-    if use_multi_target and args.dice_loss:
+    use_framewise = args.model_type == "framewise"
+
+    if use_framewise:
+        # framewise uses simple BCE — loss computed inline in training loop
+        criterion = None
+        print("Loss: Framewise BCE (computed inline)")
+    elif use_multi_target and args.dice_loss:
         criterion = FocalDiceMultiTargetLoss(
             good_pct=args.good_pct, fail_pct=args.fail_pct,
             frame_tolerance=args.frame_tolerance,
@@ -2923,13 +2936,39 @@ def train(args):
             cond = cond.to(args.device, non_blocking=True)
 
             with torch.autocast("cuda", enabled=amp_enabled):
-                logits = model(mel, evt_off, evt_mask, cond)
-                if isinstance(logits, tuple):
-                    logits = logits[0]
-                if use_multi_target:
-                    loss = criterion(logits, targets_padded, n_tgt)
+                if use_framewise:
+                    # build teacher-forcing target first
+                    B_fw = mel.size(0)
+                    fw_target = torch.zeros(B_fw, 125, device=mel.device)
+                    safe_bins = targets_padded.clamp(min=0)
+                    token_idx = (safe_bins // 4).clamp(max=124)
+                    valid_mask_fw = targets_padded >= 0
+                    idx = token_idx * valid_mask_fw.long()
+                    fw_target.scatter_(1, idx, valid_mask_fw.float())
+
+                    # framewise: model returns (B, 125) onset probs
+                    onset_probs = model(mel, evt_off, evt_mask, cond,
+                                       future_onsets=fw_target)
+                    # focal dice + BCE loss
+                    smooth = 1.0
+                    intersection = (onset_probs * fw_target).sum(dim=1)
+                    union = onset_probs.sum(dim=1) + fw_target.sum(dim=1)
+                    dice = (2.0 * intersection + smooth) / (union + smooth)
+                    dice_loss = (1.0 - dice).mean()
+                    bce_loss = F.binary_cross_entropy(onset_probs, fw_target)
+                    loss = dice_loss + 0.1 * bce_loss
+                    # for tqdm metrics, use argmax-based nearest target
+                    logits = torch.zeros(mel.size(0), N_CLASSES, device=mel.device)
+                    # put onset_probs into first 125 positions scaled up
+                    logits[:, :500:4] = onset_probs * 10  # rough proxy for compat
                 else:
-                    loss = criterion(logits, target)
+                    logits = model(mel, evt_off, evt_mask, cond)
+                    if isinstance(logits, tuple):
+                        logits = logits[0]
+                    if use_multi_target:
+                        loss = criterion(logits, targets_padded, n_tgt)
+                    else:
+                        loss = criterion(logits, target)
 
             # NaN safety: skip batch if loss or logits are NaN
             bs = mel.size(0)
@@ -3203,8 +3242,8 @@ if __name__ == "__main__":
     parser.add_argument("--lr", type=float, default=3e-4)
     parser.add_argument("--wd", type=float, default=0.01)
     parser.add_argument("--d-model", type=int, default=384)
-    parser.add_argument("--model-type", default="unified", choices=["unified", "dual_stream", "interleaved", "context_film"],
-                        help="Model architecture: unified (exp 25-30), dual_stream (exp 31-32), interleaved (exp 33), or context_film (exp 34+)")
+    parser.add_argument("--model-type", default="unified", choices=["unified", "dual_stream", "interleaved", "context_film", "framewise"],
+                        help="Model architecture: unified (exp 25-30), dual_stream (exp 31-32), interleaved (exp 33), context_film (exp 34), or framewise (exp 38+)")
     parser.add_argument("--enc-layers", type=int, default=4, help="AudioEncoder transformer layers")
     parser.add_argument("--gap-enc-layers", type=int, default=2, help="GapEncoder self-attention layers")
     parser.add_argument("--cross-attn-layers", type=int, default=2, help="Cross-attention fusion layers (dual_stream only)")
