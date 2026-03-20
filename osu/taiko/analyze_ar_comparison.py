@@ -119,31 +119,210 @@ def main():
         print(f"  Model: {model.__class__.__name__}")
         print(f"  HIT: {ckpt['val_metrics'].get('hit_rate', 0):.1%}")
 
-        results = run_benchmarks(model, val_loader, args.device,
-                                 amp_enabled=False, multi_target=False)
+        # only run the AR benchmarks, not all ablation benchmarks
+        # we need to call the AR portion directly
+        from detection_train import _serializable
+        import torch.nn.functional as F
+        from tqdm import tqdm as _tqdm
 
-        # extract AR results
-        ar = results.get("autoregress", {})
-        la = results.get("lightautoregress", {})
+        # collect batches (10% of val set)
+        all_batches = []
+        total_samples = 0
+        target_samples = len(val_loader.dataset) // 10
+        for batch in val_loader:
+            all_batches.append(batch)
+            total_samples += batch[0].size(0)
+            if total_samples >= target_samples:
+                break
+
+        # run just the AR inference benchmark
+        # (copy the AR logic from run_benchmarks)
+        AR_STEPS = 32
+        AR_MAX_SAMPLES = 1000
+
+        def _is_hit_val(pred, target):
+            if target >= N_CLASSES - 1:
+                return pred == target
+            fe = abs(pred - target)
+            pe = abs((pred + 1) / (target + 1) - 1.0)
+            return pe <= 0.03 or fe <= 1
+
+        dataset = val_loader.dataset
+        samples = []
+        sample_idx = 0
+        for batch in all_batches:
+            mel, evt_off, evt_mask, cond, target = batch
+            B = mel.size(0)
+            for b in range(B):
+                if sample_idx >= len(dataset.samples):
+                    break
+                valid = ~evt_mask[b]
+                if valid.sum() < 4:
+                    sample_idx += 1
+                    continue
+                ci, ei = dataset.samples[sample_idx]
+                evt = dataset.events[ci]
+                if ei == 0:
+                    cursor_bin = max(0, int(evt[0]) - B_BINS) if len(evt) > 0 else 0
+                else:
+                    cursor_bin = int(evt[ei - 1])
+                future_bins = evt[evt > cursor_bin] - cursor_bin
+                future_bins = future_bins[future_bins < B_BINS].astype(np.int64)
+                if len(future_bins) < 2:
+                    sample_idx += 1
+                    continue
+                samples.append({
+                    "mel": mel[b], "evt_off": evt_off[b],
+                    "evt_mask": evt_mask[b], "cond": cond[b],
+                    "gt_abs": future_bins, "density_cond": cond[b, 0].item(),
+                })
+                sample_idx += 1
+                if len(samples) >= AR_MAX_SAMPLES:
+                    break
+            if len(samples) >= AR_MAX_SAMPLES:
+                break
+
+        print(f"  AR samples: {len(samples)}")
+
+        # run AR
+        per_step_preds = [[] for _ in range(AR_STEPS)]
+        per_step_entropy = [[] for _ in range(AR_STEPS)]
+        per_step_survived = np.zeros(AR_STEPS)
+        light_hit = np.zeros(AR_STEPS)
+        light_total = np.zeros(AR_STEPS)
+        light_preds = [[] for _ in range(AR_STEPS)]
+        light_targets = [[] for _ in range(AR_STEPS)]
+        all_predicted_sets = []
+        all_gt_sets = []
+        density_conds = []
+        density_actuals = []
+
+        for sample in _tqdm(samples, desc="  AR bench", leave=False):
+            mel_s = sample["mel"].unsqueeze(0).to(args.device)
+            evt_off_s = sample["evt_off"].unsqueeze(0).clone().to(args.device)
+            evt_mask_s = sample["evt_mask"].unsqueeze(0).clone().to(args.device)
+            cond_s = sample["cond"].unsqueeze(0).to(args.device)
+            gt_abs = sample["gt_abs"]
+            density_conds.append(sample["density_cond"])
+            cursor = 0
+            predicted_positions = []
+
+            for step in range(AR_STEPS):
+                with torch.no_grad():
+                    logits = model(mel_s, evt_off_s, evt_mask_s, cond_s)
+                    if isinstance(logits, tuple):
+                        logits = logits[0]
+                    probs = torch.softmax(logits.float(), dim=1)
+                    pred = logits.argmax(dim=1).item()
+                    ent = -(probs * (probs + 1e-10).log()).sum(dim=1).item()
+
+                if pred >= N_CLASSES - 1:
+                    break
+
+                per_step_survived[step] += 1
+                per_step_preds[step].append(pred)
+                per_step_entropy[step].append(ent)
+                abs_pos = cursor + pred
+                predicted_positions.append(abs_pos)
+
+                if step < len(gt_abs):
+                    gt_target = int(gt_abs[step]) - cursor
+                    if gt_target > 0:
+                        light_total[step] += 1
+                        light_preds[step].append(pred)
+                        light_targets[step].append(gt_target)
+                        if _is_hit_val(pred, gt_target):
+                            light_hit[step] += 1
+
+                cursor = abs_pos
+                evt_off_s = evt_off_s - pred
+                evt_off_np = evt_off_s[0].cpu().numpy()
+                evt_mask_np = evt_mask_s[0].cpu().numpy()
+                evt_off_np = np.roll(evt_off_np, -1)
+                evt_mask_np = np.roll(evt_mask_np, -1)
+                evt_off_np[-1] = 0
+                evt_mask_np[-1] = False
+                evt_off_s = torch.from_numpy(evt_off_np).unsqueeze(0).to(args.device)
+                evt_mask_s = torch.from_numpy(evt_mask_np).unsqueeze(0).to(args.device)
+
+            all_predicted_sets.append(np.array(predicted_positions))
+            all_gt_sets.append(gt_abs)
+            if len(predicted_positions) >= 2:
+                total_bins = predicted_positions[-1]
+                total_s = total_bins * 4.989 / 1000
+                if total_s > 0:
+                    density_actuals.append(len(predicted_positions) / total_s)
+
+        # set matching
+        total_gt = sum(len(g) for g in all_gt_sets)
+        total_pred = sum(len(p) for p in all_predicted_sets)
+        event_hit = 0; event_matched = 0; hallucinations = 0
+        for pred_set, gt_set in zip(all_predicted_sets, all_gt_sets):
+            if len(pred_set) == 0 or len(gt_set) == 0:
+                hallucinations += len(pred_set)
+                continue
+            used_gt = set()
+            for p in pred_set:
+                best_dist = float("inf"); best_gi = -1
+                for gi, g in enumerate(gt_set):
+                    if gi in used_gt: continue
+                    d = abs(int(p) - int(g))
+                    if d < best_dist: best_dist = d; best_gi = gi
+                if best_gi >= 0 and best_dist <= 500:
+                    used_gt.add(best_gi)
+                    if _is_hit_val(int(p), int(gt_set[best_gi])):
+                        event_hit += 1
+                    event_matched += 1
+                else:
+                    hallucinations += 1
+
+        ar = {
+            "n_samples": len(samples), "total_gt_onsets": total_gt,
+            "total_predicted": total_pred,
+            "event_hit_rate": event_hit / max(total_gt, 1),
+            "event_miss_rate": (total_gt - event_matched) / max(total_gt, 1),
+            "hallucination_rate": hallucinations / max(total_pred, 1),
+            "pred_per_sample": total_pred / max(len(samples), 1),
+            "gt_per_sample": total_gt / max(len(samples), 1),
+        }
+        if per_step_survived[0] > 0:
+            ar["survival_10"] = per_step_survived[min(9, AR_STEPS-1)] / per_step_survived[0]
+            ar["survival_30"] = per_step_survived[min(29, AR_STEPS-1)] / per_step_survived[0]
+        if density_conds and density_actuals:
+            ar["density_conditioned_mean"] = np.mean(density_conds)
+            ar["density_actual_mean"] = np.mean(density_actuals)
+            ar["density_ratio"] = np.mean(density_actuals) / max(np.mean(density_conds), 0.01)
+
+        # light AR result
+        la_steps = []
+        hit_rates = []
+        for s in range(AR_STEPS):
+            si = {"step": s, "n_total": int(light_total[s]),
+                  "hit_rate": float(light_hit[s] / max(light_total[s], 1))}
+            if light_preds[s]:
+                p_arr = np.array(light_preds[s])
+                t_arr = np.array(light_targets[s])
+                si["pred_mean"] = float(p_arr.mean())
+                si["pred_std"] = float(p_arr.std())
+                si["target_mean"] = float(t_arr.mean())
+                si["frame_err_mean"] = float(np.abs(p_arr - t_arr).mean())
+                si["unique_preds"] = int(len(np.unique(p_arr)))
+                si["pred_min"] = int(p_arr.min())
+                si["pred_max"] = int(p_arr.max())
+            la_steps.append(si)
+            hit_rates.append(si["hit_rate"])
+        la = {"n_samples": len(samples), "steps": la_steps,
+              "hit_curve": hit_rates, "step0_hit": hit_rates[0] if hit_rates else 0}
 
         all_results[model_name] = {
             "val_hit": ckpt["val_metrics"].get("hit_rate", 0),
-            "autoregress": ar,
-            "lightautoregress": la,
-            "metronome_acc": results.get("metronome", {}).get("accuracy", 0),
-            "no_events_acc": results.get("no_events", {}).get("accuracy", 0),
+            "autoregress": ar, "lightautoregress": la,
         }
 
-        # print summary
-        if ar:
-            print(f"  AR: eHIT={ar.get('event_hit_rate',0):.1%} "
-                  f"eMISS={ar.get('event_miss_rate',0):.1%} "
-                  f"hall={ar.get('hallucination_rate',0):.1%} "
-                  f"density_ratio={ar.get('density_ratio',0):.2f}")
-        if la:
-            curve = la.get("hit_curve", [])
-            print(f"  LightAR: step0={la.get('step0_hit',0):.1%} "
-                  f"curve: {' '.join(f'{h:.0%}' for h in curve[:12])} ...")
+        print(f"  AR: eHIT={ar['event_hit_rate']:.1%} eMISS={ar['event_miss_rate']:.1%} "
+              f"hall={ar['hallucination_rate']:.1%}")
+        print(f"  LightAR: step0={la['step0_hit']:.1%} "
+              f"curve: {' '.join(f'{h:.0%}' for h in hit_rates[:12])} ...")
 
         del model
         torch.cuda.empty_cache()
