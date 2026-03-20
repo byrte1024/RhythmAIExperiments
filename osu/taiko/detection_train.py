@@ -1746,7 +1746,12 @@ def print_benchmarks(results):
         if steps:
             step_str = "  │ Steps: "
             for s in steps[:16]:
-                step_str += f"{s['hit_rate']:.0%} "
+                if "hit_rate" in s:
+                    step_str += f"{s['hit_rate']:.0%} "
+                elif "n_alive" in s:
+                    step_str += f"{s['n_alive']} "
+                else:
+                    step_str += "? "
             if len(steps) > 16:
                 step_str += "..."
             step_str += "│"
