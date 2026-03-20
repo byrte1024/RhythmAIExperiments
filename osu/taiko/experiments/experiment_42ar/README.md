@@ -45,9 +45,26 @@ Each evaluator sees 3 videos of one song — one per model, randomized order, no
 2. Run full AR inference on each song with all 3 model checkpoints
    - Density conditioning: `--density-mean 6.75 --density-peak 12.1` (fixed across all models, chosen randomly)
 3. Record gameplay videos of each generated chart
-4. Each of ~10 evaluators sees 3 videos of ONE song (their assigned song), ranks them 1st/2nd/3rd
-5. No evaluator sees the same song twice or knows which model is which
-6. Aggregate: which model gets ranked 1st most often?
+4. Videos compiled into blind comparisons: each song gets Alpha/Beta/Gamma labels randomly assigned to models. Mapping saved in secret `.txt` files.
+5. **Self-evaluation**: author ranks all 10 songs blind (doesn't see mappings)
+6. **External evaluators**: 10 people, each assigned 1 song, rank Alpha/Beta/Gamma as 1st/2nd/3rd
+7. Aggregate: 3pts for 1st, 2pts for 2nd, 1pt for 3rd. Total across all votes.
+
+### Scripts
+
+| Script | Purpose |
+|--------|---------|
+| `run_inference.py` | Run all 3 models on all 10 songs → CSVs in `charts/` |
+| `render_videos.py` | Render chart CSVs to mp4 with audio + hit sounds → `videos/` |
+| `compile_videos.py` | Create blind Alpha/Beta/Gamma comparison videos → `compiled/` |
+| `gather_stats.py` | Compare inference stats across models |
+| `results/tally_votes.py` | Tally votes and reveal winner |
+
+### Evaluation structure
+
+- `results/votes.json` — all rankings (self: 10 songs, evaluators: 1 each)
+- `compiled/*_mapping.txt` — secret label→model mappings (DO NOT READ until votes are in)
+- Scoring: 1st=3pts, 2nd=2pts, 3rd=1pt
 
 ### Expected outcome
 

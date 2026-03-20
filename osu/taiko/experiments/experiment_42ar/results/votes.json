@@ -1,0 +1,168 @@
+{
+  "self_rankings": [
+    {
+      "song": "Alex Warren - Ordinary (Official Video)",
+      "genre": "pop",
+      "rank_1": null,
+      "rank_2": null,
+      "rank_3": null,
+      "notes": ""
+    },
+    {
+      "song": "Equiloud - Time Machine",
+      "genre": "chiptune",
+      "rank_1": null,
+      "rank_2": null,
+      "rank_3": null,
+      "notes": ""
+    },
+    {
+      "song": "Medalist Season 2 OP - Cold Night by HANA",
+      "genre": "j-pop dance",
+      "rank_1": null,
+      "rank_2": null,
+      "rank_3": null,
+      "notes": ""
+    },
+    {
+      "song": "RoccoW - Chipper Choices",
+      "genre": "electro city-pop",
+      "rank_1": null,
+      "rank_2": null,
+      "rank_3": null,
+      "notes": ""
+    },
+    {
+      "song": "Sabrina Carpenter - Manchild (Official Video)",
+      "genre": "pop",
+      "rank_1": null,
+      "rank_2": null,
+      "rank_3": null,
+      "notes": ""
+    },
+    {
+      "song": "Snow Man - Odorouze! Music Video",
+      "genre": "j-pop dance",
+      "rank_1": null,
+      "rank_2": null,
+      "rank_3": null,
+      "notes": ""
+    },
+    {
+      "song": "The Bug Club - Watching the Omnibus (Official Audio)",
+      "genre": "indie rock",
+      "rank_1": null,
+      "rank_2": null,
+      "rank_3": null,
+      "notes": ""
+    },
+    {
+      "song": "Weird Nightmare - Might See You There (Official Music Video)",
+      "genre": "indie rock",
+      "rank_1": null,
+      "rank_2": null,
+      "rank_3": null,
+      "notes": ""
+    },
+    {
+      "song": "XAMIYA - KIKYU (Official Lyric Video)",
+      "genre": "j-electro",
+      "rank_1": null,
+      "rank_2": null,
+      "rank_3": null,
+      "notes": ""
+    },
+    {
+      "song": "muque - DARK GAME (Official Music Video)",
+      "genre": "hyperpop",
+      "rank_1": null,
+      "rank_2": null,
+      "rank_3": null,
+      "notes": ""
+    }
+  ],
+  "evaluators": [
+    {
+      "name": "",
+      "song": "Alex Warren - Ordinary (Official Video)",
+      "rank_1": null,
+      "rank_2": null,
+      "rank_3": null,
+      "notes": ""
+    },
+    {
+      "name": "",
+      "song": "Equiloud - Time Machine",
+      "rank_1": null,
+      "rank_2": null,
+      "rank_3": null,
+      "notes": ""
+    },
+    {
+      "name": "",
+      "song": "Medalist Season 2 OP - Cold Night by HANA",
+      "rank_1": null,
+      "rank_2": null,
+      "rank_3": null,
+      "notes": ""
+    },
+    {
+      "name": "",
+      "song": "RoccoW - Chipper Choices",
+      "rank_1": null,
+      "rank_2": null,
+      "rank_3": null,
+      "notes": ""
+    },
+    {
+      "name": "",
+      "song": "Sabrina Carpenter - Manchild (Official Video)",
+      "rank_1": null,
+      "rank_2": null,
+      "rank_3": null,
+      "notes": ""
+    },
+    {
+      "name": "",
+      "song": "Snow Man - Odorouze! Music Video",
+      "rank_1": null,
+      "rank_2": null,
+      "rank_3": null,
+      "notes": ""
+    },
+    {
+      "name": "",
+      "song": "The Bug Club - Watching the Omnibus (Official Audio)",
+      "rank_1": null,
+      "rank_2": null,
+      "rank_3": null,
+      "notes": ""
+    },
+    {
+      "name": "",
+      "song": "Weird Nightmare - Might See You There (Official Music Video)",
+      "rank_1": null,
+      "rank_2": null,
+      "rank_3": null,
+      "notes": ""
+    },
+    {
+      "name": "",
+      "song": "XAMIYA - KIKYU (Official Lyric Video)",
+      "rank_1": null,
+      "rank_2": null,
+      "rank_3": null,
+      "notes": ""
+    },
+    {
+      "name": "",
+      "song": "muque - DARK GAME (Official Music Video)",
+      "rank_1": null,
+      "rank_2": null,
+      "rank_3": null,
+      "notes": ""
+    }
+  ],
+  "mappings_revealed": false,
+  "final_results": null
+}
