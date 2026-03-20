@@ -241,7 +241,7 @@ class OnsetDataset(Dataset):
 
         # hallucination burst (3%) - replace recent events with rapid spam
         if len(past_bins) > 4 and rng.random() < 0.03:
-            n_spam = rng.integers(3, 8)
+            n_spam = min(rng.integers(3, 8), len(past_bins))
             tiny_gap = rng.integers(2, 8)
             spam = np.array([-tiny_gap * i for i in range(n_spam)], dtype=np.int64)
             past_bins[-n_spam:] = spam
