@@ -1529,7 +1529,12 @@ def run_benchmarks(model, val_loader, device, amp_enabled=False, multi_target=Fa
         return samples
 
     def _run_ar(samples):
-        """Run 32-step AR on collected samples, return rich per-step data."""
+        """Run 32-step AR on collected samples, return rich per-step data.
+
+        NOTE: mel window stays fixed (doesn't slide with cursor). This means
+        later steps use stale audio context. This is an approximation — real
+        inference slides the window. Results are most accurate for early steps.
+        """
         # per-step accumulators
         all_preds_per_step = [[] for _ in range(AR_STEPS)]  # raw predictions
         all_entropy_per_step = [[] for _ in range(AR_STEPS)]
@@ -1591,8 +1596,16 @@ def run_benchmarks(model, val_loader, device, amp_enabled=False, multi_target=Fa
         return all_preds_per_step, all_entropy_per_step, all_gaps_per_step, survived, density_conds, density_actuals
 
     def _run_light_ar(samples):
-        """Light AR: compare pred[i] directly to ground truth onset[i]."""
-        # per-step: how many match ground truth at that index?
+        """Light AR: compare pred[i] directly to ground truth gap[i].
+
+        Ground truth is converted to GAPS (distance between consecutive onsets).
+        Step 0: gap from cursor to 1st onset = gt_bins[0]
+        Step 1: gap from 1st to 2nd onset = gt_bins[1] - gt_bins[0]
+        Step N: gap from Nth to (N+1)th onset = gt_bins[N] - gt_bins[N-1]
+
+        The model predicts gaps autoregressively (each prediction = gap to next onset).
+        A cascade error at step K causes step K+1 to see wrong context.
+        """
         per_step_hit = np.zeros(AR_STEPS)
         per_step_total = np.zeros(AR_STEPS)
         per_step_preds = [[] for _ in range(AR_STEPS)]
@@ -1605,8 +1618,17 @@ def run_benchmarks(model, val_loader, device, amp_enabled=False, multi_target=Fa
             cond_s = sample["cond"].to(device)
             gt_bins = sample["gt_bins"]
 
-            for step in range(min(AR_STEPS, len(gt_bins))):
-                gt = int(gt_bins[step]) if step < len(gt_bins) else -1
+            # convert absolute onset positions to gaps
+            gt_gaps = np.zeros(len(gt_bins), dtype=np.int64)
+            if len(gt_bins) > 0:
+                gt_gaps[0] = gt_bins[0]  # gap from cursor to 1st onset
+                for i in range(1, len(gt_bins)):
+                    gt_gaps[i] = gt_bins[i] - gt_bins[i - 1]
+
+            for step in range(min(AR_STEPS, len(gt_gaps))):
+                gt = int(gt_gaps[step])
+                if gt <= 0:
+                    continue  # skip invalid gaps
 
                 with torch.no_grad(), torch.autocast("cuda", enabled=amp_enabled):
                     logits = model(mel_s, evt_off_s, evt_mask_s, cond_s)
@@ -1620,7 +1642,7 @@ def run_benchmarks(model, val_loader, device, amp_enabled=False, multi_target=Fa
                 per_step_total[step] += 1
                 per_step_preds[step].append(pred)
                 per_step_targets[step].append(gt)
-                if gt >= 0 and _is_hit_val(pred, gt):
+                if _is_hit_val(pred, gt):
                     per_step_hit[step] += 1
 
                 # feed prediction back (not ground truth — this is AR)
