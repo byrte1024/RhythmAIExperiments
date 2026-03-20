@@ -2088,7 +2088,8 @@ def _save_benchmark_history_graphs(bench_root, run_dir):
         return
 
     bench_names = sorted(d for d in os.listdir(bench_root)
-                         if os.path.isdir(os.path.join(bench_root, d)))
+                         if os.path.isdir(os.path.join(bench_root, d))
+                         and not d.startswith("_"))  # skip _autoregress
     if not bench_names:
         return
 

@@ -61,7 +61,7 @@ Each folder contains a README with hypothesis, results, and key graphs.
 | 42-AR | [Human Evaluation](experiment_42ar/) | Pending | Blind A/B/C test: 10 people rank AR-generated charts from exp 14, 35-C, 42. Self-rankings complete, awaiting evaluators |
 | 42-B | [Pure Hard CE](experiment_42b/) | **Entropy -45%** | hard_alpha=1.0 slashes entropy (2.39→1.32) and flattens distance correlation (+0.58→+0.36). But HIT -4.5pp and skip rate +2.1pp. Confidence ≠ accuracy |
 | 43 | [AR-Resilient Training](experiment_43/) | Pending | Realistic AR-failure augmentation (metronome, time shift, hallucination burst). New AR benchmarks (32-step autoregress + lightautoregress) |
-| 43-B | [AR Resilience Comparison](experiment_43b/) | Pending | Compare AR cascade degradation across exp 14, 35-C, 42. Expected: 14 most resilient, 42 least |
+| 43-B | [AR Resilience Comparison](experiment_43b/) | **Surprise** | Exp 42 (deepest context) is MOST AR-resilient, not least. Beats exp 14 at every step. Metronome collapse universal across all models |
 
 ## Key Lessons
 
