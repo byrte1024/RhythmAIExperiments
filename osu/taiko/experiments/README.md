@@ -56,6 +56,7 @@ Each folder contains a README with hypothesis, results, and key graphs.
 | 40 | [Stronger Balanced Sampling](experiment_40/) | Worse | power=0.7 hurt common predictions (-2.8pp HIT) without helping rare. Distant predictions are inherently ambiguous, not undertrained |
 | 41 | [Deep Entropy Analysis](experiment_41/) | **Key insight** | Skip 0=93.7% HIT, skip 1+=0% (11.2% of samples). Underpred=46.5% HIT (19.3%). Context helps (r=-0.21). Fixing skip-1 → ~83% HIT |
 | 41-B | [Entropy Progression](experiment_41b/) | Skip rate structural | Entropy/confidence improve with training but overpred rate stuck at ~28%, skip-1 at ~11%. Can't train away — need context or inference fix |
+| 42 | [Event Embedding Detector](experiment_42/) | Pending | Learned embeddings added to audio tokens at event positions. No separate tokens, no mel ramps. Context in the model's representation space |
 
 ## Key Lessons
 

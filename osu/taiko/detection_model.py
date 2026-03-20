@@ -1223,6 +1223,200 @@ class OnsetDetector(nn.Module):
         return logits
 
 
+class EventEmbeddingDetector(nn.Module):
+    """Audio-only transformer with learned event embeddings at onset positions (exp 42+).
+
+    Instead of separate gap tokens or mel ramps, event context is injected by
+    adding learned embeddings directly to audio tokens at event positions.
+    Each event-marked token receives:
+      - A learned event presence embedding
+      - Sinusoidal encoding of the gap BEFORE this event (from previous event)
+      - Sinusoidal encoding of the gap AFTER this event (to next event) — except
+        for the most recent event (where "gap after" would reveal the target)
+
+    The self-attention processes 250 audio tokens — no separate context tokens,
+    no cross-attention, no mel modification. Event information enriches audio
+    tokens in the model's own representation space.
+
+    Architecture:
+      1. Conv stem: mel → 250 tokens (d_model)
+      2. Inject event embeddings at event token positions
+      3. Self-attention (N layers) over 250 enriched tokens
+      4. Cursor at position 125 → output head → 501 logits
+    """
+
+    def __init__(
+        self,
+        n_mels=80,
+        d_model=384,
+        n_layers=8,
+        n_heads=8,
+        n_classes=501,
+        max_events=128,
+        dropout=0.1,
+        cond_dim=64,
+    ):
+        super().__init__()
+        self.n_classes = n_classes
+        self.d_model = d_model
+        self.max_events = max_events
+
+        # conditioning MLP
+        self.cond_mlp = nn.Sequential(
+            nn.Linear(3, cond_dim),
+            nn.GELU(),
+            nn.Linear(cond_dim, cond_dim),
+        )
+
+        # conv stem (same as AudioEncoder)
+        self.conv = nn.Sequential(
+            nn.Conv1d(n_mels, d_model // 2, kernel_size=7, stride=2, padding=3),
+            nn.GELU(),
+            nn.GroupNorm(1, d_model // 2),
+            nn.Conv1d(d_model // 2, d_model, kernel_size=7, stride=2, padding=3),
+            nn.GELU(),
+        )
+        self.conv_norm = nn.LayerNorm(d_model)
+        self.pos_emb = SinusoidalPosEmb(d_model)
+        self.film_conv = FiLM(cond_dim, d_model)
+
+        # event embeddings
+        self.event_presence_emb = nn.Parameter(torch.randn(1, d_model) * 0.02)
+        self.gap_before_emb = SinusoidalPosEmb(d_model)  # gap from previous event
+        self.gap_after_emb = SinusoidalPosEmb(d_model)   # gap to next event
+        self.event_proj = nn.Sequential(
+            nn.Linear(d_model * 3, d_model),
+            nn.GELU(),
+            nn.Linear(d_model, d_model),
+        )
+
+        # self-attention layers
+        self.layers = nn.ModuleList([
+            nn.TransformerEncoderLayer(
+                d_model=d_model, nhead=n_heads, dim_feedforward=d_model * 4,
+                dropout=dropout, activation="gelu", batch_first=True, norm_first=True,
+            )
+            for _ in range(n_layers)
+        ])
+        self.film_layers = nn.ModuleList(
+            [FiLM(cond_dim, d_model) for _ in range(n_layers)]
+        )
+
+        # output head
+        self.head_norm = nn.LayerNorm(d_model)
+        self.head_proj = nn.Linear(d_model, n_classes)
+        self.head_smooth = nn.Sequential(
+            nn.Conv1d(1, 8, kernel_size=5, padding=2),
+            nn.GELU(),
+            nn.Conv1d(8, 1, kernel_size=5, padding=2),
+        )
+
+    def _build_event_embeddings(self, event_offsets, event_mask):
+        """Build event embeddings and map them to token positions.
+
+        event_offsets: (B, C) bin positions relative to cursor (negative = past)
+        event_mask: (B, C) bool, True = padding
+
+        Returns: (event_embs, token_positions, valid_mask)
+          event_embs: (B, C, d_model) — embedding for each event
+          token_positions: (B, C) — which audio token each event maps to
+          valid_mask: (B, C) — True = valid event that maps to a token in [0, 124]
+        """
+        B, C = event_offsets.shape
+        valid = ~event_mask  # (B, C)
+
+        # compute gaps between consecutive events
+        # gap_before[i] = distance from event i-1 to event i
+        # gap_after[i] = distance from event i to event i+1
+        offsets = event_offsets.float()
+
+        # gap before: diff between consecutive events
+        gap_before = torch.zeros(B, C, device=offsets.device)
+        gap_before[:, 1:] = offsets[:, 1:] - offsets[:, :-1]
+        gap_before[:, 0] = 50.0  # default for first event (unknown)
+        gap_before = gap_before.abs().clamp(min=1.0)
+
+        # gap after: diff to next event
+        # CRITICAL: the last valid event's gap_after would reveal the target
+        # so we use gap_before as a proxy (assume same gap continues)
+        gap_after = torch.zeros(B, C, device=offsets.device)
+        gap_after[:, :-1] = offsets[:, 1:] - offsets[:, :-1]
+        gap_after = gap_after.abs().clamp(min=1.0)
+
+        # for the last valid event in each sample, mask out gap_after
+        # (use gap_before as proxy to avoid leaking target)
+        for b in range(B):
+            valid_indices = valid[b].nonzero(as_tuple=True)[0]
+            if len(valid_indices) > 0:
+                last_idx = valid_indices[-1].item()
+                gap_after[b, last_idx] = gap_before[b, last_idx]
+
+        # build embeddings: presence + gap_before + gap_after → project to d_model
+        presence = self.event_presence_emb.expand(B, C, -1)  # (B, C, d_model)
+        gb_emb = self.gap_before_emb(gap_before)  # (B, C, d_model)
+        ga_emb = self.gap_after_emb(gap_after)     # (B, C, d_model)
+        combined = torch.cat([presence, gb_emb, ga_emb], dim=-1)  # (B, C, 3*d_model)
+        event_embs = self.event_proj(combined)  # (B, C, d_model)
+
+        # map event offsets to audio token positions
+        # cursor is at mel frame 500 = token 125 (after 4x conv stride)
+        # event at offset -100 = mel frame 400 = token 100
+        mel_frames = 500 + event_offsets  # (B, C)
+        token_pos = mel_frames // 4  # (B, C) — conv stride 4
+
+        # valid: must be a real event AND map to a past token [0, 124]
+        # (events at token >= 125 are at/after cursor — shouldn't be marked)
+        valid_mask = valid & (token_pos >= 0) & (token_pos < 125)
+        token_pos = token_pos.clamp(0, 249)  # safe index
+
+        return event_embs, token_pos, valid_mask
+
+    def forward(self, mel, event_offsets, event_mask, conditioning):
+        """
+        mel: (B, n_mels, 1000)
+        event_offsets: (B, C) past event bin positions relative to cursor
+        event_mask: (B, C) bool, True = padding
+        conditioning: (B, 3) [mean_density, peak_density, density_std]
+        Returns: logits (B, 501)
+        """
+        cond = self.cond_mlp(conditioning)
+
+        # conv stem → 250 tokens
+        x = self.conv(mel).transpose(1, 2)  # (B, 250, d_model)
+        x = self.conv_norm(x)
+        positions = torch.arange(x.size(1), device=x.device).unsqueeze(0).expand(x.size(0), -1)
+        x = x + self.pos_emb(positions)
+        x = self.film_conv(x, cond)
+
+        # inject event embeddings at event token positions
+        event_embs, token_pos, valid_mask = self._build_event_embeddings(
+            event_offsets, event_mask
+        )
+        # scatter-add event embeddings to audio tokens
+        # for each valid event, add its embedding to the corresponding audio token
+        B = mel.size(0)
+        for b in range(B):
+            valid_idx = valid_mask[b].nonzero(as_tuple=True)[0]
+            if len(valid_idx) == 0:
+                continue
+            tpos = token_pos[b, valid_idx]  # which tokens to mark
+            embs = event_embs[b, valid_idx]  # embeddings to add
+            # scatter_add: multiple events may map to the same token
+            x[b].scatter_add_(0, tpos.unsqueeze(-1).expand(-1, self.d_model), embs)
+
+        # self-attention over 250 enriched tokens
+        for layer, film in zip(self.layers, self.film_layers):
+            x = layer(x)
+            x = film(x, cond)
+
+        # extract cursor
+        cursor = x[:, 125, :]
+
+        logits = self.head_proj(self.head_norm(cursor))
+        logits = logits + self.head_smooth(logits.unsqueeze(1)).squeeze(1)
+        return logits
+
+
 class ContextFiLMDetector(nn.Module):
     """Audio-only self-attention with context FiLM conditioning (exp 34+).
 

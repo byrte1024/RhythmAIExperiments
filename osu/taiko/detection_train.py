@@ -12,7 +12,7 @@ from collections import deque
 from torch.utils.data import Dataset, DataLoader, WeightedRandomSampler
 from tqdm import tqdm
 
-from detection_model import OnsetDetector, DualStreamOnsetDetector, InterleavedOnsetDetector, ContextFiLMDetector, FramewiseOnsetDetector
+from detection_model import OnsetDetector, DualStreamOnsetDetector, InterleavedOnsetDetector, ContextFiLMDetector, FramewiseOnsetDetector, EventEmbeddingDetector
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 
@@ -2718,7 +2718,14 @@ def train(args):
     )
 
     # model
-    if args.model_type == "framewise":
+    if args.model_type == "event_embed":
+        model = EventEmbeddingDetector(
+            n_mels=80, d_model=args.d_model,
+            n_layers=args.enc_layers + args.fusion_layers,
+            n_heads=args.n_heads,
+            n_classes=N_CLASSES, max_events=C_EVENTS, dropout=args.dropout,
+        ).to(args.device)
+    elif args.model_type == "framewise":
         model = FramewiseOnsetDetector(
             n_mels=80, d_model=args.d_model,
             n_layers=args.enc_layers + args.fusion_layers,  # total transformer depth
@@ -3255,8 +3262,8 @@ if __name__ == "__main__":
     parser.add_argument("--lr", type=float, default=3e-4)
     parser.add_argument("--wd", type=float, default=0.01)
     parser.add_argument("--d-model", type=int, default=384)
-    parser.add_argument("--model-type", default="unified", choices=["unified", "dual_stream", "interleaved", "context_film", "framewise"],
-                        help="Model architecture: unified (exp 25-30), dual_stream (exp 31-32), interleaved (exp 33), context_film (exp 34), or framewise (exp 38+)")
+    parser.add_argument("--model-type", default="unified", choices=["unified", "dual_stream", "interleaved", "context_film", "framewise", "event_embed"],
+                        help="Model architecture: unified, dual_stream, interleaved, context_film, framewise, or event_embed (exp 42+)")
     parser.add_argument("--enc-layers", type=int, default=4, help="AudioEncoder transformer layers")
     parser.add_argument("--gap-enc-layers", type=int, default=2, help="GapEncoder self-attention layers")
     parser.add_argument("--cross-attn-layers", type=int, default=2, help="Cross-attention fusion layers (dual_stream only)")
