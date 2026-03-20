@@ -185,33 +185,73 @@ class OnsetDataset(Dataset):
         # event jitter: global shift + recency-scaled per-event noise (simulates AR error)
         if len(past_bins) > 0:
             n = len(past_bins)
-            # global shift applied to ALL events (±0-2 bins) - systematic drift
-            global_shift = rng.integers(-2, 3)
-            # per-event jitter scaled by recency: 1x oldest → 2x most recent
-            jitter_scale = np.linspace(1, 2, n)
-            per_event = (rng.integers(-2, 3, size=n) * jitter_scale).astype(np.int64)
+            # global shift applied to ALL events (±0-5 bins) - systematic drift
+            global_shift = rng.integers(-5, 6)
+            # per-event jitter scaled by recency: 1x oldest → 3x most recent
+            jitter_scale = np.linspace(1, 3, n)
+            per_event = (rng.integers(-5, 6, size=n) * jitter_scale).astype(np.int64)
             past_bins = np.sort(past_bins + global_shift + per_event)
 
-        # random event deletion (4%) - drop individual events to simulate misses
-        if len(past_bins) > 2 and rng.random() < 0.04:
-            n_drop = rng.integers(1, max(2, len(past_bins) // 8))
+        # random event deletion (15%) - drop events to simulate skip errors
+        if len(past_bins) > 2 and rng.random() < 0.15:
+            n_drop = rng.integers(1, max(2, min(5, len(past_bins) // 4)))
             keep = np.ones(len(past_bins), dtype=bool)
             keep[rng.choice(len(past_bins), size=n_drop, replace=False)] = False
             past_bins = past_bins[keep]
 
-        # random event insertion (4%) - add spurious events to simulate false positives
-        if len(past_bins) > 0 and rng.random() < 0.04:
-            n_insert = rng.integers(1, max(2, len(past_bins) // 8))
+        # random event insertion (10%) - add spurious events to simulate hallucinations
+        if len(past_bins) > 0 and rng.random() < 0.10:
+            n_insert = rng.integers(1, max(2, min(4, len(past_bins) // 6)))
             lo, hi = past_bins[0], min(past_bins[-1], -1)
             if lo < hi:
                 fake = rng.integers(lo, hi, size=n_insert)
                 past_bins = np.sort(np.concatenate([past_bins, fake]))
 
-        # context dropout (2%)
-        if rng.random() < 0.02:
+        # metronome corruption (5%) - replace all events with evenly spaced random gap
+        # simulates the model locking into a repeating gap
+        if len(past_bins) > 4 and rng.random() < 0.05:
+            gap = rng.integers(10, 80)  # random metronomic gap
+            n_events = len(past_bins)
+            past_bins = np.array([-gap * (n_events - i) for i in range(n_events)], dtype=np.int64)
+
+        # advanced metronome corruption (5%) - use the dominant gap from context
+        # simulates the model finding the right tempo but losing pattern variation
+        elif len(past_bins) > 8 and rng.random() < 0.05:
+            gaps = np.diff(past_bins)
+            gaps = gaps[gaps > 0]
+            if len(gaps) > 2:
+                # find dominant gap (most common, ±2 tolerance)
+                from collections import Counter
+                rounded = (gaps // 3) * 3  # quantize to find clusters
+                dominant = Counter(rounded).most_common(1)[0][0]
+                dominant = max(5, int(dominant))
+                n_events = len(past_bins)
+                # add slight jitter to make it look like real metronome behavior
+                jitter = rng.integers(-1, 2, size=n_events)
+                past_bins = np.array([-(dominant + jitter[i]) * (n_events - i)
+                                     for i in range(n_events)], dtype=np.int64)
+
+        # large time shift (5%) - shift all recent events by a large amount
+        # simulates AR drift where cursor is way off
+        if len(past_bins) > 4 and rng.random() < 0.05:
+            shift = rng.integers(-100, 101)
+            n_shift = rng.integers(2, min(8, len(past_bins)))
+            past_bins[-n_shift:] += shift
+            past_bins = np.sort(past_bins)
+
+        # hallucination burst (3%) - replace recent events with rapid spam
+        if len(past_bins) > 4 and rng.random() < 0.03:
+            n_spam = rng.integers(3, 8)
+            tiny_gap = rng.integers(2, 8)
+            spam = np.array([-tiny_gap * i for i in range(n_spam)], dtype=np.int64)
+            past_bins[-n_spam:] = spam
+            past_bins = np.sort(past_bins)
+
+        # context dropout (5%)
+        if rng.random() < 0.05:
             past_bins = np.array([], dtype=np.int64)
-        # context truncation (5%)
-        elif len(past_bins) > 1 and rng.random() < 0.05:
+        # context truncation (8%)
+        elif len(past_bins) > 1 and rng.random() < 0.08:
             past_bins = past_bins[-rng.integers(1, len(past_bins)):]
 
         # audio fade-in (10%)
@@ -1293,7 +1333,7 @@ def run_benchmarks(model, val_loader, device, amp_enabled=False, multi_target=Fa
         }
 
     results = {}
-    bench_bar = tqdm(total=10, desc="Benchmarks", leave=False)
+    bench_bar = tqdm(total=12, desc="Benchmarks", leave=False)
 
     # 1) No events - all past context deleted
     def no_events(mel, evt_off, evt_mask, cond, target):
@@ -1301,14 +1341,14 @@ def run_benchmarks(model, val_loader, device, amp_enabled=False, multi_target=Fa
         evt_mask.fill_(True)  # all masked = no events
         return mel, evt_off, evt_mask, cond
     results["no_events"] = run_corrupted(all_batches, no_events, "no_events")
-    bench_bar.update(1)
+    bench_bar.set_postfix_str("no_events"); bench_bar.update(1)
 
     # 2) No audio - silent spectrogram
     def no_audio(mel, evt_off, evt_mask, cond, target):
         mel.zero_()
         return mel, evt_off, evt_mask, cond
     results["no_audio"] = run_corrupted(all_batches, no_audio, "no_audio")
-    bench_bar.update(1)
+    bench_bar.set_postfix_str("no_audio"); bench_bar.update(1)
 
     # 3) Random events - completely random timestamps
     def random_events(mel, evt_off, evt_mask, cond, target):
@@ -1322,14 +1362,14 @@ def run_benchmarks(model, val_loader, device, amp_enabled=False, multi_target=Fa
             evt_mask[b, -n_events:] = False
         return mel, evt_off, evt_mask, cond
     results["random_events"] = run_corrupted(all_batches, random_events, "random_events")
-    bench_bar.update(1)
+    bench_bar.set_postfix_str("random_events"); bench_bar.update(1)
 
     # 4) Static audio - white noise spectrogram
     def static_audio(mel, evt_off, evt_mask, cond, target):
         mel.normal_(mean=mel.mean().item(), std=mel.std().item())
         return mel, evt_off, evt_mask, cond
     results["static_audio"] = run_corrupted(all_batches, static_audio, "static_audio")
-    bench_bar.update(1)
+    bench_bar.set_postfix_str("static_audio"); bench_bar.update(1)
 
     # 5) No events + muted audio - everything zeroed
     def no_events_no_audio(mel, evt_off, evt_mask, cond, target):
@@ -1338,7 +1378,7 @@ def run_benchmarks(model, val_loader, device, amp_enabled=False, multi_target=Fa
         evt_mask.fill_(True)
         return mel, evt_off, evt_mask, cond
     results["no_events_no_audio"] = run_corrupted(all_batches, no_events_no_audio, "no_events_no_audio")
-    bench_bar.update(1)
+    bench_bar.set_postfix_str("no_events_no_audio"); bench_bar.update(1)
 
     # 6) Metronome - fill events with fixed gap far from target
     def metronome(mel, evt_off, evt_mask, cond, target):
@@ -1360,7 +1400,7 @@ def run_benchmarks(model, val_loader, device, amp_enabled=False, multi_target=Fa
             evt_mask[b] = False  # all valid
         return mel, evt_off, evt_mask, cond
     results["metronome"] = run_corrupted(all_batches, metronome, "metronome")
-    bench_bar.update(1)
+    bench_bar.set_postfix_str("metronome"); bench_bar.update(1)
 
     # 7) Time-shifted context - scale all event offsets by a musical fraction
     fractions = [0.5, 2.0, 1.0 / 3, 0.75, 5.0 / 3]
@@ -1375,7 +1415,7 @@ def run_benchmarks(model, val_loader, device, amp_enabled=False, multi_target=Fa
                 evt_off[b] = scaled
         return mel, evt_off, evt_mask, cond
     results["time_shifted"] = run_corrupted(all_batches, time_shifted, "time_shifted")
-    bench_bar.update(1)
+    bench_bar.set_postfix_str("time_shifted"); bench_bar.update(1)
 
     # 8) Advanced metronome - quantize events to detected BPM
     def advanced_metronome(mel, evt_off, evt_mask, cond, target):
@@ -1421,14 +1461,14 @@ def run_benchmarks(model, val_loader, device, amp_enabled=False, multi_target=Fa
             evt_mask[b, -n_fill:] = False
         return mel, evt_off, evt_mask, cond
     results["advanced_metronome"] = run_corrupted(all_batches, advanced_metronome, "advanced_metronome")
-    bench_bar.update(1)
+    bench_bar.set_postfix_str("advanced_metronome"); bench_bar.update(1)
 
     # 9) Zero density - conditioning set to [0, 0, 0]
     def zero_density(mel, evt_off, evt_mask, cond, target):
         cond.zero_()
         return mel, evt_off, evt_mask, cond
     results["zero_density"] = run_corrupted(all_batches, zero_density, "zero_density")
-    bench_bar.update(1)
+    bench_bar.set_postfix_str("zero_density"); bench_bar.update(1)
 
     # 10) Random density - conditioning randomized
     def random_density(mel, evt_off, evt_mask, cond, target):
@@ -1438,7 +1478,243 @@ def run_benchmarks(model, val_loader, device, amp_enabled=False, multi_target=Fa
         cond[:, 2] = torch.FloatTensor(B).uniform_(0.5, 4.0)    # density std
         return mel, evt_off, evt_mask, cond
     results["random_density"] = run_corrupted(all_batches, random_density, "random_density")
-    bench_bar.update(1)
+    bench_bar.set_postfix_str("random_density"); bench_bar.update(1)
+
+    # ── 11) Autoregressive benchmarks ──
+    AR_STEPS = 32
+    AR_MAX_SAMPLES = 150  # limit for speed
+
+    def _is_hit_val(pred, target):
+        if target >= N_CLASSES - 1:
+            return pred == target
+        fe = abs(pred - target)
+        pe = abs((pred + 1) / (target + 1) - 1.0)
+        return pe <= 0.03 or fe <= 1
+
+    def _collect_ar_samples(batches):
+        """Collect samples with multi-target ground truth for AR evaluation."""
+        samples = []
+        for batch in batches:
+            if multi_target:
+                mel, evt_off, evt_mask, cond, targets_padded, n_tgt = batch
+            else:
+                mel, evt_off, evt_mask, cond, target = batch
+                # fake multi-target: single target at position 0
+                targets_padded = target.unsqueeze(1)
+                n_tgt = torch.ones(mel.size(0), dtype=torch.long)
+
+            B = mel.size(0)
+            for b in range(B):
+                valid = ~evt_mask[b]
+                if valid.sum() < 4:
+                    continue
+                nt = n_tgt[b].item() if multi_target else 1
+                gt_bins = targets_padded[b, :nt].cpu().numpy() if nt > 0 else np.array([])
+                gt_bins = gt_bins[gt_bins >= 0]  # remove padding
+                gt_bins = gt_bins[gt_bins < N_CLASSES - 1]  # remove STOP
+                if len(gt_bins) == 0:
+                    continue
+                samples.append({
+                    "mel": mel[b].unsqueeze(0),
+                    "evt_off": evt_off[b].unsqueeze(0),
+                    "evt_mask": evt_mask[b].unsqueeze(0),
+                    "cond": cond[b].unsqueeze(0),
+                    "gt_bins": gt_bins,  # all future onset bins
+                    "density_cond": cond[b, 0].item(),  # conditioned density mean
+                })
+                if len(samples) >= AR_MAX_SAMPLES:
+                    break
+            if len(samples) >= AR_MAX_SAMPLES:
+                break
+        return samples
+
+    def _run_ar(samples):
+        """Run 32-step AR on collected samples, return rich per-step data."""
+        # per-step accumulators
+        all_preds_per_step = [[] for _ in range(AR_STEPS)]  # raw predictions
+        all_entropy_per_step = [[] for _ in range(AR_STEPS)]
+        all_gaps_per_step = [[] for _ in range(AR_STEPS)]  # gap from prev prediction
+        survived = np.zeros(AR_STEPS)  # how many samples survived to this step
+        density_conds = []  # conditioned densities
+        density_actuals = []  # actual predicted densities
+
+        for sample in tqdm(samples, desc="  AR bench", leave=False):
+            mel_s = sample["mel"].to(device)
+            evt_off_s = sample["evt_off"].clone().to(device)
+            evt_mask_s = sample["evt_mask"].clone().to(device)
+            cond_s = sample["cond"].to(device)
+
+            density_conds.append(sample["density_cond"])
+            preds_this = []
+            prev_pred = None
+
+            for step in range(AR_STEPS):
+                with torch.no_grad(), torch.autocast("cuda", enabled=amp_enabled):
+                    logits = model(mel_s, evt_off_s, evt_mask_s, cond_s)
+                    if isinstance(logits, tuple):
+                        logits = logits[0]
+                    probs = torch.softmax(logits.float(), dim=1)
+                    pred = logits.argmax(dim=1).item()
+                    ent = -(probs * (probs + 1e-10).log()).sum(dim=1).item()
+
+                if pred >= N_CLASSES - 1:  # STOP
+                    break
+
+                survived[step] += 1
+                all_preds_per_step[step].append(pred)
+                all_entropy_per_step[step].append(ent)
+                preds_this.append(pred)
+
+                if prev_pred is not None:
+                    all_gaps_per_step[step].append(pred)  # gap = this prediction
+                prev_pred = pred
+
+                # update context: shift events back, add new event
+                evt_off_s = evt_off_s - pred
+                evt_off_np = evt_off_s[0].cpu().numpy()
+                evt_mask_np = evt_mask_s[0].cpu().numpy()
+                evt_off_np = np.roll(evt_off_np, -1)
+                evt_mask_np = np.roll(evt_mask_np, -1)
+                evt_off_np[-1] = 0
+                evt_mask_np[-1] = False
+                evt_off_s = torch.from_numpy(evt_off_np).unsqueeze(0).to(device)
+                evt_mask_s = torch.from_numpy(evt_mask_np).unsqueeze(0).to(device)
+
+            # compute actual density of predicted events
+            if len(preds_this) >= 2:
+                total_bins = sum(preds_this)
+                total_ms = total_bins * 4.989  # BIN_MS
+                total_s = total_ms / 1000
+                if total_s > 0:
+                    density_actuals.append(len(preds_this) / total_s)
+
+        return all_preds_per_step, all_entropy_per_step, all_gaps_per_step, survived, density_conds, density_actuals
+
+    def _run_light_ar(samples):
+        """Light AR: compare pred[i] directly to ground truth onset[i]."""
+        # per-step: how many match ground truth at that index?
+        per_step_hit = np.zeros(AR_STEPS)
+        per_step_total = np.zeros(AR_STEPS)
+        per_step_preds = [[] for _ in range(AR_STEPS)]
+        per_step_targets = [[] for _ in range(AR_STEPS)]
+
+        for sample in tqdm(samples, desc="  LightAR", leave=False):
+            mel_s = sample["mel"].to(device)
+            evt_off_s = sample["evt_off"].clone().to(device)
+            evt_mask_s = sample["evt_mask"].clone().to(device)
+            cond_s = sample["cond"].to(device)
+            gt_bins = sample["gt_bins"]
+
+            for step in range(min(AR_STEPS, len(gt_bins))):
+                gt = int(gt_bins[step]) if step < len(gt_bins) else -1
+
+                with torch.no_grad(), torch.autocast("cuda", enabled=amp_enabled):
+                    logits = model(mel_s, evt_off_s, evt_mask_s, cond_s)
+                    if isinstance(logits, tuple):
+                        logits = logits[0]
+                    pred = logits.argmax(dim=1).item()
+
+                if pred >= N_CLASSES - 1:
+                    break
+
+                per_step_total[step] += 1
+                per_step_preds[step].append(pred)
+                per_step_targets[step].append(gt)
+                if gt >= 0 and _is_hit_val(pred, gt):
+                    per_step_hit[step] += 1
+
+                # feed prediction back (not ground truth — this is AR)
+                evt_off_s = evt_off_s - pred
+                evt_off_np = evt_off_s[0].cpu().numpy()
+                evt_mask_np = evt_mask_s[0].cpu().numpy()
+                evt_off_np = np.roll(evt_off_np, -1)
+                evt_mask_np = np.roll(evt_mask_np, -1)
+                evt_off_np[-1] = 0
+                evt_mask_np[-1] = False
+                evt_off_s = torch.from_numpy(evt_off_np).unsqueeze(0).to(device)
+                evt_mask_s = torch.from_numpy(evt_mask_np).unsqueeze(0).to(device)
+
+        return per_step_hit, per_step_total, per_step_preds, per_step_targets
+
+    # collect samples
+    ar_samples = _collect_ar_samples(all_batches)
+
+    if len(ar_samples) >= 10:
+        # ── Full AR benchmark ──
+        ar_preds, ar_entropy, ar_gaps, ar_survived, ar_dcond, ar_dactual = _run_ar(ar_samples)
+
+        ar_result = {
+            "n_samples": len(ar_samples),
+            "ar_steps": AR_STEPS,
+            "survival_per_step": [int(s) for s in ar_survived],
+            "steps": [],
+        }
+        for s in range(AR_STEPS):
+            step_info = {"step": s, "n_alive": int(ar_survived[s])}
+            if ar_preds[s]:
+                preds_arr = np.array(ar_preds[s])
+                step_info["pred_mean"] = float(preds_arr.mean())
+                step_info["pred_std"] = float(preds_arr.std())
+                step_info["pred_median"] = float(np.median(preds_arr))
+                step_info["unique_preds"] = int(len(np.unique(preds_arr)))
+            if ar_entropy[s]:
+                step_info["entropy_mean"] = float(np.mean(ar_entropy[s]))
+            if ar_gaps[s]:
+                step_info["gap_mean"] = float(np.mean(ar_gaps[s]))
+                step_info["gap_std"] = float(np.std(ar_gaps[s]))
+            ar_result["steps"].append(step_info)
+
+        # density comparison
+        if ar_dcond and ar_dactual:
+            ar_result["density_conditioned_mean"] = float(np.mean(ar_dcond))
+            ar_result["density_actual_mean"] = float(np.mean(ar_dactual))
+            ar_result["density_actual_std"] = float(np.std(ar_dactual))
+            ar_result["density_ratio"] = float(np.mean(ar_dactual) / max(np.mean(ar_dcond), 0.01))
+
+        # summary
+        if ar_survived[0] > 0:
+            ar_result["survival_10"] = float(ar_survived[min(9, AR_STEPS-1)] / ar_survived[0])
+            ar_result["survival_30"] = float(ar_survived[min(29, AR_STEPS-1)] / ar_survived[0])
+
+        results["autoregress"] = ar_result
+        bench_bar.update(1)
+
+        # ── Light AR benchmark ──
+        la_hit, la_total, la_preds, la_targets = _run_light_ar(ar_samples)
+
+        la_result = {
+            "n_samples": len(ar_samples),
+            "ar_steps": AR_STEPS,
+            "steps": [],
+        }
+        for s in range(AR_STEPS):
+            step_info = {
+                "step": s,
+                "n_total": int(la_total[s]),
+                "hit_rate": float(la_hit[s] / max(la_total[s], 1)),
+            }
+            if la_preds[s] and la_targets[s]:
+                p_arr = np.array(la_preds[s])
+                t_arr = np.array(la_targets[s])
+                step_info["pred_mean"] = float(p_arr.mean())
+                step_info["target_mean"] = float(t_arr.mean())
+                step_info["frame_err_mean"] = float(np.abs(p_arr - t_arr).mean())
+                # store arrays for scatter graphs
+                step_info["_preds"] = p_arr
+                step_info["_targets"] = t_arr
+            la_result["steps"].append(step_info)
+
+        # summary hit curve
+        hit_rates = [la_hit[s] / max(la_total[s], 1) for s in range(AR_STEPS)]
+        la_result["hit_curve"] = [float(h) for h in hit_rates]
+        la_result["step0_hit"] = float(hit_rates[0]) if hit_rates else 0
+        la_result["avg_hit"] = float(np.mean([h for h, t in zip(la_hit, la_total) if t > 0]))
+
+        results["lightautoregress"] = la_result
+        bench_bar.update(1)
+    else:
+        bench_bar.update(2)
+
     bench_bar.close()
 
     return results
@@ -1450,9 +1726,32 @@ def print_benchmarks(results):
     print(f"  │ {'Test':<24} {'STOP%':>6} {'Acc':>6} {'Mean':>6} {'Std':>6} {'Uniq':>5} │")
     print(f"  ├{'─' * 73}┤")
     for name, r in results.items():
+        if name in ("autoregress", "lightautoregress"):
+            continue  # printed separately
         print(f"  │ {name:<24} {r['stop_rate']:>5.1%} {r['accuracy']:>5.1%} "
               f"{r['mean_pred']:>6.1f} {r['pred_std']:>6.1f} {r['unique_preds']:>5d} │")
     print(f"  └{'─' * 73}┘")
+
+    # AR benchmarks
+    for ar_name in ("autoregress", "lightautoregress"):
+        ar = results.get(ar_name)
+        if not ar:
+            continue
+        print(f"\n  ┌─ {ar_name} ({ar.get('n_samples', 0)} samples, {ar.get('ar_steps', 32)} steps) ─┐")
+        print(f"  │ Step 0 HIT: {ar.get('step0_hit', 0):.1%}  "
+              f"Survival@10: {ar.get('survival_10', 0):.1%}  "
+              f"Survival@30: {ar.get('survival_30', 0):.1%}  "
+              f"Avg: {ar.get('avg_hit_rate', 0):.1%} │")
+        steps = ar.get("steps", [])
+        if steps:
+            step_str = "  │ Steps: "
+            for s in steps[:16]:
+                step_str += f"{s['hit_rate']:.0%} "
+            if len(steps) > 16:
+                step_str += "..."
+            step_str += "│"
+            print(step_str)
+        print(f"  └{'─' * 73}┘")
 
 
 def _serializable(results):
@@ -1534,6 +1833,151 @@ def save_benchmark_data(results, eval_step, run_dir):
             fig.tight_layout()
             fig.savefig(f"{prefix}_heatmap.png", dpi=100, facecolor="black")
             plt.close(fig)
+
+    # ── AR benchmark graphs ──
+    ar_dir = os.path.join(bench_root, "_autoregress")
+    os.makedirs(ar_dir, exist_ok=True)
+
+    for ar_name in ("autoregress", "lightautoregress"):
+        ar = results.get(ar_name)
+        if not ar or not ar.get("steps"):
+            continue
+
+        prefix = os.path.join(ar_dir, f"eval_{eval_step:03d}_{ar_name}")
+
+        # save JSON
+        ar_save = {k: v for k, v in ar.items() if not any(k2.startswith("_") for k2 in [k])}
+        # strip numpy arrays from steps
+        ar_save_steps = []
+        for s in ar.get("steps", []):
+            ar_save_steps.append({k: v for k, v in s.items() if not k.startswith("_")})
+        ar_save["steps"] = ar_save_steps
+        with open(f"{prefix}.json", "w") as f:
+            json.dump(ar_save, f, indent=2, default=lambda x: float(x) if hasattr(x, 'item') else x)
+
+        steps = ar["steps"]
+
+        if ar_name == "lightautoregress":
+            # hit rate curve over steps
+            hit_curve = ar.get("hit_curve", [])
+            if hit_curve:
+                fig, ax = plt.subplots(figsize=(10, 4))
+                ax.plot(range(len(hit_curve)), hit_curve, "o-", color="#6bc46d", linewidth=2, markersize=4)
+                ax.set_xlabel("AR Step")
+                ax.set_ylabel("HIT Rate")
+                ax.set_title(f"Eval {eval_step}: Light AR — HIT Rate Over 32 Steps")
+                ax.set_ylim(0, 1)
+                ax.grid(True, alpha=0.3)
+                ax.axhline(y=hit_curve[0] if hit_curve else 0, color="gray", linestyle="--", alpha=0.5, label=f"Step 0: {hit_curve[0]:.1%}")
+                ax.legend()
+                fig.tight_layout()
+                fig.savefig(f"{prefix}_hit_curve.png", dpi=120)
+                plt.close(fig)
+
+            # scatter for steps 0, 4, 8, 16, 31
+            scatter_steps = [0, 4, 8, 16, 31]
+            fig, axes = plt.subplots(1, len(scatter_steps), figsize=(4 * len(scatter_steps), 4))
+            for idx, ss in enumerate(scatter_steps):
+                ax = axes[idx] if len(scatter_steps) > 1 else axes
+                if ss < len(steps) and "_preds" in steps[ss] and "_targets" in steps[ss]:
+                    p = steps[ss]["_preds"]
+                    t = steps[ss]["_targets"]
+                    ax.scatter(t, p, s=2, alpha=0.3, color="#4a90d9")
+                    ax.plot([0, 500], [0, 500], "r-", linewidth=0.5, alpha=0.5)
+                    hit_r = steps[ss].get("hit_rate", 0)
+                    ax.set_title(f"Step {ss} (HIT={hit_r:.0%})")
+                else:
+                    ax.set_title(f"Step {ss} (no data)")
+                ax.set_xlim(0, 500)
+                ax.set_ylim(0, 500)
+                ax.set_xlabel("Target")
+                if idx == 0:
+                    ax.set_ylabel("Predicted")
+                ax.set_aspect("equal")
+            fig.suptitle(f"Eval {eval_step}: Light AR — Pred vs Target per Step", fontsize=12)
+            fig.tight_layout()
+            fig.savefig(f"{prefix}_scatter.png", dpi=120)
+            plt.close(fig)
+
+            # frame error over steps
+            frame_errs = [s.get("frame_err_mean", 0) for s in steps if s.get("n_total", 0) > 0]
+            if frame_errs:
+                fig, ax = plt.subplots(figsize=(10, 4))
+                ax.plot(range(len(frame_errs)), frame_errs, "o-", color="#eb4528", linewidth=2, markersize=4)
+                ax.set_xlabel("AR Step")
+                ax.set_ylabel("Mean Frame Error")
+                ax.set_title(f"Eval {eval_step}: Light AR — Frame Error Over Steps")
+                ax.grid(True, alpha=0.3)
+                fig.tight_layout()
+                fig.savefig(f"{prefix}_frame_error.png", dpi=120)
+                plt.close(fig)
+
+        elif ar_name == "autoregress":
+            # survival curve
+            survival = ar.get("survival_per_step", [])
+            if survival:
+                fig, ax = plt.subplots(figsize=(10, 4))
+                if survival[0] > 0:
+                    surv_pct = [s / survival[0] for s in survival]
+                else:
+                    surv_pct = survival
+                ax.plot(range(len(surv_pct)), surv_pct, "o-", color="#4a90d9", linewidth=2, markersize=4)
+                ax.set_xlabel("AR Step")
+                ax.set_ylabel("Survival Rate")
+                ax.set_title(f"Eval {eval_step}: AR — Survival Over 32 Steps")
+                ax.set_ylim(0, 1.05)
+                ax.grid(True, alpha=0.3)
+                fig.tight_layout()
+                fig.savefig(f"{prefix}_survival.png", dpi=120)
+                plt.close(fig)
+
+            # entropy over steps
+            ent_per_step = [s.get("entropy_mean", 0) for s in steps if s.get("n_alive", 0) > 0]
+            if ent_per_step:
+                fig, ax = plt.subplots(figsize=(10, 4))
+                ax.plot(range(len(ent_per_step)), ent_per_step, "o-", color="#c76dba", linewidth=2, markersize=4)
+                ax.set_xlabel("AR Step")
+                ax.set_ylabel("Mean Entropy")
+                ax.set_title(f"Eval {eval_step}: AR — Entropy Over Steps")
+                ax.grid(True, alpha=0.3)
+                fig.tight_layout()
+                fig.savefig(f"{prefix}_entropy.png", dpi=120)
+                plt.close(fig)
+
+            # prediction mean/std over steps (gap drift detection)
+            pred_means = [s.get("pred_mean", 0) for s in steps if s.get("n_alive", 0) > 0]
+            pred_stds = [s.get("pred_std", 0) for s in steps if s.get("n_alive", 0) > 0]
+            if pred_means:
+                fig, ax = plt.subplots(figsize=(10, 4))
+                x = range(len(pred_means))
+                ax.plot(x, pred_means, "o-", color="#6bc46d", linewidth=2, markersize=4, label="Mean pred")
+                ax.fill_between(x,
+                               [m - s for m, s in zip(pred_means, pred_stds)],
+                               [m + s for m, s in zip(pred_means, pred_stds)],
+                               alpha=0.2, color="#6bc46d")
+                ax.set_xlabel("AR Step")
+                ax.set_ylabel("Predicted Bin")
+                ax.set_title(f"Eval {eval_step}: AR — Prediction Distribution Over Steps")
+                ax.legend()
+                ax.grid(True, alpha=0.3)
+                fig.tight_layout()
+                fig.savefig(f"{prefix}_pred_drift.png", dpi=120)
+                plt.close(fig)
+
+            # density comparison bar
+            dc = ar.get("density_conditioned_mean", 0)
+            da = ar.get("density_actual_mean", 0)
+            if dc > 0 or da > 0:
+                fig, ax = plt.subplots(figsize=(6, 4))
+                ax.bar(["Conditioned", "Actual"], [dc, da], color=["#4a90d9", "#6bc46d"])
+                ax.set_ylabel("Events per second")
+                ax.set_title(f"Eval {eval_step}: AR — Density Comparison")
+                ax.grid(True, alpha=0.3, axis="y")
+                for i, v in enumerate([dc, da]):
+                    ax.text(i, v + 0.1, f"{v:.1f}", ha="center")
+                fig.tight_layout()
+                fig.savefig(f"{prefix}_density.png", dpi=120)
+                plt.close(fig)
 
     # ── history curves (one per benchmark, updated every eval) ──
     _save_benchmark_history_graphs(bench_root, run_dir)
