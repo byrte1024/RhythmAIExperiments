@@ -1484,7 +1484,7 @@ def run_benchmarks(model, val_loader, device, amp_enabled=False, multi_target=Fa
     # Run like real inference: predict, move cursor, feed prediction back.
     # Compare predicted onset positions against ground truth onset positions.
     AR_STEPS = 32
-    AR_MAX_SAMPLES = 500
+    AR_MAX_SAMPLES = 1000
 
     def _is_hit_val(pred, target):
         if target >= N_CLASSES - 1:
