@@ -1,0 +1,5673 @@
+{
+  "exp14": {
+    "Alex Warren - Ordinary (Official Video)": {
+      "total_events": 652,
+      "total_frames": 37474,
+      "duration_s": 186.95,
+      "events_per_sec": 3.49,
+      "stop_count": 85,
+      "total_model_calls": 737,
+      "event_ratio": 0.8847,
+      "stop_ratio": 0.1153,
+      "inference_time_s": 16.23,
+      "events_per_sec_realtime": 40.2,
+      "realtime_factor": 11.52,
+      "timing": {
+        "inference_s": 16.231,
+        "ms_per_call": 22.02,
+        "ms_per_event": 24.89,
+        "calls_per_sec": 45.4,
+        "model_load_s": 0.919,
+        "audio_load_s": 1.903,
+        "total_s": 19.066
+      },
+      "event_distribution": {
+        "min_offset": 10,
+        "max_offset": 306,
+        "mean_offset": 54.87,
+        "median_offset": 36,
+        "std_offset": 36.2,
+        "mean_offset_ms": 273.73,
+        "median_offset_ms": 179.59,
+        "top_offsets": [
+          {
+            "offset": 36,
+            "offset_ms": 179.6,
+            "count": 352
+          },
+          {
+            "offset": 107,
+            "offset_ms": 533.8,
+            "count": 59
+          },
+          {
+            "offset": 72,
+            "offset_ms": 359.2,
+            "count": 53
+          },
+          {
+            "offset": 71,
+            "offset_ms": 354.2,
+            "count": 52
+          },
+          {
+            "offset": 35,
+            "offset_ms": 174.6,
+            "count": 30
+          },
+          {
+            "offset": 106,
+            "offset_ms": 528.8,
+            "count": 8
+          },
+          {
+            "offset": 18,
+            "offset_ms": 89.8,
+            "count": 7
+          },
+          {
+            "offset": 108,
+            "offset_ms": 538.8,
+            "count": 7
+          },
+          {
+            "offset": 40,
+            "offset_ms": 199.5,
+            "count": 5
+          },
+          {
+            "offset": 54,
+            "offset_ms": 269.4,
+            "count": 5
+          },
+          {
+            "offset": 12,
+            "offset_ms": 59.9,
+            "count": 5
+          },
+          {
+            "offset": 53,
+            "offset_ms": 264.4,
+            "count": 4
+          },
+          {
+            "offset": 60,
+            "offset_ms": 299.3,
+            "count": 4
+          },
+          {
+            "offset": 17,
+            "offset_ms": 84.8,
+            "count": 4
+          },
+          {
+            "offset": 216,
+            "offset_ms": 1077.6,
+            "count": 4
+          }
+        ],
+        "zero_offset_count": 0,
+        "zero_offset_pct": 0.0
+      },
+      "ioi": {
+        "min_ms": 49.9,
+        "max_ms": 1526.5,
+        "mean_ms": 276.0,
+        "median_ms": 179.6,
+        "std_ms": 183.3,
+        "short_ioi_count": 0,
+        "short_ioi_pct": 0.0,
+        "long_gap_count": 0,
+        "histogram": [
+          {
+            "ms": 50,
+            "count": 2
+          },
+          {
+            "ms": 60,
+            "count": 6
+          },
+          {
+            "ms": 70,
+            "count": 2
+          },
+          {
+            "ms": 80,
+            "count": 4
+          },
+          {
+            "ms": 90,
+            "count": 7
+          },
+          {
+            "ms": 130,
+            "count": 3
+          },
+          {
+            "ms": 150,
+            "count": 4
+          },
+          {
+            "ms": 170,
+            "count": 31
+          },
+          {
+            "ms": 180,
+            "count": 354
+          },
+          {
+            "ms": 190,
+            "count": 5
+          },
+          {
+            "ms": 200,
+            "count": 6
+          },
+          {
+            "ms": 260,
+            "count": 4
+          },
+          {
+            "ms": 270,
+            "count": 6
+          },
+          {
+            "ms": 300,
+            "count": 5
+          },
+          {
+            "ms": 340,
+            "count": 2
+          },
+          {
+            "ms": 350,
+            "count": 52
+          },
+          {
+            "ms": 360,
+            "count": 53
+          },
+          {
+            "ms": 380,
+            "count": 2
+          },
+          {
+            "ms": 400,
+            "count": 2
+          },
+          {
+            "ms": 530,
+            "count": 67
+          }
+        ],
+        "estimated_bpm": 333.3
+      },
+      "density": {
+        "mean": 3.49,
+        "peak": 10,
+        "std": 1.68,
+        "min": 0,
+        "cv": 0.482,
+        "silence_regions": [],
+        "dense_regions": []
+      },
+      "stop_analysis": {
+        "total_stops": 85,
+        "first_stop_ms": 68215.0,
+        "last_stop_ms": 186855.3,
+        "consecutive_runs": 4,
+        "longest_run": 68,
+        "avg_run_length": 20.8,
+        "avg_stop_gap_ms": 1412.4,
+        "min_stop_gap_ms": 99.8,
+        "max_stop_gap_ms": 49113.4
+      },
+      "avg_stop_gap_ms": 1412.4,
+      "checkpoint": "best.pt",
+      "epoch": 6.0,
+      "val_loss": 2.6449,
+      "val_accuracy": 0.5053,
+      "device": "cuda",
+      "audio_file": "Alex Warren - Ordinary (Official Video).wav",
+      "conditioning": {
+        "mean": 6.75,
+        "peak": 12.1,
+        "std": 1.5
+      },
+      "hop_ms": 100,
+      "hop_bins": 20
+    },
+    "Equiloud - Time Machine": {
+      "total_events": 805,
+      "total_frames": 47662,
+      "duration_s": 237.77,
+      "events_per_sec": 3.39,
+      "stop_count": 206,
+      "total_model_calls": 1011,
+      "event_ratio": 0.7962,
+      "stop_ratio": 0.2038,
+      "inference_time_s": 21.53,
+      "events_per_sec_realtime": 37.4,
+      "realtime_factor": 11.04,
+      "timing": {
+        "inference_s": 21.527,
+        "ms_per_call": 21.29,
+        "ms_per_event": 26.74,
+        "calls_per_sec": 47.0,
+        "model_load_s": 0.914,
+        "audio_load_s": 1.7,
+        "total_s": 24.153
+      },
+      "event_distribution": {
+        "min_offset": 14,
+        "max_offset": 309,
+        "mean_offset": 54.1,
+        "median_offset": 57,
+        "std_offset": 20.02,
+        "mean_offset_ms": 269.86,
+        "median_offset_ms": 284.35,
+        "top_offsets": [
+          {
+            "offset": 57,
+            "offset_ms": 284.4,
+            "count": 473
+          },
+          {
+            "offset": 58,
+            "offset_ms": 289.3,
+            "count": 137
+          },
+          {
+            "offset": 29,
+            "offset_ms": 144.7,
+            "count": 125
+          },
+          {
+            "offset": 114,
+            "offset_ms": 568.7,
+            "count": 8
+          },
+          {
+            "offset": 34,
+            "offset_ms": 169.6,
+            "count": 5
+          },
+          {
+            "offset": 21,
+            "offset_ms": 104.8,
+            "count": 4
+          },
+          {
+            "offset": 20,
+            "offset_ms": 99.8,
+            "count": 4
+          },
+          {
+            "offset": 30,
+            "offset_ms": 149.7,
+            "count": 4
+          },
+          {
+            "offset": 115,
+            "offset_ms": 573.7,
+            "count": 3
+          },
+          {
+            "offset": 67,
+            "offset_ms": 334.2,
+            "count": 3
+          },
+          {
+            "offset": 60,
+            "offset_ms": 299.3,
+            "count": 3
+          },
+          {
+            "offset": 56,
+            "offset_ms": 279.4,
+            "count": 3
+          },
+          {
+            "offset": 22,
+            "offset_ms": 109.8,
+            "count": 2
+          },
+          {
+            "offset": 61,
+            "offset_ms": 304.3,
+            "count": 2
+          },
+          {
+            "offset": 31,
+            "offset_ms": 154.6,
+            "count": 2
+          }
+        ],
+        "zero_offset_count": 0,
+        "zero_offset_pct": 0.0
+      },
+      "ioi": {
+        "min_ms": 69.8,
+        "max_ms": 1541.5,
+        "mean_ms": 271.9,
+        "median_ms": 284.4,
+        "std_ms": 100.8,
+        "short_ioi_count": 0,
+        "short_ioi_pct": 0.0,
+        "long_gap_count": 0,
+        "histogram": [
+          {
+            "ms": 100,
+            "count": 4
+          },
+          {
+            "ms": 110,
+            "count": 2
+          },
+          {
+            "ms": 140,
+            "count": 126
+          },
+          {
+            "ms": 150,
+            "count": 6
+          },
+          {
+            "ms": 170,
+            "count": 5
+          },
+          {
+            "ms": 200,
+            "count": 4
+          },
+          {
+            "ms": 280,
+            "count": 476
+          },
+          {
+            "ms": 290,
+            "count": 139
+          },
+          {
+            "ms": 300,
+            "count": 7
+          },
+          {
+            "ms": 330,
+            "count": 3
+          },
+          {
+            "ms": 340,
+            "count": 2
+          },
+          {
+            "ms": 430,
+            "count": 2
+          },
+          {
+            "ms": 510,
+            "count": 2
+          },
+          {
+            "ms": 570,
+            "count": 11
+          },
+          {
+            "ms": 650,
+            "count": 2
+          },
+          {
+            "ms": 670,
+            "count": 2
+          }
+        ],
+        "estimated_bpm": 210.5
+      },
+      "density": {
+        "mean": 3.38,
+        "peak": 7,
+        "std": 1.35,
+        "min": 0,
+        "cv": 0.399,
+        "silence_regions": [],
+        "dense_regions": []
+      },
+      "stop_analysis": {
+        "total_stops": 206,
+        "first_stop_ms": 0.0,
+        "last_stop_ms": 237694.8,
+        "consecutive_runs": 6,
+        "longest_run": 174,
+        "avg_run_length": 33.8,
+        "avg_stop_gap_ms": 1159.5,
+        "min_stop_gap_ms": 99.8,
+        "max_stop_gap_ms": 107231.3
+      },
+      "avg_stop_gap_ms": 1159.5,
+      "checkpoint": "best.pt",
+      "epoch": 6.0,
+      "val_loss": 2.6449,
+      "val_accuracy": 0.5053,
+      "device": "cuda",
+      "audio_file": "Equiloud - Time Machine.wav",
+      "conditioning": {
+        "mean": 6.75,
+        "peak": 12.1,
+        "std": 1.5
+      },
+      "hop_ms": 100,
+      "hop_bins": 20
+    },
+    "Medalist Season 2 OP \u29f8 Opening Cold Night by HANA [4K 60FPS]": {
+      "total_events": 419,
+      "total_frames": 24149,
+      "duration_s": 120.47,
+      "events_per_sec": 3.48,
+      "stop_count": 333,
+      "total_model_calls": 752,
+      "event_ratio": 0.5572,
+      "stop_ratio": 0.4428,
+      "inference_time_s": 15.43,
+      "events_per_sec_realtime": 27.1,
+      "realtime_factor": 7.81,
+      "timing": {
+        "inference_s": 15.434,
+        "ms_per_call": 20.52,
+        "ms_per_event": 36.84,
+        "calls_per_sec": 48.7,
+        "model_load_s": 0.814,
+        "audio_load_s": 1.681,
+        "total_s": 17.936
+      },
+      "event_distribution": {
+        "min_offset": 21,
+        "max_offset": 332,
+        "mean_offset": 41.76,
+        "median_offset": 48,
+        "std_offset": 18.81,
+        "mean_offset_ms": 208.31,
+        "median_offset_ms": 239.46,
+        "top_offsets": [
+          {
+            "offset": 48,
+            "offset_ms": 239.5,
+            "count": 243
+          },
+          {
+            "offset": 24,
+            "offset_ms": 119.7,
+            "count": 127
+          },
+          {
+            "offset": 49,
+            "offset_ms": 244.4,
+            "count": 39
+          },
+          {
+            "offset": 72,
+            "offset_ms": 359.2,
+            "count": 3
+          },
+          {
+            "offset": 21,
+            "offset_ms": 104.8,
+            "count": 2
+          },
+          {
+            "offset": 38,
+            "offset_ms": 189.6,
+            "count": 1
+          },
+          {
+            "offset": 31,
+            "offset_ms": 154.6,
+            "count": 1
+          },
+          {
+            "offset": 117,
+            "offset_ms": 583.7,
+            "count": 1
+          },
+          {
+            "offset": 332,
+            "offset_ms": 1656.2,
+            "count": 1
+          },
+          {
+            "offset": 97,
+            "offset_ms": 483.9,
+            "count": 1
+          }
+        ],
+        "zero_offset_count": 0,
+        "zero_offset_pct": 0.0
+      },
+      "ioi": {
+        "min_ms": 119.7,
+        "max_ms": 1656.2,
+        "mean_ms": 209.8,
+        "median_ms": 239.5,
+        "std_ms": 96.5,
+        "short_ioi_count": 0,
+        "short_ioi_pct": 0.0,
+        "long_gap_count": 0,
+        "histogram": [
+          {
+            "ms": 120,
+            "count": 127
+          },
+          {
+            "ms": 240,
+            "count": 282
+          },
+          {
+            "ms": 360,
+            "count": 3
+          }
+        ],
+        "estimated_bpm": 250.0
+      },
+      "density": {
+        "mean": 3.46,
+        "peak": 8,
+        "std": 2.35,
+        "min": 0,
+        "cv": 0.68,
+        "silence_regions": [],
+        "dense_regions": []
+      },
+      "stop_analysis": {
+        "total_stops": 333,
+        "first_stop_ms": 0.0,
+        "last_stop_ms": 120406.3,
+        "consecutive_runs": 3,
+        "longest_run": 327,
+        "avg_run_length": 110.3,
+        "avg_stop_gap_ms": 362.7,
+        "min_stop_gap_ms": 99.8,
+        "max_stop_gap_ms": 86827.7
+      },
+      "avg_stop_gap_ms": 362.7,
+      "checkpoint": "best.pt",
+      "epoch": 6.0,
+      "val_loss": 2.6449,
+      "val_accuracy": 0.5053,
+      "device": "cuda",
+      "audio_file": "Medalist Season 2 OP \u29f8 Opening 'Cold Night' by HANA [4K 60FPS].wav",
+      "conditioning": {
+        "mean": 6.75,
+        "peak": 12.1,
+        "std": 1.5
+      },
+      "hop_ms": 100,
+      "hop_bins": 20
+    },
+    "RoccoW - Chipper Choices": {
+      "total_events": 551,
+      "total_frames": 27727,
+      "duration_s": 138.32,
+      "events_per_sec": 3.98,
+      "stop_count": 13,
+      "total_model_calls": 564,
+      "event_ratio": 0.977,
+      "stop_ratio": 0.023,
+      "inference_time_s": 11.83,
+      "events_per_sec_realtime": 46.6,
+      "realtime_factor": 11.69,
+      "timing": {
+        "inference_s": 11.83,
+        "ms_per_call": 20.98,
+        "ms_per_event": 21.47,
+        "calls_per_sec": 47.7,
+        "model_load_s": 0.945,
+        "audio_load_s": 1.619,
+        "total_s": 14.401
+      },
+      "event_distribution": {
+        "min_offset": 25,
+        "max_offset": 77,
+        "mean_offset": 49.86,
+        "median_offset": 51,
+        "std_offset": 7.15,
+        "mean_offset_ms": 248.75,
+        "median_offset_ms": 254.42,
+        "top_offsets": [
+          {
+            "offset": 51,
+            "offset_ms": 254.4,
+            "count": 499
+          },
+          {
+            "offset": 25,
+            "offset_ms": 124.7,
+            "count": 25
+          },
+          {
+            "offset": 26,
+            "offset_ms": 129.7,
+            "count": 8
+          },
+          {
+            "offset": 76,
+            "offset_ms": 379.1,
+            "count": 7
+          },
+          {
+            "offset": 50,
+            "offset_ms": 249.4,
+            "count": 7
+          },
+          {
+            "offset": 77,
+            "offset_ms": 384.1,
+            "count": 3
+          },
+          {
+            "offset": 53,
+            "offset_ms": 264.4,
+            "count": 1
+          },
+          {
+            "offset": 27,
+            "offset_ms": 134.7,
+            "count": 1
+          }
+        ],
+        "zero_offset_count": 0,
+        "zero_offset_pct": 0.0
+      },
+      "ioi": {
+        "min_ms": 124.7,
+        "max_ms": 384.1,
+        "mean_ms": 248.7,
+        "median_ms": 254.4,
+        "std_ms": 35.7,
+        "short_ioi_count": 0,
+        "short_ioi_pct": 0.0,
+        "long_gap_count": 0,
+        "histogram": [
+          {
+            "ms": 120,
+            "count": 25
+          },
+          {
+            "ms": 130,
+            "count": 9
+          },
+          {
+            "ms": 250,
+            "count": 506
+          },
+          {
+            "ms": 380,
+            "count": 10
+          }
+        ],
+        "estimated_bpm": 235.3
+      },
+      "density": {
+        "mean": 3.96,
+        "peak": 6,
+        "std": 0.65,
+        "min": 0,
+        "cv": 0.164,
+        "silence_regions": [],
+        "dense_regions": []
+      },
+      "stop_analysis": {
+        "total_stops": 13,
+        "first_stop_ms": 137063.5,
+        "last_stop_ms": 138260.8,
+        "consecutive_runs": 1,
+        "longest_run": 13,
+        "avg_run_length": 13.0,
+        "avg_stop_gap_ms": 99.8,
+        "min_stop_gap_ms": 99.8,
+        "max_stop_gap_ms": 99.8
+      },
+      "avg_stop_gap_ms": 99.8,
+      "checkpoint": "best.pt",
+      "epoch": 6.0,
+      "val_loss": 2.6449,
+      "val_accuracy": 0.5053,
+      "device": "cuda",
+      "audio_file": "RoccoW - Chipper Choices.wav",
+      "conditioning": {
+        "mean": 6.75,
+        "peak": 12.1,
+        "std": 1.5
+      },
+      "hop_ms": 100,
+      "hop_bins": 20
+    },
+    "Sabrina Carpenter - Manchild (Official Video)": {
+      "total_events": 922,
+      "total_frames": 47367,
+      "duration_s": 236.3,
+      "events_per_sec": 3.9,
+      "stop_count": 131,
+      "total_model_calls": 1053,
+      "event_ratio": 0.8756,
+      "stop_ratio": 0.1244,
+      "inference_time_s": 22.15,
+      "events_per_sec_realtime": 41.6,
+      "realtime_factor": 10.67,
+      "timing": {
+        "inference_s": 22.148,
+        "ms_per_call": 21.03,
+        "ms_per_event": 24.02,
+        "calls_per_sec": 47.5,
+        "model_load_s": 0.931,
+        "audio_load_s": 1.722,
+        "total_s": 24.813
+      },
+      "event_distribution": {
+        "min_offset": 9,
+        "max_offset": 470,
+        "mean_offset": 48.55,
+        "median_offset": 49,
+        "std_offset": 25.15,
+        "mean_offset_ms": 242.19,
+        "median_offset_ms": 244.44,
+        "top_offsets": [
+          {
+            "offset": 49,
+            "offset_ms": 244.4,
+            "count": 736
+          },
+          {
+            "offset": 24,
+            "offset_ms": 119.7,
+            "count": 79
+          },
+          {
+            "offset": 48,
+            "offset_ms": 239.5,
+            "count": 44
+          },
+          {
+            "offset": 97,
+            "offset_ms": 483.9,
+            "count": 10
+          },
+          {
+            "offset": 22,
+            "offset_ms": 109.8,
+            "count": 7
+          },
+          {
+            "offset": 21,
+            "offset_ms": 104.8,
+            "count": 7
+          },
+          {
+            "offset": 40,
+            "offset_ms": 199.5,
+            "count": 4
+          },
+          {
+            "offset": 20,
+            "offset_ms": 99.8,
+            "count": 3
+          },
+          {
+            "offset": 73,
+            "offset_ms": 364.2,
+            "count": 3
+          },
+          {
+            "offset": 15,
+            "offset_ms": 74.8,
+            "count": 2
+          },
+          {
+            "offset": 39,
+            "offset_ms": 194.6,
+            "count": 2
+          },
+          {
+            "offset": 34,
+            "offset_ms": 169.6,
+            "count": 2
+          },
+          {
+            "offset": 98,
+            "offset_ms": 488.9,
+            "count": 2
+          },
+          {
+            "offset": 18,
+            "offset_ms": 89.8,
+            "count": 1
+          },
+          {
+            "offset": 41,
+            "offset_ms": 204.5,
+            "count": 1
+          }
+        ],
+        "zero_offset_count": 0,
+        "zero_offset_pct": 0.0
+      },
+      "ioi": {
+        "min_ms": 54.9,
+        "max_ms": 3342.4,
+        "mean_ms": 245.8,
+        "median_ms": 244.4,
+        "std_ms": 151.2,
+        "short_ioi_count": 0,
+        "short_ioi_pct": 0.0,
+        "long_gap_count": 1,
+        "histogram": [
+          {
+            "ms": 100,
+            "count": 10
+          },
+          {
+            "ms": 110,
+            "count": 6
+          },
+          {
+            "ms": 120,
+            "count": 79
+          },
+          {
+            "ms": 190,
+            "count": 2
+          },
+          {
+            "ms": 200,
+            "count": 5
+          },
+          {
+            "ms": 240,
+            "count": 780
+          },
+          {
+            "ms": 360,
+            "count": 3
+          },
+          {
+            "ms": 480,
+            "count": 10
+          },
+          {
+            "ms": 490,
+            "count": 3
+          }
+        ],
+        "estimated_bpm": 244.9
+      },
+      "density": {
+        "mean": 3.89,
+        "peak": 9,
+        "std": 1.33,
+        "min": 0,
+        "cv": 0.341,
+        "silence_regions": [
+          {
+            "start_s": 195.0,
+            "end_s": 197.0,
+            "duration_s": 2.0
+          }
+        ],
+        "dense_regions": []
+      },
+      "stop_analysis": {
+        "total_stops": 131,
+        "first_stop_ms": 74.8,
+        "last_stop_ms": 236268.0,
+        "consecutive_runs": 5,
+        "longest_run": 99,
+        "avg_run_length": 25.8,
+        "avg_stop_gap_ms": 1816.9,
+        "min_stop_gap_ms": 99.8,
+        "max_stop_gap_ms": 189110.2
+      },
+      "avg_stop_gap_ms": 1816.9,
+      "checkpoint": "best.pt",
+      "epoch": 6.0,
+      "val_loss": 2.6449,
+      "val_accuracy": 0.5053,
+      "device": "cuda",
+      "audio_file": "Sabrina Carpenter - Manchild (Official Video).wav",
+      "conditioning": {
+        "mean": 6.75,
+        "peak": 12.1,
+        "std": 1.5
+      },
+      "hop_ms": 100,
+      "hop_bins": 20
+    },
+    "Snow Man \u30aa\u30c9\u30ed\u30a6\u30bc\uff01 Music Video": {
+      "total_events": 896,
+      "total_frames": 48545,
+      "duration_s": 242.17,
+      "events_per_sec": 3.7,
+      "stop_count": 116,
+      "total_model_calls": 1012,
+      "event_ratio": 0.8854,
+      "stop_ratio": 0.1146,
+      "inference_time_s": 21.27,
+      "events_per_sec_realtime": 42.1,
+      "realtime_factor": 11.39,
+      "timing": {
+        "inference_s": 21.265,
+        "ms_per_call": 21.01,
+        "ms_per_event": 23.73,
+        "calls_per_sec": 47.6,
+        "model_load_s": 0.896,
+        "audio_load_s": 1.702,
+        "total_s": 23.874
+      },
+      "event_distribution": {
+        "min_offset": 11,
+        "max_offset": 380,
+        "mean_offset": 51.6,
+        "median_offset": 47,
+        "std_offset": 31.57,
+        "mean_offset_ms": 257.4,
+        "median_offset_ms": 234.47,
+        "top_offsets": [
+          {
+            "offset": 47,
+            "offset_ms": 234.5,
+            "count": 558
+          },
+          {
+            "offset": 94,
+            "offset_ms": 468.9,
+            "count": 104
+          },
+          {
+            "offset": 24,
+            "offset_ms": 119.7,
+            "count": 94
+          },
+          {
+            "offset": 23,
+            "offset_ms": 114.7,
+            "count": 67
+          },
+          {
+            "offset": 70,
+            "offset_ms": 349.2,
+            "count": 16
+          },
+          {
+            "offset": 71,
+            "offset_ms": 354.2,
+            "count": 9
+          },
+          {
+            "offset": 93,
+            "offset_ms": 463.9,
+            "count": 7
+          },
+          {
+            "offset": 20,
+            "offset_ms": 99.8,
+            "count": 3
+          },
+          {
+            "offset": 15,
+            "offset_ms": 74.8,
+            "count": 3
+          },
+          {
+            "offset": 46,
+            "offset_ms": 229.5,
+            "count": 3
+          },
+          {
+            "offset": 35,
+            "offset_ms": 174.6,
+            "count": 2
+          },
+          {
+            "offset": 306,
+            "offset_ms": 1526.5,
+            "count": 2
+          },
+          {
+            "offset": 31,
+            "offset_ms": 154.6,
+            "count": 2
+          },
+          {
+            "offset": 126,
+            "offset_ms": 628.6,
+            "count": 2
+          },
+          {
+            "offset": 95,
+            "offset_ms": 473.9,
+            "count": 2
+          }
+        ],
+        "zero_offset_count": 0,
+        "zero_offset_pct": 0.0
+      },
+      "ioi": {
+        "min_ms": 54.9,
+        "max_ms": 1995.5,
+        "mean_ms": 258.5,
+        "median_ms": 234.5,
+        "std_ms": 159.4,
+        "short_ioi_count": 0,
+        "short_ioi_pct": 0.0,
+        "long_gap_count": 0,
+        "histogram": [
+          {
+            "ms": 70,
+            "count": 3
+          },
+          {
+            "ms": 80,
+            "count": 2
+          },
+          {
+            "ms": 100,
+            "count": 3
+          },
+          {
+            "ms": 110,
+            "count": 67
+          },
+          {
+            "ms": 120,
+            "count": 92
+          },
+          {
+            "ms": 150,
+            "count": 2
+          },
+          {
+            "ms": 220,
+            "count": 2
+          },
+          {
+            "ms": 230,
+            "count": 560
+          },
+          {
+            "ms": 240,
+            "count": 2
+          },
+          {
+            "ms": 350,
+            "count": 26
+          },
+          {
+            "ms": 460,
+            "count": 7
+          },
+          {
+            "ms": 470,
+            "count": 105
+          },
+          {
+            "ms": 630,
+            "count": 2
+          },
+          {
+            "ms": 820,
+            "count": 2
+          },
+          {
+            "ms": 1530,
+            "count": 2
+          }
+        ],
+        "estimated_bpm": 255.3
+      },
+      "density": {
+        "mean": 3.69,
+        "peak": 8,
+        "std": 1.52,
+        "min": 0,
+        "cv": 0.413,
+        "silence_regions": [],
+        "dense_regions": []
+      },
+      "stop_analysis": {
+        "total_stops": 116,
+        "first_stop_ms": 0.0,
+        "last_stop_ms": 242104.8,
+        "consecutive_runs": 3,
+        "longest_run": 103,
+        "avg_run_length": 37.0,
+        "avg_stop_gap_ms": 2105.3,
+        "min_stop_gap_ms": 99.8,
+        "max_stop_gap_ms": 221845.8
+      },
+      "avg_stop_gap_ms": 2105.3,
+      "checkpoint": "best.pt",
+      "epoch": 6.0,
+      "val_loss": 2.6449,
+      "val_accuracy": 0.5053,
+      "device": "cuda",
+      "audio_file": "Snow Man '\u30aa\u30c9\u30ed\u30a6\u30bc\uff01' Music Video.wav",
+      "conditioning": {
+        "mean": 6.75,
+        "peak": 12.1,
+        "std": 1.5
+      },
+      "hop_ms": 100,
+      "hop_bins": 20
+    },
+    "The Bug Club - Watching the Omnibus (Official Audio)": {
+      "total_events": 417,
+      "total_frames": 15947,
+      "duration_s": 79.55,
+      "events_per_sec": 5.24,
+      "stop_count": 24,
+      "total_model_calls": 441,
+      "event_ratio": 0.9456,
+      "stop_ratio": 0.0544,
+      "inference_time_s": 11.02,
+      "events_per_sec_realtime": 37.8,
+      "realtime_factor": 7.22,
+      "timing": {
+        "inference_s": 11.022,
+        "ms_per_call": 24.99,
+        "ms_per_event": 26.43,
+        "calls_per_sec": 40.0,
+        "model_load_s": 0.975,
+        "audio_load_s": 1.617,
+        "total_s": 13.62
+      },
+      "event_distribution": {
+        "min_offset": 19,
+        "max_offset": 189,
+        "mean_offset": 37.09,
+        "median_offset": 25,
+        "std_offset": 18.13,
+        "mean_offset_ms": 185.05,
+        "median_offset_ms": 124.72,
+        "top_offsets": [
+          {
+            "offset": 25,
+            "offset_ms": 124.7,
+            "count": 170
+          },
+          {
+            "offset": 50,
+            "offset_ms": 249.4,
+            "count": 61
+          },
+          {
+            "offset": 49,
+            "offset_ms": 244.4,
+            "count": 58
+          },
+          {
+            "offset": 24,
+            "offset_ms": 119.7,
+            "count": 42
+          },
+          {
+            "offset": 51,
+            "offset_ms": 254.4,
+            "count": 33
+          },
+          {
+            "offset": 26,
+            "offset_ms": 129.7,
+            "count": 22
+          },
+          {
+            "offset": 32,
+            "offset_ms": 159.6,
+            "count": 3
+          },
+          {
+            "offset": 33,
+            "offset_ms": 164.6,
+            "count": 2
+          },
+          {
+            "offset": 77,
+            "offset_ms": 384.1,
+            "count": 2
+          },
+          {
+            "offset": 27,
+            "offset_ms": 134.7,
+            "count": 2
+          },
+          {
+            "offset": 76,
+            "offset_ms": 379.1,
+            "count": 2
+          },
+          {
+            "offset": 101,
+            "offset_ms": 503.9,
+            "count": 2
+          },
+          {
+            "offset": 52,
+            "offset_ms": 259.4,
+            "count": 2
+          },
+          {
+            "offset": 65,
+            "offset_ms": 324.3,
+            "count": 1
+          },
+          {
+            "offset": 30,
+            "offset_ms": 149.7,
+            "count": 1
+          }
+        ],
+        "zero_offset_count": 0,
+        "zero_offset_pct": 0.0
+      },
+      "ioi": {
+        "min_ms": 94.8,
+        "max_ms": 942.9,
+        "mean_ms": 184.7,
+        "median_ms": 124.7,
+        "std_ms": 90.3,
+        "short_ioi_count": 0,
+        "short_ioi_pct": 0.0,
+        "long_gap_count": 0,
+        "histogram": [
+          {
+            "ms": 120,
+            "count": 212
+          },
+          {
+            "ms": 130,
+            "count": 24
+          },
+          {
+            "ms": 160,
+            "count": 5
+          },
+          {
+            "ms": 240,
+            "count": 58
+          },
+          {
+            "ms": 250,
+            "count": 94
+          },
+          {
+            "ms": 260,
+            "count": 3
+          },
+          {
+            "ms": 380,
+            "count": 4
+          },
+          {
+            "ms": 500,
+            "count": 3
+          }
+        ],
+        "estimated_bpm": 480.0
+      },
+      "density": {
+        "mean": 5.21,
+        "peak": 8,
+        "std": 1.58,
+        "min": 0,
+        "cv": 0.303,
+        "silence_regions": [],
+        "dense_regions": []
+      },
+      "stop_analysis": {
+        "total_stops": 24,
+        "first_stop_ms": 77164.6,
+        "last_stop_ms": 79459.4,
+        "consecutive_runs": 1,
+        "longest_run": 24,
+        "avg_run_length": 24.0,
+        "avg_stop_gap_ms": 99.8,
+        "min_stop_gap_ms": 99.8,
+        "max_stop_gap_ms": 99.8
+      },
+      "avg_stop_gap_ms": 99.8,
+      "checkpoint": "best.pt",
+      "epoch": 6.0,
+      "val_loss": 2.6449,
+      "val_accuracy": 0.5053,
+      "device": "cuda",
+      "audio_file": "The Bug Club - Watching the Omnibus (Official Audio).wav",
+      "conditioning": {
+        "mean": 6.75,
+        "peak": 12.1,
+        "std": 1.5
+      },
+      "hop_ms": 100,
+      "hop_bins": 20
+    },
+    "Weird Nightmare - Might See You There (Official Music Video)": {
+      "total_events": 499,
+      "total_frames": 24474,
+      "duration_s": 122.09,
+      "events_per_sec": 4.09,
+      "stop_count": 72,
+      "total_model_calls": 571,
+      "event_ratio": 0.8739,
+      "stop_ratio": 0.1261,
+      "inference_time_s": 12.48,
+      "events_per_sec_realtime": 40.0,
+      "realtime_factor": 9.78,
+      "timing": {
+        "inference_s": 12.484,
+        "ms_per_call": 21.86,
+        "ms_per_event": 25.02,
+        "calls_per_sec": 45.7,
+        "model_load_s": 0.885,
+        "audio_load_s": 1.66,
+        "total_s": 15.037
+      },
+      "event_distribution": {
+        "min_offset": 21,
+        "max_offset": 166,
+        "mean_offset": 46.2,
+        "median_offset": 42,
+        "std_offset": 19.76,
+        "mean_offset_ms": 230.47,
+        "median_offset_ms": 209.52,
+        "top_offsets": [
+          {
+            "offset": 42,
+            "offset_ms": 209.5,
+            "count": 221
+          },
+          {
+            "offset": 43,
+            "offset_ms": 214.5,
+            "count": 110
+          },
+          {
+            "offset": 21,
+            "offset_ms": 104.8,
+            "count": 80
+          },
+          {
+            "offset": 85,
+            "offset_ms": 424.0,
+            "count": 65
+          },
+          {
+            "offset": 84,
+            "offset_ms": 419.0,
+            "count": 14
+          },
+          {
+            "offset": 86,
+            "offset_ms": 429.0,
+            "count": 4
+          },
+          {
+            "offset": 41,
+            "offset_ms": 204.5,
+            "count": 3
+          },
+          {
+            "offset": 27,
+            "offset_ms": 134.7,
+            "count": 1
+          },
+          {
+            "offset": 166,
+            "offset_ms": 828.1,
+            "count": 1
+          }
+        ],
+        "zero_offset_count": 0,
+        "zero_offset_pct": 0.0
+      },
+      "ioi": {
+        "min_ms": 104.8,
+        "max_ms": 828.1,
+        "mean_ms": 230.7,
+        "median_ms": 209.5,
+        "std_ms": 98.6,
+        "short_ioi_count": 0,
+        "short_ioi_pct": 0.0,
+        "long_gap_count": 0,
+        "histogram": [
+          {
+            "ms": 100,
+            "count": 80
+          },
+          {
+            "ms": 200,
+            "count": 3
+          },
+          {
+            "ms": 210,
+            "count": 331
+          },
+          {
+            "ms": 420,
+            "count": 79
+          },
+          {
+            "ms": 430,
+            "count": 4
+          }
+        ],
+        "estimated_bpm": 285.7
+      },
+      "density": {
+        "mean": 4.06,
+        "peak": 7,
+        "std": 1.54,
+        "min": 0,
+        "cv": 0.379,
+        "silence_regions": [],
+        "dense_regions": []
+      },
+      "stop_analysis": {
+        "total_stops": 72,
+        "first_stop_ms": 115003.6,
+        "last_stop_ms": 122087.5,
+        "consecutive_runs": 1,
+        "longest_run": 72,
+        "avg_run_length": 72.0,
+        "avg_stop_gap_ms": 99.8,
+        "min_stop_gap_ms": 99.8,
+        "max_stop_gap_ms": 99.8
+      },
+      "avg_stop_gap_ms": 99.8,
+      "checkpoint": "best.pt",
+      "epoch": 6.0,
+      "val_loss": 2.6449,
+      "val_accuracy": 0.5053,
+      "device": "cuda",
+      "audio_file": "Weird Nightmare - Might See You There (Official Music Video).wav",
+      "conditioning": {
+        "mean": 6.75,
+        "peak": 12.1,
+        "std": 1.5
+      },
+      "hop_ms": 100,
+      "hop_bins": 20
+    },
+    "XAMIYA - KIKYU (Official Lyric Video)": {
+      "total_events": 378,
+      "total_frames": 28016,
+      "duration_s": 139.76,
+      "events_per_sec": 2.7,
+      "stop_count": 57,
+      "total_model_calls": 435,
+      "event_ratio": 0.869,
+      "stop_ratio": 0.131,
+      "inference_time_s": 9.13,
+      "events_per_sec_realtime": 41.4,
+      "realtime_factor": 15.31,
+      "timing": {
+        "inference_s": 9.128,
+        "ms_per_call": 20.98,
+        "ms_per_event": 24.15,
+        "calls_per_sec": 47.7,
+        "model_load_s": 0.938,
+        "audio_load_s": 1.659,
+        "total_s": 11.73
+      },
+      "event_distribution": {
+        "min_offset": 16,
+        "max_offset": 349,
+        "mean_offset": 71.12,
+        "median_offset": 69,
+        "std_offset": 39.64,
+        "mean_offset_ms": 354.8,
+        "median_offset_ms": 344.22,
+        "top_offsets": [
+          {
+            "offset": 69,
+            "offset_ms": 344.2,
+            "count": 140
+          },
+          {
+            "offset": 104,
+            "offset_ms": 518.8,
+            "count": 60
+          },
+          {
+            "offset": 35,
+            "offset_ms": 174.6,
+            "count": 52
+          },
+          {
+            "offset": 17,
+            "offset_ms": 84.8,
+            "count": 35
+          },
+          {
+            "offset": 34,
+            "offset_ms": 169.6,
+            "count": 21
+          },
+          {
+            "offset": 138,
+            "offset_ms": 688.4,
+            "count": 16
+          },
+          {
+            "offset": 103,
+            "offset_ms": 513.8,
+            "count": 13
+          },
+          {
+            "offset": 68,
+            "offset_ms": 339.2,
+            "count": 7
+          },
+          {
+            "offset": 70,
+            "offset_ms": 349.2,
+            "count": 5
+          },
+          {
+            "offset": 139,
+            "offset_ms": 693.4,
+            "count": 4
+          },
+          {
+            "offset": 18,
+            "offset_ms": 89.8,
+            "count": 2
+          },
+          {
+            "offset": 52,
+            "offset_ms": 259.4,
+            "count": 2
+          },
+          {
+            "offset": 142,
+            "offset_ms": 708.4,
+            "count": 2
+          },
+          {
+            "offset": 207,
+            "offset_ms": 1032.7,
+            "count": 2
+          },
+          {
+            "offset": 16,
+            "offset_ms": 79.8,
+            "count": 1
+          }
+        ],
+        "zero_offset_count": 0,
+        "zero_offset_pct": 0.0
+      },
+      "ioi": {
+        "min_ms": 84.8,
+        "max_ms": 1741.0,
+        "mean_ms": 355.8,
+        "median_ms": 344.2,
+        "std_ms": 197.5,
+        "short_ioi_count": 0,
+        "short_ioi_pct": 0.0,
+        "long_gap_count": 0,
+        "histogram": [
+          {
+            "ms": 80,
+            "count": 35
+          },
+          {
+            "ms": 90,
+            "count": 2
+          },
+          {
+            "ms": 170,
+            "count": 73
+          },
+          {
+            "ms": 260,
+            "count": 2
+          },
+          {
+            "ms": 340,
+            "count": 147
+          },
+          {
+            "ms": 350,
+            "count": 6
+          },
+          {
+            "ms": 510,
+            "count": 14
+          },
+          {
+            "ms": 520,
+            "count": 60
+          },
+          {
+            "ms": 690,
+            "count": 20
+          },
+          {
+            "ms": 710,
+            "count": 2
+          },
+          {
+            "ms": 1030,
+            "count": 2
+          }
+        ],
+        "estimated_bpm": 173.9
+      },
+      "density": {
+        "mean": 2.7,
+        "peak": 9,
+        "std": 1.45,
+        "min": 0,
+        "cv": 0.538,
+        "silence_regions": [],
+        "dense_regions": [
+          {
+            "start_s": 3.0,
+            "end_s": 7.0,
+            "duration_s": 4.0
+          }
+        ]
+      },
+      "stop_analysis": {
+        "total_stops": 57,
+        "first_stop_ms": 0.0,
+        "last_stop_ms": 139702.5,
+        "consecutive_runs": 1,
+        "longest_run": 55,
+        "avg_run_length": 55.0,
+        "avg_stop_gap_ms": 2494.7,
+        "min_stop_gap_ms": 99.8,
+        "max_stop_gap_ms": 133795.9
+      },
+      "avg_stop_gap_ms": 2494.7,
+      "checkpoint": "best.pt",
+      "epoch": 6.0,
+      "val_loss": 2.6449,
+      "val_accuracy": 0.5053,
+      "device": "cuda",
+      "audio_file": "XAMIYA - KIKYU (Official Lyric Video).wav",
+      "conditioning": {
+        "mean": 6.75,
+        "peak": 12.1,
+        "std": 1.5
+      },
+      "hop_ms": 100,
+      "hop_bins": 20
+    },
+    "muque - DARK GAME(Official Music Video)": {
+      "total_events": 855,
+      "total_frames": 44915,
+      "duration_s": 224.07,
+      "events_per_sec": 3.82,
+      "stop_count": 135,
+      "total_model_calls": 990,
+      "event_ratio": 0.8636,
+      "stop_ratio": 0.1364,
+      "inference_time_s": 19.97,
+      "events_per_sec_realtime": 42.8,
+      "realtime_factor": 11.22,
+      "timing": {
+        "inference_s": 19.971,
+        "ms_per_call": 20.17,
+        "ms_per_event": 23.36,
+        "calls_per_sec": 49.6,
+        "model_load_s": 0.819,
+        "audio_load_s": 1.681,
+        "total_s": 22.481
+      },
+      "event_distribution": {
+        "min_offset": 8,
+        "max_offset": 361,
+        "mean_offset": 49.37,
+        "median_offset": 36,
+        "std_offset": 36.4,
+        "mean_offset_ms": 246.31,
+        "median_offset_ms": 179.59,
+        "top_offsets": [
+          {
+            "offset": 36,
+            "offset_ms": 179.6,
+            "count": 322
+          },
+          {
+            "offset": 30,
+            "offset_ms": 149.7,
+            "count": 175
+          },
+          {
+            "offset": 73,
+            "offset_ms": 364.2,
+            "count": 102
+          },
+          {
+            "offset": 72,
+            "offset_ms": 359.2,
+            "count": 65
+          },
+          {
+            "offset": 37,
+            "offset_ms": 184.6,
+            "count": 44
+          },
+          {
+            "offset": 60,
+            "offset_ms": 299.3,
+            "count": 37
+          },
+          {
+            "offset": 18,
+            "offset_ms": 89.8,
+            "count": 19
+          },
+          {
+            "offset": 61,
+            "offset_ms": 304.3,
+            "count": 11
+          },
+          {
+            "offset": 100,
+            "offset_ms": 498.9,
+            "count": 5
+          },
+          {
+            "offset": 218,
+            "offset_ms": 1087.5,
+            "count": 5
+          },
+          {
+            "offset": 31,
+            "offset_ms": 154.6,
+            "count": 4
+          },
+          {
+            "offset": 90,
+            "offset_ms": 449.0,
+            "count": 4
+          },
+          {
+            "offset": 145,
+            "offset_ms": 723.4,
+            "count": 4
+          },
+          {
+            "offset": 71,
+            "offset_ms": 354.2,
+            "count": 4
+          },
+          {
+            "offset": 8,
+            "offset_ms": 39.9,
+            "count": 3
+          }
+        ],
+        "zero_offset_count": 0,
+        "zero_offset_pct": 0.0
+      },
+      "ioi": {
+        "min_ms": 74.8,
+        "max_ms": 2364.6,
+        "mean_ms": 253.2,
+        "median_ms": 179.6,
+        "std_ms": 197.5,
+        "short_ioi_count": 0,
+        "short_ioi_pct": 0.0,
+        "long_gap_count": 1,
+        "histogram": [
+          {
+            "ms": 70,
+            "count": 3
+          },
+          {
+            "ms": 90,
+            "count": 22
+          },
+          {
+            "ms": 120,
+            "count": 3
+          },
+          {
+            "ms": 150,
+            "count": 179
+          },
+          {
+            "ms": 180,
+            "count": 367
+          },
+          {
+            "ms": 200,
+            "count": 2
+          },
+          {
+            "ms": 210,
+            "count": 2
+          },
+          {
+            "ms": 240,
+            "count": 2
+          },
+          {
+            "ms": 300,
+            "count": 47
+          },
+          {
+            "ms": 350,
+            "count": 4
+          },
+          {
+            "ms": 360,
+            "count": 167
+          },
+          {
+            "ms": 450,
+            "count": 5
+          },
+          {
+            "ms": 500,
+            "count": 4
+          },
+          {
+            "ms": 540,
+            "count": 4
+          },
+          {
+            "ms": 720,
+            "count": 4
+          },
+          {
+            "ms": 730,
+            "count": 2
+          },
+          {
+            "ms": 1090,
+            "count": 5
+          },
+          {
+            "ms": 1460,
+            "count": 2
+          }
+        ],
+        "estimated_bpm": 333.3
+      },
+      "density": {
+        "mean": 3.8,
+        "peak": 7,
+        "std": 1.78,
+        "min": 0,
+        "cv": 0.469,
+        "silence_regions": [],
+        "dense_regions": []
+      },
+      "stop_analysis": {
+        "total_stops": 135,
+        "first_stop_ms": 478.9,
+        "last_stop_ms": 223966.0,
+        "consecutive_runs": 8,
+        "longest_run": 74,
+        "avg_run_length": 16.8,
+        "avg_stop_gap_ms": 1667.8,
+        "min_stop_gap_ms": 99.8,
+        "max_stop_gap_ms": 69307.5
+      },
+      "avg_stop_gap_ms": 1667.8,
+      "checkpoint": "best.pt",
+      "epoch": 6.0,
+      "val_loss": 2.6449,
+      "val_accuracy": 0.5053,
+      "device": "cuda",
+      "audio_file": "muque - DARK GAME(Official Music Video).wav",
+      "conditioning": {
+        "mean": 6.75,
+        "peak": 12.1,
+        "std": 1.5
+      },
+      "hop_ms": 100,
+      "hop_bins": 20
+    }
+  },
+  "exp35c": {
+    "Alex Warren - Ordinary (Official Video)": {
+      "total_events": 365,
+      "total_frames": 37474,
+      "duration_s": 186.95,
+      "events_per_sec": 1.95,
+      "stop_count": 65,
+      "total_model_calls": 430,
+      "event_ratio": 0.8488,
+      "stop_ratio": 0.1512,
+      "inference_time_s": 8.06,
+      "events_per_sec_realtime": 45.3,
+      "realtime_factor": 23.2,
+      "timing": {
+        "inference_s": 8.058,
+        "ms_per_call": 18.74,
+        "ms_per_event": 22.08,
+        "calls_per_sec": 53.4,
+        "model_load_s": 0.772,
+        "audio_load_s": 1.642,
+        "total_s": 10.479
+      },
+      "event_distribution": {
+        "min_offset": 18,
+        "max_offset": 217,
+        "mean_offset": 99.15,
+        "median_offset": 107,
+        "std_offset": 61.06,
+        "mean_offset_ms": 494.63,
+        "median_offset_ms": 533.79,
+        "top_offsets": [
+          {
+            "offset": 108,
+            "offset_ms": 538.8,
+            "count": 109
+          },
+          {
+            "offset": 36,
+            "offset_ms": 179.6,
+            "count": 100
+          },
+          {
+            "offset": 214,
+            "offset_ms": 1067.6,
+            "count": 45
+          },
+          {
+            "offset": 107,
+            "offset_ms": 533.8,
+            "count": 43
+          },
+          {
+            "offset": 35,
+            "offset_ms": 174.6,
+            "count": 17
+          },
+          {
+            "offset": 217,
+            "offset_ms": 1082.5,
+            "count": 11
+          },
+          {
+            "offset": 71,
+            "offset_ms": 354.2,
+            "count": 9
+          },
+          {
+            "offset": 106,
+            "offset_ms": 528.8,
+            "count": 7
+          },
+          {
+            "offset": 72,
+            "offset_ms": 359.2,
+            "count": 6
+          },
+          {
+            "offset": 18,
+            "offset_ms": 89.8,
+            "count": 5
+          },
+          {
+            "offset": 54,
+            "offset_ms": 269.4,
+            "count": 3
+          },
+          {
+            "offset": 213,
+            "offset_ms": 1062.6,
+            "count": 2
+          },
+          {
+            "offset": 211,
+            "offset_ms": 1052.6,
+            "count": 2
+          },
+          {
+            "offset": 53,
+            "offset_ms": 264.4,
+            "count": 1
+          },
+          {
+            "offset": 207,
+            "offset_ms": 1032.7,
+            "count": 1
+          }
+        ],
+        "zero_offset_count": 0,
+        "zero_offset_pct": 0.0
+      },
+      "ioi": {
+        "min_ms": 89.8,
+        "max_ms": 1082.5,
+        "mean_ms": 494.5,
+        "median_ms": 533.8,
+        "std_ms": 305.0,
+        "short_ioi_count": 0,
+        "short_ioi_pct": 0.0,
+        "long_gap_count": 0,
+        "histogram": [
+          {
+            "ms": 90,
+            "count": 5
+          },
+          {
+            "ms": 170,
+            "count": 17
+          },
+          {
+            "ms": 180,
+            "count": 100
+          },
+          {
+            "ms": 270,
+            "count": 3
+          },
+          {
+            "ms": 350,
+            "count": 9
+          },
+          {
+            "ms": 360,
+            "count": 6
+          },
+          {
+            "ms": 530,
+            "count": 49
+          },
+          {
+            "ms": 540,
+            "count": 110
+          },
+          {
+            "ms": 1050,
+            "count": 2
+          },
+          {
+            "ms": 1060,
+            "count": 2
+          },
+          {
+            "ms": 1070,
+            "count": 46
+          },
+          {
+            "ms": 1080,
+            "count": 11
+          }
+        ],
+        "estimated_bpm": 111.1
+      },
+      "density": {
+        "mean": 1.95,
+        "peak": 7,
+        "std": 1.46,
+        "min": 0,
+        "cv": 0.746,
+        "silence_regions": [],
+        "dense_regions": [
+          {
+            "start_s": 1.0,
+            "end_s": 19.0,
+            "duration_s": 18.0
+          },
+          {
+            "start_s": 20.0,
+            "end_s": 24.0,
+            "duration_s": 4.0
+          }
+        ]
+      },
+      "stop_analysis": {
+        "total_stops": 65,
+        "first_stop_ms": 180539.7,
+        "last_stop_ms": 186925.2,
+        "consecutive_runs": 1,
+        "longest_run": 65,
+        "avg_run_length": 65.0,
+        "avg_stop_gap_ms": 99.8,
+        "min_stop_gap_ms": 99.8,
+        "max_stop_gap_ms": 99.8
+      },
+      "avg_stop_gap_ms": 99.8,
+      "checkpoint": "best.pt",
+      "epoch": 2.7499977138676788,
+      "val_loss": 2.5282,
+      "val_accuracy": 0.523,
+      "device": "cuda",
+      "audio_file": "Alex Warren - Ordinary (Official Video).wav",
+      "conditioning": {
+        "mean": 6.75,
+        "peak": 12.1,
+        "std": 1.5
+      },
+      "hop_ms": 100,
+      "hop_bins": 20
+    },
+    "Equiloud - Time Machine": {
+      "total_events": 629,
+      "total_frames": 47662,
+      "duration_s": 237.77,
+      "events_per_sec": 2.65,
+      "stop_count": 214,
+      "total_model_calls": 843,
+      "event_ratio": 0.7461,
+      "stop_ratio": 0.2539,
+      "inference_time_s": 13.3,
+      "events_per_sec_realtime": 47.3,
+      "realtime_factor": 17.88,
+      "timing": {
+        "inference_s": 13.301,
+        "ms_per_call": 15.78,
+        "ms_per_event": 21.15,
+        "calls_per_sec": 63.4,
+        "model_load_s": 0.68,
+        "audio_load_s": 1.608,
+        "total_s": 15.602
+      },
+      "event_distribution": {
+        "min_offset": 15,
+        "max_offset": 425,
+        "mean_offset": 69.0,
+        "median_offset": 57,
+        "std_offset": 37.21,
+        "mean_offset_ms": 344.22,
+        "median_offset_ms": 284.35,
+        "top_offsets": [
+          {
+            "offset": 57,
+            "offset_ms": 284.4,
+            "count": 312
+          },
+          {
+            "offset": 58,
+            "offset_ms": 289.3,
+            "count": 108
+          },
+          {
+            "offset": 114,
+            "offset_ms": 568.7,
+            "count": 70
+          },
+          {
+            "offset": 115,
+            "offset_ms": 573.7,
+            "count": 59
+          },
+          {
+            "offset": 29,
+            "offset_ms": 144.7,
+            "count": 47
+          },
+          {
+            "offset": 86,
+            "offset_ms": 429.0,
+            "count": 10
+          },
+          {
+            "offset": 28,
+            "offset_ms": 139.7,
+            "count": 9
+          },
+          {
+            "offset": 19,
+            "offset_ms": 94.8,
+            "count": 4
+          },
+          {
+            "offset": 95,
+            "offset_ms": 473.9,
+            "count": 1
+          },
+          {
+            "offset": 361,
+            "offset_ms": 1800.9,
+            "count": 1
+          },
+          {
+            "offset": 21,
+            "offset_ms": 104.8,
+            "count": 1
+          },
+          {
+            "offset": 15,
+            "offset_ms": 74.8,
+            "count": 1
+          },
+          {
+            "offset": 48,
+            "offset_ms": 239.5,
+            "count": 1
+          },
+          {
+            "offset": 300,
+            "offset_ms": 1496.6,
+            "count": 1
+          },
+          {
+            "offset": 50,
+            "offset_ms": 249.4,
+            "count": 1
+          }
+        ],
+        "zero_offset_count": 0,
+        "zero_offset_pct": 0.0
+      },
+      "ioi": {
+        "min_ms": 74.8,
+        "max_ms": 2998.2,
+        "mean_ms": 351.3,
+        "median_ms": 284.4,
+        "std_ms": 238.9,
+        "short_ioi_count": 0,
+        "short_ioi_pct": 0.0,
+        "long_gap_count": 4,
+        "histogram": [
+          {
+            "ms": 140,
+            "count": 56
+          },
+          {
+            "ms": 190,
+            "count": 3
+          },
+          {
+            "ms": 280,
+            "count": 311
+          },
+          {
+            "ms": 290,
+            "count": 108
+          },
+          {
+            "ms": 430,
+            "count": 10
+          },
+          {
+            "ms": 570,
+            "count": 126
+          }
+        ],
+        "estimated_bpm": 210.5
+      },
+      "density": {
+        "mean": 2.64,
+        "peak": 7,
+        "std": 1.37,
+        "min": 0,
+        "cv": 0.518,
+        "silence_regions": [
+          {
+            "start_s": 1.0,
+            "end_s": 3.0,
+            "duration_s": 2.0
+          },
+          {
+            "start_s": 128.0,
+            "end_s": 130.0,
+            "duration_s": 2.0
+          },
+          {
+            "start_s": 138.0,
+            "end_s": 140.0,
+            "duration_s": 2.0
+          }
+        ],
+        "dense_regions": []
+      },
+      "stop_analysis": {
+        "total_stops": 214,
+        "first_stop_ms": 0.0,
+        "last_stop_ms": 237764.6,
+        "consecutive_runs": 8,
+        "longest_run": 166,
+        "avg_run_length": 26.5,
+        "avg_stop_gap_ms": 1116.3,
+        "min_stop_gap_ms": 99.8,
+        "max_stop_gap_ms": 125654.4
+      },
+      "avg_stop_gap_ms": 1116.3,
+      "checkpoint": "best.pt",
+      "epoch": 2.7499977138676788,
+      "val_loss": 2.5282,
+      "val_accuracy": 0.523,
+      "device": "cuda",
+      "audio_file": "Equiloud - Time Machine.wav",
+      "conditioning": {
+        "mean": 6.75,
+        "peak": 12.1,
+        "std": 1.5
+      },
+      "hop_ms": 100,
+      "hop_bins": 20
+    },
+    "Medalist Season 2 OP \u29f8 Opening Cold Night by HANA [4K 60FPS]": {
+      "total_events": 433,
+      "total_frames": 24149,
+      "duration_s": 120.47,
+      "events_per_sec": 3.59,
+      "stop_count": 328,
+      "total_model_calls": 761,
+      "event_ratio": 0.569,
+      "stop_ratio": 0.431,
+      "inference_time_s": 14.25,
+      "events_per_sec_realtime": 30.4,
+      "realtime_factor": 8.45,
+      "timing": {
+        "inference_s": 14.251,
+        "ms_per_call": 18.73,
+        "ms_per_event": 32.91,
+        "calls_per_sec": 53.4,
+        "model_load_s": 0.688,
+        "audio_load_s": 1.549,
+        "total_s": 16.494
+      },
+      "event_distribution": {
+        "min_offset": 24,
+        "max_offset": 384,
+        "mean_offset": 40.63,
+        "median_offset": 48,
+        "std_offset": 24.75,
+        "mean_offset_ms": 202.69,
+        "median_offset_ms": 239.46,
+        "top_offsets": [
+          {
+            "offset": 48,
+            "offset_ms": 239.5,
+            "count": 229
+          },
+          {
+            "offset": 24,
+            "offset_ms": 119.7,
+            "count": 164
+          },
+          {
+            "offset": 49,
+            "offset_ms": 244.4,
+            "count": 36
+          },
+          {
+            "offset": 96,
+            "offset_ms": 478.9,
+            "count": 2
+          },
+          {
+            "offset": 325,
+            "offset_ms": 1621.3,
+            "count": 1
+          },
+          {
+            "offset": 384,
+            "offset_ms": 1915.6,
+            "count": 1
+          }
+        ],
+        "zero_offset_count": 0,
+        "zero_offset_pct": 0.0
+      },
+      "ioi": {
+        "min_ms": 119.7,
+        "max_ms": 1915.6,
+        "mean_ms": 199.4,
+        "median_ms": 239.5,
+        "std_ms": 103.0,
+        "short_ioi_count": 0,
+        "short_ioi_pct": 0.0,
+        "long_gap_count": 0,
+        "histogram": [
+          {
+            "ms": 120,
+            "count": 164
+          },
+          {
+            "ms": 240,
+            "count": 265
+          },
+          {
+            "ms": 480,
+            "count": 2
+          }
+        ],
+        "estimated_bpm": 250.0
+      },
+      "density": {
+        "mean": 3.58,
+        "peak": 8,
+        "std": 2.5,
+        "min": 0,
+        "cv": 0.699,
+        "silence_regions": [],
+        "dense_regions": []
+      },
+      "stop_analysis": {
+        "total_stops": 328,
+        "first_stop_ms": 0.0,
+        "last_stop_ms": 120391.4,
+        "consecutive_runs": 1,
+        "longest_run": 327,
+        "avg_run_length": 327.0,
+        "avg_stop_gap_ms": 368.2,
+        "min_stop_gap_ms": 99.8,
+        "max_stop_gap_ms": 87865.3
+      },
+      "avg_stop_gap_ms": 368.2,
+      "checkpoint": "best.pt",
+      "epoch": 2.7499977138676788,
+      "val_loss": 2.5282,
+      "val_accuracy": 0.523,
+      "device": "cuda",
+      "audio_file": "Medalist Season 2 OP \u29f8 Opening 'Cold Night' by HANA [4K 60FPS].wav",
+      "conditioning": {
+        "mean": 6.75,
+        "peak": 12.1,
+        "std": 1.5
+      },
+      "hop_ms": 100,
+      "hop_bins": 20
+    },
+    "RoccoW - Chipper Choices": {
+      "total_events": 726,
+      "total_frames": 27727,
+      "duration_s": 138.32,
+      "events_per_sec": 5.25,
+      "stop_count": 11,
+      "total_model_calls": 737,
+      "event_ratio": 0.9851,
+      "stop_ratio": 0.0149,
+      "inference_time_s": 15.4,
+      "events_per_sec_realtime": 47.1,
+      "realtime_factor": 8.98,
+      "timing": {
+        "inference_s": 15.405,
+        "ms_per_call": 20.9,
+        "ms_per_event": 21.22,
+        "calls_per_sec": 47.8,
+        "model_load_s": 0.795,
+        "audio_load_s": 1.636,
+        "total_s": 17.845
+      },
+      "event_distribution": {
+        "min_offset": 15,
+        "max_offset": 77,
+        "mean_offset": 37.89,
+        "median_offset": 26,
+        "std_offset": 12.85,
+        "mean_offset_ms": 189.01,
+        "median_offset_ms": 129.71,
+        "top_offsets": [
+          {
+            "offset": 51,
+            "offset_ms": 254.4,
+            "count": 344
+          },
+          {
+            "offset": 25,
+            "offset_ms": 124.7,
+            "count": 198
+          },
+          {
+            "offset": 26,
+            "offset_ms": 129.7,
+            "count": 166
+          },
+          {
+            "offset": 50,
+            "offset_ms": 249.4,
+            "count": 6
+          },
+          {
+            "offset": 30,
+            "offset_ms": 149.7,
+            "count": 4
+          },
+          {
+            "offset": 20,
+            "offset_ms": 99.8,
+            "count": 2
+          },
+          {
+            "offset": 52,
+            "offset_ms": 259.4,
+            "count": 1
+          },
+          {
+            "offset": 39,
+            "offset_ms": 194.6,
+            "count": 1
+          },
+          {
+            "offset": 15,
+            "offset_ms": 74.8,
+            "count": 1
+          },
+          {
+            "offset": 33,
+            "offset_ms": 164.6,
+            "count": 1
+          },
+          {
+            "offset": 21,
+            "offset_ms": 104.8,
+            "count": 1
+          },
+          {
+            "offset": 77,
+            "offset_ms": 384.1,
+            "count": 1
+          }
+        ],
+        "zero_offset_count": 0,
+        "zero_offset_pct": 0.0
+      },
+      "ioi": {
+        "min_ms": 74.8,
+        "max_ms": 628.6,
+        "mean_ms": 189.7,
+        "median_ms": 129.7,
+        "std_ms": 66.1,
+        "short_ioi_count": 0,
+        "short_ioi_pct": 0.0,
+        "long_gap_count": 0,
+        "histogram": [
+          {
+            "ms": 100,
+            "count": 3
+          },
+          {
+            "ms": 120,
+            "count": 198
+          },
+          {
+            "ms": 130,
+            "count": 164
+          },
+          {
+            "ms": 150,
+            "count": 4
+          },
+          {
+            "ms": 250,
+            "count": 350
+          }
+        ],
+        "estimated_bpm": 235.3
+      },
+      "density": {
+        "mean": 5.22,
+        "peak": 7,
+        "std": 0.81,
+        "min": 0,
+        "cv": 0.154,
+        "silence_regions": [],
+        "dense_regions": []
+      },
+      "stop_analysis": {
+        "total_stops": 11,
+        "first_stop_ms": 135806.3,
+        "last_stop_ms": 138220.9,
+        "consecutive_runs": 2,
+        "longest_run": 5,
+        "avg_run_length": 5.0,
+        "avg_stop_gap_ms": 241.5,
+        "min_stop_gap_ms": 99.8,
+        "max_stop_gap_ms": 1386.8
+      },
+      "avg_stop_gap_ms": 241.5,
+      "checkpoint": "best.pt",
+      "epoch": 2.7499977138676788,
+      "val_loss": 2.5282,
+      "val_accuracy": 0.523,
+      "device": "cuda",
+      "audio_file": "RoccoW - Chipper Choices.wav",
+      "conditioning": {
+        "mean": 6.75,
+        "peak": 12.1,
+        "std": 1.5
+      },
+      "hop_ms": 100,
+      "hop_bins": 20
+    },
+    "Sabrina Carpenter - Manchild (Official Video)": {
+      "total_events": 973,
+      "total_frames": 47367,
+      "duration_s": 236.3,
+      "events_per_sec": 4.12,
+      "stop_count": 54,
+      "total_model_calls": 1027,
+      "event_ratio": 0.9474,
+      "stop_ratio": 0.0526,
+      "inference_time_s": 19.15,
+      "events_per_sec_realtime": 50.8,
+      "realtime_factor": 12.34,
+      "timing": {
+        "inference_s": 19.152,
+        "ms_per_call": 18.65,
+        "ms_per_event": 19.68,
+        "calls_per_sec": 53.6,
+        "model_load_s": 0.744,
+        "audio_load_s": 1.72,
+        "total_s": 21.627
+      },
+      "event_distribution": {
+        "min_offset": 14,
+        "max_offset": 414,
+        "mean_offset": 47.57,
+        "median_offset": 49,
+        "std_offset": 20.66,
+        "mean_offset_ms": 237.33,
+        "median_offset_ms": 244.44,
+        "top_offsets": [
+          {
+            "offset": 49,
+            "offset_ms": 244.4,
+            "count": 790
+          },
+          {
+            "offset": 24,
+            "offset_ms": 119.7,
+            "count": 89
+          },
+          {
+            "offset": 48,
+            "offset_ms": 239.5,
+            "count": 40
+          },
+          {
+            "offset": 25,
+            "offset_ms": 124.7,
+            "count": 7
+          },
+          {
+            "offset": 97,
+            "offset_ms": 483.9,
+            "count": 6
+          },
+          {
+            "offset": 16,
+            "offset_ms": 79.8,
+            "count": 5
+          },
+          {
+            "offset": 50,
+            "offset_ms": 249.4,
+            "count": 4
+          },
+          {
+            "offset": 27,
+            "offset_ms": 134.7,
+            "count": 3
+          },
+          {
+            "offset": 60,
+            "offset_ms": 299.3,
+            "count": 3
+          },
+          {
+            "offset": 56,
+            "offset_ms": 279.4,
+            "count": 3
+          },
+          {
+            "offset": 84,
+            "offset_ms": 419.0,
+            "count": 2
+          },
+          {
+            "offset": 15,
+            "offset_ms": 74.8,
+            "count": 2
+          },
+          {
+            "offset": 40,
+            "offset_ms": 199.5,
+            "count": 2
+          },
+          {
+            "offset": 28,
+            "offset_ms": 139.7,
+            "count": 2
+          },
+          {
+            "offset": 20,
+            "offset_ms": 99.8,
+            "count": 2
+          }
+        ],
+        "zero_offset_count": 0,
+        "zero_offset_pct": 0.0
+      },
+      "ioi": {
+        "min_ms": 74.8,
+        "max_ms": 2549.2,
+        "mean_ms": 241.5,
+        "median_ms": 244.4,
+        "std_ms": 128.4,
+        "short_ioi_count": 0,
+        "short_ioi_pct": 0.0,
+        "long_gap_count": 2,
+        "histogram": [
+          {
+            "ms": 70,
+            "count": 2
+          },
+          {
+            "ms": 80,
+            "count": 3
+          },
+          {
+            "ms": 100,
+            "count": 2
+          },
+          {
+            "ms": 120,
+            "count": 96
+          },
+          {
+            "ms": 130,
+            "count": 3
+          },
+          {
+            "ms": 140,
+            "count": 3
+          },
+          {
+            "ms": 190,
+            "count": 2
+          },
+          {
+            "ms": 200,
+            "count": 2
+          },
+          {
+            "ms": 240,
+            "count": 825
+          },
+          {
+            "ms": 250,
+            "count": 4
+          },
+          {
+            "ms": 280,
+            "count": 4
+          },
+          {
+            "ms": 300,
+            "count": 3
+          },
+          {
+            "ms": 340,
+            "count": 3
+          },
+          {
+            "ms": 420,
+            "count": 2
+          },
+          {
+            "ms": 480,
+            "count": 6
+          }
+        ],
+        "estimated_bpm": 244.9
+      },
+      "density": {
+        "mean": 4.11,
+        "peak": 6,
+        "std": 1.0,
+        "min": 0,
+        "cv": 0.244,
+        "silence_regions": [
+          {
+            "start_s": 196.0,
+            "end_s": 198.0,
+            "duration_s": 2.0
+          }
+        ],
+        "dense_regions": []
+      },
+      "stop_analysis": {
+        "total_stops": 54,
+        "first_stop_ms": 194278.5,
+        "last_stop_ms": 236208.2,
+        "consecutive_runs": 5,
+        "longest_run": 18,
+        "avg_run_length": 10.4,
+        "avg_stop_gap_ms": 791.1,
+        "min_stop_gap_ms": 99.8,
+        "max_stop_gap_ms": 31249.0
+      },
+      "avg_stop_gap_ms": 791.1,
+      "checkpoint": "best.pt",
+      "epoch": 2.7499977138676788,
+      "val_loss": 2.5282,
+      "val_accuracy": 0.523,
+      "device": "cuda",
+      "audio_file": "Sabrina Carpenter - Manchild (Official Video).wav",
+      "conditioning": {
+        "mean": 6.75,
+        "peak": 12.1,
+        "std": 1.5
+      },
+      "hop_ms": 100,
+      "hop_bins": 20
+    },
+    "Snow Man \u30aa\u30c9\u30ed\u30a6\u30bc\uff01 Music Video": {
+      "total_events": 551,
+      "total_frames": 48545,
+      "duration_s": 242.17,
+      "events_per_sec": 2.28,
+      "stop_count": 113,
+      "total_model_calls": 664,
+      "event_ratio": 0.8298,
+      "stop_ratio": 0.1702,
+      "inference_time_s": 12.6,
+      "events_per_sec_realtime": 43.7,
+      "realtime_factor": 19.22,
+      "timing": {
+        "inference_s": 12.598,
+        "ms_per_call": 18.97,
+        "ms_per_event": 22.86,
+        "calls_per_sec": 52.7,
+        "model_load_s": 0.766,
+        "audio_load_s": 1.737,
+        "total_s": 15.111
+      },
+      "event_distribution": {
+        "min_offset": 23,
+        "max_offset": 451,
+        "mean_offset": 84.01,
+        "median_offset": 94,
+        "std_offset": 39.36,
+        "mean_offset_ms": 419.1,
+        "median_offset_ms": 468.93,
+        "top_offsets": [
+          {
+            "offset": 94,
+            "offset_ms": 468.9,
+            "count": 417
+          },
+          {
+            "offset": 47,
+            "offset_ms": 234.5,
+            "count": 57
+          },
+          {
+            "offset": 23,
+            "offset_ms": 114.7,
+            "count": 46
+          },
+          {
+            "offset": 24,
+            "offset_ms": 119.7,
+            "count": 14
+          },
+          {
+            "offset": 56,
+            "offset_ms": 279.4,
+            "count": 2
+          },
+          {
+            "offset": 301,
+            "offset_ms": 1501.6,
+            "count": 2
+          },
+          {
+            "offset": 71,
+            "offset_ms": 354.2,
+            "count": 2
+          },
+          {
+            "offset": 376,
+            "offset_ms": 1875.7,
+            "count": 2
+          },
+          {
+            "offset": 130,
+            "offset_ms": 648.5,
+            "count": 1
+          },
+          {
+            "offset": 30,
+            "offset_ms": 149.7,
+            "count": 1
+          },
+          {
+            "offset": 451,
+            "offset_ms": 2249.9,
+            "count": 1
+          },
+          {
+            "offset": 400,
+            "offset_ms": 1995.5,
+            "count": 1
+          },
+          {
+            "offset": 46,
+            "offset_ms": 229.5,
+            "count": 1
+          },
+          {
+            "offset": 48,
+            "offset_ms": 239.5,
+            "count": 1
+          },
+          {
+            "offset": 70,
+            "offset_ms": 349.2,
+            "count": 1
+          }
+        ],
+        "zero_offset_count": 0,
+        "zero_offset_pct": 0.0
+      },
+      "ioi": {
+        "min_ms": 114.7,
+        "max_ms": 3147.8,
+        "mean_ms": 420.5,
+        "median_ms": 468.9,
+        "std_ms": 214.3,
+        "short_ioi_count": 0,
+        "short_ioi_pct": 0.0,
+        "long_gap_count": 1,
+        "histogram": [
+          {
+            "ms": 110,
+            "count": 46
+          },
+          {
+            "ms": 120,
+            "count": 14
+          },
+          {
+            "ms": 230,
+            "count": 57
+          },
+          {
+            "ms": 280,
+            "count": 2
+          },
+          {
+            "ms": 350,
+            "count": 3
+          },
+          {
+            "ms": 470,
+            "count": 418
+          },
+          {
+            "ms": 1500,
+            "count": 2
+          },
+          {
+            "ms": 1880,
+            "count": 2
+          }
+        ],
+        "estimated_bpm": 127.7
+      },
+      "density": {
+        "mean": 2.27,
+        "peak": 8,
+        "std": 1.11,
+        "min": 0,
+        "cv": 0.49,
+        "silence_regions": [
+          {
+            "start_s": 2.0,
+            "end_s": 4.0,
+            "duration_s": 2.0
+          }
+        ],
+        "dense_regions": []
+      },
+      "stop_analysis": {
+        "total_stops": 113,
+        "first_stop_ms": 1077.6,
+        "last_stop_ms": 242099.8,
+        "consecutive_runs": 2,
+        "longest_run": 103,
+        "avg_run_length": 56.0,
+        "avg_stop_gap_ms": 2152.0,
+        "min_stop_gap_ms": 99.8,
+        "max_stop_gap_ms": 229712.9
+      },
+      "avg_stop_gap_ms": 2152.0,
+      "checkpoint": "best.pt",
+      "epoch": 2.7499977138676788,
+      "val_loss": 2.5282,
+      "val_accuracy": 0.523,
+      "device": "cuda",
+      "audio_file": "Snow Man '\u30aa\u30c9\u30ed\u30a6\u30bc\uff01' Music Video.wav",
+      "conditioning": {
+        "mean": 6.75,
+        "peak": 12.1,
+        "std": 1.5
+      },
+      "hop_ms": 100,
+      "hop_bins": 20
+    },
+    "The Bug Club - Watching the Omnibus (Official Audio)": {
+      "total_events": 426,
+      "total_frames": 15947,
+      "duration_s": 79.55,
+      "events_per_sec": 5.35,
+      "stop_count": 27,
+      "total_model_calls": 453,
+      "event_ratio": 0.9404,
+      "stop_ratio": 0.0596,
+      "inference_time_s": 8.67,
+      "events_per_sec_realtime": 49.1,
+      "realtime_factor": 9.18,
+      "timing": {
+        "inference_s": 8.67,
+        "ms_per_call": 19.14,
+        "ms_per_event": 20.35,
+        "calls_per_sec": 52.3,
+        "model_load_s": 0.871,
+        "audio_load_s": 1.621,
+        "total_s": 11.169
+      },
+      "event_distribution": {
+        "min_offset": 12,
+        "max_offset": 317,
+        "mean_offset": 36.19,
+        "median_offset": 25,
+        "std_offset": 18.75,
+        "mean_offset_ms": 180.53,
+        "median_offset_ms": 124.72,
+        "top_offsets": [
+          {
+            "offset": 25,
+            "offset_ms": 124.7,
+            "count": 214
+          },
+          {
+            "offset": 50,
+            "offset_ms": 249.4,
+            "count": 106
+          },
+          {
+            "offset": 49,
+            "offset_ms": 244.4,
+            "count": 46
+          },
+          {
+            "offset": 24,
+            "offset_ms": 119.7,
+            "count": 25
+          },
+          {
+            "offset": 51,
+            "offset_ms": 254.4,
+            "count": 19
+          },
+          {
+            "offset": 26,
+            "offset_ms": 129.7,
+            "count": 7
+          },
+          {
+            "offset": 48,
+            "offset_ms": 239.5,
+            "count": 4
+          },
+          {
+            "offset": 64,
+            "offset_ms": 319.3,
+            "count": 1
+          },
+          {
+            "offset": 12,
+            "offset_ms": 59.9,
+            "count": 1
+          },
+          {
+            "offset": 74,
+            "offset_ms": 369.2,
+            "count": 1
+          },
+          {
+            "offset": 317,
+            "offset_ms": 1581.4,
+            "count": 1
+          },
+          {
+            "offset": 102,
+            "offset_ms": 508.8,
+            "count": 1
+          }
+        ],
+        "zero_offset_count": 0,
+        "zero_offset_pct": 0.0
+      },
+      "ioi": {
+        "min_ms": 119.7,
+        "max_ms": 1581.4,
+        "mean_ms": 180.9,
+        "median_ms": 124.7,
+        "std_ms": 93.6,
+        "short_ioi_count": 0,
+        "short_ioi_pct": 0.0,
+        "long_gap_count": 0,
+        "histogram": [
+          {
+            "ms": 120,
+            "count": 239
+          },
+          {
+            "ms": 130,
+            "count": 7
+          },
+          {
+            "ms": 240,
+            "count": 50
+          },
+          {
+            "ms": 250,
+            "count": 124
+          }
+        ],
+        "estimated_bpm": 480.0
+      },
+      "density": {
+        "mean": 5.32,
+        "peak": 8,
+        "std": 1.41,
+        "min": 0,
+        "cv": 0.265,
+        "silence_regions": [],
+        "dense_regions": []
+      },
+      "stop_analysis": {
+        "total_stops": 27,
+        "first_stop_ms": 9343.8,
+        "last_stop_ms": 79499.3,
+        "consecutive_runs": 2,
+        "longest_run": 24,
+        "avg_run_length": 13.0,
+        "avg_stop_gap_ms": 2698.3,
+        "min_stop_gap_ms": 99.8,
+        "max_stop_gap_ms": 56177.3
+      },
+      "avg_stop_gap_ms": 2698.3,
+      "checkpoint": "best.pt",
+      "epoch": 2.7499977138676788,
+      "val_loss": 2.5282,
+      "val_accuracy": 0.523,
+      "device": "cuda",
+      "audio_file": "The Bug Club - Watching the Omnibus (Official Audio).wav",
+      "conditioning": {
+        "mean": 6.75,
+        "peak": 12.1,
+        "std": 1.5
+      },
+      "hop_ms": 100,
+      "hop_bins": 20
+    },
+    "Weird Nightmare - Might See You There (Official Music Video)": {
+      "total_events": 1051,
+      "total_frames": 24474,
+      "duration_s": 122.09,
+      "events_per_sec": 8.61,
+      "stop_count": 71,
+      "total_model_calls": 1122,
+      "event_ratio": 0.9367,
+      "stop_ratio": 0.0633,
+      "inference_time_s": 20.5,
+      "events_per_sec_realtime": 51.3,
+      "realtime_factor": 5.96,
+      "timing": {
+        "inference_s": 20.501,
+        "ms_per_call": 18.27,
+        "ms_per_event": 19.51,
+        "calls_per_sec": 54.7,
+        "model_load_s": 0.809,
+        "audio_load_s": 1.626,
+        "total_s": 22.947
+      },
+      "event_distribution": {
+        "min_offset": 20,
+        "max_offset": 84,
+        "mean_offset": 21.94,
+        "median_offset": 21,
+        "std_offset": 7.18,
+        "mean_offset_ms": 109.44,
+        "median_offset_ms": 104.76,
+        "top_offsets": [
+          {
+            "offset": 21,
+            "offset_ms": 104.8,
+            "count": 950
+          },
+          {
+            "offset": 20,
+            "offset_ms": 99.8,
+            "count": 75
+          },
+          {
+            "offset": 42,
+            "offset_ms": 209.5,
+            "count": 9
+          },
+          {
+            "offset": 84,
+            "offset_ms": 419.0,
+            "count": 5
+          },
+          {
+            "offset": 83,
+            "offset_ms": 414.1,
+            "count": 4
+          },
+          {
+            "offset": 41,
+            "offset_ms": 204.5,
+            "count": 3
+          },
+          {
+            "offset": 81,
+            "offset_ms": 404.1,
+            "count": 2
+          },
+          {
+            "offset": 82,
+            "offset_ms": 409.1,
+            "count": 2
+          },
+          {
+            "offset": 28,
+            "offset_ms": 139.7,
+            "count": 1
+          }
+        ],
+        "zero_offset_count": 0,
+        "zero_offset_pct": 0.0
+      },
+      "ioi": {
+        "min_ms": 99.8,
+        "max_ms": 419.0,
+        "mean_ms": 109.4,
+        "median_ms": 104.8,
+        "std_ms": 35.8,
+        "short_ioi_count": 0,
+        "short_ioi_pct": 0.0,
+        "long_gap_count": 0,
+        "histogram": [
+          {
+            "ms": 100,
+            "count": 1025
+          },
+          {
+            "ms": 200,
+            "count": 3
+          },
+          {
+            "ms": 210,
+            "count": 9
+          },
+          {
+            "ms": 400,
+            "count": 2
+          },
+          {
+            "ms": 410,
+            "count": 6
+          },
+          {
+            "ms": 420,
+            "count": 5
+          }
+        ],
+        "estimated_bpm": 571.4
+      },
+      "density": {
+        "mean": 8.54,
+        "peak": 10,
+        "std": 2.52,
+        "min": 0,
+        "cv": 0.295,
+        "silence_regions": [],
+        "dense_regions": []
+      },
+      "stop_analysis": {
+        "total_stops": 71,
+        "first_stop_ms": 115023.6,
+        "last_stop_ms": 122007.7,
+        "consecutive_runs": 1,
+        "longest_run": 71,
+        "avg_run_length": 71.0,
+        "avg_stop_gap_ms": 99.8,
+        "min_stop_gap_ms": 99.8,
+        "max_stop_gap_ms": 99.8
+      },
+      "avg_stop_gap_ms": 99.8,
+      "checkpoint": "best.pt",
+      "epoch": 2.7499977138676788,
+      "val_loss": 2.5282,
+      "val_accuracy": 0.523,
+      "device": "cuda",
+      "audio_file": "Weird Nightmare - Might See You There (Official Music Video).wav",
+      "conditioning": {
+        "mean": 6.75,
+        "peak": 12.1,
+        "std": 1.5
+      },
+      "hop_ms": 100,
+      "hop_bins": 20
+    },
+    "XAMIYA - KIKYU (Official Lyric Video)": {
+      "total_events": 688,
+      "total_frames": 28016,
+      "duration_s": 139.76,
+      "events_per_sec": 4.92,
+      "stop_count": 56,
+      "total_model_calls": 744,
+      "event_ratio": 0.9247,
+      "stop_ratio": 0.0753,
+      "inference_time_s": 12.6,
+      "events_per_sec_realtime": 54.6,
+      "realtime_factor": 11.09,
+      "timing": {
+        "inference_s": 12.604,
+        "ms_per_call": 16.94,
+        "ms_per_event": 18.32,
+        "calls_per_sec": 59.0,
+        "model_load_s": 0.698,
+        "audio_load_s": 1.677,
+        "total_s": 15.0
+      },
+      "event_distribution": {
+        "min_offset": 10,
+        "max_offset": 484,
+        "mean_offset": 39.78,
+        "median_offset": 35,
+        "std_offset": 32.75,
+        "mean_offset_ms": 198.44,
+        "median_offset_ms": 174.6,
+        "top_offsets": [
+          {
+            "offset": 35,
+            "offset_ms": 174.6,
+            "count": 207
+          },
+          {
+            "offset": 17,
+            "offset_ms": 84.8,
+            "count": 186
+          },
+          {
+            "offset": 69,
+            "offset_ms": 344.2,
+            "count": 115
+          },
+          {
+            "offset": 34,
+            "offset_ms": 169.6,
+            "count": 100
+          },
+          {
+            "offset": 104,
+            "offset_ms": 518.8,
+            "count": 15
+          },
+          {
+            "offset": 18,
+            "offset_ms": 89.8,
+            "count": 10
+          },
+          {
+            "offset": 30,
+            "offset_ms": 149.7,
+            "count": 6
+          },
+          {
+            "offset": 11,
+            "offset_ms": 54.9,
+            "count": 5
+          },
+          {
+            "offset": 16,
+            "offset_ms": 79.8,
+            "count": 4
+          },
+          {
+            "offset": 105,
+            "offset_ms": 523.8,
+            "count": 4
+          },
+          {
+            "offset": 15,
+            "offset_ms": 74.8,
+            "count": 3
+          },
+          {
+            "offset": 33,
+            "offset_ms": 164.6,
+            "count": 3
+          },
+          {
+            "offset": 72,
+            "offset_ms": 359.2,
+            "count": 2
+          },
+          {
+            "offset": 68,
+            "offset_ms": 339.2,
+            "count": 2
+          },
+          {
+            "offset": 70,
+            "offset_ms": 349.2,
+            "count": 2
+          }
+        ],
+        "zero_offset_count": 0,
+        "zero_offset_pct": 0.0
+      },
+      "ioi": {
+        "min_ms": 49.9,
+        "max_ms": 7802.3,
+        "mean_ms": 206.5,
+        "median_ms": 174.6,
+        "std_ms": 322.0,
+        "short_ioi_count": 0,
+        "short_ioi_pct": 0.0,
+        "long_gap_count": 1,
+        "histogram": [
+          {
+            "ms": 50,
+            "count": 6
+          },
+          {
+            "ms": 70,
+            "count": 3
+          },
+          {
+            "ms": 80,
+            "count": 190
+          },
+          {
+            "ms": 90,
+            "count": 10
+          },
+          {
+            "ms": 100,
+            "count": 2
+          },
+          {
+            "ms": 110,
+            "count": 2
+          },
+          {
+            "ms": 150,
+            "count": 7
+          },
+          {
+            "ms": 160,
+            "count": 4
+          },
+          {
+            "ms": 170,
+            "count": 306
+          },
+          {
+            "ms": 180,
+            "count": 2
+          },
+          {
+            "ms": 250,
+            "count": 2
+          },
+          {
+            "ms": 340,
+            "count": 117
+          },
+          {
+            "ms": 350,
+            "count": 2
+          },
+          {
+            "ms": 360,
+            "count": 2
+          },
+          {
+            "ms": 520,
+            "count": 19
+          }
+        ],
+        "estimated_bpm": 342.9
+      },
+      "density": {
+        "mean": 4.91,
+        "peak": 10,
+        "std": 2.22,
+        "min": 0,
+        "cv": 0.452,
+        "silence_regions": [],
+        "dense_regions": []
+      },
+      "stop_analysis": {
+        "total_stops": 56,
+        "first_stop_ms": 34132.4,
+        "last_stop_ms": 139602.7,
+        "consecutive_runs": 2,
+        "longest_run": 54,
+        "avg_run_length": 28.0,
+        "avg_stop_gap_ms": 1917.6,
+        "min_stop_gap_ms": 99.8,
+        "max_stop_gap_ms": 100082.5
+      },
+      "avg_stop_gap_ms": 1917.6,
+      "checkpoint": "best.pt",
+      "epoch": 2.7499977138676788,
+      "val_loss": 2.5282,
+      "val_accuracy": 0.523,
+      "device": "cuda",
+      "audio_file": "XAMIYA - KIKYU (Official Lyric Video).wav",
+      "conditioning": {
+        "mean": 6.75,
+        "peak": 12.1,
+        "std": 1.5
+      },
+      "hop_ms": 100,
+      "hop_bins": 20
+    },
+    "muque - DARK GAME(Official Music Video)": {
+      "total_events": 883,
+      "total_frames": 44915,
+      "duration_s": 224.07,
+      "events_per_sec": 3.94,
+      "stop_count": 169,
+      "total_model_calls": 1052,
+      "event_ratio": 0.8394,
+      "stop_ratio": 0.1606,
+      "inference_time_s": 18.72,
+      "events_per_sec_realtime": 47.2,
+      "realtime_factor": 11.97,
+      "timing": {
+        "inference_s": 18.724,
+        "ms_per_call": 17.8,
+        "ms_per_event": 21.21,
+        "calls_per_sec": 56.2,
+        "model_load_s": 0.766,
+        "audio_load_s": 1.68,
+        "total_s": 21.18
+      },
+      "event_distribution": {
+        "min_offset": 15,
+        "max_offset": 451,
+        "mean_offset": 47.05,
+        "median_offset": 36,
+        "std_offset": 41.17,
+        "mean_offset_ms": 234.73,
+        "median_offset_ms": 179.59,
+        "top_offsets": [
+          {
+            "offset": 36,
+            "offset_ms": 179.6,
+            "count": 372
+          },
+          {
+            "offset": 30,
+            "offset_ms": 149.7,
+            "count": 187
+          },
+          {
+            "offset": 73,
+            "offset_ms": 364.2,
+            "count": 75
+          },
+          {
+            "offset": 37,
+            "offset_ms": 184.6,
+            "count": 66
+          },
+          {
+            "offset": 72,
+            "offset_ms": 359.2,
+            "count": 47
+          },
+          {
+            "offset": 18,
+            "offset_ms": 89.8,
+            "count": 41
+          },
+          {
+            "offset": 60,
+            "offset_ms": 299.3,
+            "count": 32
+          },
+          {
+            "offset": 31,
+            "offset_ms": 154.6,
+            "count": 9
+          },
+          {
+            "offset": 90,
+            "offset_ms": 449.0,
+            "count": 5
+          },
+          {
+            "offset": 291,
+            "offset_ms": 1451.7,
+            "count": 4
+          },
+          {
+            "offset": 328,
+            "offset_ms": 1636.3,
+            "count": 4
+          },
+          {
+            "offset": 145,
+            "offset_ms": 723.4,
+            "count": 4
+          },
+          {
+            "offset": 61,
+            "offset_ms": 304.3,
+            "count": 3
+          },
+          {
+            "offset": 91,
+            "offset_ms": 454.0,
+            "count": 3
+          },
+          {
+            "offset": 15,
+            "offset_ms": 74.8,
+            "count": 3
+          }
+        ],
+        "zero_offset_count": 0,
+        "zero_offset_pct": 0.0
+      },
+      "ioi": {
+        "min_ms": 74.8,
+        "max_ms": 7537.9,
+        "mean_ms": 253.4,
+        "median_ms": 179.6,
+        "std_ms": 403.8,
+        "short_ioi_count": 0,
+        "short_ioi_pct": 0.0,
+        "long_gap_count": 3,
+        "histogram": [
+          {
+            "ms": 70,
+            "count": 3
+          },
+          {
+            "ms": 90,
+            "count": 41
+          },
+          {
+            "ms": 150,
+            "count": 194
+          },
+          {
+            "ms": 180,
+            "count": 436
+          },
+          {
+            "ms": 240,
+            "count": 3
+          },
+          {
+            "ms": 280,
+            "count": 2
+          },
+          {
+            "ms": 300,
+            "count": 35
+          },
+          {
+            "ms": 350,
+            "count": 2
+          },
+          {
+            "ms": 360,
+            "count": 122
+          },
+          {
+            "ms": 450,
+            "count": 8
+          },
+          {
+            "ms": 540,
+            "count": 5
+          },
+          {
+            "ms": 720,
+            "count": 4
+          },
+          {
+            "ms": 1090,
+            "count": 2
+          },
+          {
+            "ms": 1450,
+            "count": 6
+          },
+          {
+            "ms": 1640,
+            "count": 4
+          }
+        ],
+        "estimated_bpm": 333.3
+      },
+      "density": {
+        "mean": 3.92,
+        "peak": 8,
+        "std": 2.1,
+        "min": 0,
+        "cv": 0.536,
+        "silence_regions": [
+          {
+            "start_s": 2.0,
+            "end_s": 4.0,
+            "duration_s": 2.0
+          },
+          {
+            "start_s": 5.0,
+            "end_s": 11.0,
+            "duration_s": 6.0
+          },
+          {
+            "start_s": 217.0,
+            "end_s": 224.0,
+            "duration_s": 7.0
+          }
+        ],
+        "dense_regions": []
+      },
+      "stop_analysis": {
+        "total_stops": 169,
+        "first_stop_ms": 498.9,
+        "last_stop_ms": 224030.8,
+        "consecutive_runs": 6,
+        "longest_run": 72,
+        "avg_run_length": 27.5,
+        "avg_stop_gap_ms": 1330.5,
+        "min_stop_gap_ms": 99.8,
+        "max_stop_gap_ms": 114814.1
+      },
+      "avg_stop_gap_ms": 1330.5,
+      "checkpoint": "best.pt",
+      "epoch": 2.7499977138676788,
+      "val_loss": 2.5282,
+      "val_accuracy": 0.523,
+      "device": "cuda",
+      "audio_file": "muque - DARK GAME(Official Music Video).wav",
+      "conditioning": {
+        "mean": 6.75,
+        "peak": 12.1,
+        "std": 1.5
+      },
+      "hop_ms": 100,
+      "hop_bins": 20
+    }
+  },
+  "exp42": {
+    "Alex Warren - Ordinary (Official Video)": {
+      "total_events": 707,
+      "total_frames": 37474,
+      "duration_s": 186.95,
+      "events_per_sec": 3.78,
+      "stop_count": 87,
+      "total_model_calls": 794,
+      "event_ratio": 0.8904,
+      "stop_ratio": 0.1096,
+      "inference_time_s": 10.96,
+      "events_per_sec_realtime": 64.5,
+      "realtime_factor": 17.05,
+      "timing": {
+        "inference_s": 10.962,
+        "ms_per_call": 13.81,
+        "ms_per_event": 15.51,
+        "calls_per_sec": 72.4,
+        "model_load_s": 0.689,
+        "audio_load_s": 1.681,
+        "total_s": 13.346
+      },
+      "event_distribution": {
+        "min_offset": 9,
+        "max_offset": 319,
+        "mean_offset": 50.57,
+        "median_offset": 36,
+        "std_offset": 34.51,
+        "mean_offset_ms": 252.26,
+        "median_offset_ms": 179.59,
+        "top_offsets": [
+          {
+            "offset": 36,
+            "offset_ms": 179.6,
+            "count": 438
+          },
+          {
+            "offset": 71,
+            "offset_ms": 354.2,
+            "count": 81
+          },
+          {
+            "offset": 35,
+            "offset_ms": 174.6,
+            "count": 53
+          },
+          {
+            "offset": 72,
+            "offset_ms": 359.2,
+            "count": 45
+          },
+          {
+            "offset": 107,
+            "offset_ms": 533.8,
+            "count": 21
+          },
+          {
+            "offset": 18,
+            "offset_ms": 89.8,
+            "count": 16
+          },
+          {
+            "offset": 106,
+            "offset_ms": 528.8,
+            "count": 5
+          },
+          {
+            "offset": 104,
+            "offset_ms": 518.8,
+            "count": 5
+          },
+          {
+            "offset": 213,
+            "offset_ms": 1062.6,
+            "count": 4
+          },
+          {
+            "offset": 215,
+            "offset_ms": 1072.6,
+            "count": 4
+          },
+          {
+            "offset": 214,
+            "offset_ms": 1067.6,
+            "count": 4
+          },
+          {
+            "offset": 37,
+            "offset_ms": 184.6,
+            "count": 4
+          },
+          {
+            "offset": 177,
+            "offset_ms": 883.0,
+            "count": 3
+          },
+          {
+            "offset": 19,
+            "offset_ms": 94.8,
+            "count": 3
+          },
+          {
+            "offset": 70,
+            "offset_ms": 349.2,
+            "count": 2
+          }
+        ],
+        "zero_offset_count": 0,
+        "zero_offset_pct": 0.0
+      },
+      "ioi": {
+        "min_ms": 44.9,
+        "max_ms": 1591.4,
+        "mean_ms": 254.7,
+        "median_ms": 179.6,
+        "std_ms": 178.6,
+        "short_ioi_count": 0,
+        "short_ioi_pct": 0.0,
+        "long_gap_count": 0,
+        "histogram": [
+          {
+            "ms": 90,
+            "count": 17
+          },
+          {
+            "ms": 170,
+            "count": 52
+          },
+          {
+            "ms": 180,
+            "count": 441
+          },
+          {
+            "ms": 190,
+            "count": 2
+          },
+          {
+            "ms": 260,
+            "count": 2
+          },
+          {
+            "ms": 350,
+            "count": 83
+          },
+          {
+            "ms": 360,
+            "count": 47
+          },
+          {
+            "ms": 520,
+            "count": 6
+          },
+          {
+            "ms": 530,
+            "count": 25
+          },
+          {
+            "ms": 540,
+            "count": 2
+          },
+          {
+            "ms": 880,
+            "count": 3
+          },
+          {
+            "ms": 1060,
+            "count": 5
+          },
+          {
+            "ms": 1070,
+            "count": 8
+          },
+          {
+            "ms": 1080,
+            "count": 2
+          }
+        ],
+        "estimated_bpm": 333.3
+      },
+      "density": {
+        "mean": 3.78,
+        "peak": 8,
+        "std": 1.62,
+        "min": 0,
+        "cv": 0.427,
+        "silence_regions": [],
+        "dense_regions": []
+      },
+      "stop_analysis": {
+        "total_stops": 87,
+        "first_stop_ms": 68224.9,
+        "last_stop_ms": 186925.2,
+        "consecutive_runs": 4,
+        "longest_run": 67,
+        "avg_run_length": 21.8,
+        "avg_stop_gap_ms": 1380.2,
+        "min_stop_gap_ms": 99.8,
+        "max_stop_gap_ms": 75393.7
+      },
+      "avg_stop_gap_ms": 1380.2,
+      "checkpoint": "best.pt",
+      "epoch": 3.249993141603036,
+      "val_loss": 2.4815,
+      "val_accuracy": 0.5429,
+      "device": "cuda",
+      "audio_file": "Alex Warren - Ordinary (Official Video).wav",
+      "conditioning": {
+        "mean": 6.75,
+        "peak": 12.1,
+        "std": 1.5
+      },
+      "hop_ms": 100,
+      "hop_bins": 20
+    },
+    "Equiloud - Time Machine": {
+      "total_events": 987,
+      "total_frames": 47662,
+      "duration_s": 237.77,
+      "events_per_sec": 4.15,
+      "stop_count": 214,
+      "total_model_calls": 1201,
+      "event_ratio": 0.8218,
+      "stop_ratio": 0.1782,
+      "inference_time_s": 15.72,
+      "events_per_sec_realtime": 62.8,
+      "realtime_factor": 15.12,
+      "timing": {
+        "inference_s": 15.724,
+        "ms_per_call": 13.09,
+        "ms_per_event": 15.93,
+        "calls_per_sec": 76.4,
+        "model_load_s": 0.639,
+        "audio_load_s": 1.679,
+        "total_s": 18.053
+      },
+      "event_distribution": {
+        "min_offset": 14,
+        "max_offset": 350,
+        "mean_offset": 43.97,
+        "median_offset": 50,
+        "std_offset": 19.35,
+        "mean_offset_ms": 219.35,
+        "median_offset_ms": 249.43,
+        "top_offsets": [
+          {
+            "offset": 57,
+            "offset_ms": 284.4,
+            "count": 395
+          },
+          {
+            "offset": 29,
+            "offset_ms": 144.7,
+            "count": 345
+          },
+          {
+            "offset": 28,
+            "offset_ms": 139.7,
+            "count": 91
+          },
+          {
+            "offset": 58,
+            "offset_ms": 289.3,
+            "count": 73
+          },
+          {
+            "offset": 32,
+            "offset_ms": 159.6,
+            "count": 29
+          },
+          {
+            "offset": 33,
+            "offset_ms": 164.6,
+            "count": 20
+          },
+          {
+            "offset": 67,
+            "offset_ms": 334.2,
+            "count": 12
+          },
+          {
+            "offset": 31,
+            "offset_ms": 154.6,
+            "count": 4
+          },
+          {
+            "offset": 51,
+            "offset_ms": 254.4,
+            "count": 3
+          },
+          {
+            "offset": 50,
+            "offset_ms": 249.4,
+            "count": 3
+          },
+          {
+            "offset": 350,
+            "offset_ms": 1746.0,
+            "count": 1
+          },
+          {
+            "offset": 19,
+            "offset_ms": 94.8,
+            "count": 1
+          },
+          {
+            "offset": 53,
+            "offset_ms": 264.4,
+            "count": 1
+          },
+          {
+            "offset": 301,
+            "offset_ms": 1501.6,
+            "count": 1
+          },
+          {
+            "offset": 104,
+            "offset_ms": 518.8,
+            "count": 1
+          }
+        ],
+        "zero_offset_count": 0,
+        "zero_offset_pct": 0.0
+      },
+      "ioi": {
+        "min_ms": 139.7,
+        "max_ms": 1501.6,
+        "mean_ms": 221.3,
+        "median_ms": 281.9,
+        "std_ms": 89.2,
+        "short_ioi_count": 0,
+        "short_ioi_pct": 0.0,
+        "long_gap_count": 0,
+        "histogram": [
+          {
+            "ms": 140,
+            "count": 434
+          },
+          {
+            "ms": 150,
+            "count": 3
+          },
+          {
+            "ms": 160,
+            "count": 45
+          },
+          {
+            "ms": 250,
+            "count": 6
+          },
+          {
+            "ms": 260,
+            "count": 2
+          },
+          {
+            "ms": 280,
+            "count": 396
+          },
+          {
+            "ms": 290,
+            "count": 72
+          },
+          {
+            "ms": 330,
+            "count": 12
+          },
+          {
+            "ms": 360,
+            "count": 2
+          },
+          {
+            "ms": 570,
+            "count": 2
+          }
+        ],
+        "estimated_bpm": 210.5
+      },
+      "density": {
+        "mean": 4.15,
+        "peak": 7,
+        "std": 1.7,
+        "min": 0,
+        "cv": 0.411,
+        "silence_regions": [
+          {
+            "start_s": 0.0,
+            "end_s": 3.0,
+            "duration_s": 3.0
+          }
+        ],
+        "dense_regions": []
+      },
+      "stop_analysis": {
+        "total_stops": 214,
+        "first_stop_ms": 0.0,
+        "last_stop_ms": 237749.7,
+        "consecutive_runs": 9,
+        "longest_run": 160,
+        "avg_run_length": 23.4,
+        "avg_stop_gap_ms": 1116.2,
+        "min_stop_gap_ms": 99.8,
+        "max_stop_gap_ms": 110513.8
+      },
+      "avg_stop_gap_ms": 1116.2,
+      "checkpoint": "best.pt",
+      "epoch": 3.249993141603036,
+      "val_loss": 2.4815,
+      "val_accuracy": 0.5429,
+      "device": "cuda",
+      "audio_file": "Equiloud - Time Machine.wav",
+      "conditioning": {
+        "mean": 6.75,
+        "peak": 12.1,
+        "std": 1.5
+      },
+      "hop_ms": 100,
+      "hop_bins": 20
+    },
+    "Medalist Season 2 OP \u29f8 Opening Cold Night by HANA [4K 60FPS]": {
+      "total_events": 509,
+      "total_frames": 24149,
+      "duration_s": 120.47,
+      "events_per_sec": 4.23,
+      "stop_count": 339,
+      "total_model_calls": 848,
+      "event_ratio": 0.6002,
+      "stop_ratio": 0.3998,
+      "inference_time_s": 11.4,
+      "events_per_sec_realtime": 44.6,
+      "realtime_factor": 10.56,
+      "timing": {
+        "inference_s": 11.405,
+        "ms_per_call": 13.45,
+        "ms_per_event": 22.41,
+        "calls_per_sec": 74.4,
+        "model_load_s": 0.571,
+        "audio_load_s": 1.661,
+        "total_s": 13.643
+      },
+      "event_distribution": {
+        "min_offset": 16,
+        "max_offset": 470,
+        "mean_offset": 34.14,
+        "median_offset": 24,
+        "std_offset": 23.08,
+        "mean_offset_ms": 170.32,
+        "median_offset_ms": 119.73,
+        "top_offsets": [
+          {
+            "offset": 24,
+            "offset_ms": 119.7,
+            "count": 317
+          },
+          {
+            "offset": 48,
+            "offset_ms": 239.5,
+            "count": 152
+          },
+          {
+            "offset": 49,
+            "offset_ms": 244.4,
+            "count": 34
+          },
+          {
+            "offset": 96,
+            "offset_ms": 478.9,
+            "count": 2
+          },
+          {
+            "offset": 470,
+            "offset_ms": 2344.7,
+            "count": 1
+          },
+          {
+            "offset": 97,
+            "offset_ms": 483.9,
+            "count": 1
+          },
+          {
+            "offset": 16,
+            "offset_ms": 79.8,
+            "count": 1
+          },
+          {
+            "offset": 33,
+            "offset_ms": 164.6,
+            "count": 1
+          }
+        ],
+        "zero_offset_count": 0,
+        "zero_offset_pct": 0.0
+      },
+      "ioi": {
+        "min_ms": 79.8,
+        "max_ms": 483.9,
+        "mean_ms": 166.0,
+        "median_ms": 119.7,
+        "std_ms": 62.9,
+        "short_ioi_count": 0,
+        "short_ioi_pct": 0.0,
+        "long_gap_count": 0,
+        "histogram": [
+          {
+            "ms": 120,
+            "count": 317
+          },
+          {
+            "ms": 240,
+            "count": 186
+          },
+          {
+            "ms": 480,
+            "count": 3
+          }
+        ],
+        "estimated_bpm": 500.0
+      },
+      "density": {
+        "mean": 4.21,
+        "peak": 9,
+        "std": 3.1,
+        "min": 0,
+        "cv": 0.736,
+        "silence_regions": [
+          {
+            "start_s": 0.0,
+            "end_s": 3.0,
+            "duration_s": 3.0
+          }
+        ],
+        "dense_regions": []
+      },
+      "stop_analysis": {
+        "total_stops": 339,
+        "first_stop_ms": 0.0,
+        "last_stop_ms": 120416.3,
+        "consecutive_runs": 2,
+        "longest_run": 326,
+        "avg_run_length": 169.5,
+        "avg_stop_gap_ms": 356.3,
+        "min_stop_gap_ms": 99.8,
+        "max_stop_gap_ms": 86792.7
+      },
+      "avg_stop_gap_ms": 356.3,
+      "checkpoint": "best.pt",
+      "epoch": 3.249993141603036,
+      "val_loss": 2.4815,
+      "val_accuracy": 0.5429,
+      "device": "cuda",
+      "audio_file": "Medalist Season 2 OP \u29f8 Opening 'Cold Night' by HANA [4K 60FPS].wav",
+      "conditioning": {
+        "mean": 6.75,
+        "peak": 12.1,
+        "std": 1.5
+      },
+      "hop_ms": 100,
+      "hop_bins": 20
+    },
+    "RoccoW - Chipper Choices": {
+      "total_events": 578,
+      "total_frames": 27727,
+      "duration_s": 138.32,
+      "events_per_sec": 4.18,
+      "stop_count": 14,
+      "total_model_calls": 592,
+      "event_ratio": 0.9764,
+      "stop_ratio": 0.0236,
+      "inference_time_s": 8.63,
+      "events_per_sec_realtime": 67.0,
+      "realtime_factor": 16.03,
+      "timing": {
+        "inference_s": 8.628,
+        "ms_per_call": 14.57,
+        "ms_per_event": 14.93,
+        "calls_per_sec": 68.6,
+        "model_load_s": 0.644,
+        "audio_load_s": 1.813,
+        "total_s": 11.092
+      },
+      "event_distribution": {
+        "min_offset": 25,
+        "max_offset": 52,
+        "mean_offset": 47.49,
+        "median_offset": 51,
+        "std_offset": 8.81,
+        "mean_offset_ms": 236.94,
+        "median_offset_ms": 254.42,
+        "top_offsets": [
+          {
+            "offset": 51,
+            "offset_ms": 254.4,
+            "count": 496
+          },
+          {
+            "offset": 25,
+            "offset_ms": 124.7,
+            "count": 54
+          },
+          {
+            "offset": 26,
+            "offset_ms": 129.7,
+            "count": 24
+          },
+          {
+            "offset": 50,
+            "offset_ms": 249.4,
+            "count": 2
+          },
+          {
+            "offset": 52,
+            "offset_ms": 259.4,
+            "count": 1
+          },
+          {
+            "offset": 30,
+            "offset_ms": 149.7,
+            "count": 1
+          }
+        ],
+        "zero_offset_count": 0,
+        "zero_offset_pct": 0.0
+      },
+      "ioi": {
+        "min_ms": 124.7,
+        "max_ms": 354.2,
+        "mean_ms": 237.1,
+        "median_ms": 254.4,
+        "std_ms": 44.2,
+        "short_ioi_count": 0,
+        "short_ioi_pct": 0.0,
+        "long_gap_count": 0,
+        "histogram": [
+          {
+            "ms": 120,
+            "count": 54
+          },
+          {
+            "ms": 130,
+            "count": 24
+          },
+          {
+            "ms": 250,
+            "count": 497
+          }
+        ],
+        "estimated_bpm": 235.3
+      },
+      "density": {
+        "mean": 4.16,
+        "peak": 7,
+        "std": 0.78,
+        "min": 0,
+        "cv": 0.188,
+        "silence_regions": [],
+        "dense_regions": []
+      },
+      "stop_analysis": {
+        "total_stops": 14,
+        "first_stop_ms": 136439.9,
+        "last_stop_ms": 138245.8,
+        "consecutive_runs": 1,
+        "longest_run": 13,
+        "avg_run_length": 13.0,
+        "avg_stop_gap_ms": 138.9,
+        "min_stop_gap_ms": 99.8,
+        "max_stop_gap_ms": 608.6
+      },
+      "avg_stop_gap_ms": 138.9,
+      "checkpoint": "best.pt",
+      "epoch": 3.249993141603036,
+      "val_loss": 2.4815,
+      "val_accuracy": 0.5429,
+      "device": "cuda",
+      "audio_file": "RoccoW - Chipper Choices.wav",
+      "conditioning": {
+        "mean": 6.75,
+        "peak": 12.1,
+        "std": 1.5
+      },
+      "hop_ms": 100,
+      "hop_bins": 20
+    },
+    "Sabrina Carpenter - Manchild (Official Video)": {
+      "total_events": 927,
+      "total_frames": 47367,
+      "duration_s": 236.3,
+      "events_per_sec": 3.92,
+      "stop_count": 136,
+      "total_model_calls": 1063,
+      "event_ratio": 0.8721,
+      "stop_ratio": 0.1279,
+      "inference_time_s": 14.26,
+      "events_per_sec_realtime": 65.0,
+      "realtime_factor": 16.57,
+      "timing": {
+        "inference_s": 14.264,
+        "ms_per_call": 13.42,
+        "ms_per_event": 15.39,
+        "calls_per_sec": 74.5,
+        "model_load_s": 0.715,
+        "audio_load_s": 1.702,
+        "total_s": 16.695
+      },
+      "event_distribution": {
+        "min_offset": 12,
+        "max_offset": 481,
+        "mean_offset": 48.18,
+        "median_offset": 49,
+        "std_offset": 25.54,
+        "mean_offset_ms": 240.35,
+        "median_offset_ms": 244.44,
+        "top_offsets": [
+          {
+            "offset": 49,
+            "offset_ms": 244.4,
+            "count": 724
+          },
+          {
+            "offset": 24,
+            "offset_ms": 119.7,
+            "count": 101
+          },
+          {
+            "offset": 48,
+            "offset_ms": 239.5,
+            "count": 25
+          },
+          {
+            "offset": 98,
+            "offset_ms": 488.9,
+            "count": 13
+          },
+          {
+            "offset": 17,
+            "offset_ms": 84.8,
+            "count": 10
+          },
+          {
+            "offset": 97,
+            "offset_ms": 483.9,
+            "count": 10
+          },
+          {
+            "offset": 34,
+            "offset_ms": 169.6,
+            "count": 9
+          },
+          {
+            "offset": 32,
+            "offset_ms": 159.6,
+            "count": 5
+          },
+          {
+            "offset": 35,
+            "offset_ms": 174.6,
+            "count": 4
+          },
+          {
+            "offset": 25,
+            "offset_ms": 124.7,
+            "count": 3
+          },
+          {
+            "offset": 68,
+            "offset_ms": 339.2,
+            "count": 3
+          },
+          {
+            "offset": 33,
+            "offset_ms": 164.6,
+            "count": 2
+          },
+          {
+            "offset": 16,
+            "offset_ms": 79.8,
+            "count": 2
+          },
+          {
+            "offset": 12,
+            "offset_ms": 59.9,
+            "count": 2
+          },
+          {
+            "offset": 96,
+            "offset_ms": 478.9,
+            "count": 2
+          }
+        ],
+        "zero_offset_count": 0,
+        "zero_offset_pct": 0.0
+      },
+      "ioi": {
+        "min_ms": 59.9,
+        "max_ms": 2698.9,
+        "mean_ms": 244.4,
+        "median_ms": 244.4,
+        "std_ms": 144.9,
+        "short_ioi_count": 0,
+        "short_ioi_pct": 0.0,
+        "long_gap_count": 2,
+        "histogram": [
+          {
+            "ms": 60,
+            "count": 2
+          },
+          {
+            "ms": 80,
+            "count": 12
+          },
+          {
+            "ms": 120,
+            "count": 103
+          },
+          {
+            "ms": 160,
+            "count": 5
+          },
+          {
+            "ms": 170,
+            "count": 13
+          },
+          {
+            "ms": 240,
+            "count": 748
+          },
+          {
+            "ms": 340,
+            "count": 3
+          },
+          {
+            "ms": 480,
+            "count": 12
+          },
+          {
+            "ms": 490,
+            "count": 14
+          }
+        ],
+        "estimated_bpm": 244.9
+      },
+      "density": {
+        "mean": 3.91,
+        "peak": 8,
+        "std": 1.39,
+        "min": 0,
+        "cv": 0.356,
+        "silence_regions": [
+          {
+            "start_s": 196.0,
+            "end_s": 198.0,
+            "duration_s": 2.0
+          },
+          {
+            "start_s": 204.0,
+            "end_s": 206.0,
+            "duration_s": 2.0
+          }
+        ],
+        "dense_regions": []
+      },
+      "stop_analysis": {
+        "total_stops": 136,
+        "first_stop_ms": 0.0,
+        "last_stop_ms": 236273.0,
+        "consecutive_runs": 9,
+        "longest_run": 92,
+        "avg_run_length": 15.0,
+        "avg_stop_gap_ms": 1750.2,
+        "min_stop_gap_ms": 99.8,
+        "max_stop_gap_ms": 193450.3
+      },
+      "avg_stop_gap_ms": 1750.2,
+      "checkpoint": "best.pt",
+      "epoch": 3.249993141603036,
+      "val_loss": 2.4815,
+      "val_accuracy": 0.5429,
+      "device": "cuda",
+      "audio_file": "Sabrina Carpenter - Manchild (Official Video).wav",
+      "conditioning": {
+        "mean": 6.75,
+        "peak": 12.1,
+        "std": 1.5
+      },
+      "hop_ms": 100,
+      "hop_bins": 20
+    },
+    "Snow Man \u30aa\u30c9\u30ed\u30a6\u30bc\uff01 Music Video": {
+      "total_events": 925,
+      "total_frames": 48545,
+      "duration_s": 242.17,
+      "events_per_sec": 3.82,
+      "stop_count": 127,
+      "total_model_calls": 1052,
+      "event_ratio": 0.8793,
+      "stop_ratio": 0.1207,
+      "inference_time_s": 14.16,
+      "events_per_sec_realtime": 65.3,
+      "realtime_factor": 17.11,
+      "timing": {
+        "inference_s": 14.155,
+        "ms_per_call": 13.46,
+        "ms_per_event": 15.3,
+        "calls_per_sec": 74.3,
+        "model_load_s": 0.719,
+        "audio_load_s": 1.751,
+        "total_s": 16.637
+      },
+      "event_distribution": {
+        "min_offset": 23,
+        "max_offset": 470,
+        "mean_offset": 49.74,
+        "median_offset": 47,
+        "std_offset": 33.97,
+        "mean_offset_ms": 248.16,
+        "median_offset_ms": 234.47,
+        "top_offsets": [
+          {
+            "offset": 47,
+            "offset_ms": 234.5,
+            "count": 590
+          },
+          {
+            "offset": 24,
+            "offset_ms": 119.7,
+            "count": 114
+          },
+          {
+            "offset": 23,
+            "offset_ms": 114.7,
+            "count": 93
+          },
+          {
+            "offset": 94,
+            "offset_ms": 468.9,
+            "count": 82
+          },
+          {
+            "offset": 46,
+            "offset_ms": 229.5,
+            "count": 10
+          },
+          {
+            "offset": 70,
+            "offset_ms": 349.2,
+            "count": 7
+          },
+          {
+            "offset": 93,
+            "offset_ms": 463.9,
+            "count": 7
+          },
+          {
+            "offset": 235,
+            "offset_ms": 1172.3,
+            "count": 4
+          },
+          {
+            "offset": 311,
+            "offset_ms": 1551.5,
+            "count": 2
+          },
+          {
+            "offset": 48,
+            "offset_ms": 239.5,
+            "count": 2
+          },
+          {
+            "offset": 95,
+            "offset_ms": 473.9,
+            "count": 2
+          },
+          {
+            "offset": 96,
+            "offset_ms": 478.9,
+            "count": 2
+          },
+          {
+            "offset": 167,
+            "offset_ms": 833.1,
+            "count": 2
+          },
+          {
+            "offset": 470,
+            "offset_ms": 2344.7,
+            "count": 1
+          },
+          {
+            "offset": 437,
+            "offset_ms": 2180.0,
+            "count": 1
+          }
+        ],
+        "zero_offset_count": 0,
+        "zero_offset_pct": 0.0
+      },
+      "ioi": {
+        "min_ms": 114.7,
+        "max_ms": 2180.0,
+        "mean_ms": 246.4,
+        "median_ms": 234.5,
+        "std_ms": 155.7,
+        "short_ioi_count": 0,
+        "short_ioi_pct": 0.0,
+        "long_gap_count": 1,
+        "histogram": [
+          {
+            "ms": 110,
+            "count": 93
+          },
+          {
+            "ms": 120,
+            "count": 114
+          },
+          {
+            "ms": 230,
+            "count": 599
+          },
+          {
+            "ms": 240,
+            "count": 3
+          },
+          {
+            "ms": 350,
+            "count": 7
+          },
+          {
+            "ms": 460,
+            "count": 8
+          },
+          {
+            "ms": 470,
+            "count": 84
+          },
+          {
+            "ms": 480,
+            "count": 2
+          },
+          {
+            "ms": 830,
+            "count": 2
+          },
+          {
+            "ms": 1170,
+            "count": 4
+          },
+          {
+            "ms": 1550,
+            "count": 2
+          }
+        ],
+        "estimated_bpm": 255.3
+      },
+      "density": {
+        "mean": 3.81,
+        "peak": 8,
+        "std": 1.65,
+        "min": 0,
+        "cv": 0.432,
+        "silence_regions": [
+          {
+            "start_s": 0.0,
+            "end_s": 4.0,
+            "duration_s": 4.0
+          }
+        ],
+        "dense_regions": []
+      },
+      "stop_analysis": {
+        "total_stops": 127,
+        "first_stop_ms": 0.0,
+        "last_stop_ms": 242119.7,
+        "consecutive_runs": 3,
+        "longest_run": 103,
+        "avg_run_length": 42.0,
+        "avg_stop_gap_ms": 1921.6,
+        "min_stop_gap_ms": 99.8,
+        "max_stop_gap_ms": 124282.5
+      },
+      "avg_stop_gap_ms": 1921.6,
+      "checkpoint": "best.pt",
+      "epoch": 3.249993141603036,
+      "val_loss": 2.4815,
+      "val_accuracy": 0.5429,
+      "device": "cuda",
+      "audio_file": "Snow Man '\u30aa\u30c9\u30ed\u30a6\u30bc\uff01' Music Video.wav",
+      "conditioning": {
+        "mean": 6.75,
+        "peak": 12.1,
+        "std": 1.5
+      },
+      "hop_ms": 100,
+      "hop_bins": 20
+    },
+    "The Bug Club - Watching the Omnibus (Official Audio)": {
+      "total_events": 398,
+      "total_frames": 15947,
+      "duration_s": 79.55,
+      "events_per_sec": 5.0,
+      "stop_count": 35,
+      "total_model_calls": 433,
+      "event_ratio": 0.9192,
+      "stop_ratio": 0.0808,
+      "inference_time_s": 6.62,
+      "events_per_sec_realtime": 60.1,
+      "realtime_factor": 12.02,
+      "timing": {
+        "inference_s": 6.621,
+        "ms_per_call": 15.29,
+        "ms_per_event": 16.64,
+        "calls_per_sec": 65.4,
+        "model_load_s": 0.665,
+        "audio_load_s": 1.725,
+        "total_s": 9.016
+      },
+      "event_distribution": {
+        "min_offset": 12,
+        "max_offset": 353,
+        "mean_offset": 38.31,
+        "median_offset": 41,
+        "std_offset": 20.66,
+        "mean_offset_ms": 191.11,
+        "median_offset_ms": 204.54,
+        "top_offsets": [
+          {
+            "offset": 25,
+            "offset_ms": 124.7,
+            "count": 125
+          },
+          {
+            "offset": 50,
+            "offset_ms": 249.4,
+            "count": 84
+          },
+          {
+            "offset": 49,
+            "offset_ms": 244.4,
+            "count": 72
+          },
+          {
+            "offset": 24,
+            "offset_ms": 119.7,
+            "count": 50
+          },
+          {
+            "offset": 51,
+            "offset_ms": 254.4,
+            "count": 31
+          },
+          {
+            "offset": 26,
+            "offset_ms": 129.7,
+            "count": 13
+          },
+          {
+            "offset": 20,
+            "offset_ms": 99.8,
+            "count": 5
+          },
+          {
+            "offset": 52,
+            "offset_ms": 259.4,
+            "count": 5
+          },
+          {
+            "offset": 30,
+            "offset_ms": 149.7,
+            "count": 3
+          },
+          {
+            "offset": 48,
+            "offset_ms": 239.5,
+            "count": 2
+          },
+          {
+            "offset": 12,
+            "offset_ms": 59.9,
+            "count": 2
+          },
+          {
+            "offset": 65,
+            "offset_ms": 324.3,
+            "count": 1
+          },
+          {
+            "offset": 96,
+            "offset_ms": 478.9,
+            "count": 1
+          },
+          {
+            "offset": 353,
+            "offset_ms": 1761.0,
+            "count": 1
+          },
+          {
+            "offset": 74,
+            "offset_ms": 369.2,
+            "count": 1
+          }
+        ],
+        "zero_offset_count": 0,
+        "zero_offset_pct": 0.0
+      },
+      "ioi": {
+        "min_ms": 59.9,
+        "max_ms": 1761.0,
+        "mean_ms": 193.5,
+        "median_ms": 239.5,
+        "std_ms": 106.1,
+        "short_ioi_count": 0,
+        "short_ioi_pct": 0.0,
+        "long_gap_count": 0,
+        "histogram": [
+          {
+            "ms": 100,
+            "count": 5
+          },
+          {
+            "ms": 120,
+            "count": 174
+          },
+          {
+            "ms": 130,
+            "count": 12
+          },
+          {
+            "ms": 150,
+            "count": 3
+          },
+          {
+            "ms": 240,
+            "count": 74
+          },
+          {
+            "ms": 250,
+            "count": 114
+          },
+          {
+            "ms": 260,
+            "count": 5
+          }
+        ],
+        "estimated_bpm": 480.0
+      },
+      "density": {
+        "mean": 4.97,
+        "peak": 8,
+        "std": 1.39,
+        "min": 0,
+        "cv": 0.279,
+        "silence_regions": [],
+        "dense_regions": []
+      },
+      "stop_analysis": {
+        "total_stops": 35,
+        "first_stop_ms": 29173.7,
+        "last_stop_ms": 79454.4,
+        "consecutive_runs": 4,
+        "longest_run": 24,
+        "avg_run_length": 8.5,
+        "avg_stop_gap_ms": 1478.8,
+        "min_stop_gap_ms": 99.8,
+        "max_stop_gap_ms": 29602.7
+      },
+      "avg_stop_gap_ms": 1478.8,
+      "checkpoint": "best.pt",
+      "epoch": 3.249993141603036,
+      "val_loss": 2.4815,
+      "val_accuracy": 0.5429,
+      "device": "cuda",
+      "audio_file": "The Bug Club - Watching the Omnibus (Official Audio).wav",
+      "conditioning": {
+        "mean": 6.75,
+        "peak": 12.1,
+        "std": 1.5
+      },
+      "hop_ms": 100,
+      "hop_bins": 20
+    },
+    "Weird Nightmare - Might See You There (Official Music Video)": {
+      "total_events": 558,
+      "total_frames": 24474,
+      "duration_s": 122.09,
+      "events_per_sec": 4.57,
+      "stop_count": 71,
+      "total_model_calls": 629,
+      "event_ratio": 0.8871,
+      "stop_ratio": 0.1129,
+      "inference_time_s": 8.58,
+      "events_per_sec_realtime": 65.0,
+      "realtime_factor": 14.22,
+      "timing": {
+        "inference_s": 8.584,
+        "ms_per_call": 13.65,
+        "ms_per_event": 15.38,
+        "calls_per_sec": 73.3,
+        "model_load_s": 0.662,
+        "audio_load_s": 1.573,
+        "total_s": 10.826
+      },
+      "event_distribution": {
+        "min_offset": 21,
+        "max_offset": 361,
+        "mean_offset": 41.32,
+        "median_offset": 42,
+        "std_offset": 19.25,
+        "mean_offset_ms": 206.11,
+        "median_offset_ms": 209.52,
+        "top_offsets": [
+          {
+            "offset": 42,
+            "offset_ms": 209.5,
+            "count": 263
+          },
+          {
+            "offset": 43,
+            "offset_ms": 214.5,
+            "count": 156
+          },
+          {
+            "offset": 21,
+            "offset_ms": 104.8,
+            "count": 105
+          },
+          {
+            "offset": 85,
+            "offset_ms": 424.0,
+            "count": 24
+          },
+          {
+            "offset": 84,
+            "offset_ms": 419.0,
+            "count": 5
+          },
+          {
+            "offset": 83,
+            "offset_ms": 414.1,
+            "count": 2
+          },
+          {
+            "offset": 361,
+            "offset_ms": 1800.9,
+            "count": 1
+          },
+          {
+            "offset": 86,
+            "offset_ms": 429.0,
+            "count": 1
+          },
+          {
+            "offset": 22,
+            "offset_ms": 109.8,
+            "count": 1
+          }
+        ],
+        "zero_offset_count": 0,
+        "zero_offset_pct": 0.0
+      },
+      "ioi": {
+        "min_ms": 104.8,
+        "max_ms": 429.0,
+        "mean_ms": 203.2,
+        "median_ms": 209.5,
+        "std_ms": 68.3,
+        "short_ioi_count": 0,
+        "short_ioi_pct": 0.0,
+        "long_gap_count": 0,
+        "histogram": [
+          {
+            "ms": 100,
+            "count": 105
+          },
+          {
+            "ms": 210,
+            "count": 419
+          },
+          {
+            "ms": 410,
+            "count": 2
+          },
+          {
+            "ms": 420,
+            "count": 29
+          }
+        ],
+        "estimated_bpm": 285.7
+      },
+      "density": {
+        "mean": 4.54,
+        "peak": 7,
+        "std": 1.62,
+        "min": 0,
+        "cv": 0.357,
+        "silence_regions": [],
+        "dense_regions": []
+      },
+      "stop_analysis": {
+        "total_stops": 71,
+        "first_stop_ms": 115008.6,
+        "last_stop_ms": 121992.7,
+        "consecutive_runs": 1,
+        "longest_run": 71,
+        "avg_run_length": 71.0,
+        "avg_stop_gap_ms": 99.8,
+        "min_stop_gap_ms": 99.8,
+        "max_stop_gap_ms": 99.8
+      },
+      "avg_stop_gap_ms": 99.8,
+      "checkpoint": "best.pt",
+      "epoch": 3.249993141603036,
+      "val_loss": 2.4815,
+      "val_accuracy": 0.5429,
+      "device": "cuda",
+      "audio_file": "Weird Nightmare - Might See You There (Official Music Video).wav",
+      "conditioning": {
+        "mean": 6.75,
+        "peak": 12.1,
+        "std": 1.5
+      },
+      "hop_ms": 100,
+      "hop_bins": 20
+    },
+    "XAMIYA - KIKYU (Official Lyric Video)": {
+      "total_events": 558,
+      "total_frames": 28016,
+      "duration_s": 139.76,
+      "events_per_sec": 3.99,
+      "stop_count": 70,
+      "total_model_calls": 628,
+      "event_ratio": 0.8885,
+      "stop_ratio": 0.1115,
+      "inference_time_s": 8.2,
+      "events_per_sec_realtime": 68.1,
+      "realtime_factor": 17.05,
+      "timing": {
+        "inference_s": 8.198,
+        "ms_per_call": 13.05,
+        "ms_per_event": 14.69,
+        "calls_per_sec": 76.6,
+        "model_load_s": 0.657,
+        "audio_load_s": 1.657,
+        "total_s": 10.518
+      },
+      "event_distribution": {
+        "min_offset": 17,
+        "max_offset": 379,
+        "mean_offset": 47.72,
+        "median_offset": 35,
+        "std_offset": 38.16,
+        "mean_offset_ms": 238.04,
+        "median_offset_ms": 174.6,
+        "top_offsets": [
+          {
+            "offset": 35,
+            "offset_ms": 174.6,
+            "count": 168
+          },
+          {
+            "offset": 17,
+            "offset_ms": 84.8,
+            "count": 151
+          },
+          {
+            "offset": 69,
+            "offset_ms": 344.2,
+            "count": 64
+          },
+          {
+            "offset": 34,
+            "offset_ms": 169.6,
+            "count": 63
+          },
+          {
+            "offset": 104,
+            "offset_ms": 518.8,
+            "count": 56
+          },
+          {
+            "offset": 103,
+            "offset_ms": 513.8,
+            "count": 13
+          },
+          {
+            "offset": 138,
+            "offset_ms": 688.4,
+            "count": 11
+          },
+          {
+            "offset": 18,
+            "offset_ms": 89.8,
+            "count": 9
+          },
+          {
+            "offset": 52,
+            "offset_ms": 259.4,
+            "count": 8
+          },
+          {
+            "offset": 137,
+            "offset_ms": 683.4,
+            "count": 3
+          },
+          {
+            "offset": 173,
+            "offset_ms": 863.0,
+            "count": 3
+          },
+          {
+            "offset": 70,
+            "offset_ms": 349.2,
+            "count": 2
+          },
+          {
+            "offset": 68,
+            "offset_ms": 339.2,
+            "count": 2
+          },
+          {
+            "offset": 379,
+            "offset_ms": 1890.7,
+            "count": 1
+          },
+          {
+            "offset": 86,
+            "offset_ms": 429.0,
+            "count": 1
+          }
+        ],
+        "zero_offset_count": 0,
+        "zero_offset_pct": 0.0
+      },
+      "ioi": {
+        "min_ms": 84.8,
+        "max_ms": 1376.9,
+        "mean_ms": 235.6,
+        "median_ms": 174.6,
+        "std_ms": 177.9,
+        "short_ioi_count": 0,
+        "short_ioi_pct": 0.0,
+        "long_gap_count": 0,
+        "histogram": [
+          {
+            "ms": 80,
+            "count": 150
+          },
+          {
+            "ms": 90,
+            "count": 9
+          },
+          {
+            "ms": 170,
+            "count": 231
+          },
+          {
+            "ms": 260,
+            "count": 8
+          },
+          {
+            "ms": 340,
+            "count": 66
+          },
+          {
+            "ms": 350,
+            "count": 2
+          },
+          {
+            "ms": 510,
+            "count": 13
+          },
+          {
+            "ms": 520,
+            "count": 55
+          },
+          {
+            "ms": 680,
+            "count": 3
+          },
+          {
+            "ms": 690,
+            "count": 11
+          },
+          {
+            "ms": 860,
+            "count": 3
+          }
+        ],
+        "estimated_bpm": 342.9
+      },
+      "density": {
+        "mean": 3.99,
+        "peak": 10,
+        "std": 2.48,
+        "min": 0,
+        "cv": 0.622,
+        "silence_regions": [
+          {
+            "start_s": 0.0,
+            "end_s": 3.0,
+            "duration_s": 3.0
+          }
+        ],
+        "dense_regions": [
+          {
+            "start_s": 3.0,
+            "end_s": 7.0,
+            "duration_s": 4.0
+          }
+        ]
+      },
+      "stop_analysis": {
+        "total_stops": 70,
+        "first_stop_ms": 0.0,
+        "last_stop_ms": 139712.5,
+        "consecutive_runs": 3,
+        "longest_run": 55,
+        "avg_run_length": 23.0,
+        "avg_stop_gap_ms": 2024.8,
+        "min_stop_gap_ms": 99.8,
+        "max_stop_gap_ms": 100087.5
+      },
+      "avg_stop_gap_ms": 2024.8,
+      "checkpoint": "best.pt",
+      "epoch": 3.249993141603036,
+      "val_loss": 2.4815,
+      "val_accuracy": 0.5429,
+      "device": "cuda",
+      "audio_file": "XAMIYA - KIKYU (Official Lyric Video).wav",
+      "conditioning": {
+        "mean": 6.75,
+        "peak": 12.1,
+        "std": 1.5
+      },
+      "hop_ms": 100,
+      "hop_bins": 20
+    },
+    "muque - DARK GAME(Official Music Video)": {
+      "total_events": 1035,
+      "total_frames": 44915,
+      "duration_s": 224.07,
+      "events_per_sec": 4.62,
+      "stop_count": 158,
+      "total_model_calls": 1193,
+      "event_ratio": 0.8676,
+      "stop_ratio": 0.1324,
+      "inference_time_s": 16.3,
+      "events_per_sec_realtime": 63.5,
+      "realtime_factor": 13.75,
+      "timing": {
+        "inference_s": 16.297,
+        "ms_per_call": 13.66,
+        "ms_per_event": 15.75,
+        "calls_per_sec": 73.2,
+        "model_load_s": 0.587,
+        "audio_load_s": 1.72,
+        "total_s": 18.615
+      },
+      "event_distribution": {
+        "min_offset": 17,
+        "max_offset": 362,
+        "mean_offset": 40.36,
+        "median_offset": 36,
+        "std_offset": 27.46,
+        "mean_offset_ms": 201.34,
+        "median_offset_ms": 179.59,
+        "top_offsets": [
+          {
+            "offset": 36,
+            "offset_ms": 179.6,
+            "count": 311
+          },
+          {
+            "offset": 30,
+            "offset_ms": 149.7,
+            "count": 252
+          },
+          {
+            "offset": 37,
+            "offset_ms": 184.6,
+            "count": 96
+          },
+          {
+            "offset": 72,
+            "offset_ms": 359.2,
+            "count": 93
+          },
+          {
+            "offset": 73,
+            "offset_ms": 364.2,
+            "count": 67
+          },
+          {
+            "offset": 20,
+            "offset_ms": 99.8,
+            "count": 46
+          },
+          {
+            "offset": 18,
+            "offset_ms": 89.8,
+            "count": 36
+          },
+          {
+            "offset": 22,
+            "offset_ms": 109.8,
+            "count": 26
+          },
+          {
+            "offset": 21,
+            "offset_ms": 104.8,
+            "count": 19
+          },
+          {
+            "offset": 31,
+            "offset_ms": 154.6,
+            "count": 15
+          },
+          {
+            "offset": 23,
+            "offset_ms": 114.7,
+            "count": 13
+          },
+          {
+            "offset": 19,
+            "offset_ms": 94.8,
+            "count": 11
+          },
+          {
+            "offset": 45,
+            "offset_ms": 224.5,
+            "count": 10
+          },
+          {
+            "offset": 60,
+            "offset_ms": 299.3,
+            "count": 7
+          },
+          {
+            "offset": 24,
+            "offset_ms": 119.7,
+            "count": 7
+          }
+        ],
+        "zero_offset_count": 0,
+        "zero_offset_pct": 0.0
+      },
+      "ioi": {
+        "min_ms": 84.8,
+        "max_ms": 1805.9,
+        "mean_ms": 204.1,
+        "median_ms": 179.6,
+        "std_ms": 148.0,
+        "short_ioi_count": 0,
+        "short_ioi_pct": 0.0,
+        "long_gap_count": 0,
+        "histogram": [
+          {
+            "ms": 90,
+            "count": 44
+          },
+          {
+            "ms": 100,
+            "count": 64
+          },
+          {
+            "ms": 110,
+            "count": 39
+          },
+          {
+            "ms": 120,
+            "count": 6
+          },
+          {
+            "ms": 150,
+            "count": 267
+          },
+          {
+            "ms": 180,
+            "count": 405
+          },
+          {
+            "ms": 190,
+            "count": 2
+          },
+          {
+            "ms": 210,
+            "count": 3
+          },
+          {
+            "ms": 220,
+            "count": 14
+          },
+          {
+            "ms": 230,
+            "count": 3
+          },
+          {
+            "ms": 300,
+            "count": 9
+          },
+          {
+            "ms": 350,
+            "count": 2
+          },
+          {
+            "ms": 360,
+            "count": 160
+          },
+          {
+            "ms": 1080,
+            "count": 2
+          },
+          {
+            "ms": 1810,
+            "count": 2
+          }
+        ],
+        "estimated_bpm": 333.3
+      },
+      "density": {
+        "mean": 4.6,
+        "peak": 10,
+        "std": 2.13,
+        "min": 0,
+        "cv": 0.464,
+        "silence_regions": [
+          {
+            "start_s": 0.0,
+            "end_s": 5.0,
+            "duration_s": 5.0
+          }
+        ],
+        "dense_regions": [
+          {
+            "start_s": 8.0,
+            "end_s": 11.0,
+            "duration_s": 3.0
+          }
+        ]
+      },
+      "stop_analysis": {
+        "total_stops": 158,
+        "first_stop_ms": 0.0,
+        "last_stop_ms": 224055.8,
+        "consecutive_runs": 7,
+        "longest_run": 75,
+        "avg_run_length": 22.0,
+        "avg_stop_gap_ms": 1427.1,
+        "min_stop_gap_ms": 99.8,
+        "max_stop_gap_ms": 68604.1
+      },
+      "avg_stop_gap_ms": 1427.1,
+      "checkpoint": "best.pt",
+      "epoch": 3.249993141603036,
+      "val_loss": 2.4815,
+      "val_accuracy": 0.5429,
+      "device": "cuda",
+      "audio_file": "muque - DARK GAME(Official Music Video).wav",
+      "conditioning": {
+        "mean": 6.75,
+        "peak": 12.1,
+        "std": 1.5
+      },
+      "hop_ms": 100,
+      "hop_bins": 20
+    }
+  }
+}

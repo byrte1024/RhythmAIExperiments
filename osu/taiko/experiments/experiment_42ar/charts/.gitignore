@@ -1,0 +1,4 @@
+*.csv
+*_stats.json
+*_mel.npy
+*_wave.npy

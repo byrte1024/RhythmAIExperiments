@@ -79,6 +79,8 @@ def parse_args():
     parser.add_argument("--stats-json", default=None, help="Inference stats JSON file")
     parser.add_argument("--mel-npy", default=None, help="Mel spectrogram .npy file")
     parser.add_argument("--wave-npy", default=None, help="Waveform envelope .npy file")
+    parser.add_argument("--render", default=None, help="Render to video file (e.g. output.mp4) instead of interactive mode")
+    parser.add_argument("--render-fps", type=int, default=60, help="Video FPS for render mode (default 60)")
     return parser.parse_args()
 
 
@@ -357,11 +359,11 @@ class Viewer:
             try:
                 pygame.mixer.music.load(self.audio_path)
                 self.has_audio = True
+                print(f"Audio loaded: {self.audio_path}")
             except Exception as e:
                 print(f"Could not load audio: {e}")
         else:
-            if audio_name:
-                print(f"Audio not found: {audio_name}")
+            print(f"Audio not found: {self.audio_path or audio_name}")
 
         self.w = WIDTH
         self.h = HEIGHT
@@ -1201,6 +1203,208 @@ class Viewer:
             except OSError:
                 pass
 
+    def render_video(self, output_path, fps=60):
+        """Render the taiko view to a video file with audio + hit sounds."""
+        import numpy as np
+
+        print(f"Rendering to {output_path} at {fps}fps...")
+
+        # generate tick sounds as numpy arrays for mixing (white noise clap, matches viewer)
+        sr = 44100
+        tick_dur = 0.04  # 40ms
+        n_tick = int(sr * tick_dur)
+
+        def make_noise_tick(vol=0.7):
+            noise = np.random.uniform(-1, 1, n_tick)
+            fade = (1.0 - (np.arange(n_tick) / n_tick) ** 0.5)  # fast decay
+            return (noise * fade * vol * 32767).astype(np.int16)
+
+        don_tick = make_noise_tick(vol=0.7)
+        ka_tick = make_noise_tick(vol=0.5)
+
+        # load source audio as wav for mixing
+        audio_data = None
+        audio_sr = sr
+        if self.audio_path and os.path.exists(self.audio_path):
+            try:
+                result = subprocess.run(
+                    ["ffprobe", "-v", "quiet", "-print_format", "json",
+                     "-show_streams", self.audio_path],
+                    capture_output=True, text=True
+                )
+                # convert to raw pcm via ffmpeg
+                pcm_result = subprocess.run(
+                    ["ffmpeg", "-i", self.audio_path, "-f", "s16le",
+                     "-acodec", "pcm_s16le", "-ac", "1", "-ar", str(sr), "-"],
+                    capture_output=True, timeout=60
+                )
+                if pcm_result.returncode == 0:
+                    audio_data = np.frombuffer(pcm_result.stdout, dtype=np.int16).astype(np.float64)
+                    print(f"  Audio loaded: {len(audio_data)/sr:.1f}s")
+            except Exception as e:
+                print(f"  Could not load audio for mixing: {e}")
+
+        # determine video duration
+        duration_ms = self.song_end_ms + 2000
+        n_frames = int(duration_ms / 1000 * fps)
+        ms_per_frame = 1000.0 / fps
+
+        # mix audio with tick sounds
+        if audio_data is not None:
+            total_samples = max(len(audio_data), int(duration_ms / 1000 * sr))
+            mixed = np.zeros(total_samples, dtype=np.float64)
+            mixed[:len(audio_data)] = audio_data
+            # add tick sounds at onset positions
+            for onset_ms, kind in self.onsets:
+                sample_pos = int(onset_ms / 1000 * sr)
+                tick = ka_tick if "ka" in kind else don_tick
+                end = min(sample_pos + len(tick), total_samples)
+                if sample_pos >= 0 and sample_pos < total_samples:
+                    mixed[sample_pos:end] += tick[:end - sample_pos]
+            # normalize
+            peak = np.abs(mixed).max()
+            if peak > 32767:
+                mixed = mixed * (32767 / peak)
+            mixed_pcm = mixed.astype(np.int16).tobytes()
+        else:
+            mixed_pcm = None
+
+        # set up pygame surface (offscreen)
+        render_w, render_h = 1200, 300  # compact: just playfield + header
+        surface = pygame.Surface((render_w, render_h))
+
+        # start ffmpeg video pipe
+        tmp_audio = None
+        ffmpeg_cmd = [
+            "ffmpeg", "-y",
+            "-f", "rawvideo", "-pix_fmt", "rgb24",
+            "-s", f"{render_w}x{render_h}",
+            "-r", str(fps),
+            "-i", "-",  # video from stdin
+        ]
+
+        if mixed_pcm:
+            # write mixed audio to temp file
+            tmp_audio = tempfile.NamedTemporaryFile(suffix=".wav", delete=False)
+            with wave.open(tmp_audio.name, "w") as wf:
+                wf.setnchannels(1)
+                wf.setsampwidth(2)
+                wf.setframerate(sr)
+                wf.writeframes(mixed_pcm)
+            ffmpeg_cmd += ["-i", tmp_audio.name]  # audio input
+            ffmpeg_cmd += ["-c:v", "libx264", "-preset", "fast", "-crf", "23",
+                          "-c:a", "aac", "-b:a", "192k",
+                          "-shortest", output_path]
+        else:
+            ffmpeg_cmd += ["-c:v", "libx264", "-preset", "fast", "-crf", "23",
+                          output_path]
+
+        proc = subprocess.Popen(ffmpeg_cmd, stdin=subprocess.PIPE)
+
+        # render frames
+        hit_circle_x = 120
+        scroll_px_per_ms = 0.5
+        font = pygame.font.SysFont("consolas", 16)
+        font_big = pygame.font.SysFont("consolas", 22, bold=True)
+
+        recent_hits = []  # (time_ms, kind) for flash effect
+        next_hit = 0
+
+        from tqdm import tqdm
+        for frame_i in tqdm(range(n_frames), desc="Rendering"):
+            now_ms = frame_i * ms_per_frame
+
+            # trigger hits
+            while next_hit < len(self.onsets) and self.onsets[next_hit][0] <= now_ms:
+                recent_hits.append((self.onsets[next_hit][0], self.onsets[next_hit][1]))
+                next_hit += 1
+            recent_hits = [(t, k) for t, k in recent_hits if now_ms - t < 200]
+
+            # draw
+            surface.fill((22, 22, 30))
+
+            # header
+            time_str = f"{int(now_ms/60000):02d}:{int(now_ms/1000)%60:02d}"
+            total_str = f"{int(duration_ms/60000):02d}:{int(duration_ms/1000)%60:02d}"
+            header = font.render(f"{os.path.basename(self.csv_path)}  {time_str}/{total_str}  "
+                                f"Notes: {len(self.onsets)}", True, (200, 200, 210))
+            surface.blit(header, (10, 8))
+
+            # playfield background
+            pf_top = 40
+            pf_h = 120
+            pf_center = pf_top + pf_h // 2
+            pygame.draw.rect(surface, (30, 30, 42), (0, pf_top, render_w, pf_h))
+
+            # hit line
+            pygame.draw.line(surface, (255, 255, 255), (hit_circle_x, pf_top), (hit_circle_x, pf_top + pf_h), 2)
+
+            # draw approaching notes
+            for onset_ms, kind in self.onsets:
+                dx = (onset_ms - now_ms) * scroll_px_per_ms
+                x = hit_circle_x + dx
+                if x < -40 or x > render_w + 40:
+                    continue
+                is_big = "big" in kind
+                radius = 28 if is_big else 20
+                if "ka" in kind:
+                    color = (80, 165, 230) if is_big else (68, 141, 199)
+                elif "drumroll" in kind:
+                    color = (252, 183, 30)
+                    radius = 18
+                else:
+                    color = (255, 90, 60) if is_big else (235, 69, 44)
+                pygame.draw.circle(surface, color, (int(x), pf_center), radius)
+                # white inner circle
+                if "drumroll" not in kind:
+                    pygame.draw.circle(surface, (255, 255, 255), (int(x), pf_center), radius // 3)
+
+            # hit flash
+            for t, k in recent_hits:
+                age = now_ms - t
+                alpha = max(0, 1.0 - age / 200)
+                flash_r = int(40 * (1 + age / 100))
+                flash_surface = pygame.Surface((flash_r * 2, flash_r * 2), pygame.SRCALPHA)
+                flash_color = (68, 141, 199) if "ka" in k else (235, 69, 44)
+                pygame.draw.circle(flash_surface, (*flash_color, int(alpha * 150)),
+                                  (flash_r, flash_r), flash_r)
+                surface.blit(flash_surface, (hit_circle_x - flash_r, pf_center - flash_r))
+
+            # progress bar
+            bar_y = pf_top + pf_h + 10
+            bar_h = 6
+            pygame.draw.rect(surface, (40, 40, 55), (10, bar_y, render_w - 20, bar_h))
+            if duration_ms > 0:
+                progress = min(now_ms / duration_ms, 1.0)
+                pygame.draw.rect(surface, (80, 120, 220),
+                               (10, bar_y, int((render_w - 20) * progress), bar_h))
+
+            # bottom info
+            info_y = bar_y + 14
+            passed = sum(1 for t, _ in self.onsets if t <= now_ms)
+            info = font.render(f"Passed: {passed}/{len(self.onsets)}", True, (120, 120, 135))
+            surface.blit(info, (10, info_y))
+
+            # write frame to ffmpeg
+            frame_bytes = pygame.image.tobytes(surface, "RGB")
+            try:
+                proc.stdin.write(frame_bytes)
+            except BrokenPipeError:
+                print("ffmpeg pipe broken!")
+                break
+
+        proc.stdin.close()
+        proc.wait()
+
+        # cleanup
+        if tmp_audio:
+            try:
+                os.unlink(tmp_audio.name)
+            except OSError:
+                pass
+
+        print(f"Done! Saved to {output_path}")
+
 
 def main():
     args = parse_args()
@@ -1212,11 +1416,22 @@ def main():
         print(f"File not found: {csv_path}")
         return
 
-    viewer = Viewer(csv_path, audio_override=args.audio, compare_csv=args.compare,
-                    stats_json_path=args.stats_json,
-                    mel_npy_path=getattr(args, 'mel_npy', None),
-                    wave_npy_path=getattr(args, 'wave_npy', None))
-    viewer.run()
+    if args.render:
+        # render mode: no interactive window needed, just init pygame for drawing
+        pygame.init()
+        pygame.mixer.init(frequency=44100, size=-16, channels=2, buffer=512)
+        viewer = Viewer(csv_path, audio_override=args.audio, compare_csv=args.compare,
+                        stats_json_path=args.stats_json,
+                        mel_npy_path=getattr(args, 'mel_npy', None),
+                        wave_npy_path=getattr(args, 'wave_npy', None))
+        viewer.render_video(args.render, fps=args.render_fps)
+        pygame.quit()
+    else:
+        viewer = Viewer(csv_path, audio_override=args.audio, compare_csv=args.compare,
+                        stats_json_path=args.stats_json,
+                        mel_npy_path=getattr(args, 'mel_npy', None),
+                        wave_npy_path=getattr(args, 'wave_npy', None))
+        viewer.run()
 
 
 if __name__ == "__main__":
