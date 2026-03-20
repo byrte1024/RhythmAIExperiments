@@ -1,0 +1,5 @@
+Song: Medalist Season 2 OP ⧸ Opening Cold Night by HANA [4K 60FPS]
+---
+Alpha = exp35c
+Beta = exp42
+Gamma = exp14

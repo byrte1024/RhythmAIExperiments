@@ -1,0 +1,5 @@
+Song: XAMIYA - KIKYU (Official Lyric Video)
+---
+Alpha = exp35c
+Beta = exp42
+Gamma = exp14

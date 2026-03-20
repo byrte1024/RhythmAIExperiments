@@ -1,0 +1,5 @@
+Song: Alex Warren - Ordinary (Official Video)
+---
+Alpha = exp35c
+Beta = exp14
+Gamma = exp42

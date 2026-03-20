@@ -3,82 +3,82 @@
     {
       "song": "Alex Warren - Ordinary (Official Video)",
       "genre": "pop",
-      "rank_1": null,
-      "rank_2": null,
-      "rank_3": null,
-      "notes": ""
+      "rank_1": "Gamma",
+      "rank_2": "Alpha",
+      "rank_3": "Beta",
+      "notes": "Alpha performs slightly bad, but nice on the slow sections, but there are definetly points where it could have placed notes but didn't, matches a very primitive rhythm thats not aligned to the drums. it also just feels generic and repetitive. beta had some major skippage in the first fast part, and then slowed down like the others, but performed very badly on the slow parts while faster the alpha, it feels wrong at points. the STD also feels wrong, we range from easy to hard very quickly. Gamma does very well on the fast section on the start, it has some hallucination and desyncs, but gets into its tempo after a little bit, providing the best results"
     },
     {
       "song": "Equiloud - Time Machine",
       "genre": "chiptune",
-      "rank_1": null,
-      "rank_2": null,
-      "rank_3": null,
-      "notes": ""
+      "rank_1": "Gamma",
+      "rank_2": "Beta",
+      "rank_3": "Alpha",
+      "notes": "Alpha performs very well, managing to follow the simplistic drum pattern while alternating between different styles, giving a unique level to what is objectively an EXTREMELY repetitive song, it does the best with what it has, but the more the song goes on, it starts to decay a little bit, spamming a lot in what should be a relatively empty section, and hallucinating notes at the end.  beta performs much better on the vocals at the start, and creates a more unique rhythm to the level, its overall a lot easier and more metronome-y but again, so is the song. but i expect the unique patterns it created at the start to last, not just decay into a metronome, it came up with a cool pattern once and then never again. Gamma had a little bit of difficulty with the vocals at the start, but them immediately picked up the pace, it formed a unique pattern (a very cool one!) but then instantly regressed back into metronome. but generally lasts longer without errors and has better patterns, it manages to recover a few times but then falls back in"
     },
     {
       "song": "Medalist Season 2 OP - Cold Night by HANA",
       "genre": "j-pop dance",
-      "rank_1": null,
-      "rank_2": null,
-      "rank_3": null,
-      "notes": ""
+      "rank_1": "Gamma",
+      "rank_2": "Beta",
+      "rank_3": "Alpha",
+      "notes": "Alpha has a very cool unique pattern at the start, and follows the song very well, but is a bit inconsistent in its patterns, switching from one charting style to the other very quickly and feels jarring. beta is much simpler, no unique pattern at the start and some weird hallucinations, but starts to form some very cool patterns at the midway, has a very consistent style and much quicker. Gamma starts off as a very solid metronome, adding on unique patterns at good moments, following the pattern very well. it maintains the rhythm while not overspamming."
     },
     {
       "song": "RoccoW - Chipper Choices",
       "genre": "electro city-pop",
-      "rank_1": null,
-      "rank_2": null,
-      "rank_3": null,
-      "notes": ""
+      "rank_1": "Alpha",
+      "rank_2": "Beta",
+      "rank_3": "Gamma",
+      "notes": "Alpha performs ok, but feels just a bit wrong at some times, but overall maintains the pattern well. beta is worse at the start, copying the pattern unwell, and then gets worse by instantly regressing into a metronome, unlike alpha which at this stage predicted very unique patterns. it is technically following the drums more accurately, but feels generally worse. Gamma performs very similarly, very quickly turning into a metronome, it has a lot more unique moments however, but quickly regresses from them and back to metronoming"
     },
     {
       "song": "Sabrina Carpenter - Manchild (Official Video)",
       "genre": "pop",
-      "rank_1": null,
-      "rank_2": null,
-      "rank_3": null,
+      "rank_1": "Beta",
+      "rank_2": "Gamma",
+      "rank_3": "Alpha",
       "notes": ""
     },
     {
       "song": "Snow Man - Odorouze! Music Video",
       "genre": "j-pop dance",
-      "rank_1": null,
-      "rank_2": null,
-      "rank_3": null,
-      "notes": ""
+      "rank_1": "Beta",
+      "rank_2": "Alpha",
+      "rank_3": "Gamma",
+      "notes": "Alpha performs well, with just a little noticeable drift, but a medium amount of over/under predictions. but almost no perceibable hallucinations, only skips. Beta performs much better, its noticably much less dense, and is following the drums a lot more carefully. it produced a very low density but cleanly followed the drums. totally valid but a bit unsynced with the intended density, and very repetitive at times (but so are the songs drums) gamma was the weirdest, missing quite a few notes, but keeping its own rhythm, it also fell into the metronome trap at times but has some noticeable drifts and hallucinations. "
     },
     {
       "song": "The Bug Club - Watching the Omnibus (Official Audio)",
       "genre": "indie rock",
-      "rank_1": null,
-      "rank_2": null,
-      "rank_3": null,
-      "notes": ""
+      "rank_1": "Beta",
+      "rank_2": "Gamma",
+      "rank_3": "Alpha",
+      "notes": "alpha spams a lot early on, with a lot of notes not really matching the song, it overall 'works' but feels wrong. but fixes itself later on. Beta instantly performs better, without the giant spamming, also has some trouble with this song, but generally better. gamma performs extremely similar to alpha, with extreme spamming, but listening to it, it feels the most right to the music, but not the best feeling."
     },
     {
       "song": "Weird Nightmare - Might See You There (Official Music Video)",
       "genre": "indie rock",
-      "rank_1": null,
-      "rank_2": null,
-      "rank_3": null,
-      "notes": ""
+      "rank_1": "Gamma",
+      "rank_2": "Beta",
+      "rank_3": "Alpha",
+      "notes": "Alpha is EXTREMELY spammy here, theres no pattern, its just extreme and uncontrollable spam. its 'right' but thats just cause its following the BPM, it could do the same pattern to any other song and it would be right. Beta does nicely, metronoming just a bit but so does the song, following the drum pattern VERY well and generating a fun level too, but often regresses from its unique patterns to metronome, doesn't have that good temporal consistency, but generates very nice patterns. Gamma instantly performs better then all other options, with an extremely unique and fun pattern, but destabilizes into a metronome quite often. it recovers quite quickly however"
     },
     {
       "song": "XAMIYA - KIKYU (Official Lyric Video)",
       "genre": "j-electro",
-      "rank_1": null,
-      "rank_2": null,
-      "rank_3": null,
-      "notes": ""
+      "rank_1": "Beta",
+      "rank_2": "Alpha",
+      "rank_3": "Gamma",
+      "notes": "Alpha does very well at the first half of the song, matching the energy and spam of the drums almost exactly, but regresses into metronome behavior at the ending, but still maintains an acceptable structure. Beta instantly starts strong, but suffers heavily on the slow sections, showing some heavy desyncs with the actual audio and the placements of its events, the more we progress the more it starts to skip some events as well, overall good but lacking... it however does NOT regress into metronome, and maintains a good structure all the way. Gamma starts off strange, it follows a totally different loop then the others, it does not follow the fast drums in the background even with the high density, and has very bad structure to the notes it does place, but it manages to recover its note placement timings, but still has a much lower density then expected."
     },
     {
       "song": "muque - DARK GAME (Official Music Video)",
       "genre": "hyperpop",
-      "rank_1": null,
-      "rank_2": null,
-      "rank_3": null,
-      "notes": ""
+      "rank_1": "Alpha",
+      "rank_2": "Beta",
+      "rank_3": "Gamma",
+      "notes": "Alpha handles the silence at the start very well, but has some desync on the drums, sounding off, it also spams a lot more then it should, with no real pattern being used, even though there clearly is a deeper one then just spamming. it actually seems to recover from this when the song gets to its halfway point, but quickly regresses back into metronome like behavior, missing some obvious notes. but at the very end it has a giant glow up and performs very well for a small moment. Beta hallucinates some notes in the beginning silence but quickly locks in, its hallucinating and droping a bunch of notes, and is seemingly unable to find the pattern early on just like alpha, performing worse. however it half recovers later on, but then quickly regresses. just like alpha it has a glow up at the end but performs overall worse. gamma IMMIDEATLY spams on the silence, handling it very badly, it treats the song by spamming almost instantly. it almost always outputs a garbage metronome-y output, it does very bad."
     }
   ],
   "evaluators": [
@@ -99,7 +99,7 @@
       "notes": ""
     },
     {
-      "name": "",
+      "name": "GloomyKyu/Rose",
       "song": "Medalist Season 2 OP - Cold Night by HANA",
       "rank_1": null,
       "rank_2": null,
@@ -123,7 +123,7 @@
       "notes": ""
     },
     {
-      "name": "",
+      "name": "x3nd3n",
       "song": "Snow Man - Odorouze! Music Video",
       "rank_1": null,
       "rank_2": null,
@@ -131,7 +131,7 @@
       "notes": ""
     },
     {
-      "name": "",
+      "name": "Tinky Winky",
       "song": "The Bug Club - Watching the Omnibus (Official Audio)",
       "rank_1": null,
       "rank_2": null,
@@ -139,7 +139,7 @@
       "notes": ""
     },
     {
-      "name": "",
+      "name": "FixelStyle",
       "song": "Weird Nightmare - Might See You There (Official Music Video)",
       "rank_1": null,
       "rank_2": null,

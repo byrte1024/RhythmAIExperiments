@@ -1,0 +1,5 @@
+Song: Snow Man オドロウゼ！ Music Video
+---
+Alpha = exp14
+Beta = exp35c
+Gamma = exp42
