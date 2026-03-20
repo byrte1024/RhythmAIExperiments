@@ -35,7 +35,7 @@ sys.path.insert(0, SCRIPT_DIR)
 from detection_train import (
     OnsetDataset, N_CLASSES, B_BINS, C_EVENTS, split_by_song, MAX_TARGETS,
 )
-from detection_model import OnsetDetector
+from detection_model import OnsetDetector, EventEmbeddingDetector
 
 
 def is_hit(pred, target):
@@ -87,15 +87,24 @@ def main():
 
     ckpt = torch.load(args.checkpoint, map_location=args.device, weights_only=False)
     ckpt_args = ckpt["args"]
-    model = OnsetDetector(
-        d_model=ckpt_args["d_model"],
-        n_heads=ckpt_args["n_heads"],
-        enc_layers=ckpt_args["enc_layers"],
-        gap_enc_layers=ckpt_args.get("gap_enc_layers", 2),
-        fusion_layers=ckpt_args.get("fusion_layers", 4),
-        snippet_frames=ckpt_args.get("snippet_frames", 10),
-        dropout=0.0,
-    ).to(args.device)
+    state_keys = set(ckpt["model"].keys())
+    if "event_presence_emb" in state_keys:
+        model = EventEmbeddingDetector(
+            d_model=ckpt_args["d_model"],
+            n_layers=ckpt_args.get("enc_layers", 4) + ckpt_args.get("fusion_layers", 4),
+            n_heads=ckpt_args["n_heads"],
+            dropout=0.0,
+        ).to(args.device)
+    else:
+        model = OnsetDetector(
+            d_model=ckpt_args["d_model"],
+            n_heads=ckpt_args["n_heads"],
+            enc_layers=ckpt_args["enc_layers"],
+            gap_enc_layers=ckpt_args.get("gap_enc_layers", 2),
+            fusion_layers=ckpt_args.get("fusion_layers", 4),
+            snippet_frames=ckpt_args.get("snippet_frames", 10),
+            dropout=0.0,
+        ).to(args.device)
     model.load_state_dict(ckpt["model"])
     model.eval()
     print(f"Loaded: {args.checkpoint}")

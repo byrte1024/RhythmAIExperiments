@@ -1,0 +1,17 @@
+{
+  "n_samples": 74075,
+  "correlations": {
+    "target_distance": 0.581709024798253,
+    "n_future_onsets": -0.53609568296275,
+    "n_skipped_onsets": 0.131598870050915,
+    "context_length": -0.20941982020687294,
+    "density_mean": -0.5324657087828698,
+    "target_mel_energy": -0.2173797560278187,
+    "target_spectral_flux": 0.07557237421528243,
+    "top1_confidence": -0.8351803867909493,
+    "is_hit": -0.37305245136526566
+  },
+  "mean_entropy": 2.394214153289795,
+  "hit_entropy": 2.2431581020355225,
+  "miss_entropy": 2.8044002056121826
+}
