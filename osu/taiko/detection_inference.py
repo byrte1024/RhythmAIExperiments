@@ -15,7 +15,7 @@ import librosa
 from tqdm import tqdm
 from collections import Counter
 
-from detection_model import OnsetDetector, DualStreamOnsetDetector, InterleavedOnsetDetector, ContextFiLMDetector, FramewiseOnsetDetector, AdditiveOnsetDetector, RerankerOnsetDetector, LegacyOnsetDetector, Exp17OnsetDetector, Exp18OnsetDetector
+from detection_model import OnsetDetector, DualStreamOnsetDetector, InterleavedOnsetDetector, ContextFiLMDetector, FramewiseOnsetDetector, EventEmbeddingDetector, AdditiveOnsetDetector, RerankerOnsetDetector, LegacyOnsetDetector, Exp17OnsetDetector, Exp18OnsetDetector
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 
@@ -657,7 +657,11 @@ def main():
     # simpler check: framewise has onset_feedback_emb
     has_framewise = "onset_feedback_emb" in state_keys
 
-    if has_framewise:
+    has_event_embed = "event_presence_emb" in state_keys
+
+    if has_event_embed:
+        ModelClass = EventEmbeddingDetector  # exp 42+ (event embeddings)
+    elif has_framewise:
         ModelClass = FramewiseOnsetDetector  # exp 38+ (framewise)
     elif has_context_film:
         ModelClass = ContextFiLMDetector  # exp 34+ (context FiLM)
@@ -679,7 +683,16 @@ def main():
         ModelClass = Exp17OnsetDetector  # exp 17
 
     # Build model kwargs based on checkpoint era
-    if ModelClass == FramewiseOnsetDetector:
+    if ModelClass == EventEmbeddingDetector:
+        model_kwargs = dict(
+            n_mels=N_MELS,
+            d_model=ckpt_args.get("d_model", 384),
+            n_layers=ckpt_args.get("enc_layers", 4) + ckpt_args.get("fusion_layers", 4),
+            n_heads=ckpt_args.get("n_heads", 8),
+            n_classes=N_CLASSES,
+            max_events=C_EVENTS,
+        )
+    elif ModelClass == FramewiseOnsetDetector:
         # exp 38+: framewise onset detection
         model_kwargs = dict(
             n_mels=N_MELS,
@@ -785,7 +798,9 @@ def main():
             model.load_state_dict(state)
     else:
         model.load_state_dict(state)
-    if ModelClass == FramewiseOnsetDetector:
+    if ModelClass == EventEmbeddingDetector:
+        print("  (exp 42+ checkpoint - event embedding detector)")
+    elif ModelClass == FramewiseOnsetDetector:
         print("  (exp 38+ checkpoint - framewise onset detection)")
     elif ModelClass == ContextFiLMDetector:
         print("  (exp 34+ checkpoint - context FiLM conditioning)")

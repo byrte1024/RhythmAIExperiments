@@ -6,7 +6,7 @@ Exp 42's entropy profile is identical to 35-C despite +1.6pp HIT. The proportion
 
 **Test: pure hard CE with ±3 frame tolerance.** No soft trapezoid at all (`hard_alpha=1.0`). The model gets credit only for hitting within 3 bins of the exact target, regardless of target distance. This is maximally sharpening — equal precision demanded at all distances.
 
-Expected: worse HIT rate (hard CE is less forgiving), but significantly lower entropy. If entropy drops, the soft targets were the confidence bottleneck.
+Expected: worse HIT rate overall (hard CE is less forgiving), but **equally bad across all distances** — the entropy-distance correlation should flatten. The model will be less accurate but uniformly less accurate, rather than confident at short range and uncertain at long range. If the entropy-distance gradient disappears, the proportional soft targets were the cause.
 
 ### Changes from exp 42
 
