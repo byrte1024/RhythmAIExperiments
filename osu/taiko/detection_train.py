@@ -1481,8 +1481,10 @@ def run_benchmarks(model, val_loader, device, amp_enabled=False, multi_target=Fa
     bench_bar.set_postfix_str("random_density"); bench_bar.update(1)
 
     # ── 11) Autoregressive benchmarks ──
+    # Run like real inference: predict, move cursor, feed prediction back.
+    # Compare predicted onset positions against ground truth onset positions.
     AR_STEPS = 32
-    AR_MAX_SAMPLES = 150  # limit for speed
+    AR_MAX_SAMPLES = 500
 
     def _is_hit_val(pred, target):
         if target >= N_CLASSES - 1:
@@ -1491,67 +1493,101 @@ def run_benchmarks(model, val_loader, device, amp_enabled=False, multi_target=Fa
         pe = abs((pred + 1) / (target + 1) - 1.0)
         return pe <= 0.03 or fe <= 1
 
-    def _collect_ar_samples(batches):
-        """Collect samples with multi-target ground truth for AR evaluation."""
+    def _run_ar_inference(batches):
+        """Run AR inference loop on val samples.
+
+        For each sample: run 32 predictions, feeding each back as context.
+        Collect all predicted absolute positions, then match against all
+        ground truth positions using greedy matching.
+
+        Ground truth comes from the dataset's raw event arrays — we look up
+        ALL future onsets from each sample's cursor position, not just the
+        single target from the batch.
+
+        Returns two result dicts: 'autoregress' (set matching) and
+        'lightautoregress' (1:1 index matching).
+        """
+        # access the underlying dataset for ground truth events
+        dataset = val_loader.dataset
+
+        # collect samples: use batch data for model input, dataset for GT
         samples = []
+        sample_idx = 0
         for batch in batches:
             if multi_target:
                 mel, evt_off, evt_mask, cond, targets_padded, n_tgt = batch
             else:
                 mel, evt_off, evt_mask, cond, target = batch
-                # fake multi-target: single target at position 0
-                targets_padded = target.unsqueeze(1)
-                n_tgt = torch.ones(mel.size(0), dtype=torch.long)
 
             B = mel.size(0)
             for b in range(B):
+                if sample_idx >= len(dataset.samples):
+                    break
                 valid = ~evt_mask[b]
                 if valid.sum() < 4:
+                    sample_idx += 1
                     continue
-                nt = n_tgt[b].item() if multi_target else 1
-                gt_bins = targets_padded[b, :nt].cpu().numpy() if nt > 0 else np.array([])
-                gt_bins = gt_bins[gt_bins >= 0]  # remove padding
-                gt_bins = gt_bins[gt_bins < N_CLASSES - 1]  # remove STOP
-                if len(gt_bins) == 0:
+
+                # get ground truth: all future onsets from cursor
+                ci, ei = dataset.samples[sample_idx]
+                evt = dataset.events[ci]
+                # cursor position
+                if ei == 0:
+                    cursor_bin = max(0, int(evt[0]) - B_BINS) if len(evt) > 0 else 0
+                else:
+                    cursor_bin = int(evt[ei - 1])
+                # all onsets AFTER cursor
+                future_bins = evt[evt > cursor_bin] - cursor_bin
+                future_bins = future_bins[future_bins < B_BINS].astype(np.int64)
+
+                if len(future_bins) < 2:
+                    sample_idx += 1
                     continue
+
                 samples.append({
-                    "mel": mel[b].unsqueeze(0),
-                    "evt_off": evt_off[b].unsqueeze(0),
-                    "evt_mask": evt_mask[b].unsqueeze(0),
-                    "cond": cond[b].unsqueeze(0),
-                    "gt_bins": gt_bins,  # all future onset bins
-                    "density_cond": cond[b, 0].item(),  # conditioned density mean
+                    "mel": mel[b],
+                    "evt_off": evt_off[b],
+                    "evt_mask": evt_mask[b],
+                    "cond": cond[b],
+                    "gt_abs": future_bins,  # absolute bin offsets from cursor
+                    "density_cond": cond[b, 0].item(),
                 })
+                sample_idx += 1
                 if len(samples) >= AR_MAX_SAMPLES:
                     break
             if len(samples) >= AR_MAX_SAMPLES:
                 break
-        return samples
 
-    def _run_ar(samples):
-        """Run 32-step AR on collected samples, return rich per-step data.
+        if len(samples) < 5:
+            return None, None
 
-        NOTE: mel window stays fixed (doesn't slide with cursor). This means
-        later steps use stale audio context. This is an approximation — real
-        inference slides the window. Results are most accurate for early steps.
-        """
-        # per-step accumulators
-        all_preds_per_step = [[] for _ in range(AR_STEPS)]  # raw predictions
-        all_entropy_per_step = [[] for _ in range(AR_STEPS)]
-        all_gaps_per_step = [[] for _ in range(AR_STEPS)]  # gap from prev prediction
-        survived = np.zeros(AR_STEPS)  # how many samples survived to this step
-        density_conds = []  # conditioned densities
-        density_actuals = []  # actual predicted densities
+        # per-step tracking
+        per_step_preds = [[] for _ in range(AR_STEPS)]
+        per_step_entropy = [[] for _ in range(AR_STEPS)]
+        per_step_survived = np.zeros(AR_STEPS)
+
+        # light AR: per-step HIT against ground truth onset at same index
+        light_hit = np.zeros(AR_STEPS)
+        light_total = np.zeros(AR_STEPS)
+        light_preds = [[] for _ in range(AR_STEPS)]
+        light_targets = [[] for _ in range(AR_STEPS)]
+
+        # set matching accumulators
+        all_predicted_sets = []  # list of predicted position arrays
+        all_gt_sets = []  # list of ground truth position arrays
+        density_conds = []
+        density_actuals = []
 
         for sample in tqdm(samples, desc="  AR bench", leave=False):
-            mel_s = sample["mel"].to(device)
-            evt_off_s = sample["evt_off"].clone().to(device)
-            evt_mask_s = sample["evt_mask"].clone().to(device)
-            cond_s = sample["cond"].to(device)
+            mel_s = sample["mel"].unsqueeze(0).to(device)
+            evt_off_s = sample["evt_off"].unsqueeze(0).clone().to(device)
+            evt_mask_s = sample["evt_mask"].unsqueeze(0).clone().to(device)
+            cond_s = sample["cond"].unsqueeze(0).to(device)
+            gt_abs = sample["gt_abs"]  # absolute positions of ground truth onsets
 
             density_conds.append(sample["density_cond"])
-            preds_this = []
-            prev_pred = None
+            cursor = 0  # absolute cursor position
+            predicted_positions = []
 
             for step in range(AR_STEPS):
                 with torch.no_grad(), torch.autocast("cuda", enabled=amp_enabled):
@@ -1565,87 +1601,26 @@ def run_benchmarks(model, val_loader, device, amp_enabled=False, multi_target=Fa
                 if pred >= N_CLASSES - 1:  # STOP
                     break
 
-                survived[step] += 1
-                all_preds_per_step[step].append(pred)
-                all_entropy_per_step[step].append(ent)
-                preds_this.append(pred)
-
-                if prev_pred is not None:
-                    all_gaps_per_step[step].append(pred)  # gap = this prediction
-                prev_pred = pred
-
-                # update context: shift events back, add new event
-                evt_off_s = evt_off_s - pred
-                evt_off_np = evt_off_s[0].cpu().numpy()
-                evt_mask_np = evt_mask_s[0].cpu().numpy()
-                evt_off_np = np.roll(evt_off_np, -1)
-                evt_mask_np = np.roll(evt_mask_np, -1)
-                evt_off_np[-1] = 0
-                evt_mask_np[-1] = False
-                evt_off_s = torch.from_numpy(evt_off_np).unsqueeze(0).to(device)
-                evt_mask_s = torch.from_numpy(evt_mask_np).unsqueeze(0).to(device)
-
-            # compute actual density of predicted events
-            if len(preds_this) >= 2:
-                total_bins = sum(preds_this)
-                total_ms = total_bins * 4.989  # BIN_MS
-                total_s = total_ms / 1000
-                if total_s > 0:
-                    density_actuals.append(len(preds_this) / total_s)
-
-        return all_preds_per_step, all_entropy_per_step, all_gaps_per_step, survived, density_conds, density_actuals
-
-    def _run_light_ar(samples):
-        """Light AR: compare pred[i] directly to ground truth gap[i].
-
-        Ground truth is converted to GAPS (distance between consecutive onsets).
-        Step 0: gap from cursor to 1st onset = gt_bins[0]
-        Step 1: gap from 1st to 2nd onset = gt_bins[1] - gt_bins[0]
-        Step N: gap from Nth to (N+1)th onset = gt_bins[N] - gt_bins[N-1]
-
-        The model predicts gaps autoregressively (each prediction = gap to next onset).
-        A cascade error at step K causes step K+1 to see wrong context.
-        """
-        per_step_hit = np.zeros(AR_STEPS)
-        per_step_total = np.zeros(AR_STEPS)
-        per_step_preds = [[] for _ in range(AR_STEPS)]
-        per_step_targets = [[] for _ in range(AR_STEPS)]
-
-        for sample in tqdm(samples, desc="  LightAR", leave=False):
-            mel_s = sample["mel"].to(device)
-            evt_off_s = sample["evt_off"].clone().to(device)
-            evt_mask_s = sample["evt_mask"].clone().to(device)
-            cond_s = sample["cond"].to(device)
-            gt_bins = sample["gt_bins"]
-
-            # convert absolute onset positions to gaps
-            gt_gaps = np.zeros(len(gt_bins), dtype=np.int64)
-            if len(gt_bins) > 0:
-                gt_gaps[0] = gt_bins[0]  # gap from cursor to 1st onset
-                for i in range(1, len(gt_bins)):
-                    gt_gaps[i] = gt_bins[i] - gt_bins[i - 1]
-
-            for step in range(min(AR_STEPS, len(gt_gaps))):
-                gt = int(gt_gaps[step])
-                if gt <= 0:
-                    continue  # skip invalid gaps
-
-                with torch.no_grad(), torch.autocast("cuda", enabled=amp_enabled):
-                    logits = model(mel_s, evt_off_s, evt_mask_s, cond_s)
-                    if isinstance(logits, tuple):
-                        logits = logits[0]
-                    pred = logits.argmax(dim=1).item()
-
-                if pred >= N_CLASSES - 1:
-                    break
-
-                per_step_total[step] += 1
+                per_step_survived[step] += 1
                 per_step_preds[step].append(pred)
-                per_step_targets[step].append(gt)
-                if _is_hit_val(pred, gt):
-                    per_step_hit[step] += 1
+                per_step_entropy[step].append(ent)
 
-                # feed prediction back (not ground truth — this is AR)
+                # absolute position of this prediction
+                abs_pos = cursor + pred
+                predicted_positions.append(abs_pos)
+
+                # light AR: compare to ground truth onset at same index
+                if step < len(gt_abs):
+                    gt_target = int(gt_abs[step]) - cursor  # expected gap from current cursor
+                    if gt_target > 0:
+                        light_total[step] += 1
+                        light_preds[step].append(pred)
+                        light_targets[step].append(gt_target)
+                        if _is_hit_val(pred, gt_target):
+                            light_hit[step] += 1
+
+                # move cursor and update context
+                cursor = abs_pos
                 evt_off_s = evt_off_s - pred
                 evt_off_np = evt_off_s[0].cpu().numpy()
                 evt_mask_np = evt_mask_s[0].cpu().numpy()
@@ -1656,86 +1631,147 @@ def run_benchmarks(model, val_loader, device, amp_enabled=False, multi_target=Fa
                 evt_off_s = torch.from_numpy(evt_off_np).unsqueeze(0).to(device)
                 evt_mask_s = torch.from_numpy(evt_mask_np).unsqueeze(0).to(device)
 
-        return per_step_hit, per_step_total, per_step_preds, per_step_targets
+            all_predicted_sets.append(np.array(predicted_positions))
+            all_gt_sets.append(gt_abs)
 
-    # collect samples
-    ar_samples = _collect_ar_samples(all_batches)
+            # density
+            if len(predicted_positions) >= 2:
+                total_bins = predicted_positions[-1] - 0  # total span
+                total_s = total_bins * 4.989 / 1000
+                if total_s > 0:
+                    density_actuals.append(len(predicted_positions) / total_s)
 
-    if len(ar_samples) >= 10:
-        # ── Full AR benchmark ──
-        ar_preds, ar_entropy, ar_gaps, ar_survived, ar_dcond, ar_dactual = _run_ar(ar_samples)
+        # ── Build autoregress result (set matching) ──
+        # greedy match predicted positions to ground truth positions
+        total_gt = 0
+        total_pred = 0
+        event_hit = 0    # GT onsets matched by a HIT prediction
+        event_good = 0   # GT onsets matched by a GOOD prediction
+        event_matched = 0  # GT onsets matched at all
+        pred_hit = 0     # predictions that HIT a GT onset
+        pred_good = 0    # predictions within GOOD of a GT onset
+        pred_matched = 0  # predictions matched to any GT onset
+        hallucinations = 0  # predictions with no GT match
+
+        for pred_set, gt_set in zip(all_predicted_sets, all_gt_sets):
+            total_gt += len(gt_set)
+            total_pred += len(pred_set)
+            if len(pred_set) == 0 or len(gt_set) == 0:
+                hallucinations += len(pred_set)
+                continue
+
+            # greedy nearest matching
+            used_gt = set()
+            for p in pred_set:
+                best_dist = float("inf")
+                best_gi = -1
+                for gi, g in enumerate(gt_set):
+                    if gi in used_gt:
+                        continue
+                    d = abs(int(p) - int(g))
+                    if d < best_dist:
+                        best_dist = d
+                        best_gi = gi
+                if best_gi >= 0 and best_dist <= 500:
+                    used_gt.add(best_gi)
+                    pred_matched += 1
+                    event_matched += 1
+                    is_h = _is_hit_val(int(p), int(gt_set[best_gi]))
+                    pct = abs((p + 1) / (gt_set[best_gi] + 1) - 1.0)
+                    is_g = pct <= 0.10 or best_dist <= 2
+                    if is_h:
+                        event_hit += 1
+                        pred_hit += 1
+                    if is_g:
+                        event_good += 1
+                        pred_good += 1
+                else:
+                    hallucinations += 1
+
+        event_miss = total_gt - event_matched
+        pred_miss = total_pred - pred_matched  # = hallucinations
 
         ar_result = {
-            "n_samples": len(ar_samples),
+            "n_samples": len(samples),
             "ar_steps": AR_STEPS,
-            "survival_per_step": [int(s) for s in ar_survived],
+            "total_gt_onsets": int(total_gt),
+            "total_predicted": int(total_pred),
+            "event_hit": int(event_hit),
+            "event_good": int(event_good),
+            "event_miss": int(event_miss),
+            "event_hit_rate": float(event_hit / max(total_gt, 1)),
+            "event_good_rate": float(event_good / max(total_gt, 1)),
+            "event_miss_rate": float(event_miss / max(total_gt, 1)),
+            "pred_hit": int(pred_hit),
+            "pred_good": int(pred_good),
+            "pred_miss": int(pred_miss),
+            "pred_hit_rate": float(pred_hit / max(total_pred, 1)),
+            "pred_good_rate": float(pred_good / max(total_pred, 1)),
+            "hallucination_rate": float(hallucinations / max(total_pred, 1)),
+            "pred_per_sample": float(total_pred / max(len(samples), 1)),
+            "gt_per_sample": float(total_gt / max(len(samples), 1)),
+            "survival_per_step": [int(s) for s in per_step_survived],
             "steps": [],
         }
+        if per_step_survived[0] > 0:
+            ar_result["survival_10"] = float(per_step_survived[min(9, AR_STEPS-1)] / per_step_survived[0])
+            ar_result["survival_30"] = float(per_step_survived[min(29, AR_STEPS-1)] / per_step_survived[0])
+        if density_conds and density_actuals:
+            ar_result["density_conditioned_mean"] = float(np.mean(density_conds))
+            ar_result["density_actual_mean"] = float(np.mean(density_actuals))
+            ar_result["density_ratio"] = float(np.mean(density_actuals) / max(np.mean(density_conds), 0.01))
+
         for s in range(AR_STEPS):
-            step_info = {"step": s, "n_alive": int(ar_survived[s])}
-            if ar_preds[s]:
-                preds_arr = np.array(ar_preds[s])
-                step_info["pred_mean"] = float(preds_arr.mean())
-                step_info["pred_std"] = float(preds_arr.std())
-                step_info["pred_median"] = float(np.median(preds_arr))
-                step_info["unique_preds"] = int(len(np.unique(preds_arr)))
-            if ar_entropy[s]:
-                step_info["entropy_mean"] = float(np.mean(ar_entropy[s]))
-            if ar_gaps[s]:
-                step_info["gap_mean"] = float(np.mean(ar_gaps[s]))
-                step_info["gap_std"] = float(np.std(ar_gaps[s]))
+            step_info = {"step": s, "n_alive": int(per_step_survived[s])}
+            if per_step_preds[s]:
+                arr = np.array(per_step_preds[s])
+                step_info["pred_mean"] = float(arr.mean())
+                step_info["pred_std"] = float(arr.std())
+                step_info["unique_preds"] = int(len(np.unique(arr)))
+            if per_step_entropy[s]:
+                step_info["entropy_mean"] = float(np.mean(per_step_entropy[s]))
             ar_result["steps"].append(step_info)
 
-        # density comparison
-        if ar_dcond and ar_dactual:
-            ar_result["density_conditioned_mean"] = float(np.mean(ar_dcond))
-            ar_result["density_actual_mean"] = float(np.mean(ar_dactual))
-            ar_result["density_actual_std"] = float(np.std(ar_dactual))
-            ar_result["density_ratio"] = float(np.mean(ar_dactual) / max(np.mean(ar_dcond), 0.01))
-
-        # summary
-        if ar_survived[0] > 0:
-            ar_result["survival_10"] = float(ar_survived[min(9, AR_STEPS-1)] / ar_survived[0])
-            ar_result["survival_30"] = float(ar_survived[min(29, AR_STEPS-1)] / ar_survived[0])
-
-        results["autoregress"] = ar_result
-        bench_bar.update(1)
-
-        # ── Light AR benchmark ──
-        la_hit, la_total, la_preds, la_targets = _run_light_ar(ar_samples)
-
+        # ── Build lightautoregress result (1:1 index matching) ──
         la_result = {
-            "n_samples": len(ar_samples),
+            "n_samples": len(samples),
             "ar_steps": AR_STEPS,
             "steps": [],
         }
+        hit_rates = []
         for s in range(AR_STEPS):
             step_info = {
                 "step": s,
-                "n_total": int(la_total[s]),
-                "hit_rate": float(la_hit[s] / max(la_total[s], 1)),
+                "n_total": int(light_total[s]),
+                "hit_rate": float(light_hit[s] / max(light_total[s], 1)),
             }
-            if la_preds[s] and la_targets[s]:
-                p_arr = np.array(la_preds[s])
-                t_arr = np.array(la_targets[s])
+            if light_preds[s] and light_targets[s]:
+                p_arr = np.array(light_preds[s])
+                t_arr = np.array(light_targets[s])
                 step_info["pred_mean"] = float(p_arr.mean())
+                step_info["pred_std"] = float(p_arr.std())
                 step_info["target_mean"] = float(t_arr.mean())
                 step_info["frame_err_mean"] = float(np.abs(p_arr - t_arr).mean())
-                # store arrays for scatter graphs
+                step_info["unique_preds"] = int(len(np.unique(p_arr)))
+                step_info["pred_min"] = int(p_arr.min())
+                step_info["pred_max"] = int(p_arr.max())
                 step_info["_preds"] = p_arr
                 step_info["_targets"] = t_arr
             la_result["steps"].append(step_info)
+            hit_rates.append(step_info["hit_rate"])
 
-        # summary hit curve
-        hit_rates = [la_hit[s] / max(la_total[s], 1) for s in range(AR_STEPS)]
-        la_result["hit_curve"] = [float(h) for h in hit_rates]
+        la_result["hit_curve"] = hit_rates
         la_result["step0_hit"] = float(hit_rates[0]) if hit_rates else 0
-        la_result["avg_hit"] = float(np.mean([h for h, t in zip(la_hit, la_total) if t > 0]))
 
+        return ar_result, la_result
+
+    ar_result, la_result = _run_ar_inference(all_batches)
+    if ar_result:
+        results["autoregress"] = ar_result
+    bench_bar.set_postfix_str("autoregress"); bench_bar.update(1)
+    if la_result:
         results["lightautoregress"] = la_result
-        bench_bar.update(1)
-    else:
-        bench_bar.update(2)
+    bench_bar.set_postfix_str("lightautoregress"); bench_bar.update(1)
 
     bench_bar.close()
 
@@ -1744,41 +1780,44 @@ def run_benchmarks(model, val_loader, device, amp_enabled=False, multi_target=Fa
 
 def print_benchmarks(results):
     """Print benchmark results in a compact table."""
-    print("\n  ┌─ Ablation Benchmarks ─────────────────────────────────────────────────┐")
-    print(f"  │ {'Test':<24} {'STOP%':>6} {'Acc':>6} {'Mean':>6} {'Std':>6} {'Uniq':>5} │")
-    print(f"  ├{'─' * 73}┤")
+    print(f"\n  +-- Ablation Benchmarks -----------------------------------------------+")
+    print(f"  | {'Test':<24} {'STOP%':>6} {'Acc':>6} {'Mean':>6} {'Std':>6} {'Uniq':>5} |")
+    print(f"  +{'-' * 73}+")
     for name, r in results.items():
         if name in ("autoregress", "lightautoregress"):
-            continue  # printed separately
-        print(f"  │ {name:<24} {r['stop_rate']:>5.1%} {r['accuracy']:>5.1%} "
-              f"{r['mean_pred']:>6.1f} {r['pred_std']:>6.1f} {r['unique_preds']:>5d} │")
-    print(f"  └{'─' * 73}┘")
+            continue
+        print(f"  | {name:<24} {r['stop_rate']:>5.1%} {r['accuracy']:>5.1%} "
+              f"{r['mean_pred']:>6.1f} {r['pred_std']:>6.1f} {r['unique_preds']:>5d} |")
+    print(f"  +{'-' * 73}+")
 
     # AR benchmarks
     for ar_name in ("autoregress", "lightautoregress"):
         ar = results.get(ar_name)
         if not ar:
             continue
-        print(f"\n  ┌─ {ar_name} ({ar.get('n_samples', 0)} samples, {ar.get('ar_steps', 32)} steps) ─┐")
-        print(f"  │ Step 0 HIT: {ar.get('step0_hit', 0):.1%}  "
-              f"Survival@10: {ar.get('survival_10', 0):.1%}  "
-              f"Survival@30: {ar.get('survival_30', 0):.1%}  "
-              f"Avg: {ar.get('avg_hit_rate', 0):.1%} │")
-        steps = ar.get("steps", [])
-        if steps:
-            step_str = "  │ Steps: "
-            for s in steps[:16]:
-                if "hit_rate" in s:
-                    step_str += f"{s['hit_rate']:.0%} "
-                elif "n_alive" in s:
-                    step_str += f"{s['n_alive']} "
-                else:
-                    step_str += "? "
-            if len(steps) > 16:
-                step_str += "..."
-            step_str += "│"
-            print(step_str)
-        print(f"  └{'─' * 73}┘")
+        print(f"\n  +-- {ar_name} ({ar.get('n_samples', 0)} samples, {ar.get('ar_steps', 32)} steps) --+")
+        # autoregress: set matching stats
+        if "event_hit_rate" in ar:
+            print(f"  | Events: HIT={ar['event_hit_rate']:.1%} GOOD={ar['event_good_rate']:.1%} "
+                  f"MISS={ar.get('event_miss_rate', 0):.1%}  "
+                  f"({ar.get('event_hit', 0)}/{ar['total_gt_onsets']} found) |")
+            print(f"  | Preds:  HIT={ar.get('pred_hit_rate', 0):.1%} GOOD={ar.get('pred_good_rate', 0):.1%} "
+                  f"HALL={ar['hallucination_rate']:.1%}  "
+                  f"({ar.get('pred_hit', 0)}/{ar['total_predicted']} valid) |")
+            print(f"  | Surv@10: {ar.get('survival_10', 0):.1%}  @30: {ar.get('survival_30', 0):.1%}", end="")
+            if "density_actual_mean" in ar:
+                print(f"  Density: {ar['density_conditioned_mean']:.1f}->{ar['density_actual_mean']:.1f} ({ar['density_ratio']:.2f}x) |")
+            else:
+                print(" |")
+        # lightautoregress: per-step HIT curve
+        if "hit_curve" in ar:
+            curve = ar["hit_curve"]
+            print(f"  | Step0 HIT: {ar.get('step0_hit', 0):.1%}  Curve: ", end="")
+            print(" ".join(f"{h:.0%}" for h in curve[:16]), end="")
+            if len(curve) > 16:
+                print(" ...", end="")
+            print(" |")
+        print(f"  +{'-' * 73}+")
 
 
 def _serializable(results):
@@ -1807,6 +1846,9 @@ def save_benchmark_data(results, eval_step, run_dir):
     stop = N_CLASSES - 1
 
     for name, r in results.items():
+        # skip AR benchmarks — they have different structure, handled separately below
+        if name in ("autoregress", "lightautoregress"):
+            continue
         bench_dir = os.path.join(bench_root, name)
         os.makedirs(bench_dir, exist_ok=True)
         prefix = os.path.join(bench_dir, f"eval_{eval_step:03d}")
@@ -1937,6 +1979,32 @@ def save_benchmark_data(results, eval_step, run_dir):
                 ax.grid(True, alpha=0.3)
                 fig.tight_layout()
                 fig.savefig(f"{prefix}_frame_error.png", dpi=120)
+                plt.close(fig)
+
+            # metronome detection: unique preds + pred range over steps
+            active_steps = [s for s in steps if s.get("n_total", 0) > 0 and "unique_preds" in s]
+            if active_steps:
+                fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(10, 7), sharex=True)
+                x = [s["step"] for s in active_steps]
+                ax1.plot(x, [s["unique_preds"] for s in active_steps], "o-", color="#c76dba", linewidth=2, markersize=4)
+                ax1.set_ylabel("Unique Predictions")
+                ax1.set_title(f"Eval {eval_step}: Light AR — Metronome Detection")
+                ax1.grid(True, alpha=0.3)
+
+                ax2.fill_between(x,
+                                [s.get("pred_min", 0) for s in active_steps],
+                                [s.get("pred_max", 0) for s in active_steps],
+                                alpha=0.3, color="#4a90d9", label="Pred range")
+                ax2.plot(x, [s.get("pred_mean", 0) for s in active_steps],
+                        "o-", color="#4a90d9", linewidth=2, markersize=4, label="Pred mean")
+                ax2.plot(x, [s.get("target_mean", 0) for s in active_steps],
+                        "o-", color="#6bc46d", linewidth=2, markersize=4, label="Target mean")
+                ax2.set_xlabel("AR Step")
+                ax2.set_ylabel("Bin Value")
+                ax2.legend()
+                ax2.grid(True, alpha=0.3)
+                fig.tight_layout()
+                fig.savefig(f"{prefix}_metronome.png", dpi=120)
                 plt.close(fig)
 
         elif ar_name == "autoregress":
