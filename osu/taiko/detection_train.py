@@ -185,73 +185,63 @@ class OnsetDataset(Dataset):
         # event jitter: global shift + recency-scaled per-event noise (simulates AR error)
         if len(past_bins) > 0:
             n = len(past_bins)
-            # global shift applied to ALL events (±0-5 bins) - systematic drift
-            global_shift = rng.integers(-5, 6)
-            # per-event jitter scaled by recency: 1x oldest → 3x most recent
-            jitter_scale = np.linspace(1, 3, n)
-            per_event = (rng.integers(-5, 6, size=n) * jitter_scale).astype(np.int64)
+            # global shift applied to ALL events (±0-3 bins) - systematic drift
+            global_shift = rng.integers(-3, 4)
+            # per-event jitter scaled by recency: 1x oldest → 2x most recent
+            jitter_scale = np.linspace(1, 2, n)
+            per_event = (rng.integers(-3, 4, size=n) * jitter_scale).astype(np.int64)
             past_bins = np.sort(past_bins + global_shift + per_event)
 
-        # random event deletion (15%) - drop events to simulate skip errors
-        if len(past_bins) > 2 and rng.random() < 0.15:
-            n_drop = rng.integers(1, max(2, min(5, len(past_bins) // 4)))
+        # random event deletion (5%) - drop 1-2 events to simulate skip errors
+        if len(past_bins) > 2 and rng.random() < 0.05:
+            n_drop = rng.integers(1, max(2, min(3, len(past_bins) // 4)))
             keep = np.ones(len(past_bins), dtype=bool)
             keep[rng.choice(len(past_bins), size=n_drop, replace=False)] = False
             past_bins = past_bins[keep]
 
-        # random event insertion (10%) - add spurious events to simulate hallucinations
-        if len(past_bins) > 0 and rng.random() < 0.10:
-            n_insert = rng.integers(1, max(2, min(4, len(past_bins) // 6)))
+        # random event insertion (3%) - add 1 fake event to simulate hallucination
+        if len(past_bins) > 0 and rng.random() < 0.03:
             lo, hi = past_bins[0], min(past_bins[-1], -1)
             if lo < hi:
-                fake = rng.integers(lo, hi, size=n_insert)
+                fake = rng.integers(lo, hi, size=1)
                 past_bins = np.sort(np.concatenate([past_bins, fake]))
 
-        # metronome corruption (5%) - replace all events with evenly spaced random gap
-        # simulates the model locking into a repeating gap
-        if len(past_bins) > 4 and rng.random() < 0.05:
-            gap = rng.integers(10, 80)  # random metronomic gap
-            n_events = len(past_bins)
-            past_bins = np.array([-gap * (n_events - i) for i in range(n_events)], dtype=np.int64)
+        # partial metronome corruption (2%) - replace RECENT HALF with metronomic events
+        # keeps older context intact so model still has real pattern to reference
+        if len(past_bins) > 8 and rng.random() < 0.02:
+            half = len(past_bins) // 2
+            gap = rng.integers(10, 80)
+            metro = np.array([-gap * (half - i) for i in range(half)], dtype=np.int64)
+            past_bins[-half:] = metro
+            past_bins = np.sort(past_bins)
 
-        # advanced metronome corruption (5%) - use the dominant gap from context
-        # simulates the model finding the right tempo but losing pattern variation
-        elif len(past_bins) > 8 and rng.random() < 0.05:
+        # partial advanced metronome (2%) - replace OLDEST HALF with dominant-gap metronome
+        # recent context stays real, older history becomes metronomic
+        elif len(past_bins) > 8 and rng.random() < 0.02:
             gaps = np.diff(past_bins)
             gaps = gaps[gaps > 0]
             if len(gaps) > 2:
-                # find dominant gap (most common, ±2 tolerance)
                 from collections import Counter
-                rounded = (gaps // 3) * 3  # quantize to find clusters
+                rounded = (gaps // 3) * 3
                 dominant = Counter(rounded).most_common(1)[0][0]
                 dominant = max(5, int(dominant))
-                n_events = len(past_bins)
-                # add slight jitter to make it look like real metronome behavior
-                jitter = rng.integers(-1, 2, size=n_events)
-                past_bins = np.array([-(dominant + jitter[i]) * (n_events - i)
-                                     for i in range(n_events)], dtype=np.int64)
+                half = len(past_bins) // 2
+                jitter = rng.integers(-1, 2, size=half)
+                # oldest half becomes metronomic, starting from where the real oldest event was
+                base = past_bins[0]
+                metro = np.array([base + (dominant + jitter[i]) * i for i in range(half)], dtype=np.int64)
+                past_bins[:half] = metro
+                past_bins = np.sort(past_bins)
 
-        # large time shift (5%) - shift all recent events by a large amount
-        # simulates AR drift where cursor is way off
-        if len(past_bins) > 4 and rng.random() < 0.05:
-            shift = rng.integers(-100, 101)
-            n_shift = rng.integers(2, min(8, len(past_bins)))
+        # large time shift (2%) - shift 2-4 recent events by ±50 bins
+        if len(past_bins) > 4 and rng.random() < 0.02:
+            shift = rng.integers(-50, 51)
+            n_shift = rng.integers(2, min(5, len(past_bins)))
             past_bins[-n_shift:] += shift
             past_bins = np.sort(past_bins)
 
-        # hallucination burst (3%) - replace recent events with rapid spam
-        if len(past_bins) > 4 and rng.random() < 0.03:
-            n_spam = min(rng.integers(3, 8), len(past_bins))
-            tiny_gap = rng.integers(2, 8)
-            spam = np.array([-tiny_gap * i for i in range(n_spam)], dtype=np.int64)
-            past_bins[-n_spam:] = spam
-            past_bins = np.sort(past_bins)
-
-        # context dropout (5%)
-        if rng.random() < 0.05:
-            past_bins = np.array([], dtype=np.int64)
-        # context truncation (8%)
-        elif len(past_bins) > 1 and rng.random() < 0.08:
+        # context truncation (5%) - remove oldest events
+        if len(past_bins) > 1 and rng.random() < 0.05:
             past_bins = past_bins[-rng.integers(1, len(past_bins)):]
 
         # audio fade-in (10%)
@@ -263,16 +253,16 @@ class OnsetDataset(Dataset):
             fl = rng.integers(20, 101)
             mel_window[:, -fl:] *= np.linspace(1, 0, fl, dtype=np.float32)[np.newaxis, :]
 
-        # mel gain ±3dB (50%)
-        if rng.random() < 0.5:
-            mel_window = mel_window + rng.uniform(-3.0, 3.0)
-        # mel noise (30%)
+        # mel gain ±2dB (30%)
         if rng.random() < 0.30:
-            mel_window = mel_window + rng.normal(0, rng.uniform(0.1, 0.4), mel_window.shape).astype(np.float32)
+            mel_window = mel_window + rng.uniform(-2.0, 2.0)
+        # mel noise (15%)
+        if rng.random() < 0.15:
+            mel_window = mel_window + rng.normal(0, rng.uniform(0.1, 0.3), mel_window.shape).astype(np.float32)
 
-        # frequency jitter: shift all mel bands up/down by ±1-5 bins (30%)
-        if rng.random() < 0.30:
-            shift = rng.integers(-5, 6)
+        # frequency jitter: shift all mel bands up/down by ±1-3 bins (15%)
+        if rng.random() < 0.15:
+            shift = rng.integers(-3, 4)
             if shift != 0:
                 mel_window = np.roll(mel_window, shift, axis=0)
                 if shift > 0:
@@ -280,30 +270,16 @@ class OnsetDataset(Dataset):
                 else:
                     mel_window[shift:, :] = 0
 
-        # temporal corruption: split into 10-frame chunks and shuffle (2%)
-        if rng.random() < 0.02:
-            chunk = 10
-            n_chunks = mel_window.shape[1] // chunk
-            if n_chunks > 1:
-                chunks = [mel_window[:, i*chunk:(i+1)*chunk] for i in range(n_chunks)]
-                remainder = mel_window[:, n_chunks*chunk:]
-                rng.shuffle(chunks)
-                mel_window = np.concatenate(chunks + [remainder], axis=1)
-
-        # SpecAugment freq mask (40%, 1-2 masks, up to 15 bands each)
-        if rng.random() < 0.4:
-            n_masks = rng.integers(1, 3)
-            for _ in range(n_masks):
-                n = rng.integers(1, 16)
-                f = rng.integers(0, mel_window.shape[0] - n)
-                mel_window[f:f + n, :] = 0
-        # SpecAugment time mask (40%, 1-2 masks, up to 50 frames each)
-        if rng.random() < 0.4:
-            n_masks = rng.integers(1, 3)
-            for _ in range(n_masks):
-                n = rng.integers(1, 51)
-                t = rng.integers(0, mel_window.shape[1] - n)
-                mel_window[:, t:t + n] = 0
+        # SpecAugment freq mask (20%, 1 mask, up to 10 bands)
+        if rng.random() < 0.20:
+            n = rng.integers(1, 11)
+            f = rng.integers(0, mel_window.shape[0] - n)
+            mel_window[f:f + n, :] = 0
+        # SpecAugment time mask (20%, 1 mask, up to 30 frames)
+        if rng.random() < 0.20:
+            n = rng.integers(1, 31)
+            t = rng.integers(0, mel_window.shape[1] - n)
+            mel_window[:, t:t + n] = 0
 
         # conditioning jitter ±10% (30%)
         if rng.random() < 0.3:
