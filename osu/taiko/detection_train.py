@@ -756,6 +756,50 @@ def compute_class_weights(dataset, mode="log"):
     return weights
 
 
+def _top3_gap_peaks(gaps, tolerance=0.05):
+    """Find top 3 gap peaks from an array of gaps, merging within tolerance.
+
+    Returns array of 3 values (NaN-padded if fewer than 3 peaks).
+    Peaks are sorted by frequency (most common first).
+    """
+    result = np.full(3, np.nan, dtype=np.float64)
+    if len(gaps) == 0:
+        return result
+
+    # sort gaps and cluster within tolerance
+    sorted_gaps = np.sort(gaps)
+    clusters = []  # list of (centroid, count)
+    cluster_vals = [sorted_gaps[0]]
+    for i in range(1, len(sorted_gaps)):
+        centroid = np.mean(cluster_vals)
+        if centroid > 0 and abs(sorted_gaps[i] - centroid) / centroid <= tolerance:
+            cluster_vals.append(sorted_gaps[i])
+        else:
+            clusters.append((np.mean(cluster_vals), len(cluster_vals)))
+            cluster_vals = [sorted_gaps[i]]
+    clusters.append((np.mean(cluster_vals), len(cluster_vals)))
+
+    # sort by count descending
+    clusters.sort(key=lambda x: x[1], reverse=True)
+
+    # pick top 3, skipping peaks too close to already-picked ones
+    picked = []
+    for centroid, count in clusters:
+        if len(picked) >= 3:
+            break
+        too_close = False
+        for p in picked:
+            if p > 0 and abs(centroid - p) / p <= tolerance:
+                too_close = True
+                break
+        if not too_close:
+            picked.append(centroid)
+
+    for i, p in enumerate(picked):
+        result[i] = p
+    return result
+
+
 @torch.no_grad()
 def validate_and_collect(model, loader, criterion, device, amp_enabled=False, sigmoid_mode=False, framewise=False,
                          multi_target=False):
@@ -765,6 +809,7 @@ def validate_and_collect(model, loader, criterion, device, amp_enabled=False, si
     all_preds = []
     all_cond = []
     all_prev_gap = []
+    all_top3_gaps = []
     all_ctx_len = []
     all_topk = []          # top-10 predictions per sample (legacy mode only)
     all_entropy = []       # logit entropy per sample
@@ -849,12 +894,19 @@ def validate_and_collect(model, loader, criterion, device, amp_enabled=False, si
 
         eo = evt_off.cpu().numpy()
         prev_gaps = np.full(B, np.nan, dtype=np.float64)
+        top3_gaps = np.full((B, 3), np.nan, dtype=np.float64)
         for b in range(B):
             valid = ~em[b]
             if valid.sum() >= 2:
                 valid_offsets = eo[b][valid]
                 prev_gaps[b] = abs(int(valid_offsets[-2]))
+                # compute all gaps between consecutive context events
+                gaps = np.abs(np.diff(valid_offsets)).astype(np.float64)
+                gaps = gaps[gaps > 0]
+                if len(gaps) >= 1:
+                    top3_gaps[b] = _top3_gap_peaks(gaps)
         all_prev_gap.append(prev_gaps)
+        all_top3_gaps.append(top3_gaps)
 
     val_loss = total_loss / total_n
     extra = {
@@ -862,6 +914,7 @@ def validate_and_collect(model, loader, criterion, device, amp_enabled=False, si
         "preds": np.concatenate(all_preds),
         "conds": np.concatenate(all_cond),
         "prev_gaps": np.concatenate(all_prev_gap),
+        "top3_gaps": np.concatenate(all_top3_gaps, axis=0),
         "ctx_len": np.concatenate(all_ctx_len),
         "entropy": np.concatenate(all_entropy),
     }
@@ -2389,6 +2442,7 @@ def save_eval_graphs(targets, preds, metrics, eval_step, run_dir, extra=None, mt
     # ── 6. Ratio error in density space (scatter + heatmap) ──
     conds = extra.get("conds") if extra else None
     prev_gaps = extra.get("prev_gaps") if extra else None
+    top3_gaps = extra.get("top3_gaps") if extra else None
     ctx_len = extra.get("ctx_len") if extra else None
     topk = extra.get("topk") if extra else None
     entropy = extra.get("entropy") if extra else None
@@ -2525,6 +2579,129 @@ def save_eval_graphs(targets, preds, metrics, eval_step, run_dir, extra=None, mt
             fig.tight_layout()
             fig.savefig(f"{prefix}_forward_error_heatmap.png", dpi=150)
             plt.close(fig)
+
+    # ── 7b. Forward metronome error: pred/target vs top context gaps (scatter + heatmap) ──
+    # For each sample, normalize pred and target by the top 3 gap peaks in context.
+    # R = top1, G = top2, B = top3. Points at (1, 1) = exact metronome continuation.
+    if top3_gaps is not None and len(t_ns) > 0:
+        tg3 = top3_gaps[ns]  # (N_ns, 3)
+        metronome_stats = {}  # for JSON export
+
+        # collect all points for each peak
+        all_rx, all_ry = [], []   # top1
+        all_gx, all_gy = [], []   # top2
+        all_bx, all_by = [], []   # top3
+        colors_scatter = []
+        xs_scatter = []
+        ys_scatter = []
+
+        for k, (label, color, ax_list, ay_list) in enumerate([
+            ("top1", "#ff4444", all_rx, all_ry),
+            ("top2", "#44cc44", all_gx, all_gy),
+            ("top3", "#4488ff", all_bx, all_by),
+        ]):
+            valid = np.isfinite(tg3[:, k]) & (tg3[:, k] > 0)
+            if valid.sum() < 10:
+                continue
+            gap_k = tg3[valid, k]
+            pred_ratio = p_ns[valid].astype(np.float64) / gap_k
+            target_ratio = t_ns[valid].astype(np.float64) / gap_k
+
+            ax_list.extend(pred_ratio.tolist())
+            ay_list.extend(target_ratio.tolist())
+
+            # stats: what % of predictions land within 5% of this gap peak?
+            pred_near = np.abs(pred_ratio - 1.0) <= 0.05
+            target_near = np.abs(target_ratio - 1.0) <= 0.05
+            both_near = pred_near & target_near  # correct metronome continuation
+            pred_near_target_not = pred_near & ~target_near  # model metronomes but shouldn't
+
+            metronome_stats[label] = {
+                "n_samples": int(valid.sum()),
+                "gap_mean_bins": float(gap_k.mean()),
+                "target_continues_pct": float(target_near.mean() * 100),
+                "target_breaks_pct": float((~target_near).mean() * 100),
+                "pred_continues_pct": float(pred_near.mean() * 100),
+                "pred_breaks_pct": float((~pred_near).mean() * 100),
+                "both_continue_pct": float(both_near.mean() * 100),
+                "pred_continues_target_breaks_pct": float(pred_near_target_not.mean() * 100),
+                "pred_breaks_target_continues_pct": float((~pred_near & target_near).mean() * 100),
+                "both_break_pct": float((~pred_near & ~target_near).mean() * 100),
+            }
+
+        # scatter with all 3 colors
+        fig, ax = plt.subplots(figsize=(8, 8))
+        for label, color, rxl, ryl in [
+            ("top3", "#4488ff", all_bx, all_by),
+            ("top2", "#44cc44", all_gx, all_gy),
+            ("top1", "#ff4444", all_rx, all_ry),
+        ]:
+            if len(rxl) > 0:
+                rx_clip = np.clip(rxl, 0, 4)
+                ry_clip = np.clip(ryl, 0, 4)
+                ax.scatter(rx_clip, ry_clip, alpha=0.015, s=1, color=color, label=label)
+        ax.plot([0, 4], [0, 4], "w--", alpha=0.4, linewidth=1)
+        ax.axhline(1.0, color="white", alpha=0.3, linewidth=0.5)
+        ax.axvline(1.0, color="white", alpha=0.3, linewidth=0.5)
+        for r in [0.5, 2.0]:
+            ax.axhline(r, color="white", alpha=0.15, linewidth=0.5)
+            ax.axvline(r, color="white", alpha=0.15, linewidth=0.5)
+        ax.set_xlabel("Predicted gap / top_gap")
+        ax.set_ylabel("Target gap / top_gap")
+        ax.set_title(f"Eval {eval_step}: Forward Metronome Error")
+        ax.legend(loc="upper left", fontsize=8)
+        ax.set_xlim(0, 4)
+        ax.set_ylim(0, 4)
+        fig.tight_layout()
+        fig.savefig(f"{prefix}_metronome_scatter.png", dpi=120)
+        plt.close(fig)
+
+        # heatmap — RGB channels: R=top1, G=top2, B=top3
+        if len(all_rx) > 100:
+            bins = 200
+            rgb = np.zeros((bins, bins, 3), dtype=np.float64)
+            for ch, (rxl, ryl) in enumerate([
+                (all_rx, all_ry), (all_gx, all_gy), (all_bx, all_by)
+            ]):
+                if len(rxl) > 0:
+                    h, _, _ = np.histogram2d(
+                        np.clip(rxl, 0, 4), np.clip(ryl, 0, 4),
+                        bins=[bins, bins], range=[[0, 4], [0, 4]])
+                    rgb[:, :, ch] = gaussian_filter(h.astype(np.float64), sigma=1.0)
+            # log-scale each channel independently, normalize to [0, 1]
+            for ch in range(3):
+                c = rgb[:, :, ch]
+                c[c < 0.5] = 0
+                if c.max() > 0:
+                    c = np.log1p(c)
+                    c /= c.max()
+                rgb[:, :, ch] = c
+
+            fig, ax = plt.subplots(figsize=(8, 8))
+            fig.patch.set_facecolor("black")
+            ax.set_facecolor("black")
+            ax.imshow(rgb.transpose(1, 0, 2), origin="lower", aspect="auto",
+                      extent=[0, 4, 0, 4])
+            ax.plot([0, 4], [0, 4], "w--", alpha=0.4, linewidth=1)
+            ax.axhline(1.0, color="white", alpha=0.4, linewidth=0.5)
+            ax.axvline(1.0, color="white", alpha=0.4, linewidth=0.5)
+            for r in [0.5, 2.0]:
+                ax.axhline(r, color="white", alpha=0.2, linewidth=0.5)
+                ax.axvline(r, color="white", alpha=0.2, linewidth=0.5)
+            ax.set_xlabel("Predicted gap / top_gap", color="white")
+            ax.set_ylabel("Target gap / top_gap", color="white")
+            ax.set_title(f"Eval {eval_step}: Metronome Density (R=top1 G=top2 B=top3)", color="white")
+            ax.tick_params(colors="white")
+            fig.tight_layout()
+            fig.savefig(f"{prefix}_metronome_heatmap.png", dpi=150)
+            plt.close(fig)
+
+        # save JSON stats
+        try:
+            with open(f"{prefix}_metronome_stats.json", "w", encoding="utf-8") as f:
+                json.dump(metronome_stats, f, indent=2)
+        except Exception:
+            pass
 
     # ── 8. Ratio confusion histogram ──
     # When wrong, which ratio multiple did the model pick?
