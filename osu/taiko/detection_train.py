@@ -1820,11 +1820,27 @@ def print_benchmarks(results):
         print(f"  +{'-' * 73}+")
 
 
+def _to_json_safe(obj):
+    """Recursively convert numpy types to Python natives for JSON."""
+    if isinstance(obj, (np.integer,)):
+        return int(obj)
+    if isinstance(obj, (np.floating,)):
+        return float(obj)
+    if isinstance(obj, np.ndarray):
+        return obj.tolist()
+    if isinstance(obj, dict):
+        return {k: _to_json_safe(v) for k, v in obj.items() if not k.startswith("_")}
+    if isinstance(obj, (list, tuple)):
+        return [_to_json_safe(v) for v in obj]
+    return obj
+
+
 def _serializable(results):
-    """Strip numpy arrays from benchmark results for JSON serialization."""
+    """Strip numpy arrays and convert types for JSON serialization."""
     out = {}
     for name, r in results.items():
-        out[name] = {k: v for k, v in r.items() if k not in ("preds", "targets")}
+        clean = {k: v for k, v in r.items() if k not in ("preds", "targets") and not k.startswith("_")}
+        out[name] = _to_json_safe(clean)
     return out
 
 
