@@ -180,4 +180,8 @@ The ranking is *inversely correlated* with per-sample accuracy. Context dependen
 - **Metronome regression is the dominant failure mode.** Not hallucination, not skipping, not density — it's the inability to break out of repeating patterns. Exp 44-B confirmed this is data-driven: 47% of training samples ask the model to continue the previous gap, rising to 83% when a streak of 8+ exists.
 - **Context dependency is a double-edged sword.** It improves per-sample accuracy but creates AR vulnerability. The model needs to use context without becoming enslaved to it.
 - **Blind human evaluation works.** Even with limited volunteers, the method produced a clear, consistent ranking. Self and volunteer rankings agreed. Worth repeating for future model comparisons.
+### Thanks
+
+Thanks to Flufonyx, Lusai, x3nd3n, Tinky Winky, FixelStyle, Egroish, and Mawdi for volunteering their time to blind-evaluate generated charts. Your feedback directly shaped the direction of this project.
+
 - **Next steps:** Many possible directions — loss function changes (streak-break upweighting, adversarial metronome penalty), architecture changes (explicit streak features, two-stage continue/break prediction), data sampling (oversampling pattern-break samples), or training curriculum. The 44-B data analysis gives us the tools to measure progress on the actual problem.
