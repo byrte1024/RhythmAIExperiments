@@ -6,6 +6,7 @@ Controls:
   Up/Down   - Volume up/down
   +/-       - Speed up/down (0.25x steps)
   R         - Restart
+  E         - Export to video (.mp4)
   H         - Toggle help overlay
   T         - Toggle stats panel
   M         - Toggle minimap
@@ -575,6 +576,8 @@ class Viewer:
                 elif ev.key == pygame.K_w:
                     if self.mel_data is not None or self.wave_data is not None:
                         self.show_mel = not self.show_mel
+                elif ev.key == pygame.K_e:
+                    self._export_video()
 
             if ev.type == pygame.MOUSEBUTTONDOWN:
                 # Click on progress bar to seek
@@ -594,6 +597,59 @@ class Viewer:
                 self.screen = pygame.display.set_mode((self.w, self.h), pygame.RESIZABLE)
 
         return True
+
+    def _export_video(self):
+        """Export current view to video file, with file picker for location."""
+        import shutil
+        import tkinter as tk
+        from tkinter import filedialog
+
+        was_playing = self.playing
+        if was_playing:
+            self._pause()
+
+        # default filename from csv name
+        base = os.path.splitext(os.path.basename(self.csv_path))[0]
+
+        # file picker (tkinter dialog, hidden root window)
+        root = tk.Tk()
+        root.withdraw()
+        root.attributes("-topmost", True)
+        output_path = filedialog.asksaveasfilename(
+            title="Export video",
+            initialfile=f"{base}.mp4",
+            defaultextension=".mp4",
+            filetypes=[("MP4 video", "*.mp4"), ("All files", "*.*")],
+        )
+        root.destroy()
+
+        if not output_path:
+            print("Export cancelled.")
+            if was_playing:
+                self._resume()
+            return
+
+        # show export message on screen
+        font = pygame.font.SysFont("consolas", 24)
+        msg = font.render(f"Exporting to {os.path.basename(output_path)}...", True, (255, 255, 100))
+        rect = msg.get_rect(center=(self.w // 2, self.h // 2))
+        self.screen.blit(msg, rect)
+        pygame.display.flip()
+
+        self.render_video(output_path)
+
+        # copy CSV alongside the video
+        csv_dest = os.path.splitext(output_path)[0] + ".csv"
+        try:
+            shutil.copy2(self.csv_path, csv_dest)
+            print(f"CSV copied to: {csv_dest}")
+        except Exception as e:
+            print(f"Could not copy CSV: {e}")
+
+        print(f"Export complete: {output_path}")
+
+        if was_playing:
+            self._resume()
 
     def update(self):
         if self.playing:
@@ -1148,6 +1204,7 @@ class Viewer:
             ("Up/Down", "Volume up / down"),
             ("+/-", "Speed up / down (0.25x)"),
             ("R", "Restart from beginning"),
+            ("E", "Export to video (.mp4)"),
             ("H", "Toggle this help"),
             ("T", "Toggle stats panel"),
             ("M", "Toggle minimap"),

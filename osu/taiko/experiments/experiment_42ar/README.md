@@ -105,8 +105,79 @@ Exp 35-C's outliers (bold): Weird Nightmare at 8.6 eps and Ordinary at 1.9 eps s
 
 ## Result
 
-*Pending — awaiting human evaluation*
+### Final standings (18 votes: 10 self + 8 volunteer)
+
+| Model | Points | 1st | 2nd | 3rd | Avg |
+|---|---|---|---|---|---|
+| **exp14** | **43** | **10** | 5 | 3 | **2.39** |
+| exp42 | 34 | 4 | 8 | 6 | 1.89 |
+| exp35c | 31 | 4 | 5 | 9 | 1.72 |
+
+**exp14 (no context) wins decisively** with 10 first-place votes out of 18 — more than exp42 and exp35c combined.
+
+### Volunteer results (8 votes, 6 unique evaluators)
+
+| Evaluator | Song | 1st | 2nd | 3rd |
+|---|---|---|---|---|
+| Flufonyx | Time Machine | exp14 | exp42 | exp35c |
+| Lusai | Chipper Choices | exp35c | exp14 | exp42 |
+| x3nd3n | Odorouze | exp42 | exp14 | exp35c |
+| Lusai | Odorouze | exp14 | exp42 | exp35c |
+| Tinky Winky | Watching the Omnibus | exp14 | exp35c | exp42 |
+| FixelStyle | Might See You There | exp14 | exp42 | exp35c |
+| Egroish | KIKYU | exp14 | exp35c | exp42 |
+| Mawdi | DARK GAME | exp14 | exp42 | exp35c |
+
+Volunteer-only: exp14 gets 5/8 first-place votes. Volunteers independently agree with self-rankings.
+
+### Self vs volunteer agreement
+
+On songs with both self and volunteer votes, self and volunteers agreed on 1st place 5/8 times. Disagreements were minor (rank swaps between 1st/2nd, never 1st/3rd).
+
+### Common feedback themes
+
+**Metronome regression** — the #1 complaint across all evaluators. Every evaluator noted models "falling into" repetitive patterns. Context models (exp42, exp35c) suffer more because their context dependency creates a positive feedback loop: once the model starts repeating a gap, the context reinforces it.
+
+Volunteer quotes:
+- *"beta just feels like going straight tak tak tak tak tak"* (Lusai on exp42)
+- *"it keeps putting just the same notes over for a few seconds and it gets old"* (x3nd3n)
+- *"Alpha is fucked up... it's like spamming"* (FixelStyle on exp35c)
+
+**Pattern variety** — exp14 wins because it produces more varied patterns. Without context to lock into, it relies purely on audio, which naturally varies. Self-notes: *"Alpha... changes"*, *"Beta [exp42] regresses from unique patterns to metronome"*.
+
+**exp35c instability** — mel ramps cause erratic density (std 1.8 events/sec vs 0.4 for exp42). Multiple evaluators noted exp35c as "worse gamma" or spam-heavy on certain songs.
+
+### Genre breakdown (self-rankings only, 10 songs)
+
+| Genre | exp14 1st | exp42 1st | exp35c 1st |
+|---|---|---|---|
+| J-pop/J-electro (4) | 2 | 2 | 0 |
+| Indie rock (2) | 1 | 1 | 0 |
+| Chiptune/electro (2) | 0 | 0 | 2 |
+| Pop (2) | 1 | 0 | 1 |
+
+exp14 and exp42 split evenly on self-rankings. exp35c only wins on chiptune/electro where its higher density variation matches the genre.
+
+### Evaluation limitations
+
+Due to recruitment constraints, only 6 unique volunteers participated (8 votes — Lusai evaluated 2 songs). 4 songs received no volunteer evaluation beyond self-rankings (Ordinary, Cold Night, Manchild, Might See You There had only self or single evaluator). A future human evaluation should aim for full coverage (1+ volunteer per song) and ideally 2+ volunteers per song for agreement measurement. The blind A/B/C methodology proved effective — clear winner emerged despite small sample size.
+
+### The paradox
+
+**Higher per-sample accuracy does NOT mean better AR generation.**
+
+| Model | Per-sample HIT | Human ranking |
+|---|---|---|
+| exp14 | 68.9% | **1st (43pts)** |
+| exp35c | 71.6% | 3rd (31pts) |
+| exp42 | 73.2% | 2nd (34pts) |
+
+The ranking is *inversely correlated* with per-sample accuracy. Context dependency helps per-sample prediction but hurts AR generation through metronome lock-in.
 
 ## Lesson
 
-*Pending*
+- **Per-sample metrics are misleading for AR quality.** The best per-sample model (exp42, 73.2% HIT) lost to the worst (exp14, 68.9% HIT) in human evaluation. Optimizing per-sample accuracy may actively harm generation quality by deepening context dependency.
+- **Metronome regression is the dominant failure mode.** Not hallucination, not skipping, not density — it's the inability to break out of repeating patterns. Exp 44-B confirmed this is data-driven: 47% of training samples ask the model to continue the previous gap, rising to 83% when a streak of 8+ exists.
+- **Context dependency is a double-edged sword.** It improves per-sample accuracy but creates AR vulnerability. The model needs to use context without becoming enslaved to it.
+- **Blind human evaluation works.** Even with limited volunteers, the method produced a clear, consistent ranking. Self and volunteer rankings agreed. Worth repeating for future model comparisons.
+- **Next steps:** Many possible directions — loss function changes (streak-break upweighting, adversarial metronome penalty), architecture changes (explicit streak features, two-stage continue/break prediction), data sampling (oversampling pattern-break samples), or training curriculum. The 44-B data analysis gives us the tools to measure progress on the actual problem.

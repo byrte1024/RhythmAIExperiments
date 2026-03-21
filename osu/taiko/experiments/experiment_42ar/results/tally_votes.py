@@ -7,10 +7,55 @@ Usage:
 """
 import json
 import os
+import re
+import unicodedata
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 COMPILED_DIR = os.path.join(os.path.dirname(SCRIPT_DIR), "compiled")
 VOTES_PATH = os.path.join(SCRIPT_DIR, "votes.json")
+
+
+def _normalize(s):
+    """Normalize a song name for fuzzy matching: lowercase, ascii-only, alphanum+spaces."""
+    s = unicodedata.normalize("NFKD", s)
+    s = s.encode("ascii", "ignore").decode()  # strip non-ascii
+    s = re.sub(r"[^a-z0-9 ]", " ", s.lower())
+    s = re.sub(r"\s+", " ", s).strip()
+    return s
+
+
+def _find_mapping(song, mappings):
+    """Find the mapping for a song name, with fuzzy matching."""
+    # exact match
+    if song in mappings:
+        return song, mappings[song]
+
+    # substring match
+    for s, m in mappings.items():
+        if song.lower() in s.lower() or s.lower() in song.lower():
+            return s, m
+
+    # normalized fuzzy match: check if normalized names share enough words
+    norm_song = _normalize(song)
+    best_match = None
+    best_score = 0
+    for s, m in mappings.items():
+        norm_s = _normalize(s)
+        # count shared words
+        words_song = set(norm_song.split())
+        words_s = set(norm_s.split())
+        shared = words_song & words_s
+        # score = shared words / min word count (Jaccard-like)
+        if len(words_song) > 0 and len(words_s) > 0:
+            score = len(shared) / min(len(words_song), len(words_s))
+            if score > best_score:
+                best_score = score
+                best_match = s
+
+    if best_score >= 0.5:
+        return best_match, mappings[best_match]
+
+    return None, None
 
 
 def load_mappings():
@@ -21,7 +66,7 @@ def load_mappings():
             continue
         song = f.replace("_mapping.txt", "")
         mapping = {}
-        with open(os.path.join(COMPILED_DIR, f)) as fh:
+        with open(os.path.join(COMPILED_DIR, f), encoding="utf-8") as fh:
             for line in fh:
                 line = line.strip()
                 if " = " in line:
@@ -32,7 +77,7 @@ def load_mappings():
 
 
 def main():
-    with open(VOTES_PATH) as f:
+    with open(VOTES_PATH, encoding="utf-8") as f:
         data = json.load(f)
 
     # collect all votes: self (all songs) + evaluators (1 song each)
@@ -73,15 +118,9 @@ def main():
 
     for ev in all_votes:
         song = ev["song"]
-        mapping = mappings.get(song)
-
-        if not mapping:
-            # try partial match
-            for s, m in mappings.items():
-                if song.lower() in s.lower() or s.lower() in song.lower():
-                    mapping = m
-                    song = s
-                    break
+        matched_song, mapping = _find_mapping(song, mappings)
+        if matched_song:
+            song = matched_song
 
         if not mapping:
             print(f"  WARNING: no mapping for song '{song}' (evaluator: {ev['name']})")
@@ -95,7 +134,8 @@ def main():
             print(f"  WARNING: invalid rank_1 '{ev['rank_1']}' for {ev['name']}")
             continue
 
-        print(f"  {ev['name']:15s} | {song[:35]:35s} | 1st={ev['rank_1']}({r1_model})  "
+        display_song = song.encode("ascii", "replace").decode()[:35]
+        print(f"  {ev['name']:15s} | {display_song:35s} | 1st={ev['rank_1']}({r1_model})  "
               f"2nd={ev['rank_2']}({r2_model})  3rd={ev['rank_3']}({r3_model})")
 
         if r1_model:
@@ -134,7 +174,7 @@ def main():
         "lasts": model_lasts,
         "winner": winner,
     }
-    with open(VOTES_PATH, "w") as f:
+    with open(VOTES_PATH, "w", encoding="utf-8") as f:
         json.dump(data, f, indent=2)
     print(f"\n  Results saved to {VOTES_PATH}")
 

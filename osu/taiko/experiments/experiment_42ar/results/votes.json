@@ -41,7 +41,7 @@
       "notes": ""
     },
     {
-      "song": "Snow Man - Odorouze! Music Video",
+      "song": "Snow Man - Odorouze  ! Music Video",
       "genre": "j-pop dance",
       "rank_1": "Beta",
       "rank_2": "Alpha",
@@ -91,12 +91,12 @@
       "notes": ""
     },
     {
-      "name": "",
+      "name": "Flufonyx",
       "song": "Equiloud - Time Machine",
-      "rank_1": null,
-      "rank_2": null,
-      "rank_3": null,
-      "notes": ""
+      "rank_1": "Gamma",
+      "rank_2": "Alpha",
+      "rank_3": "Beta",
+      "notes": "i liked alphas parts alot more during the drop sections, but gamma had alot more changes where it did have changes :3, beta was just kinda eh felt like gamma but like- worse .w. i feel like #1 is gamma, liked its changes alot, and consistent patterns is ok imo (hell ive been charting for a rhythm game and my last chart had very samey patterns) alpha, consistent, but its main drops had alot more changes and was more interesting then the others, and beta, just kinda worse gamma .w."
     },
     {
       "name": "GloomyKyu/Rose",
@@ -136,14 +136,14 @@
       "rank_1": "Alpha",
       "rank_2": "Gamma",
       "rank_3": "Beta",
-      "notes": ""
+      "notes": "beta is sounding like metronome to me, alpha and gamma close but ig alpha"
     },
     {
       "name": "Tinky Winky",
       "song": "The Bug Club - Watching the Omnibus (Official Audio)",
-      "rank_1": null,
-      "rank_2": null,
-      "rank_3": null,
+      "rank_1": "Gamma",
+      "rank_2": "Alpha",
+      "rank_3": "Beta",
       "notes": ""
     },
     {
@@ -163,14 +163,32 @@
       "notes": "no notes, they all sound kinda the same"
     },
     {
-      "name": "",
+      "name": "Mawdi",
       "song": "muque - DARK GAME (Official Music Video)",
-      "rank_1": null,
-      "rank_2": null,
-      "rank_3": null,
+      "rank_1": "Beta",
+      "rank_2": "Gamma",
+      "rank_3": "Alpha",
       "notes": ""
     }
   ],
-  "mappings_revealed": false,
-  "final_results": null
+  "mappings_revealed": true,
+  "final_results": {
+    "n_votes": 18,
+    "points": {
+      "exp14": 43,
+      "exp35c": 31,
+      "exp42": 34
+    },
+    "firsts": {
+      "exp14": 10,
+      "exp35c": 4,
+      "exp42": 4
+    },
+    "lasts": {
+      "exp14": 3,
+      "exp35c": 9,
+      "exp42": 6
+    },
+    "winner": "exp14"
+  }
 }
