@@ -49,8 +49,64 @@ python detection_train.py taiko_v2 --run-name detect_experiment_44 --model-type 
 
 ## Result
 
-*Pending*
+**New ATH across the board.** Stopped at eval 20 (epoch 5). Surpasses exp 42 on per-sample metrics while adding significant metronome resilience.
+
+### Per-sample metrics (best: eval 19-20)
+
+| Metric | Exp 44 (eval 19) | Exp 44 (eval 20) | Exp 42 ATH (eval 9) |
+|---|---|---|---|
+| HIT | **73.6%** | 73.5% | 73.2% |
+| MISS | **25.9%** | 26.0% | 26.4% |
+| Accuracy | 54.7% | 54.7% | — |
+| Context delta | 5.6pp | 4.9pp | 4.3pp |
+
+### AR resilience
+
+| Metric | Exp 44 (eval 20) | Exp 42 (eval 9) |
+|---|---|---|
+| AR step0 | 74.9% | 74.2% |
+| AR step1 | **48.2%** | 46.3% |
+| AR step3 | 22.2% | 26.4% |
+| AR step5 | 16.8% | 22.4% |
+
+Step0-1 improved over exp 42. Step3+ still lower — deeper AR cascade remains an open problem.
+
+### Metronome resilience
+
+| Metric | Exp 44 (eval 20) | Exp 42 (eval 9) |
+|---|---|---|
+| Metronome benchmark | **45.7%** | 25.4% |
+| Advanced metronome | **49.5%** | — |
+| Time shifted | **47.3%** | — |
+
+Nearly 2x exp 42's metronome resilience. The gentle augmentation works — the model maintains accuracy even when context is corrupted to a metronome pattern.
+
+### no_audio behavior
+
+| Metric | Exp 44 (eval 20) | Exp 42 (eval 9) |
+|---|---|---|
+| no_audio stop rate | 96.6% | 3.1% |
+
+The no_audio stop rate is extremely noisy across evals (12% → 68% → 16% → 77% → 96%), so the eval 20 value is not reliable. The model has not consistently learned to stop on silence — this remains an open problem for future work.
+
+### Metronome error analysis (eval 20)
+
+| Peak | Target continues | Pred continues | Pred continues but target breaks |
+|---|---|---|---|
+| top1 | 47.1% | 48.8% | **11.8%** |
+| top2 | 28.3% | 29.4% | 10.2% |
+| top3 | 12.4% | 10.3% | 4.4% |
+
+The metronome failure mode (pred continues when target breaks) is 11.8% on top1, down from 13.6% at eval 4. Still the dominant error type.
+
+### Progression
+
+HIT plateaued at ~72.8% from eval 5-15, then broke through to 73.6% at eval 19. The model was not converged at eval 7 as initially suspected — longer training paid off.
 
 ## Lesson
 
-*Pending*
+- **Gentle augmentation works.** ~14% context corruption rate preserves context trust while building resilience. The "distort, don't destroy" principle is validated.
+- **Longer training matters.** HIT appeared plateaued for 10 evals, then broke through. Patience was rewarded.
+- **Metronome resilience and per-sample accuracy are not at odds.** Exp 44 achieves both — better HIT than exp 42 AND 2x the metronome resilience.
+- **no_audio stop rate is unreliable.** Swings wildly between evals (12%-96%). The model has not consistently learned to stop on silence — this needs explicit training or an audio gate mechanism.
+- **The 11.8% metronome failure rate remains** the key target for future work. This is where the model continues a pattern when it should break — the dominant error mode in AR generation (see exp 42-AR human evaluation).
