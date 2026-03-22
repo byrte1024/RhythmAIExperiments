@@ -70,13 +70,56 @@ def extract_mel_window(mel, cursor):
 
 
 @torch.no_grad()
+def _compute_top_u(probs, max_u=5, tolerance=0.05):
+    """Cluster predictions within tolerance, return top-U as (bin, confidence) list."""
+    n_classes = len(probs) - 1  # exclude STOP
+    order = np.argsort(probs[:n_classes])[::-1]
+    clusters = []  # [rep_bin, total_conf, weighted_sum]
+    for cls in order:
+        conf = probs[cls]
+        if conf < 1e-6:
+            break
+        matched = False
+        for c in clusters:
+            if c[0] > 0 and abs(cls - c[0]) / c[0] <= tolerance:
+                c[1] += conf
+                c[2] += conf * cls
+                matched = True
+                break
+        if not matched:
+            clusters.append([cls, conf, conf * cls])
+        if len(clusters) >= max_u * 3:
+            break
+    clusters.sort(key=lambda c: c[1], reverse=True)
+    return [(int(round(c[2] / c[1])), c[1]) for c in clusters[:max_u]]
+
+
+def _sample_from_candidates(candidates, confs, temperature, rng):
+    """Temperature-sample from candidate list. Returns chosen bin index."""
+    if len(candidates) <= 1:
+        return candidates[0] if candidates else 0
+    confs = np.array(confs, dtype=np.float64)
+    confs = np.maximum(confs, 1e-30)
+    log_c = np.log(confs) / temperature
+    log_c -= log_c.max()
+    tempered = np.exp(log_c)
+    tempered /= tempered.sum()
+    return candidates[rng.choice(len(candidates), p=tempered)]
+
+
 def run_inference(model, mel, conditioning, device, hop_bins=20, max_events=10000,
-                  threshold=None):
+                  threshold=None, sample_cfg=None):
     """Autoregressive inference: predict events one at a time.
+
+    sample_cfg: optional dict with keys {seed, mode, temperature, topx} for
+                temperature sampling. If None, uses argmax.
 
     Returns (events, run_stats) where run_stats has detailed inference metrics.
     """
     model.eval()
+    rng = None
+    if sample_cfg:
+        rng = np.random.default_rng(sample_cfg["seed"])
     total_frames = mel.shape[1]
     events = []  # list of bin positions
     cursor = 0
@@ -87,6 +130,8 @@ def run_inference(model, mel, conditioning, device, hop_bins=20, max_events=1000
     stop_positions = []  # cursor positions where STOP was predicted
     event_offsets = []  # raw predicted offsets (before adding cursor)
     cursor_history = []  # (call_idx, cursor_pos, prediction)
+    temp_history = []  # effective temperature used per prediction (sampling mode only)
+    metronome_history = []  # (cursor_bin, closeness, multiplier) for metronome tracking
 
     cond_tensor = torch.tensor(conditioning, dtype=torch.float32).unsqueeze(0).to(device)
     duration_s = total_frames * BIN_MS / 1000
@@ -136,6 +181,90 @@ def run_inference(model, mel, conditioning, device, hop_bins=20, max_events=1000
                 pred = N_CLASSES - 1  # no onset → hop forward
             else:
                 pred = int(above[0])
+        elif sample_cfg and rng is not None:
+            # temperature sampling from Top-K or Top-U candidates
+            prob = torch.softmax(logits, dim=-1).squeeze(0).detach().cpu().numpy()
+            topx = sample_cfg["topx"]
+            temp = sample_cfg["temperature"]
+
+            if sample_cfg["mode"] == "U":
+                clusters = _compute_top_u(prob, max_u=topx, tolerance=0.05)
+                cand_bins = [c[0] for c in clusters]
+                cand_confs = [c[1] for c in clusters]
+            else:  # mode == "K"
+                topk_idx = np.argsort(prob[:N_CLASSES - 1])[::-1][:topx]
+                cand_bins = topk_idx.tolist()
+                cand_confs = prob[topk_idx].tolist()
+
+            # near-weight: upweight candidates close to previous gap
+            near_w = sample_cfg.get("near_weight", 0.0)
+            if near_w > 0 and len(event_offsets) > 0:
+                prev_gap = event_offsets[-1]
+                if prev_gap > 0:
+                    for ci in range(len(cand_bins)):
+                        # gaussian proximity: exp(-0.5 * ((bin - prev_gap) / (prev_gap * 0.1))^2)
+                        dist = abs(cand_bins[ci] - prev_gap) / max(prev_gap, 1)
+                        proximity = np.exp(-0.5 * (dist / 0.1) ** 2)
+                        cand_confs[ci] *= (1.0 + near_w * proximity)
+
+            # metronome detection: measure how metronomic recent gaps are,
+            # compute a multiplier, and multiply temperature by it directly.
+            met_w = sample_cfg.get("metronome_weight", 0.0)
+            if met_w > 0 and len(event_offsets) >= 3:
+                # gather gaps from roughly the last 2s of events
+                bins_2s = int(2000 / BIN_MS)
+                recent_gaps = []
+                for g in reversed(event_offsets):
+                    recent_gaps.append(g)
+                    if sum(recent_gaps) >= bins_2s:
+                        break
+                if len(recent_gaps) >= 3:
+                    recent_gaps = np.array(recent_gaps, dtype=np.float64)
+                    recent_gaps = recent_gaps[recent_gaps > 0]
+                    if len(recent_gaps) >= 3:
+                        # cluster gaps within 5% to find the dominant gap
+                        sorted_gaps = np.sort(recent_gaps)
+                        clusters_g = []
+                        cluster_vals = [sorted_gaps[0]]
+                        for gi in range(1, len(sorted_gaps)):
+                            centroid = np.mean(cluster_vals)
+                            if centroid > 0 and abs(sorted_gaps[gi] - centroid) / centroid <= 0.05:
+                                cluster_vals.append(sorted_gaps[gi])
+                            else:
+                                clusters_g.append((np.mean(cluster_vals), len(cluster_vals)))
+                                cluster_vals = [sorted_gaps[gi]]
+                        clusters_g.append((np.mean(cluster_vals), len(cluster_vals)))
+                        clusters_g.sort(key=lambda x: x[1], reverse=True)
+                        dominant_gap = clusters_g[0][0]
+
+                        halflife = max(sample_cfg.get("metronome_halflife", 20.0), 0.1)
+                        met_mode = sample_cfg.get("metronome_mode", "frame")
+
+                        if met_mode == "pp":
+                            # pp mode: distance = % of gaps outside the peak's 5% radius
+                            n_outside = sum(1 for g in recent_gaps
+                                            if dominant_gap <= 0 or abs(g - dominant_gap) / dominant_gap > 0.05)
+                            outside_pct = n_outside / len(recent_gaps) * 100  # 0-100
+                            # halflife is in pp: at outside_pct=halflife, closeness=0.5
+                            closeness = 2.0 ** (-outside_pct / halflife)
+                        else:
+                            # frame mode: distance = abs(avg_gap - dominant_gap) in bins
+                            avg_gap = recent_gaps.mean()
+                            distance = abs(avg_gap - dominant_gap)
+                            closeness = 2.0 ** (-distance / halflife)
+                        # compute multiplier and apply directly to temperature
+                        multiplier = 1.0 + (met_w - 1.0) * closeness  # at closeness=1: multiplier=met_w, at 0: multiplier=1.0
+                        temp = temp * multiplier
+                        metronome_history.append((cursor, float(closeness), float(multiplier)))
+
+            temp_history.append(temp)
+
+            # check if STOP is dominant — if STOP conf > all candidates, predict STOP
+            stop_conf = prob[N_CLASSES - 1]
+            if len(cand_confs) == 0 or stop_conf > max(cand_confs):
+                pred = N_CLASSES - 1
+            else:
+                pred = _sample_from_candidates(cand_bins, cand_confs, temp, rng)
         else:
             pred = logits.argmax(dim=1).item()
 
@@ -166,6 +295,48 @@ def run_inference(model, mel, conditioning, device, hop_bins=20, max_events=1000
         events, event_offsets, stop_count, stop_positions,
         total_calls, cursor_history, total_frames, duration_s, inference_time
     )
+
+    # temperature distribution stats (sampling mode only)
+    if temp_history:
+        th = np.array(temp_history)
+        run_stats["temperature"] = {
+            "mean": float(th.mean()),
+            "median": float(np.median(th)),
+            "min": float(th.min()),
+            "max": float(th.max()),
+            "std": float(th.std()),
+            "p10": float(np.percentile(th, 10)),
+            "p90": float(np.percentile(th, 90)),
+        }
+
+    # metronome detection history over time
+    if metronome_history:
+        closeness_vals = np.array([m[1] for m in metronome_history])
+        multiplier_vals = np.array([m[2] for m in metronome_history])
+        run_stats["metronome"] = {
+            "n_measured": len(metronome_history),
+            "closeness_mean": float(closeness_vals.mean()),
+            "closeness_median": float(np.median(closeness_vals)),
+            "closeness_p90": float(np.percentile(closeness_vals, 90)),
+            "multiplier_mean": float(multiplier_vals.mean()),
+            "multiplier_max": float(multiplier_vals.max()),
+        }
+
+    # per-prediction sampling timeline (sparse: cursor_bin → temp, closeness)
+    # stored as numpy array for viewer: (N, 3) = [cursor_bin, temperature, closeness]
+    if temp_history:
+        sampling_timeline = np.zeros((len(temp_history), 3), dtype=np.float32)
+        for i, (call_idx, cur, pred) in enumerate(cursor_history[:len(temp_history)]):
+            sampling_timeline[i, 0] = cur
+            sampling_timeline[i, 1] = temp_history[i]
+        # fill closeness from metronome_history (sparse — not every prediction has it)
+        met_idx = 0
+        for i in range(len(sampling_timeline)):
+            cur = sampling_timeline[i, 0]
+            if met_idx < len(metronome_history) and metronome_history[met_idx][0] <= cur:
+                sampling_timeline[i, 2] = metronome_history[met_idx][1]
+                met_idx += 1
+        run_stats["_sampling_timeline"] = sampling_timeline
 
     return events, run_stats
 
@@ -614,6 +785,14 @@ def main():
     parser.add_argument("--slide-frames", type=int, default=200, help="Slide step for framewise inference (mel frames, default 200)")
     parser.add_argument("--fw-threshold", type=float, default=0.3, help="Onset threshold for framewise inference (default 0.3)")
     parser.add_argument("--fw-merge", default="max", choices=["max", "avg", "vote"], help="Merge method for overlapping framewise windows")
+    parser.add_argument("--random-seed", type=int, default=None, help="Enable temperature sampling with this seed (default: off/argmax)")
+    parser.add_argument("--random-mode", default="U", choices=["U", "K"], help="Sampling candidate mode: U=Top-Unique, K=Top-K (default: U)")
+    parser.add_argument("--temperature", type=float, default=0.75, help="Sampling temperature 0.01-100 (default: 0.75)")
+    parser.add_argument("--topx", type=int, default=5, help="Number of candidates for sampling (default: 5)")
+    parser.add_argument("--near-weight", type=float, default=0.0, help="Upweight candidates near previous gap (0=off, 1=strong, default: 0)")
+    parser.add_argument("--metronome-weight", type=float, default=0.0, help="Temperature multiplier when in metronome pattern (0=off, default: 0)")
+    parser.add_argument("--metronome-halflife", type=float, default=20.0, help="Half-life: in pp mode, pp outside peak where closeness halves; in frame mode, bin distance (default: 20)")
+    parser.add_argument("--metronome-mode", default="frame", choices=["frame", "pp"], help="Closeness metric: frame=bin distance avg-to-peak, pp=percentage of gaps outside peak's 5%% radius (default: frame)")
     parser.add_argument("--andlaunch", action="store_true", help="Launch viewer after inference")
     parser.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
     args = parser.parse_args()
@@ -843,7 +1022,21 @@ def main():
     else:
         hop_bins = max(1, int(args.hop_ms / BIN_MS))
         print(f"  STOP hop: {args.hop_ms}ms = {hop_bins} bins")
-        events, run_stats = run_inference(model, mel, conditioning, args.device, hop_bins=hop_bins)
+        sample_cfg = None
+        if args.random_seed is not None:
+            sample_cfg = {
+                "seed": args.random_seed,
+                "mode": args.random_mode,
+                "temperature": args.temperature,
+                "topx": args.topx,
+                "near_weight": args.near_weight,
+                "metronome_weight": args.metronome_weight,
+                "metronome_halflife": args.metronome_halflife,
+                "metronome_mode": args.metronome_mode,
+            }
+            print(f"  Sampling: mode={args.random_mode} T={args.temperature} top={args.topx} near={args.near_weight} met_w={args.metronome_weight} met_hl={args.metronome_halflife} met_mode={args.metronome_mode} seed={args.random_seed}")
+        events, run_stats = run_inference(model, mel, conditioning, args.device, hop_bins=hop_bins,
+                                          sample_cfg=sample_cfg)
     print(f"  Predicted {len(events)} events ({len(events) / duration:.1f}/s)")
 
     # Add extra info to stats
@@ -899,10 +1092,17 @@ def main():
     np.save(wave_npy_path, envelope)
     print(f"Wrote waveform envelope to {wave_npy_path} ({n_frames} frames)")
 
+    # Save sampling timeline if present (temperature + metronome over time)
+    sampling_npy_path = None
+    if "_sampling_timeline" in run_stats:
+        sampling_npy_path = args.output.replace(".csv", "_sampling.npy")
+        np.save(sampling_npy_path, run_stats["_sampling_timeline"])
+        print(f"Wrote sampling timeline to {sampling_npy_path} ({len(run_stats['_sampling_timeline'])} points)")
+
     # Write stats JSON alongside CSV
     stats_path = args.output.replace(".csv", "_stats.json")
-    # Remove timeline from JSON to keep it manageable (can be large)
-    json_stats = {k: v for k, v in run_stats.items()}
+    # Remove non-serializable / large internal arrays from JSON
+    json_stats = {k: v for k, v in run_stats.items() if not k.startswith("_")}
     if "density" in json_stats and "timeline" in json_stats["density"]:
         json_stats["density"] = {k: v for k, v in json_stats["density"].items() if k != "timeline"}
     if "ioi" in json_stats and "histogram" in json_stats["ioi"]:
@@ -920,6 +1120,8 @@ def main():
         cmd = [sys.executable, viewer_path, args.output, "--audio", args.audio,
                "--stats-json", stats_path,
                "--mel-npy", mel_npy_path, "--wave-npy", wave_npy_path]
+        if sampling_npy_path:
+            cmd.extend(["--sampling-npy", sampling_npy_path])
         subprocess.run(cmd)
 
     if tmp_dir is not None:

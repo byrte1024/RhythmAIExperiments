@@ -80,6 +80,7 @@ def parse_args():
     parser.add_argument("--stats-json", default=None, help="Inference stats JSON file")
     parser.add_argument("--mel-npy", default=None, help="Mel spectrogram .npy file")
     parser.add_argument("--wave-npy", default=None, help="Waveform envelope .npy file")
+    parser.add_argument("--sampling-npy", default=None, help="Sampling timeline .npy file (temperature + metronome)")
     parser.add_argument("--render", default=None, help="Render to video file (e.g. output.mp4) instead of interactive mode")
     parser.add_argument("--render-fps", type=int, default=60, help="Video FPS for render mode (default 60)")
     return parser.parse_args()
@@ -318,7 +319,8 @@ def _get_mel_colormap():
 
 class Viewer:
     def __init__(self, csv_path, audio_override=None, compare_csv=None,
-                 stats_json_path=None, mel_npy_path=None, wave_npy_path=None):
+                 stats_json_path=None, mel_npy_path=None, wave_npy_path=None,
+                 sampling_npy_path=None):
         self.csv_path = csv_path
         audio_name, self.onsets = load_csv(csv_path)
         self.stats = compute_level_stats(self.onsets)
@@ -347,6 +349,13 @@ class Viewer:
             if wave_npy_path and os.path.exists(wave_npy_path):
                 self.wave_data = np.load(wave_npy_path)
                 print(f"Loaded waveform envelope: {self.wave_data.shape}")
+
+        # Sampling timeline: (N, 3) = [cursor_bin, temperature, closeness]
+        self.sampling_data = None
+        if HAS_NUMPY:
+            if sampling_npy_path and os.path.exists(sampling_npy_path):
+                self.sampling_data = np.load(sampling_npy_path)
+                print(f"Loaded sampling timeline: {self.sampling_data.shape}")
 
         # Audio
         self.audio_path = audio_override or find_audio(audio_name)
@@ -680,6 +689,8 @@ class Viewer:
         if self.show_mel:
             self._draw_mel_view(y_below)
             y_below += 145
+            if self.sampling_data is not None:
+                y_below += 48
 
         if self.show_density:
             self._draw_density_graph(y_below)
@@ -964,6 +975,62 @@ class Viewer:
                     c = COLORS.get(kind, (200, 200, 200))
                     pygame.draw.line(self.screen, c, (ox, y), (ox, y + 4), 2)
 
+            y += wave_h + 4
+
+        # --- Sampling timeline (temperature + metronome) ---
+        if self.sampling_data is not None:
+            self._draw_sampling_bar(y, frame_start, frame_end, frames_left, px_per_frame)
+
+    def _draw_sampling_bar(self, y_start, frame_start, frame_end, frames_left, px_per_frame):
+        """Draw temperature + metronome closeness bar aligned to mel/wave view."""
+        if self.sampling_data is None or not HAS_NUMPY:
+            return
+        bar_h = 30
+        pad_x = 10
+        view_w = self.w - 20
+
+        label = self.font_small.render("Temperature (orange) / Metronome (cyan)", True, DIM_TEXT)
+        self.screen.blit(label, (pad_x, y_start))
+        y = y_start + 14
+
+        pygame.draw.rect(self.screen, PANEL_BG, (pad_x, y, view_w, bar_h), border_radius=3)
+
+        # sampling_data: (N, 3) = [cursor_bin, temperature, closeness]
+        bins = self.sampling_data[:, 0]
+        temps = self.sampling_data[:, 1]
+        closes = self.sampling_data[:, 2]
+
+        # find max temperature for normalization
+        temp_max = max(float(temps.max()), 1.0)
+
+        # draw each data point that falls in visible range
+        for i in range(len(bins)):
+            f = int(bins[i])
+            if f < frame_start or f > frame_end:
+                continue
+            px = pad_x + int((f - frame_start) * px_per_frame)
+            if px < pad_x or px > pad_x + view_w:
+                continue
+
+            # temperature bar (orange, from bottom)
+            t_norm = min(temps[i] / temp_max, 1.0)
+            t_h = int(t_norm * (bar_h - 2))
+            if t_h > 0:
+                r = min(255, int(200 + t_norm * 55))
+                g = min(255, int(120 + t_norm * 40))
+                pygame.draw.line(self.screen, (r, g, 30),
+                                 (px, y + bar_h - 1), (px, y + bar_h - 1 - t_h), 1)
+
+            # metronome closeness (cyan, from top)
+            c_h = int(closes[i] * (bar_h - 2))
+            if c_h > 0:
+                pygame.draw.line(self.screen, (30, 200, 220),
+                                 (px, y + 1), (px, y + 1 + c_h), 1)
+
+        # cursor line
+        cx = pad_x + int(frames_left * px_per_frame)
+        pygame.draw.line(self.screen, (255, 255, 255), (cx, y), (cx, y + bar_h), 1)
+
     def _draw_density_graph(self, y_start):
         """Density over time graph."""
         if not self._density_surface:
@@ -1030,6 +1097,52 @@ class Viewer:
             cx = 10 + int(frac * map_w)
             pygame.draw.rect(self.screen, (255, 255, 255), (cx - 1, map_y - 1, 3, map_h + 2), border_radius=1)
 
+    def _compute_local_metronome(self):
+        """Compute metronome % around cursor: what % of recent gaps match the dominant gap."""
+        # gather onsets in the last 2s before cursor
+        cursor_ms = self.now_ms
+        recent = [t for t, _ in self.onsets if cursor_ms - 2000 <= t <= cursor_ms]
+        if len(recent) < 4:
+            return None, None
+
+        gaps = []
+        for i in range(1, len(recent)):
+            g = recent[i] - recent[i - 1]
+            if g > 0:
+                gaps.append(g)
+        if len(gaps) < 3:
+            return None, None
+
+        # cluster gaps within 5% to find dominant
+        sorted_gaps = sorted(gaps)
+        clusters = []
+        cluster_vals = [sorted_gaps[0]]
+        for i in range(1, len(sorted_gaps)):
+            centroid = sum(cluster_vals) / len(cluster_vals)
+            if centroid > 0 and abs(sorted_gaps[i] - centroid) / centroid <= 0.05:
+                cluster_vals.append(sorted_gaps[i])
+            else:
+                clusters.append((sum(cluster_vals) / len(cluster_vals), len(cluster_vals)))
+                cluster_vals = [sorted_gaps[i]]
+        clusters.append((sum(cluster_vals) / len(cluster_vals), len(cluster_vals)))
+        clusters.sort(key=lambda x: x[1], reverse=True)
+
+        dominant_gap = clusters[0][0]
+        dominant_count = clusters[0][1]
+        total = len(gaps)
+        in_peak_pct = dominant_count / total * 100
+        dominant_bpm = 60000 / dominant_gap if dominant_gap > 0 else 0
+
+        # color based on how metronomic
+        if in_peak_pct >= 80:
+            color = (255, 80, 80)   # red = very metronomic
+        elif in_peak_pct >= 50:
+            color = (255, 200, 60)  # yellow = moderate
+        else:
+            color = (100, 220, 100) # green = varied
+
+        return f"{in_peak_pct:.0f}% in peak ({dominant_gap:.0f}ms / {dominant_bpm:.0f}BPM)  {len(gaps)} gaps  {len(clusters)} clusters", color
+
     def _draw_stats_panel(self, y_start):
         """Statistics panel at the bottom."""
         panel_x = 10
@@ -1092,6 +1205,11 @@ class Viewer:
         local_count = sum(1 for t, _ in self.onsets if abs(t - self.now_ms) < 500)
         text("Local density:", f"{local_count:.0f} events/s (around cursor)")
 
+        # Metronome analysis around cursor (last 2s of events before cursor)
+        met_str, met_color = self._compute_local_metronome()
+        if met_str:
+            text("Metronome:", met_str, color=met_color)
+
         # --- Column 2: Inference stats (if available) ---
         col2_x = panel_x + panel_w // 2
         if self.inference_stats or s.get("is_predicted"):
@@ -1127,6 +1245,17 @@ class Viewer:
                     text("Inference:", f"{timing.get('inference_s', 0):.2f}s")
                     text("ms/event:", f"{timing.get('ms_per_event', 0):.1f}")
                     text("ms/model call:", f"{timing.get('ms_per_call', 0):.1f}")
+
+                # Temperature stats
+                if "temperature" in ist:
+                    ts = ist["temperature"]
+                    text("Temperature:", f"mean={ts['mean']:.2f}  med={ts['median']:.2f}  [{ts['min']:.2f}, {ts['max']:.2f}]")
+
+                # Metronome detection stats
+                if "metronome" in ist:
+                    ms = ist["metronome"]
+                    text("Met closeness:", f"mean={ms['closeness_mean']:.2f}  med={ms['closeness_median']:.2f}  p90={ms['closeness_p90']:.2f}")
+                    text("Met multiplier:", f"mean={ms['multiplier_mean']:.2f}  max={ms['multiplier_max']:.2f}")
 
                 # Event distribution
                 if "event_distribution" in ist:
@@ -1326,8 +1455,8 @@ class Viewer:
         else:
             mixed_pcm = None
 
-        # set up pygame surface (offscreen)
-        render_w, render_h = 1200, 300  # compact: just playfield + header
+        # set up pygame surface (offscreen, dimensions must be even for h264)
+        render_w, render_h = 1200, 300
         surface = pygame.Surface((render_w, render_h))
 
         # start ffmpeg video pipe
@@ -1350,10 +1479,12 @@ class Viewer:
                 wf.writeframes(mixed_pcm)
             ffmpeg_cmd += ["-i", tmp_audio.name]  # audio input
             ffmpeg_cmd += ["-c:v", "libx264", "-preset", "fast", "-crf", "23",
+                          "-pix_fmt", "yuv420p",
                           "-c:a", "aac", "-b:a", "192k",
                           "-shortest", output_path]
         else:
             ffmpeg_cmd += ["-c:v", "libx264", "-preset", "fast", "-crf", "23",
+                          "-pix_fmt", "yuv420p",
                           output_path]
 
         proc = subprocess.Popen(ffmpeg_cmd, stdin=subprocess.PIPE)
@@ -1480,14 +1611,16 @@ def main():
         viewer = Viewer(csv_path, audio_override=args.audio, compare_csv=args.compare,
                         stats_json_path=args.stats_json,
                         mel_npy_path=getattr(args, 'mel_npy', None),
-                        wave_npy_path=getattr(args, 'wave_npy', None))
+                        wave_npy_path=getattr(args, 'wave_npy', None),
+                        sampling_npy_path=getattr(args, 'sampling_npy', None))
         viewer.render_video(args.render, fps=args.render_fps)
         pygame.quit()
     else:
         viewer = Viewer(csv_path, audio_override=args.audio, compare_csv=args.compare,
                         stats_json_path=args.stats_json,
                         mel_npy_path=getattr(args, 'mel_npy', None),
-                        wave_npy_path=getattr(args, 'wave_npy', None))
+                        wave_npy_path=getattr(args, 'wave_npy', None),
+                        sampling_npy_path=getattr(args, 'sampling_npy', None))
         viewer.run()
 
 
