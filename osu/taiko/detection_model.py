@@ -1284,8 +1284,10 @@ class EventEmbeddingDetector(nn.Module):
         self.event_presence_emb = nn.Parameter(torch.randn(1, d_model) * 0.02)
         self.gap_before_emb = SinusoidalPosEmb(d_model)  # gap from previous event
         self.gap_after_emb = SinusoidalPosEmb(d_model)   # gap to next event
+        self.gap_ratio_before_emb = SinusoidalPosEmb(d_model)  # gap_2xbefore / gap_before (rhythm acceleration)
+        self.gap_ratio_after_emb = SinusoidalPosEmb(d_model)   # gap_2xafter / gap_after (rhythm acceleration)
         self.event_proj = nn.Sequential(
-            nn.Linear(d_model * 3, d_model),
+            nn.Linear(d_model * 5, d_model),
             nn.GELU(),
             nn.Linear(d_model, d_model),
         )
@@ -1351,11 +1353,27 @@ class EventEmbeddingDetector(nn.Module):
                 last_idx = valid_indices[-1].item()
                 gap_after[b, last_idx] = gap_before[b, last_idx]
 
-        # build embeddings: presence + gap_before + gap_after → project to d_model
+        # gap ratios: how is the rhythm changing?
+        # gap_ratio_before[i] = gap_before[i-1] / gap_before[i]
+        #   = 1.0 means constant, <1 means speeding up, >1 means slowing down
+        # gap_ratio_after[i] = gap_after[i+1] / gap_after[i]
+        gap_ratio_before = torch.ones(B, C, device=offsets.device)
+        gap_ratio_before[:, 1:] = gap_before[:, :-1] / gap_before[:, 1:]
+        # clamp to reasonable range and scale to bin-like values for sinusoidal encoding
+        # ratio 0.5-2.0 → values 25-100 (centered at 50 for ratio=1.0)
+        gap_ratio_before = (gap_ratio_before.clamp(0.1, 10.0) * 50.0)
+
+        gap_ratio_after = torch.ones(B, C, device=offsets.device)
+        gap_ratio_after[:, :-1] = gap_after[:, 1:] / gap_after[:, :-1]
+        gap_ratio_after = (gap_ratio_after.clamp(0.1, 10.0) * 50.0)
+
+        # build embeddings: presence + gap_before + gap_after + ratio_before + ratio_after
         presence = self.event_presence_emb.expand(B, C, -1)  # (B, C, d_model)
         gb_emb = self.gap_before_emb(gap_before)  # (B, C, d_model)
         ga_emb = self.gap_after_emb(gap_after)     # (B, C, d_model)
-        combined = torch.cat([presence, gb_emb, ga_emb], dim=-1)  # (B, C, 3*d_model)
+        grb_emb = self.gap_ratio_before_emb(gap_ratio_before)  # (B, C, d_model)
+        gra_emb = self.gap_ratio_after_emb(gap_ratio_after)    # (B, C, d_model)
+        combined = torch.cat([presence, gb_emb, ga_emb, grb_emb, gra_emb], dim=-1)  # (B, C, 5*d_model)
         event_embs = self.event_proj(combined)  # (B, C, d_model)
 
         # map event offsets to audio token positions

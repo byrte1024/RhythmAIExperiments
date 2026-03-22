@@ -281,9 +281,9 @@ class OnsetDataset(Dataset):
             t = rng.integers(0, mel_window.shape[1] - n)
             mel_window[:, t:t + n] = 0
 
-        # conditioning jitter ±10% (30%)
-        if rng.random() < 0.3:
-            cond_jitter = rng.uniform(0.90, 1.10, size=3).astype(np.float32)
+        # conditioning jitter ±2% (10%) — keep density reliable
+        if rng.random() < 0.10:
+            cond_jitter = rng.uniform(0.98, 1.02, size=3).astype(np.float32)
 
         return mel_window, past_bins, cond_jitter
 
