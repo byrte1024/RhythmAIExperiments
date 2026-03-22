@@ -38,7 +38,7 @@ EventEmbeddingDetector with expanded event projection (5 × d_model input instea
 ### Launch
 
 ```bash
-python detection_train.py taiko_v2 --run-name detect_experiment_45 --model-type event_embed --epochs 50 --batch-size 48 --subsample 1 --evals-per-epoch 4 --workers 3
+python detection_train.py taiko_v2 --run-name detect_experiment_45 --model-type event_embed --gap-ratios --epochs 50 --batch-size 48 --subsample 1 --evals-per-epoch 4 --workers 3
 ```
 
 ## Result

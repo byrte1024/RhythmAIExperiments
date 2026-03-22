@@ -3433,6 +3433,7 @@ def train(args):
             n_layers=args.enc_layers + args.fusion_layers,
             n_heads=args.n_heads,
             n_classes=N_CLASSES, max_events=C_EVENTS, dropout=args.dropout,
+            gap_ratios=args.gap_ratios,
         ).to(args.device)
     elif args.model_type == "framewise":
         model = FramewiseOnsetDetector(
@@ -3981,6 +3982,7 @@ if __name__ == "__main__":
     parser.add_argument("--snippet-frames", type=int, default=10, help="Mel frames per audio snippet (~5ms each, default 10 = ~50ms)")
     parser.add_argument("--n-heads", type=int, default=8)
     parser.add_argument("--dropout", type=float, default=0.1)
+    parser.add_argument("--gap-ratios", action="store_true", default=False, help="Add gap ratio features to event embeddings (exp 45+)")
     parser.add_argument("--focal-gamma", type=float, default=0.0, help="Focal loss gamma (0=disabled, default 0)")
     parser.add_argument("--good-pct", type=float, default=0.03, help="Soft target plateau threshold (ratio, default 3%%)")
     parser.add_argument("--fail-pct", type=float, default=0.20, help="Soft target hard cutoff (ratio, default 20%%)")

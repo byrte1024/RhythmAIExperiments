@@ -863,6 +863,7 @@ def main():
 
     # Build model kwargs based on checkpoint era
     if ModelClass == EventEmbeddingDetector:
+        has_gap_ratios = "gap_ratio_before_emb.div_term" in state_keys
         model_kwargs = dict(
             n_mels=N_MELS,
             d_model=ckpt_args.get("d_model", 384),
@@ -870,6 +871,7 @@ def main():
             n_heads=ckpt_args.get("n_heads", 8),
             n_classes=N_CLASSES,
             max_events=C_EVENTS,
+            gap_ratios=has_gap_ratios,
         )
     elif ModelClass == FramewiseOnsetDetector:
         # exp 38+: framewise onset detection

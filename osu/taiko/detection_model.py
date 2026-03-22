@@ -1255,8 +1255,10 @@ class EventEmbeddingDetector(nn.Module):
         max_events=128,
         dropout=0.1,
         cond_dim=64,
+        gap_ratios=False,
     ):
         super().__init__()
+        self.gap_ratios = gap_ratios
         self.n_classes = n_classes
         self.d_model = d_model
         self.max_events = max_events
@@ -1284,10 +1286,13 @@ class EventEmbeddingDetector(nn.Module):
         self.event_presence_emb = nn.Parameter(torch.randn(1, d_model) * 0.02)
         self.gap_before_emb = SinusoidalPosEmb(d_model)  # gap from previous event
         self.gap_after_emb = SinusoidalPosEmb(d_model)   # gap to next event
-        self.gap_ratio_before_emb = SinusoidalPosEmb(d_model)  # gap_2xbefore / gap_before (rhythm acceleration)
-        self.gap_ratio_after_emb = SinusoidalPosEmb(d_model)   # gap_2xafter / gap_after (rhythm acceleration)
+        n_emb_inputs = 3  # presence + gap_before + gap_after
+        if gap_ratios:
+            self.gap_ratio_before_emb = SinusoidalPosEmb(d_model)  # gap_2xbefore / gap_before
+            self.gap_ratio_after_emb = SinusoidalPosEmb(d_model)   # gap_2xafter / gap_after
+            n_emb_inputs = 5
         self.event_proj = nn.Sequential(
-            nn.Linear(d_model * 5, d_model),
+            nn.Linear(d_model * n_emb_inputs, d_model),
             nn.GELU(),
             nn.Linear(d_model, d_model),
         )
@@ -1353,27 +1358,27 @@ class EventEmbeddingDetector(nn.Module):
                 last_idx = valid_indices[-1].item()
                 gap_after[b, last_idx] = gap_before[b, last_idx]
 
-        # gap ratios: how is the rhythm changing?
-        # gap_ratio_before[i] = gap_before[i-1] / gap_before[i]
-        #   = 1.0 means constant, <1 means speeding up, >1 means slowing down
-        # gap_ratio_after[i] = gap_after[i+1] / gap_after[i]
-        gap_ratio_before = torch.ones(B, C, device=offsets.device)
-        gap_ratio_before[:, 1:] = gap_before[:, :-1] / gap_before[:, 1:]
-        # clamp to reasonable range and scale to bin-like values for sinusoidal encoding
-        # ratio 0.5-2.0 → values 25-100 (centered at 50 for ratio=1.0)
-        gap_ratio_before = (gap_ratio_before.clamp(0.1, 10.0) * 50.0)
-
-        gap_ratio_after = torch.ones(B, C, device=offsets.device)
-        gap_ratio_after[:, :-1] = gap_after[:, 1:] / gap_after[:, :-1]
-        gap_ratio_after = (gap_ratio_after.clamp(0.1, 10.0) * 50.0)
-
-        # build embeddings: presence + gap_before + gap_after + ratio_before + ratio_after
+        # build embeddings
         presence = self.event_presence_emb.expand(B, C, -1)  # (B, C, d_model)
         gb_emb = self.gap_before_emb(gap_before)  # (B, C, d_model)
         ga_emb = self.gap_after_emb(gap_after)     # (B, C, d_model)
-        grb_emb = self.gap_ratio_before_emb(gap_ratio_before)  # (B, C, d_model)
-        gra_emb = self.gap_ratio_after_emb(gap_ratio_after)    # (B, C, d_model)
-        combined = torch.cat([presence, gb_emb, ga_emb, grb_emb, gra_emb], dim=-1)  # (B, C, 5*d_model)
+        parts = [presence, gb_emb, ga_emb]
+
+        if self.gap_ratios:
+            # gap ratios: how is the rhythm changing?
+            # ratio = 1.0 means constant, <1 means speeding up, >1 means slowing down
+            gap_ratio_before = torch.ones(B, C, device=offsets.device)
+            gap_ratio_before[:, 1:] = gap_before[:, :-1] / gap_before[:, 1:]
+            gap_ratio_before = (gap_ratio_before.clamp(0.1, 10.0) * 50.0)
+
+            gap_ratio_after = torch.ones(B, C, device=offsets.device)
+            gap_ratio_after[:, :-1] = gap_after[:, 1:] / gap_after[:, :-1]
+            gap_ratio_after = (gap_ratio_after.clamp(0.1, 10.0) * 50.0)
+
+            parts.append(self.gap_ratio_before_emb(gap_ratio_before))
+            parts.append(self.gap_ratio_after_emb(gap_ratio_after))
+
+        combined = torch.cat(parts, dim=-1)
         event_embs = self.event_proj(combined)  # (B, C, d_model)
 
         # map event offsets to audio token positions
