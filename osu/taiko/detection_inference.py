@@ -840,6 +840,8 @@ def main():
     parser.add_argument("--metronome-mode", default="frame", choices=["frame", "pp"], help="Closeness metric: frame=bin distance avg-to-peak, pp=percentage of gaps outside peak's 5%% radius (default: frame)")
     parser.add_argument("--metronome-applymode", default="temp", choices=["temp", "suppress", "both"], help="How to apply metronome detection: temp=multiply temperature, suppress=downweight candidates near dominant gap, both=suppress+temp (default: temp)")
     parser.add_argument("--andlaunch", action="store_true", help="Launch viewer after inference")
+    parser.add_argument("--gif", default=None, help="Path to GIF for beat-synced animation in viewer")
+    parser.add_argument("--gif-cycles", type=int, default=1, help="Events per full GIF cycle (default: 1)")
     parser.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
     args = parser.parse_args()
 
@@ -1196,6 +1198,8 @@ def main():
             cmd.extend(["--sampling-npy", sampling_npy_path])
         if candidates_path:
             cmd.extend(["--candidates-json", candidates_path])
+        if args.gif:
+            cmd.extend(["--gif", args.gif, "--gif-cycles", str(args.gif_cycles)])
         subprocess.run(cmd)
 
     if tmp_dir is not None:

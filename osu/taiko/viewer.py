@@ -82,6 +82,8 @@ def parse_args():
     parser.add_argument("--wave-npy", default=None, help="Waveform envelope .npy file")
     parser.add_argument("--sampling-npy", default=None, help="Sampling timeline .npy file (temperature + metronome)")
     parser.add_argument("--candidates-json", default=None, help="Candidate history JSON (per-prediction candidates)")
+    parser.add_argument("--gif", default=None, help="Path to GIF file for beat-synced animation window")
+    parser.add_argument("--gif-cycles", type=int, default=1, help="Events per full GIF animation cycle (default: 1)")
     parser.add_argument("--render", default=None, help="Render to video file (e.g. output.mp4) instead of interactive mode")
     parser.add_argument("--render-fps", type=int, default=60, help="Video FPS for render mode (default 60)")
     return parser.parse_args()
@@ -318,10 +320,73 @@ def _get_mel_colormap():
     return cmap
 
 
+class GifPlayer:
+    """Beat-synced GIF animation rendered as overlay on the main viewer."""
+
+    def __init__(self, gif_path, cycles=1):
+        from PIL import Image
+
+        self.cycles = max(1, cycles)
+        self.frames = []
+
+        img = Image.open(gif_path)
+        try:
+            while True:
+                frame = img.convert("RGBA")
+                surf = pygame.image.fromstring(frame.tobytes(), frame.size, "RGBA")
+                self.frames.append(surf)
+                img.seek(img.tell() + 1)
+        except EOFError:
+            pass
+
+        if not self.frames:
+            raise ValueError(f"No frames found in {gif_path}")
+
+        self.n_frames = len(self.frames)
+        self.current_frame = 0
+        # pre-scale to a reasonable display size
+        fw, fh = self.frames[0].get_size()
+        self.display_h = 440
+        self.display_w = int(fw * self.display_h / fh)
+        self.scaled_frames = [
+            pygame.transform.smoothscale(f, (self.display_w, self.display_h))
+            for f in self.frames
+        ]
+        print(f"Loaded GIF: {self.n_frames} frames, display {self.display_w}x{self.display_h}, {cycles} events/cycle")
+
+    def update(self, now_ms, onsets):
+        """Update frame based on progress between events."""
+        passed = 0
+        prev_ms = 0
+        next_ms = 0
+        for t, _ in onsets:
+            if t <= now_ms:
+                passed += 1
+                prev_ms = t
+            else:
+                next_ms = t
+                break
+
+        cycle_event = passed % self.cycles
+        if next_ms > prev_ms:
+            inter = (now_ms - prev_ms) / (next_ms - prev_ms)
+        else:
+            inter = 0.0
+        inter = max(0.0, min(1.0, inter))
+
+        progress = (cycle_event + inter) / self.cycles
+        self.current_frame = int(progress * self.n_frames) % self.n_frames
+
+    def draw(self, screen, x, y):
+        """Render current frame onto the given surface."""
+        screen.blit(self.scaled_frames[self.current_frame], (x, y))
+
+
 class Viewer:
     def __init__(self, csv_path, audio_override=None, compare_csv=None,
                  stats_json_path=None, mel_npy_path=None, wave_npy_path=None,
-                 sampling_npy_path=None, candidates_json_path=None):
+                 sampling_npy_path=None, candidates_json_path=None,
+                 gif_path=None, gif_cycles=1):
         self.csv_path = csv_path
         audio_name, self.onsets = load_csv(csv_path)
         self.stats = compute_level_stats(self.onsets)
@@ -373,6 +438,14 @@ class Viewer:
                     abs_cands = [(cursor_bin + c[0], c[1], c[2]) for c in cands]
                     self._cand_by_event[event_bin] = abs_cands
             print(f"Loaded candidate history: {len(self.candidate_data)} predictions, {len(self._cand_by_event)} events")
+
+        # Beat-synced GIF
+        self.gif_player = None
+        if gif_path:
+            try:
+                self.gif_player = GifPlayer(gif_path, cycles=gif_cycles)
+            except Exception as e:
+                print(f"Could not load GIF: {e}")
 
         # Audio
         self.audio_path = audio_override or find_audio(audio_name)
@@ -722,6 +795,13 @@ class Viewer:
 
         if self.show_help:
             self._draw_help_overlay()
+
+        # beat-synced GIF (bottom-right, next to inference stats)
+        if self.gif_player:
+            self.gif_player.update(self.now_ms, self.onsets)
+            gx = self.w - self.gif_player.display_w - 20
+            gy = self.h - self.gif_player.display_h - 15
+            self.gif_player.draw(self.screen, gx, gy)
 
         pygame.display.flip()
 
@@ -1719,7 +1799,8 @@ def main():
                         mel_npy_path=getattr(args, 'mel_npy', None),
                         wave_npy_path=getattr(args, 'wave_npy', None),
                         sampling_npy_path=getattr(args, 'sampling_npy', None),
-                        candidates_json_path=getattr(args, 'candidates_json', None))
+                        candidates_json_path=getattr(args, 'candidates_json', None),
+                        gif_path=args.gif, gif_cycles=args.gif_cycles)
         viewer.render_video(args.render, fps=args.render_fps)
         pygame.quit()
     else:
@@ -1728,7 +1809,8 @@ def main():
                         mel_npy_path=getattr(args, 'mel_npy', None),
                         wave_npy_path=getattr(args, 'wave_npy', None),
                         sampling_npy_path=getattr(args, 'sampling_npy', None),
-                        candidates_json_path=getattr(args, 'candidates_json', None))
+                        candidates_json_path=getattr(args, 'candidates_json', None),
+                        gif_path=args.gif, gif_cycles=args.gif_cycles)
         viewer.run()
 
 
