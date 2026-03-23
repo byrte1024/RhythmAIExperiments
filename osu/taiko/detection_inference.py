@@ -1022,7 +1022,13 @@ def main():
 
     # Build model kwargs based on checkpoint era
     if ModelClass == EventEmbeddingDetector:
-        has_gap_ratios = "gap_ratio_before_emb.div_term" in state_keys
+        # detect gap_ratios: event_proj input is 5*d_model (1920) vs 3*d_model (1152)
+        event_proj_key = next((k for k in state_keys if "event_proj.0.weight" in k), None)
+        has_gap_ratios = False
+        if event_proj_key:
+            w = ckpt["model"][event_proj_key]
+            if w.shape[1] > ckpt_args.get("d_model", 384) * 3:
+                has_gap_ratios = True
         model_kwargs = dict(
             n_mels=N_MELS,
             d_model=ckpt_args.get("d_model", 384),

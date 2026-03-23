@@ -8,7 +8,11 @@ Exp 44 uses hard_alpha=0.5 (50% hard CE + 50% soft targets). Exp 42-B tested har
 
 ### Sub-experiments
 
-All identical to exp 44 (EventEmbeddingDetector, gentle augmentation, subsample 1, ±10% density jitter @30%) except hard_alpha:
+All identical to exp 44 (EventEmbeddingDetector, gentle augmentation, subsample 1) with two changes adopted from exp 45:
+- ±2% density jitter @10% (better AR density adherence)
+- Gap ratio features enabled (default on from now)
+
+Only variable is hard_alpha:
 
 | Exp | hard_alpha | Soft weight | Hard weight | Description |
 |---|---|---|---|---|

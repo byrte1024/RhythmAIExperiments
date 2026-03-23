@@ -56,10 +56,19 @@ python detection_train.py taiko_v2 --run-name detect_experiment_45 --model-type 
 | Random density | 32.3% | ~37% | 40.7% |
 | Zero density | 29.1% | ~24% | 36.8% |
 
-Consistently ~0.6pp behind exp 44 on HIT. Small differences in metronome benchmarks are noise. Random density dropped (32.3% vs exp 44's ~37%) confirming the model relied more on density, but this didn't translate to better accuracy.
+Consistently ~0.6pp behind exp 44 on HIT. Small differences in metronome benchmarks are noise. Random density dropped (32.3% vs exp 44's ~37%) confirming the model relied more on density, but this didn't translate to better per-sample accuracy.
+
+### AR density adherence
+
+| Exp | Eval | Conditioned | Actual | Ratio |
+|---|---|---|---|---|
+| 44 | 20 | 5.69 | 6.45 | 1.132 (13% over) |
+| 45 | 7 | 5.69 | 6.39 | 1.122 (12% over) |
+
+Both overshoot by 12-29% in AR benchmarks. In manual full-song AR testing, exp 45 showed notably better density adaptation — responding proportionally to different density inputs with a consistent ~10-20% overshoot. The tighter density jitter made the model more responsive to density conditioning in real AR generation, even though per-sample metrics didn't improve.
 
 ## Lesson
 
-- **Gap ratio features don't help.** The model can already infer rhythm acceleration/deceleration from raw gap sequences via attention. Making it explicit adds parameters but no signal. The feared risk (ratio features reinforcing metronome) didn't materialize either — metronome benchmarks were similar.
-- **Tighter density conditioning doesn't help.** Reducing jitter from ±10%@30% to ±2%@10% made the model trust density more (lower random_density score) but didn't improve accuracy. The model was already using density effectively with the original jitter.
-- **Neither change was harmful, just useless.** No regression, no improvement — pure noise. Exp 44's architecture and augmentation remain the best configuration.
+- **Gap ratio features don't help per-sample metrics.** The model can already infer rhythm acceleration/deceleration from raw gap sequences via attention. Making it explicit adds parameters but no signal.
+- **Tighter density jitter IS valuable for AR generation.** Per-sample metrics didn't improve, but real AR testing showed much better density adherence. The model follows requested density more faithfully with less jitter during training. This is adopted going forward.
+- **Per-sample metrics continue to understate AR quality differences.** Same story as exp 42-AR — what matters in generation isn't fully captured by validation accuracy.

@@ -1744,6 +1744,16 @@ class Viewer:
             info = font.render(f"Passed: {passed}/{len(self.onsets)}", True, (120, 120, 135))
             surface.blit(info, (10, info_y))
 
+            # beat-synced GIF (scaled to fit render height)
+            if self.gif_player:
+                self.gif_player.update(now_ms, self.onsets)
+                gif_h = min(self.gif_player.display_h, render_h - pf_top - pf_h - 30)
+                if gif_h > 20:
+                    gif_w = int(self.gif_player.display_w * gif_h / self.gif_player.display_h)
+                    gif_frame = self.gif_player.scaled_frames[self.gif_player.current_frame]
+                    gif_scaled = pygame.transform.smoothscale(gif_frame, (gif_w, gif_h))
+                    surface.blit(gif_scaled, (render_w - gif_w - 10, render_h - gif_h - 5))
+
             # write frame to ffmpeg
             frame_bytes = pygame.image.tobytes(surface, "RGB")
             try:

@@ -281,9 +281,9 @@ class OnsetDataset(Dataset):
             t = rng.integers(0, mel_window.shape[1] - n)
             mel_window[:, t:t + n] = 0
 
-        # conditioning jitter ±10% (30%)
-        if rng.random() < 0.3:
-            cond_jitter = rng.uniform(0.90, 1.10, size=3).astype(np.float32)
+        # conditioning jitter ±2% (10%) — tighter jitter improves AR density adherence (exp 45)
+        if rng.random() < 0.10:
+            cond_jitter = rng.uniform(0.98, 1.02, size=3).astype(np.float32)
 
         return mel_window, past_bins, cond_jitter
 
@@ -3982,7 +3982,8 @@ if __name__ == "__main__":
     parser.add_argument("--snippet-frames", type=int, default=10, help="Mel frames per audio snippet (~5ms each, default 10 = ~50ms)")
     parser.add_argument("--n-heads", type=int, default=8)
     parser.add_argument("--dropout", type=float, default=0.1)
-    parser.add_argument("--gap-ratios", action="store_true", default=False, help="Add gap ratio features to event embeddings (exp 45+)")
+    parser.add_argument("--gap-ratios", action="store_true", default=True, help="Add gap ratio features to event embeddings (exp 45+)")
+    parser.add_argument("--no-gap-ratios", dest="gap_ratios", action="store_false", help="Disable gap ratio features")
     parser.add_argument("--focal-gamma", type=float, default=0.0, help="Focal loss gamma (0=disabled, default 0)")
     parser.add_argument("--good-pct", type=float, default=0.03, help="Soft target plateau threshold (ratio, default 3%%)")
     parser.add_argument("--fail-pct", type=float, default=0.20, help="Soft target hard cutoff (ratio, default 20%%)")
