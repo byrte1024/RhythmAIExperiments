@@ -4,4 +4,5 @@ A collection of experiments regarding machine learning's applications in music a
 
 ## Projects
 
-- **[osu/taiko](osu/taiko/)** - Autoregressive onset detection for osu!taiko rhythm game chart generation
+- **[osu/taiko](osu/taiko/)** - Autoregressive onset detection for osu!taiko rhythm game chart generation (73.6% HIT, 45+ experiments)
+
