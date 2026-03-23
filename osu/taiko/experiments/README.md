@@ -57,8 +57,7 @@ Each folder contains a README with hypothesis, results, and key graphs.
 | 41 | [Deep Entropy Analysis](experiment_41/) | **Key insight** | Skip 0=93.7% HIT, skip 1+=0% (11.2% of samples). Underpred=46.5% HIT (19.3%). Context helps (r=-0.21). Fixing skip-1 → ~83% HIT |
 | 41-B | [Entropy Progression](experiment_41b/) | Skip rate structural | Entropy/confidence improve with training but overpred rate stuck at ~28%, skip-1 at ~11%. Can't train away — need context or inference fix |
 | 42 | [Event Embedding Detector](experiment_42/) | **New ATH 73.2%** | Deepest context (metronome 25.4%). HIT +1.6pp vs 35-C. But entropy unchanged — improvements on easy cases only. Skip-1 still 11% |
-| 42-AR | [Human Evaluation](experiment_42ar/) | Pending | Blind A/B/C test: 10 people rank AR-generated charts from exp 14, 35-C, 42. Which model sounds best in practice? |
-| 42-AR | [Human Evaluation](experiment_42ar/) | Pending | Blind A/B/C test: 10 people rank AR-generated charts from exp 14, 35-C, 42. Self-rankings complete, awaiting evaluators |
+| 42-AR | [Human Evaluation](experiment_42ar/) | Epic Fail | Blind A/B/C test: 10 people rank AR-generated charts from exp 14, 35-C, 42. Which model sounds best in practice?, T'was 14 |
 | 42-B | [Pure Hard CE](experiment_42b/) | **Entropy -45%** | hard_alpha=1.0 slashes entropy (2.39→1.32) and flattens distance correlation (+0.58→+0.36). But HIT -4.5pp and skip rate +2.1pp. Confidence ≠ accuracy |
 | 43 | [AR-Resilient Training](experiment_43/) | Backfired | ~43% context corruption rate → model distrusts context (-0.4% delta), metronomes from step 0 (11 unique preds). Worse on both per-sample (-3.7pp) and AR. Augmentation must be much gentler |
 | 44 | [Gentle AR Augmentation](experiment_44/) | Pending | ~14% context corruption (down from 43%). Partial metronome (half only), no blanking, no full replacement. Distort don't destroy |
