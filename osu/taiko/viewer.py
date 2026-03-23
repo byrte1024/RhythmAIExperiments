@@ -425,19 +425,15 @@ class Viewer:
 
         # Candidate history: list of [cursor_bin, chosen_bin, [[bin, raw, final], ...]]
         self.candidate_data = None
-        self._cand_by_event = {}  # event_bin → candidate list for quick lookup
+        self._cand_by_cursor = {}  # cursor_bin → (chosen, abs_candidates) for quick lookup
         if candidates_json_path and os.path.exists(candidates_json_path):
             with open(candidates_json_path, "r", encoding="utf-8") as f:
                 self.candidate_data = json.load(f)
-            # build lookup: for each prediction, the event_bin = cursor + chosen
             for entry in self.candidate_data:
                 cursor_bin, chosen, cands = entry
-                if chosen < 500:  # not STOP
-                    event_bin = cursor_bin + chosen
-                    # store candidates as absolute bin positions with confidences
-                    abs_cands = [(cursor_bin + c[0], c[1], c[2]) for c in cands]
-                    self._cand_by_event[event_bin] = abs_cands
-            print(f"Loaded candidate history: {len(self.candidate_data)} predictions, {len(self._cand_by_event)} events")
+                abs_cands = [(cursor_bin + c[0], c[1], c[2]) for c in cands]
+                self._cand_by_cursor[cursor_bin] = (chosen, abs_cands)
+            print(f"Loaded candidate history: {len(self.candidate_data)} predictions, {len(self._cand_by_cursor)} cursor points")
 
         # Beat-synced GIF
         self.gif_player = None
@@ -879,7 +875,7 @@ class Viewer:
         self._draw_notes(self.onsets, cy)
 
         # Draw ghost notes above main notes (alternative candidates)
-        if self._cand_by_event:
+        if self._cand_by_cursor:
             self._draw_ghost_candidates(PLAYFIELD_TOP + 20)
 
         # Note count near hit line
@@ -888,34 +884,37 @@ class Viewer:
         counter = self.font_small.render(f"{passed}/{total}", True, DIM_TEXT)
         self.screen.blit(counter, (HIT_X - counter.get_width() // 2, PLAYFIELD_TOP + PLAYFIELD_H - 18))
 
-    def _draw_ghost_candidates(self, cy):
-        """Draw ghost notes for the next prediction's alternative candidates only."""
-        # find the next event after cursor (same logic as candidate bars)
+    def _find_next_prediction(self):
+        """Find the next prediction cursor point after playback cursor."""
         cursor_bin = int(self.now_ms / MEL_BIN_MS)
-        best_event = None
+        best_cursor = None
         best_dist = float('inf')
-        for event_bin in self._cand_by_event:
-            dist = event_bin - cursor_bin
+        for pred_cursor in self._cand_by_cursor:
+            dist = pred_cursor - cursor_bin
             if 0 <= dist < best_dist:
                 best_dist = dist
-                best_event = event_bin
+                best_cursor = pred_cursor
+        if best_cursor is None:
+            return None, None, None
+        chosen, cands = self._cand_by_cursor[best_cursor]
+        return best_cursor, chosen, cands
 
-        if best_event is None:
+    def _draw_ghost_candidates(self, cy):
+        """Draw ghost notes for the next prediction's alternative candidates only."""
+        pred_cursor, chosen, cands = self._find_next_prediction()
+        if cands is None or not cands:
             return
-
-        cands = self._cand_by_event[best_event]
-        if not cands:
-            return
-
-        # find the main note's x position
-        event_ms = best_event * MEL_BIN_MS
-        event_x = HIT_X + (event_ms - self.now_ms) * SCROLL_SPEED * self.zoom
 
         total_conf = sum(c[2] for c in cands) or 1.0
+        # find chosen event's x position
+        chosen_bin = pred_cursor + chosen if chosen < 500 else pred_cursor
+        chosen_ms = chosen_bin * MEL_BIN_MS
+        chosen_x = HIT_X + (chosen_ms - self.now_ms) * SCROLL_SPEED * self.zoom
+
         for cand_bin, raw_conf, final_conf in cands:
             cand_ms = cand_bin * MEL_BIN_MS
             cand_x = HIT_X + (cand_ms - self.now_ms) * SCROLL_SPEED * self.zoom
-            if abs(cand_x - event_x) < 3:  # skip the chosen one
+            if abs(cand_x - chosen_x) < 3:  # skip the chosen one
                 continue
             if cand_x < -40 or cand_x > self.w + 40:
                 continue
@@ -1287,35 +1286,21 @@ class Viewer:
 
     def _draw_candidate_bars(self, x, y, max_w):
         """Draw horizontal confidence bars for the nearest prediction's candidates."""
-        # find the event closest to (but after) cursor
-        cursor_bin = int(self.now_ms / MEL_BIN_MS)
-        best_event = None
-        best_dist = float('inf')
-        for event_bin in self._cand_by_event:
-            dist = event_bin - cursor_bin
-            if 0 <= dist < best_dist:
-                best_dist = dist
-                best_event = event_bin
-
-        if best_event is None:
-            return
-
-        cands = self._cand_by_event[best_event]
-        if not cands:
+        pred_cursor, chosen, cands = self._find_next_prediction()
+        if cands is None or not cands:
             return
 
         label = self.font_small.render("Next candidates:", True, DIM_TEXT)
         self.screen.blit(label, (x, y))
         y += 14
 
+        chosen_bin = pred_cursor + chosen if chosen < 500 else None
         total_conf = sum(c[2] for c in cands) or 1.0
         bar_h = 6
         for i, (cand_bin, raw_conf, final_conf) in enumerate(cands[:5]):
-            if i > 4:
-                break
             pct = final_conf / total_conf
             bar_w = max(2, int(pct * max_w))
-            is_chosen = (cand_bin == best_event)
+            is_chosen = chosen_bin is not None and abs(cand_bin - chosen_bin) < 3
             color = (100, 220, 100) if is_chosen else (180, 120, 255)
             pygame.draw.rect(self.screen, color, (x, y, bar_w, bar_h))
 
@@ -1392,7 +1377,7 @@ class Viewer:
             text("Metronome:", met_str, color=met_color)
 
         # Candidate confidence bars for the next prediction near cursor
-        if self._cand_by_event:
+        if self._cand_by_cursor:
             self._draw_candidate_bars(col_x, y, panel_w // 2 - 24)
             y += 50
 

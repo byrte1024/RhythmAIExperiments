@@ -43,8 +43,23 @@ python detection_train.py taiko_v2 --run-name detect_experiment_45 --model-type 
 
 ## Result
 
-*Pending*
+**Stopped at eval 8. No meaningful improvement over exp 44.**
+
+| Metric | Exp 45 (eval 8) | Exp 44 (eval 8) | Exp 44 ATH (eval 19) |
+|---|---|---|---|
+| HIT | 71.9% | 72.5% | 73.6% |
+| MISS | 27.5% | 27.0% | 25.9% |
+| Ctx delta | 7.6pp | 7.5pp | 5.6pp |
+| AR step0 | 73.5% | 75.4% | 76.7% |
+| Metronome | 44.8% | 40.0% | 42.9% |
+| Adv metronome | 49.7% | 50.2% | 50.1% |
+| Random density | 32.3% | ~37% | 40.7% |
+| Zero density | 29.1% | ~24% | 36.8% |
+
+Consistently ~0.6pp behind exp 44 on HIT. Small differences in metronome benchmarks are noise. Random density dropped (32.3% vs exp 44's ~37%) confirming the model relied more on density, but this didn't translate to better accuracy.
 
 ## Lesson
 
-*Pending*
+- **Gap ratio features don't help.** The model can already infer rhythm acceleration/deceleration from raw gap sequences via attention. Making it explicit adds parameters but no signal. The feared risk (ratio features reinforcing metronome) didn't materialize either — metronome benchmarks were similar.
+- **Tighter density conditioning doesn't help.** Reducing jitter from ±10%@30% to ±2%@10% made the model trust density more (lower random_density score) but didn't improve accuracy. The model was already using density effectively with the original jitter.
+- **Neither change was harmful, just useless.** No regression, no improvement — pure noise. Exp 44's architecture and augmentation remain the best configuration.

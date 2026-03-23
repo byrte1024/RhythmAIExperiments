@@ -74,24 +74,26 @@ def _compute_top_u(probs, max_u=5, tolerance=0.05):
     """Cluster predictions within tolerance, return top-U as (bin, confidence) list."""
     n_classes = len(probs) - 1  # exclude STOP
     order = np.argsort(probs[:n_classes])[::-1]
-    clusters = []  # [rep_bin, total_conf, weighted_sum]
+    clusters = []  # [centroid, total_conf, weighted_sum]
     for cls in order:
         conf = probs[cls]
         if conf < 1e-6:
             break
         matched = False
         for c in clusters:
-            if c[0] > 0 and abs(cls - c[0]) / c[0] <= tolerance:
+            centroid = c[2] / c[1]  # live centroid
+            if centroid > 0 and abs(cls - centroid) / centroid <= tolerance:
                 c[1] += conf
                 c[2] += conf * cls
+                c[0] = c[2] / c[1]  # update centroid
                 matched = True
                 break
         if not matched:
-            clusters.append([cls, conf, conf * cls])
+            clusters.append([float(cls), conf, conf * cls])
         if len(clusters) >= max_u * 3:
             break
     clusters.sort(key=lambda c: c[1], reverse=True)
-    return [(int(round(c[2] / c[1])), c[1]) for c in clusters[:max_u]]
+    return [(int(round(c[0])), c[1]) for c in clusters[:max_u]]
 
 
 def _sample_from_candidates(candidates, confs, temperature, rng):
@@ -108,11 +110,13 @@ def _sample_from_candidates(candidates, confs, temperature, rng):
 
 
 def run_inference(model, mel, conditioning, device, hop_bins=20, max_events=10000,
-                  threshold=None, sample_cfg=None):
+                  threshold=None, sample_cfg=None, addall_cfg=None):
     """Autoregressive inference: predict events one at a time.
 
     sample_cfg: optional dict with keys {seed, mode, temperature, topx} for
                 temperature sampling. If None, uses argmax.
+    addall_cfg: optional dict with keys {mode, topx, min_conf, topu_range} for
+                adding all candidates above threshold. Not compatible with sample_cfg.
 
     Returns (events, run_stats) where run_stats has detailed inference metrics.
     """
@@ -182,7 +186,7 @@ def run_inference(model, mel, conditioning, device, hop_bins=20, max_events=1000
                 pred = N_CLASSES - 1  # no onset → hop forward
             else:
                 pred = int(above[0])
-        elif sample_cfg and rng is not None:
+        elif sample_cfg:
             # temperature sampling from Top-K or Top-U candidates
             prob = torch.softmax(logits, dim=-1).squeeze(0).detach().cpu().numpy()
             topx = sample_cfg["topx"]
@@ -192,7 +196,7 @@ def run_inference(model, mel, conditioning, device, hop_bins=20, max_events=1000
             min_conf = sample_cfg.get("min_conf", 0.0)
 
             if sample_cfg["mode"] == "U":
-                clusters = _compute_top_u(prob, max_u=max_u, tolerance=0.05)
+                clusters = _compute_top_u(prob, max_u=max_u, tolerance=sample_cfg.get("topu_range", 0.05))
                 cand_bins = [c[0] for c in clusters]
                 cand_confs = [c[1] for c in clusters]
             else:  # mode == "K"
@@ -292,8 +296,11 @@ def run_inference(model, mel, conditioning, device, hop_bins=20, max_events=1000
             stop_conf = prob[N_CLASSES - 1]
             if len(cand_confs) == 0 or stop_conf > max(cand_confs):
                 pred = N_CLASSES - 1
-            else:
+            elif rng is not None:
                 pred = _sample_from_candidates(cand_bins, cand_confs, temp, rng)
+            else:
+                # argmax of weighted candidates
+                pred = cand_bins[np.argmax(cand_confs)]
 
             # save candidate info for viewer
             cands = []
@@ -302,8 +309,110 @@ def run_inference(model, mel, conditioning, device, hop_bins=20, max_events=1000
                 final = cand_confs[ci] if ci < len(cand_confs) else 0.0
                 cands.append((cand_bins[ci], float(raw), float(final)))
             candidate_history.append((cursor, pred, cands))
+        elif addall_cfg:
+            # addall mode: add ALL candidates above threshold as events
+            prob = torch.softmax(logits, dim=-1).squeeze(0).detach().cpu().numpy()
+            topx = addall_cfg["topx"]
+            max_u = topx if topx > 0 else 50
+            min_conf = addall_cfg.get("min_conf", 0.0)
+            topu_range = addall_cfg.get("topu_range", 0.05)
+
+            # apply metronome suppression to raw probs BEFORE clustering
+            met_suppress_w = addall_cfg.get("metronome_suppress_weight", 0.0)
+            if met_suppress_w > 0 and len(event_offsets) >= 3:
+                bins_window = int(addall_cfg.get("metronome_window_ms", 2000) / BIN_MS)
+                recent_gaps = []
+                for g in reversed(event_offsets):
+                    recent_gaps.append(g)
+                    if sum(recent_gaps) >= bins_window:
+                        break
+                if len(recent_gaps) >= 3:
+                    recent_gaps_arr = np.array(recent_gaps, dtype=np.float64)
+                    recent_gaps_arr = recent_gaps_arr[recent_gaps_arr > 0]
+                    if len(recent_gaps_arr) >= 3:
+                        sorted_gaps = np.sort(recent_gaps_arr)
+                        clusters_g = []
+                        cluster_vals = [sorted_gaps[0]]
+                        for gi in range(1, len(sorted_gaps)):
+                            centroid = np.mean(cluster_vals)
+                            if centroid > 0 and abs(sorted_gaps[gi] - centroid) / centroid <= 0.05:
+                                cluster_vals.append(sorted_gaps[gi])
+                            else:
+                                clusters_g.append((np.mean(cluster_vals), len(cluster_vals)))
+                                cluster_vals = [sorted_gaps[gi]]
+                        clusters_g.append((np.mean(cluster_vals), len(cluster_vals)))
+                        clusters_g.sort(key=lambda x: x[1], reverse=True)
+                        dominant_gap = clusters_g[0][0]
+
+                        halflife = max(addall_cfg.get("metronome_halflife", 20.0), 0.1)
+                        met_mode = addall_cfg.get("metronome_mode", "frame")
+                        if met_mode == "pp":
+                            n_outside = sum(1 for g in recent_gaps_arr
+                                            if dominant_gap <= 0 or abs(g - dominant_gap) / dominant_gap > 0.05)
+                            outside_pct = n_outside / len(recent_gaps_arr) * 100
+                            closeness = 2.0 ** (-outside_pct / halflife)
+                        else:
+                            avg_gap = recent_gaps_arr.mean()
+                            distance = abs(avg_gap - dominant_gap)
+                            closeness = 2.0 ** (-distance / halflife)
+
+                        # suppress bins near dominant gap in raw probs
+                        suppress_strength = max(closeness * met_suppress_w, 1.0)
+                        dom_int = int(round(dominant_gap))
+                        radius = max(1, int(dominant_gap * 0.05))
+                        lo = max(0, dom_int - radius)
+                        hi = min(N_CLASSES - 1, dom_int + radius + 1)
+                        prob[lo:hi] /= suppress_strength
+
+            if addall_cfg["mode"] == "U":
+                clusters = _compute_top_u(prob, max_u=max_u, tolerance=topu_range)
+                cand_bins = [c[0] for c in clusters]
+                cand_confs = [c[1] for c in clusters]
+            else:
+                topk_idx = np.argsort(prob[:N_CLASSES - 1])[::-1][:max_u]
+                cand_bins = topk_idx.tolist()
+                cand_confs = prob[topk_idx].tolist()
+
+            # save ALL candidates for viewer (before min-conf filter)
+            stop_conf = prob[N_CLASSES - 1]
+            cands_addall = [(b, float(c), float(c)) for b, c in zip(cand_bins, cand_confs)]
+
+            # filter by min confidence (only affects which become events)
+            if min_conf > 0 and len(cand_confs) > 0:
+                total_conf = sum(cand_confs)
+                if total_conf > 0:
+                    filtered = [(b, c) for b, c in zip(cand_bins, cand_confs)
+                                if c / total_conf >= min_conf]
+                    if filtered:
+                        cand_bins = [f[0] for f in filtered]
+                        cand_confs = [f[1] for f in filtered]
+            # if STOP dominates all candidates, treat as STOP
+            if len(cand_confs) == 0 or stop_conf > max(cand_confs):
+                pred = N_CLASSES - 1
+                candidate_history.append((cursor, pred, cands_addall))
+            else:
+                # add all candidates as events, advance cursor to the furthest
+                added = sorted(set(cand_bins))
+                added = [b for b in added if b > 0 and b < N_CLASSES - 1]
+                if added:
+                    for b in added:
+                        event_bin = cursor + b
+                        events.append(event_bin)
+                        event_offsets.append(b)
+                    candidate_history.append((cursor, added[-1], cands_addall))
+                    cursor = cursor + max(added)
+                    cursor_history.append((total_calls, cursor, added[-1]))
+                    continue
+                else:
+                    pred = N_CLASSES - 1
+                    candidate_history.append((cursor, pred, cands_addall))
         else:
+            # plain argmax — still save top candidates for viewer
             pred = logits.argmax(dim=1).item()
+            prob = torch.softmax(logits, dim=-1).squeeze(0).detach().cpu().numpy()
+            top_u = _compute_top_u(prob, max_u=5, tolerance=0.05)
+            cands = [(b, float(c), float(c)) for b, c in top_u]
+            candidate_history.append((cursor, pred, cands))
 
         cursor_history.append((total_calls, cursor, pred))
 
@@ -839,6 +948,8 @@ def main():
     parser.add_argument("--metronome-window", type=float, default=2.0, help="Metronome lookback window in seconds (default: 2.0)")
     parser.add_argument("--metronome-mode", default="frame", choices=["frame", "pp"], help="Closeness metric: frame=bin distance avg-to-peak, pp=percentage of gaps outside peak's 5%% radius (default: frame)")
     parser.add_argument("--metronome-applymode", default="temp", choices=["temp", "suppress", "both"], help="How to apply metronome detection: temp=multiply temperature, suppress=downweight candidates near dominant gap, both=suppress+temp (default: temp)")
+    parser.add_argument("--addall", action="store_true", default=False, help="Add ALL candidates above threshold as events (not compatible with --random-seed)")
+    parser.add_argument("--topu-range", type=float, default=0.05, help="Top-U merge tolerance (default: 0.05 = 5%%)")
     parser.add_argument("--andlaunch", action="store_true", help="Launch viewer after inference")
     parser.add_argument("--gif", default=None, help="Path to GIF for beat-synced animation in viewer")
     parser.add_argument("--gif-cycles", type=int, default=1, help="Events per full GIF cycle (default: 1)")
@@ -1073,14 +1184,16 @@ def main():
         hop_bins = max(1, int(args.hop_ms / BIN_MS))
         print(f"  STOP hop: {args.hop_ms}ms = {hop_bins} bins")
         sample_cfg = None
-        if args.random_seed is not None:
-            # parse metronome weight: single value or "suppress,temp" for both mode
-            met_w_str = args.metronome_weight
-            if "," in met_w_str:
-                met_suppress_w, met_temp_w = [float(x) for x in met_w_str.split(",", 1)]
-            else:
-                met_suppress_w = met_temp_w = float(met_w_str)
+        # build sample_cfg if any weighting/sampling features are enabled
+        met_w_str = args.metronome_weight
+        if "," in met_w_str:
+            met_suppress_w, met_temp_w = [float(x) for x in met_w_str.split(",", 1)]
+        else:
+            met_suppress_w = met_temp_w = float(met_w_str)
 
+        has_weighting = (args.near_weight > 0 or met_suppress_w > 0 or met_temp_w > 0
+                         or args.random_seed is not None)
+        if has_weighting:
             sample_cfg = {
                 "seed": args.random_seed,
                 "mode": args.random_mode,
@@ -1088,6 +1201,7 @@ def main():
                 "topx": args.topx,
                 "near_weight": args.near_weight,
                 "min_conf": args.min_conf,
+                "topu_range": args.topu_range,
                 "metronome_suppress_weight": met_suppress_w,
                 "metronome_temp_weight": met_temp_w,
                 "metronome_halflife": args.metronome_halflife,
@@ -1095,9 +1209,30 @@ def main():
                 "metronome_mode": args.metronome_mode,
                 "metronome_applymode": args.metronome_applymode,
             }
-            print(f"  Sampling: mode={args.random_mode} T={args.temperature} top={args.topx} near={args.near_weight} met_w={met_w_str} met_hl={args.metronome_halflife} met_mode={args.metronome_mode} met_apply={args.metronome_applymode} seed={args.random_seed}")
+            if args.random_seed is not None:
+                print(f"  Sampling: mode={args.random_mode} T={args.temperature} top={args.topx} near={args.near_weight} met_w={met_w_str} met_hl={args.metronome_halflife} met_mode={args.metronome_mode} met_apply={args.metronome_applymode} seed={args.random_seed}")
+            else:
+                print(f"  Weighted argmax: mode={args.random_mode} top={args.topx} near={args.near_weight} met_w={met_w_str} met_hl={args.metronome_halflife} met_mode={args.metronome_mode} met_apply={args.metronome_applymode}")
+
+        addall_cfg = None
+        if args.addall:
+            if args.random_seed is not None:
+                print("  WARNING: --addall is not compatible with --random-seed, ignoring --random-seed")
+                sample_cfg = None
+            addall_cfg = {
+                "mode": args.random_mode,
+                "topx": args.topx,
+                "min_conf": args.min_conf,
+                "topu_range": args.topu_range,
+                "metronome_suppress_weight": met_suppress_w,
+                "metronome_halflife": args.metronome_halflife,
+                "metronome_window_ms": args.metronome_window * 1000,
+                "metronome_mode": args.metronome_mode,
+            }
+            print(f"  AddAll: mode={args.random_mode} top={args.topx} min_conf={args.min_conf} topu_range={args.topu_range} met_suppress={met_suppress_w}")
+
         events, run_stats = run_inference(model, mel, conditioning, args.device, hop_bins=hop_bins,
-                                          sample_cfg=sample_cfg)
+                                          sample_cfg=sample_cfg, addall_cfg=addall_cfg)
     print(f"  Predicted {len(events)} events ({len(events) / duration:.1f}/s)")
 
     # Add extra info to stats
