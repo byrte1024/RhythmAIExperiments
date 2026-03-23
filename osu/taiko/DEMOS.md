@@ -9,7 +9,16 @@ python detection_inference.py --checkpoint runs/detect_experiment_45/checkpoints
 
 ## Examples
 
-[![Demo 1](https://img.youtube.com/vi/Ts8scggP44o/0.jpg)](https://youtu.be/Ts8scggP44o)
-[![Demo 2](https://img.youtube.com/vi/7WhiCzUbP7A/0.jpg)](https://youtu.be/7WhiCzUbP7A)
-[![Demo 3](https://img.youtube.com/vi/11H6EizY1L0/0.jpg)](https://youtu.be/11H6EizY1L0)
+### I Can’t Fix You
+[![Demo 1](https://img.youtube.com/vi/11H6EizY1L0/0.jpg)](https://youtu.be/11H6EizY1L0)
+
+### Comment te dire adieu
+[![Demo 2](https://img.youtube.com/vi/ibq_yx8fuMs/0.jpg)](https://youtu.be/ibq_yx8fuMs)
+
+### Q & A (levia remix)
+[![Demo 3](https://img.youtube.com/vi/Ts8scggP44o/0.jpg)](https://youtu.be/Ts8scggP44o)
+
+### わちゃわちゃGo!Go!
 [![Demo 4](https://img.youtube.com/vi/QGmC9X0yvzk/0.jpg)](https://youtu.be/QGmC9X0yvzk)
+
+
