@@ -81,6 +81,7 @@ def parse_args():
     parser.add_argument("--mel-npy", default=None, help="Mel spectrogram .npy file")
     parser.add_argument("--wave-npy", default=None, help="Waveform envelope .npy file")
     parser.add_argument("--sampling-npy", default=None, help="Sampling timeline .npy file (temperature + metronome)")
+    parser.add_argument("--candidates-json", default=None, help="Candidate history JSON (per-prediction candidates)")
     parser.add_argument("--render", default=None, help="Render to video file (e.g. output.mp4) instead of interactive mode")
     parser.add_argument("--render-fps", type=int, default=60, help="Video FPS for render mode (default 60)")
     return parser.parse_args()
@@ -320,7 +321,7 @@ def _get_mel_colormap():
 class Viewer:
     def __init__(self, csv_path, audio_override=None, compare_csv=None,
                  stats_json_path=None, mel_npy_path=None, wave_npy_path=None,
-                 sampling_npy_path=None):
+                 sampling_npy_path=None, candidates_json_path=None):
         self.csv_path = csv_path
         audio_name, self.onsets = load_csv(csv_path)
         self.stats = compute_level_stats(self.onsets)
@@ -356,6 +357,22 @@ class Viewer:
             if sampling_npy_path and os.path.exists(sampling_npy_path):
                 self.sampling_data = np.load(sampling_npy_path)
                 print(f"Loaded sampling timeline: {self.sampling_data.shape}")
+
+        # Candidate history: list of [cursor_bin, chosen_bin, [[bin, raw, final], ...]]
+        self.candidate_data = None
+        self._cand_by_event = {}  # event_bin → candidate list for quick lookup
+        if candidates_json_path and os.path.exists(candidates_json_path):
+            with open(candidates_json_path, "r", encoding="utf-8") as f:
+                self.candidate_data = json.load(f)
+            # build lookup: for each prediction, the event_bin = cursor + chosen
+            for entry in self.candidate_data:
+                cursor_bin, chosen, cands = entry
+                if chosen < 500:  # not STOP
+                    event_bin = cursor_bin + chosen
+                    # store candidates as absolute bin positions with confidences
+                    abs_cands = [(cursor_bin + c[0], c[1], c[2]) for c in cands]
+                    self._cand_by_event[event_bin] = abs_cands
+            print(f"Loaded candidate history: {len(self.candidate_data)} predictions, {len(self._cand_by_event)} events")
 
         # Audio
         self.audio_path = audio_override or find_audio(audio_name)
@@ -781,11 +798,56 @@ class Viewer:
         # Draw main notes
         self._draw_notes(self.onsets, cy)
 
+        # Draw ghost notes above main notes (alternative candidates)
+        if self._cand_by_event:
+            self._draw_ghost_candidates(PLAYFIELD_TOP + 20)
+
         # Note count near hit line
         passed = self.next_hit
         total = len(self.onsets)
         counter = self.font_small.render(f"{passed}/{total}", True, DIM_TEXT)
         self.screen.blit(counter, (HIT_X - counter.get_width() // 2, PLAYFIELD_TOP + PLAYFIELD_H - 18))
+
+    def _draw_ghost_candidates(self, cy):
+        """Draw ghost notes for the next prediction's alternative candidates only."""
+        # find the next event after cursor (same logic as candidate bars)
+        cursor_bin = int(self.now_ms / MEL_BIN_MS)
+        best_event = None
+        best_dist = float('inf')
+        for event_bin in self._cand_by_event:
+            dist = event_bin - cursor_bin
+            if 0 <= dist < best_dist:
+                best_dist = dist
+                best_event = event_bin
+
+        if best_event is None:
+            return
+
+        cands = self._cand_by_event[best_event]
+        if not cands:
+            return
+
+        # find the main note's x position
+        event_ms = best_event * MEL_BIN_MS
+        event_x = HIT_X + (event_ms - self.now_ms) * SCROLL_SPEED * self.zoom
+
+        total_conf = sum(c[2] for c in cands) or 1.0
+        for cand_bin, raw_conf, final_conf in cands:
+            cand_ms = cand_bin * MEL_BIN_MS
+            cand_x = HIT_X + (cand_ms - self.now_ms) * SCROLL_SPEED * self.zoom
+            if abs(cand_x - event_x) < 3:  # skip the chosen one
+                continue
+            if cand_x < -40 or cand_x > self.w + 40:
+                continue
+
+            # size based on confidence, constant opacity
+            pct = final_conf / total_conf
+            size = max(4, int(12 * pct * len(cands)))
+
+            ghost_surf = pygame.Surface((size * 2, size * 2), pygame.SRCALPHA)
+            pygame.draw.circle(ghost_surf, (220, 170, 255, 200), (size, size), size)
+            pygame.draw.circle(ghost_surf, (255, 220, 255, 220), (size, size), size, 1)
+            self.screen.blit(ghost_surf, (int(cand_x) - size, cy - size))
 
     def _draw_notes(self, onsets, cy, alpha_mod=1.0, outline_only=False):
         """Draw note circles on the playfield."""
@@ -1143,6 +1205,45 @@ class Viewer:
 
         return f"{in_peak_pct:.0f}% in peak ({dominant_gap:.0f}ms / {dominant_bpm:.0f}BPM)  {len(gaps)} gaps  {len(clusters)} clusters", color
 
+    def _draw_candidate_bars(self, x, y, max_w):
+        """Draw horizontal confidence bars for the nearest prediction's candidates."""
+        # find the event closest to (but after) cursor
+        cursor_bin = int(self.now_ms / MEL_BIN_MS)
+        best_event = None
+        best_dist = float('inf')
+        for event_bin in self._cand_by_event:
+            dist = event_bin - cursor_bin
+            if 0 <= dist < best_dist:
+                best_dist = dist
+                best_event = event_bin
+
+        if best_event is None:
+            return
+
+        cands = self._cand_by_event[best_event]
+        if not cands:
+            return
+
+        label = self.font_small.render("Next candidates:", True, DIM_TEXT)
+        self.screen.blit(label, (x, y))
+        y += 14
+
+        total_conf = sum(c[2] for c in cands) or 1.0
+        bar_h = 6
+        for i, (cand_bin, raw_conf, final_conf) in enumerate(cands[:5]):
+            if i > 4:
+                break
+            pct = final_conf / total_conf
+            bar_w = max(2, int(pct * max_w))
+            is_chosen = (cand_bin == best_event)
+            color = (100, 220, 100) if is_chosen else (180, 120, 255)
+            pygame.draw.rect(self.screen, color, (x, y, bar_w, bar_h))
+
+            cand_ms = cand_bin * MEL_BIN_MS
+            lbl = self.font_small.render(f"{cand_ms:.0f}ms {pct*100:.0f}%", True, TEXT_COLOR)
+            self.screen.blit(lbl, (x + bar_w + 4, y - 2))
+            y += bar_h + 2
+
     def _draw_stats_panel(self, y_start):
         """Statistics panel at the bottom."""
         panel_x = 10
@@ -1209,6 +1310,11 @@ class Viewer:
         met_str, met_color = self._compute_local_metronome()
         if met_str:
             text("Metronome:", met_str, color=met_color)
+
+        # Candidate confidence bars for the next prediction near cursor
+        if self._cand_by_event:
+            self._draw_candidate_bars(col_x, y, panel_w // 2 - 24)
+            y += 50
 
         # --- Column 2: Inference stats (if available) ---
         col2_x = panel_x + panel_w // 2
@@ -1612,7 +1718,8 @@ def main():
                         stats_json_path=args.stats_json,
                         mel_npy_path=getattr(args, 'mel_npy', None),
                         wave_npy_path=getattr(args, 'wave_npy', None),
-                        sampling_npy_path=getattr(args, 'sampling_npy', None))
+                        sampling_npy_path=getattr(args, 'sampling_npy', None),
+                        candidates_json_path=getattr(args, 'candidates_json', None))
         viewer.render_video(args.render, fps=args.render_fps)
         pygame.quit()
     else:
@@ -1620,7 +1727,8 @@ def main():
                         stats_json_path=args.stats_json,
                         mel_npy_path=getattr(args, 'mel_npy', None),
                         wave_npy_path=getattr(args, 'wave_npy', None),
-                        sampling_npy_path=getattr(args, 'sampling_npy', None))
+                        sampling_npy_path=getattr(args, 'sampling_npy', None),
+                        candidates_json_path=getattr(args, 'candidates_json', None))
         viewer.run()
 
 
