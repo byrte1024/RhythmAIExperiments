@@ -201,46 +201,27 @@ def main():
         "-shortest", args.output,
     ], stdin=subprocess.PIPE)
 
-    for case_i, sample_idx in enumerate(tqdm(selected, desc="Rendering")):
+    for case_i, (sample_idx, cursor_bin, anim_start_ms, anim_end_ms, scroll_frames, pause_frames) in enumerate(tqdm(case_info, desc="Rendering")):
         ci, ei = val_ds.samples[sample_idx]
         chart = val_ds.charts[ci]
         evt = val_ds.events[ci]
 
-        # cursor bin and ms
-        if ei == 0:
-            cursor_bin = max(0, int(evt[0]) - B_BINS)
-        else:
-            cursor_bin = int(evt[ei - 1])
         cursor_ms = cursor_bin * BIN_MS
-
         target_bin = int(targets[sample_idx])
         pred_bin = int(preds[sample_idx])
         score = scores[sample_idx]
 
-        # target/pred in absolute ms
         target_ms = (cursor_bin + target_bin) * BIN_MS
         pred_ms = (cursor_bin + pred_bin) * BIN_MS
 
-        # past events as absolute ms
         past_events_bins = evt[max(0, ei - C_EVENTS):ei].astype(int)
         past_events_ms = past_events_bins * BIN_MS
 
-        # load mel
         mel = np.load(os.path.join(DS_DIR, "mels", chart["mel_file"]), mmap_mode="r")
         total_mel_frames = mel.shape[1]
         mel_min = float(mel.min())
         mel_max = float(mel.max())
         mel_range = max(mel_max - mel_min, 1.0)
-
-        # animation: scroll from 2.5s before cursor to slightly past pred, then pause
-        anim_start_ms = cursor_ms - 2500
-        pred_abs_ms = (cursor_bin + pred_bin) * BIN_MS
-        anim_end_ms = pred_abs_ms + 300  # 300ms past prediction
-        scroll_duration_s = (anim_end_ms - anim_start_ms) / 1000 * 0.8  # 80% speed
-        pause_s = 1.0
-
-        scroll_frames = int(scroll_duration_s * args.fps)
-        pause_frames = int(pause_s * args.fps)
 
         ratio = (pred_bin + 1) / (target_bin + 1) if target_bin > 0 else 0
 
