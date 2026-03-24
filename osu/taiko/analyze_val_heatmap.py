@@ -118,11 +118,12 @@ def main():
     elif has_fusion_layers or has_gap_encoder:
         model = OnsetDetector(
             n_mels=80, d_model=ckpt_args.get("d_model", 384),
-            n_audio_layers=ckpt_args.get("enc_layers", 4),
-            n_gap_layers=ckpt_args.get("gap_enc_layers", 2),
-            n_fusion_layers=ckpt_args.get("fusion_layers", 4),
+            enc_layers=ckpt_args.get("enc_layers", 4),
+            gap_enc_layers=ckpt_args.get("gap_enc_layers", 2),
+            fusion_layers=ckpt_args.get("fusion_layers", 4),
             n_heads=ckpt_args.get("n_heads", 8),
             n_classes=N_CLASSES, max_events=C_EVENTS,
+            snippet_frames=ckpt_args.get("snippet_frames", 10),
         ).to(device)
     elif is_legacy:
         model = LegacyOnsetDetector(
