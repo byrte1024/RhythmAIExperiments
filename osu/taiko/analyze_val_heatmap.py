@@ -192,24 +192,38 @@ def main():
     pixel_scores[:n_used // samples_per_pixel] = scores[:n_used].reshape(-1, samples_per_pixel).mean(axis=1)
     # remaining pixels stay at 0 (black/neutral)
 
-    # color map: -1 = red, 0 = black, +0.67 = green
-    img = np.zeros((n_pixels, 3), dtype=np.uint8)
+    # color map: -1 = red, 0 = black/neutral, +0.67 = green
+    img = np.zeros((n_pixels, 3), dtype=np.float32)
     for i, s in enumerate(pixel_scores):
         if s >= 0:
-            # black to green: 0 → (0,0,0), 0.67 → (0,255,0)
             t = min(s / 0.67, 1.0)
-            img[i] = (0, int(255 * t), 0)
+            img[i] = (0, t, 0)
         else:
-            # black to red: 0 → (0,0,0), -1 → (255,0,0)
             t = min(-s, 1.0)
-            img[i] = (int(255 * t), 0, 0)
+            img[i] = (t, 0, 0)
 
     img = img.reshape(size, size, 3)
-    pil_img = Image.fromarray(img)
+
+    # gaussian blur to smooth out the pattern
+    from scipy.ndimage import gaussian_filter
+    for c in range(3):
+        img[:, :, c] = gaussian_filter(img[:, :, c], sigma=1.5)
+
+    # renormalize after blur
+    img_max = img.max()
+    if img_max > 0:
+        img = img / img_max
+
+    img_uint8 = (img * 255).clip(0, 255).astype(np.uint8)
+    pil_img = Image.fromarray(img_uint8)
+
+    # scale up to 512x512 for visibility
+    if size < 512:
+        pil_img = pil_img.resize((512, 512), Image.NEAREST)
 
     out_path = os.path.join(args.output_dir, f"val_heatmap_{args.label}.png")
     pil_img.save(out_path)
-    print(f"Saved: {out_path} ({size}x{size}, {samples_per_pixel} samples/pixel)")
+    print(f"Saved: {out_path} ({size}x{size} → 512x512, {samples_per_pixel} samples/pixel)")
 
     # save raw data for cross-model analysis
     npy_path = os.path.join(args.output_dir, f"val_scores_{args.label}.npy")
