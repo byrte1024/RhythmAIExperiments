@@ -1256,11 +1256,11 @@ class EventEmbeddingDetector(nn.Module):
         dropout=0.1,
         cond_dim=64,
         gap_ratios=False,
-        binary_stop=False,
+        stop_token=False,
     ):
         super().__init__()
         self.gap_ratios = gap_ratios
-        self.binary_stop = binary_stop
+        self.stop_token = stop_token
         self.n_classes = n_classes
         self.d_model = d_model
         self.max_events = max_events
@@ -1311,18 +1311,20 @@ class EventEmbeddingDetector(nn.Module):
             [FiLM(cond_dim, d_model) for _ in range(n_layers)]
         )
 
+        # STOP query token: learned token appended to sequence, attends to everything
+        if stop_token:
+            self.stop_query = nn.Parameter(torch.randn(1, 1, d_model) * 0.02)
+            self.stop_head = nn.Sequential(
+                nn.LayerNorm(d_model),
+                nn.Linear(d_model, d_model // 4),
+                nn.GELU(),
+                nn.Linear(d_model // 4, 1),
+            )
+
         # output head
         self.head_norm = nn.LayerNorm(d_model)
-        if binary_stop:
-            self.head_proj = nn.Linear(d_model, n_classes - 1)  # 500 onset bins only
-            self.gate_norm = nn.LayerNorm(d_model)
-            self.gate_head = nn.Sequential(
-                nn.Linear(d_model, d_model // 2),
-                nn.GELU(),
-                nn.Linear(d_model // 2, 1),
-            )
-        else:
-            self.head_proj = nn.Linear(d_model, n_classes)
+        onset_classes = n_classes - 1 if stop_token else n_classes
+        self.head_proj = nn.Linear(d_model, onset_classes)
         self.head_smooth = nn.Sequential(
             nn.Conv1d(1, 8, kernel_size=5, padding=2),
             nn.GELU(),
@@ -1438,23 +1440,26 @@ class EventEmbeddingDetector(nn.Module):
             # scatter_add: multiple events may map to the same token
             x[b].scatter_add_(0, tpos.unsqueeze(-1).expand(-1, self.d_model), embs)
 
-        # self-attention over 250 enriched tokens
+        # append STOP query token if enabled
+        if self.stop_token:
+            stop_q = self.stop_query.expand(B, -1, -1)  # (B, 1, d_model)
+            x = torch.cat([x, stop_q], dim=1)  # (B, 251, d_model)
+
+        # self-attention over 250 (or 251) enriched tokens
         for layer, film in zip(self.layers, self.film_layers):
             x = layer(x)
             x = film(x, cond)
 
-        # extract cursor
+        # extract cursor for onset prediction
         cursor = x[:, 125, :]
-        cursor_norm = self.head_norm(cursor)
-
-        logits = self.head_proj(cursor_norm)
+        logits = self.head_proj(self.head_norm(cursor))
         logits = logits + self.head_smooth(logits.unsqueeze(1)).squeeze(1)
 
-        if self.binary_stop:
-            # gate reads forward tokens (126-249): "is there any onset ahead?"
-            forward_pool = x[:, 126:, :].mean(dim=1)  # (B, d_model)
-            gate_logit = self.gate_head(self.gate_norm(forward_pool)).squeeze(-1)  # (B,)
-            return logits, gate_logit
+        if self.stop_token:
+            # extract STOP query token (last position) for stop prediction
+            stop_repr = x[:, -1, :]  # (B, d_model)
+            stop_logit = self.stop_head(stop_repr).squeeze(-1)  # (B,)
+            return logits, stop_logit
 
         return logits
 
