@@ -181,7 +181,7 @@ def run_inference(model, mel, conditioning, device, hop_bins=20, max_events=1000
             logits, gate_logit = output
             # binary stop: check gate first
             gate_prob = torch.sigmoid(gate_logit).item()
-            if gate_prob < 0.5:  # gate says STOP
+            if gate_prob > 0.5:  # gate says STOP (1=stop, 0=onset)
                 pred = N_CLASSES - 1
                 cursor_history.append((total_calls, cursor, pred))
                 stop_count += 1

@@ -854,13 +854,15 @@ def validate_and_collect(model, loader, criterion, device, amp_enabled=False, si
                 output = model(mel, evt_off, evt_mask, cond)
                 if isinstance(output, tuple):
                     logits, gate_logit = output
-                    # binary stop validation: combine losses
+                    # binary stop validation: focal BCE
                     is_stop = (target == N_CLASSES - 1)
-                    gate_target = (~is_stop).float()
-                    gate_loss = F.binary_cross_entropy_with_logits(
-                        gate_logit, gate_target,
-                        pos_weight=torch.tensor(0.01, device=device)
-                    )
+                    gate_target = is_stop.float()  # 1=stop, 0=onset
+                    gate_bce = F.binary_cross_entropy_with_logits(
+                        gate_logit, gate_target, reduction='none')
+                    gate_prob = torch.sigmoid(gate_logit)
+                    p_t = gate_prob * gate_target + (1 - gate_prob) * (1 - gate_target)
+                    focal_weight = (1 - p_t) ** 2.0
+                    gate_loss = (focal_weight * gate_bce).mean()
                     onset_mask = ~is_stop
                     if onset_mask.any():
                         onset_loss = criterion(logits[onset_mask], target[onset_mask])
@@ -869,7 +871,7 @@ def validate_and_collect(model, loader, criterion, device, amp_enabled=False, si
                     loss = onset_loss + 2.0 * gate_loss
                     # pad logits for compat
                     logits = F.pad(logits, (0, 1), value=-10.0)
-                    logits[:, N_CLASSES - 1] = -gate_logit * 5.0
+                    logits[:, N_CLASSES - 1] = gate_logit * 5.0
                 else:
                     logits = output
                     if multi_target:
@@ -968,6 +970,11 @@ def compute_metrics(targets, preds):
     m["stop_precision"] = (tp / (tp + fp)).item() if (tp + fp) > 0 else 0.0
     m["stop_recall"] = (tp / (tp + fn)).item() if (tp + fn) > 0 else 0.0
     m["stop_f1"] = (2 * tp / (2 * tp + fp + fn)).item() if (2 * tp + fp + fn) > 0 else 0.0
+    n_total = len(targets)
+    m["stop_pred_rate"] = ((preds == stop).sum() / n_total).item() if n_total > 0 else 0.0
+    m["stop_target_rate"] = ((targets == stop).sum() / n_total).item() if n_total > 0 else 0.0
+    m["stop_hallucinations"] = int(fp)
+    m["stop_misses"] = int(fn)
 
     # non-stop samples only for frame/relative error
     ns = targets < stop
@@ -3715,12 +3722,15 @@ def train(args):
                         logits, gate_logit = output
                         # binary stop: gate loss + onset loss
                         is_stop = (target == N_CLASSES - 1)
-                        gate_target = (~is_stop).float()  # 1=onset, 0=stop
-                        # BCE with pos_weight to handle imbalance (99.7% onset)
-                        gate_loss = F.binary_cross_entropy_with_logits(
-                            gate_logit, gate_target,
-                            pos_weight=torch.tensor(0.01, device=mel.device)  # heavily weight STOP
-                        )
+                        gate_target = is_stop.float()  # 1=stop, 0=onset
+                        # focal BCE: downweight easy negatives (onsets), focus on rare positives (STOPs)
+                        gate_bce = F.binary_cross_entropy_with_logits(
+                            gate_logit, gate_target, reduction='none')
+                        gate_prob = torch.sigmoid(gate_logit)
+                        # p_t = probability of correct class
+                        p_t = gate_prob * gate_target + (1 - gate_prob) * (1 - gate_target)
+                        focal_weight = (1 - p_t) ** 2.0  # gamma=2
+                        gate_loss = (focal_weight * gate_bce).mean()
                         # onset loss only on non-STOP samples
                         onset_mask = ~is_stop
                         if onset_mask.any():
@@ -3733,8 +3743,8 @@ def train(args):
                         loss = onset_loss + gate_w * gate_loss
                         # pad logits to N_CLASSES for compatibility with metrics
                         logits = F.pad(logits, (0, 1), value=-10.0)  # add STOP column
-                        # override STOP column with gate signal
-                        logits[:, N_CLASSES - 1] = -gate_logit * 5.0  # high gate → low STOP logit
+                        # high gate_logit → STOP, so map directly to STOP logit
+                        logits[:, N_CLASSES - 1] = gate_logit * 5.0
                     else:
                         logits = output
                         if use_multi_target:
@@ -3942,7 +3952,7 @@ def _run_eval(model, val_loader, criterion, args, amp_enabled,
               f"exact={val_metrics.get('exact_match', 0):.1%} ±1f={val_metrics.get('within_1_frame', 0):.1%} "
               f"±2f={val_metrics.get('within_2_frames', 0):.1%} | "
               f"≤3%={val_metrics.get('within_3pct', 0):.1%} ≤10%={val_metrics.get('within_10pct', 0):.1%} | "
-              f"stop_f1={val_metrics['stop_f1']:.3f} | "
+              f"stop_f1={val_metrics['stop_f1']:.3f} p={val_metrics['stop_precision']:.2f} r={val_metrics['stop_recall']:.2f} pred%={val_metrics.get('stop_pred_rate',0):.3f} | "
               f"score={val_metrics.get('model_score', 0):+.3f} | "
               f"uniq={val_metrics.get('unique_preds', 0)} | lr={scheduler.get_last_lr()[0]:.2e}")
 

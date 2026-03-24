@@ -46,8 +46,11 @@ python detection_train.py taiko_v2 --run-name detect_experiment_47 --model-type 
 
 ## Result
 
-*Pending*
+**Stopped at eval 1. Stop rate was 0% — model never predicted STOP.**
+
+Root cause: `pos_weight=0.01` in BCE was backwards. The gate target had 1=onset, 0=stop, so `pos_weight` upweighted the already-dominant onset class 100x, making STOP invisible to the loss. The model learned to always output "onset."
 
 ## Lesson
 
-*Pending*
+- **BCE pos_weight scales the POSITIVE class, not the rare class.** With target 1=onset (99.7%), pos_weight=0.01 made onsets even less important — the opposite of intended.
+- **Fixed in exp 47-B:** Flipped targets (1=stop, 0=onset) and switched to focal BCE (gamma=2) which naturally downweights easy negatives (confident onset predictions) and focuses on the rare positives (STOP boundaries).
