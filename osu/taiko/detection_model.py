@@ -1315,10 +1315,11 @@ class EventEmbeddingDetector(nn.Module):
         self.head_norm = nn.LayerNorm(d_model)
         if binary_stop:
             self.head_proj = nn.Linear(d_model, n_classes - 1)  # 500 onset bins only
+            self.gate_norm = nn.LayerNorm(d_model)
             self.gate_head = nn.Sequential(
-                nn.Linear(d_model, d_model // 4),
+                nn.Linear(d_model, d_model // 2),
                 nn.GELU(),
-                nn.Linear(d_model // 4, 1),
+                nn.Linear(d_model // 2, 1),
             )
         else:
             self.head_proj = nn.Linear(d_model, n_classes)
@@ -1450,7 +1451,9 @@ class EventEmbeddingDetector(nn.Module):
         logits = logits + self.head_smooth(logits.unsqueeze(1)).squeeze(1)
 
         if self.binary_stop:
-            gate_logit = self.gate_head(cursor_norm).squeeze(-1)  # (B,)
+            # gate reads forward tokens (126-249): "is there any onset ahead?"
+            forward_pool = x[:, 126:, :].mean(dim=1)  # (B, d_model)
+            gate_logit = self.gate_head(self.gate_norm(forward_pool)).squeeze(-1)  # (B,)
             return logits, gate_logit
 
         return logits
