@@ -43,8 +43,39 @@ python detection_train.py taiko_v2 --run-name detect_experiment_47e --model-type
 
 ## Result
 
-*Pending*
+**Stopped at eval 4. STOP token works — first successful binary stop architecture after 4 failed attempts (47-47D).**
+
+### Progression
+
+| Metric | Eval 1 | Eval 2 | Eval 4 | Exp 44 eval 4 |
+|---|---|---|---|---|
+| HIT | 66.8% | 67.8% | 70.3% | 72.0% |
+| stop_f1 | 0.377 | 0.464 | 0.469 | 0.520 |
+| stop_precision | 0.240 | 0.330 | 0.338 | ~0.39 |
+| stop_recall | 0.880 | 0.784 | 0.766 | ~0.73 |
+| no_audio_stop | 99.9% | 94.4% | 81.5% | 15.5% |
+| AR step0 | 67.7% | 64.9% | 70.8% | 74.7% |
+
+### What worked
+
+- **Learned STOP query token** participating in all 8 transformer layers — the token builds its own representation through attention, unlike shallow MLP heads that failed in 47-47D
+- **20x STOP sampling boost** — ensures ~7-8 STOP samples per batch (up from 0-1). Without this, most batches had zero STOP gradient
+- **Balanced BCE** — STOP and onset losses averaged separately within each batch to prevent class dilution
+
+### What's still behind
+
+- HIT 70.3% vs exp 44's 72.0% at same eval — onset head trains on ~84% of data (16% is STOP samples). Gap was closing, likely would converge with more training
+- Stop F1 0.469 vs exp 44's 0.520 — precision (34%) still low, too many hallucinated STOPs. Recall (77%) is good
+- no_audio_stop drifting down (99.9% → 81.5%) — still far better than exp 44's 15.5% but trending toward it
+
+### Why stopped
+
+STOP isn't the primary bottleneck right now. Low hop spacing at inference (--hop-ms 10-50) works around poor STOP prediction effectively. The metronome problem and AR cascade are higher priority. This architecture is proven and can be revisited when STOP becomes the bottleneck.
 
 ## Lesson
 
-*Pending*
+- **The STOP query token works.** A learned token in the transformer sequence is the right architecture for binary stop — it gets full attention context and its own gradient path. Shallow MLP heads on frozen features fail.
+- **Data balance was the real blocker.** Every 47-47D variant failed because STOP is 0.3% of data. The 20x sampling boost + balanced BCE were essential — not the architecture.
+- **Onset head entropy appeared worse but was actually fine.** The entropy heatmap looked all-red because STOP token's near-zero entropy stretched the color scale. Actual onset entropy distribution was nearly identical to exp 45.
+- **Onset loss should include STOP samples.** Currently the onset head gets zero gradient on STOP samples — wasted forward passes. Future work: give onset head a "what would the onset be IF there was one" target on STOP samples.
+- **no_audio_stop was solved immediately** (99.9% at eval 1) and stayed high. The STOP token learned "silence = stop" with minimal training. This was stuck at 3-18% for all previous experiments.
