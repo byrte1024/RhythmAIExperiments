@@ -862,7 +862,12 @@ def validate_and_collect(model, loader, criterion, device, amp_enabled=False, si
                     gate_prob = torch.sigmoid(gate_logit)
                     p_t = gate_prob * gate_target + (1 - gate_prob) * (1 - gate_target)
                     focal_weight = (1 - p_t) ** 2.0
-                    gate_loss = (focal_weight * gate_bce).mean()
+                    stop_mask = is_stop
+                    onset_focal = (focal_weight[~stop_mask] * gate_bce[~stop_mask])
+                    stop_focal = (focal_weight[stop_mask] * gate_bce[stop_mask])
+                    gate_loss_onset = onset_focal.mean() if onset_focal.numel() > 0 else torch.tensor(0.0, device=device)
+                    gate_loss_stop = stop_focal.mean() if stop_focal.numel() > 0 else torch.tensor(0.0, device=device)
+                    gate_loss = (gate_loss_onset + gate_loss_stop) / 2.0
                     onset_mask = ~is_stop
                     if onset_mask.any():
                         onset_loss = criterion(logits[onset_mask], target[onset_mask])
@@ -3730,7 +3735,13 @@ def train(args):
                         # p_t = probability of correct class
                         p_t = gate_prob * gate_target + (1 - gate_prob) * (1 - gate_target)
                         focal_weight = (1 - p_t) ** 2.0  # gamma=2
-                        gate_loss = (focal_weight * gate_bce).mean()
+                        # average STOP and onset losses separately to prevent class imbalance
+                        stop_mask = is_stop
+                        onset_focal = (focal_weight[~stop_mask] * gate_bce[~stop_mask])
+                        stop_focal = (focal_weight[stop_mask] * gate_bce[stop_mask])
+                        gate_loss_onset = onset_focal.mean() if onset_focal.numel() > 0 else torch.tensor(0.0, device=mel.device)
+                        gate_loss_stop = stop_focal.mean() if stop_focal.numel() > 0 else torch.tensor(0.0, device=mel.device)
+                        gate_loss = (gate_loss_onset + gate_loss_stop) / 2.0
                         # onset loss only on non-STOP samples
                         onset_mask = ~is_stop
                         if onset_mask.any():
@@ -3819,7 +3830,16 @@ def train(args):
                     b_score = batch_scores.sum().item()
                     train_score_sum += b_score
 
-            recent_buf.append((b_loss_x_bs, b_bs, b_ns, b_hit, b_miss, b_score))
+            b_gate_loss = gate_loss.item() if isinstance(output, tuple) else 0.0
+            b_stop_f1 = 0.0
+            if isinstance(output, tuple):
+                with torch.no_grad():
+                    gate_pred_stop = (torch.sigmoid(gate_logit) > 0.5)
+                    tp = (gate_pred_stop & is_stop).sum().item()
+                    fp = (gate_pred_stop & ~is_stop).sum().item()
+                    fn = (~gate_pred_stop & is_stop).sum().item()
+                    b_stop_f1 = 2*tp / (2*tp + fp + fn) if (2*tp + fp + fn) > 0 else 0.0
+            recent_buf.append((b_loss_x_bs, b_bs, b_ns, b_hit, b_miss, b_score, b_gate_loss, b_stop_f1))
 
             # update bars
             epoch_bar.update(1)
@@ -3840,10 +3860,14 @@ def train(args):
                     r_hit = sum(r[3] for r in recent_buf) / r_ns_sum
                     r_miss = sum(r[4] for r in recent_buf) / r_ns_sum
                     r_score = sum(r[5] for r in recent_buf) / r_ns_sum
+                    r_gate = sum(r[6] for r in recent_buf) / len(recent_buf) if recent_buf else 0
+                    r_sf1 = sum(r[7] for r in recent_buf) / len(recent_buf) if recent_buf else 0
                     stats = (f"L={avg_loss:.3f}|{r_loss:.3f} "
                              f"HIT={hit:.1%}|{r_hit:.1%} "
                              f"miss={miss:.1%}|{r_miss:.1%} "
                              f"score={score:+.3f}|{r_score:+.3f}")
+                    if r_gate > 0:
+                        stats += f" gL={r_gate:.4f} sF1={r_sf1:.2f}"
                 else:
                     stats = f"L={avg_loss:.3f}|{r_loss:.3f}"
                 epoch_bar.set_postfix_str(stats)

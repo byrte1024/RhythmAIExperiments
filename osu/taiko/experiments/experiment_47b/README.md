@@ -24,8 +24,15 @@ python detection_train.py taiko_v2 --run-name detect_experiment_47b --model-type
 
 ## Result
 
-*Pending*
+**Stopped at eval 1. Stop pred rate 0.000% — gate almost never fires.**
+
+Stop F1=0.066, precision=0.93, recall=0.03. The gate is extremely conservative — when it does predict STOP it's right, but it almost never does.
+
+Root cause: focal BCE with `.mean()` reduction. With 99.7% onset samples, the mean is dominated by onset loss. Focal loss correctly downweights easy onsets, but the total gate loss (~0.007) is tiny compared to onset CE loss (~2.5). With gate_weight=2.0, the gate contributes 0.014 to a total of ~2.5 — the optimizer can't see it.
+
+The math confirms focal is working correctly per-sample (STOP gets 2.75x more gradient than onset), but the 300:1 class ratio means STOP's contribution is still invisible after averaging.
 
 ## Lesson
 
-*Pending*
+- **Focal loss helps per-sample but doesn't solve the averaging problem.** With 0.3% STOP, even with focal weighting, the mean loss is dominated by the 99.7% onset class.
+- **Fix for 47-C:** Average STOP and onset focal losses separately, then combine. This ensures STOP loss has equal standing regardless of class ratio.
