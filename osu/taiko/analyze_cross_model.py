@@ -276,6 +276,122 @@ def main():
     except ImportError:
         print("PIL not available, skipping heatmap comparison")
 
+    # === 8. Generate good/bad core heatmaps from score data ===
+    try:
+        from PIL import Image, ImageDraw, ImageFont
+        from scipy.ndimage import gaussian_filter
+
+        def make_core_heatmap(pixel_scores, size, mode="good"):
+            """Generate a good-core or bad-core heatmap image."""
+            n_pixels = len(pixel_scores)
+            img = np.zeros((n_pixels, 3), dtype=np.float32)
+            for i, s in enumerate(pixel_scores):
+                if mode == "good":
+                    t = min(max(s, 0.0) / 0.67, 1.0)
+                    img[i] = (0, t, 0)
+                else:
+                    t = min(max(-s, 0.0), 1.0)
+                    img[i] = (t, 0, 0)
+            img = img.reshape(size, size, 3)
+            for c in range(3):
+                img[:, :, c] = gaussian_filter(img[:, :, c], sigma=1.5)
+            mx = img.max()
+            if mx > 0:
+                img = img / mx
+            return Image.fromarray((img * 255).clip(0, 255).astype(np.uint8))
+
+        for mode in ["good", "bad"]:
+            panels = []
+            for label in labels_loaded:
+                scores = models[label]["scores"]
+                n_s = len(scores)
+                size = min(512, int(np.ceil(np.sqrt(n_s))))
+                n_pix = size * size
+                spp = max(1, n_s // n_pix)
+                n_used = min(n_s, n_pix * spp)
+                pixel_scores = np.zeros(n_pix)
+                pixel_scores[:n_used // spp] = scores[:n_used].reshape(-1, spp).mean(axis=1)
+
+                pil_img = make_core_heatmap(pixel_scores, size, mode=mode)
+                if size < 512:
+                    pil_img = pil_img.resize((512, 512), Image.NEAREST)
+                panels.append((label, pil_img))
+
+            if len(panels) >= 2:
+                w = panels[0][1].width
+                h = panels[0][1].height
+                label_h = 25
+                combined = Image.new("RGB", (w * len(panels), h + label_h), (22, 22, 30))
+                draw = ImageDraw.Draw(combined)
+                try:
+                    font = ImageFont.truetype("consola.ttf", 16)
+                except:
+                    font = ImageFont.load_default()
+                for i, (label, img) in enumerate(panels):
+                    combined.paste(img, (i * w, label_h))
+                    draw.text((i * w + w // 2, 4), label, fill=(200, 200, 210), font=font, anchor="mt")
+                out = os.path.join(args.output_dir, f"compare_{mode}_core.png")
+                combined.save(out)
+                print(f"Saved: {out}")
+
+        # === 9. Animated GIFs cycling through models ===
+        for mode in ["full", "good", "bad"]:
+            frames = []
+            for label in labels_loaded:
+                scores = models[label]["scores"]
+                n_s = len(scores)
+                size = min(512, int(np.ceil(np.sqrt(n_s))))
+                n_pix = size * size
+                spp = max(1, n_s // n_pix)
+                n_used = min(n_s, n_pix * spp)
+                pixel_scores = np.zeros(n_pix)
+                pixel_scores[:n_used // spp] = scores[:n_used].reshape(-1, spp).mean(axis=1)
+
+                if mode == "good":
+                    pil_img = make_core_heatmap(pixel_scores, size, mode="good")
+                elif mode == "bad":
+                    pil_img = make_core_heatmap(pixel_scores, size, mode="bad")
+                else:
+                    # full range
+                    img_f = np.zeros((n_pix, 3), dtype=np.float32)
+                    for i, s in enumerate(pixel_scores):
+                        if s >= 0:
+                            t = min(s / 0.67, 1.0)
+                            img_f[i] = (0, t, 0)
+                        else:
+                            t = min(max(-s, 0.0), 1.0)
+                            img_f[i] = (t, 0, 0)
+                    img_f = img_f.reshape(size, size, 3)
+                    for c in range(3):
+                        img_f[:, :, c] = gaussian_filter(img_f[:, :, c], sigma=1.5)
+                    mx = img_f.max()
+                    if mx > 0:
+                        img_f = img_f / mx
+                    pil_img = Image.fromarray((img_f * 255).clip(0, 255).astype(np.uint8))
+
+                if size < 512:
+                    pil_img = pil_img.resize((512, 512), Image.NEAREST)
+
+                # add label text
+                labeled = Image.new("RGB", (512, 512 + 25), (22, 22, 30))
+                labeled.paste(pil_img, (0, 25))
+                draw_l = ImageDraw.Draw(labeled)
+                try:
+                    font_l = ImageFont.truetype("consola.ttf", 18)
+                except:
+                    font_l = ImageFont.load_default()
+                draw_l.text((256, 4), label, fill=(200, 200, 210), font=font_l, anchor="mt")
+                frames.append(labeled)
+
+            if frames:
+                gif_path = os.path.join(args.output_dir, f"compare_{mode}_animated.gif")
+                frames[0].save(gif_path, save_all=True, append_images=frames[1:],
+                               duration=2000, loop=0)
+                print(f"Saved: {gif_path} ({len(frames)} frames, 2s each)")
+
+    except ImportError:
+        print("PIL/scipy not available, skipping core heatmaps")
+
 
 if __name__ == "__main__":
     main()
