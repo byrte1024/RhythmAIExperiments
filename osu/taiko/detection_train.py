@@ -856,8 +856,14 @@ def validate_and_collect(model, loader, criterion, device, amp_enabled=False, si
                     onset_logits, stop_logit = output
                     is_stop = (target == N_CLASSES - 1)
                     stop_target = is_stop.float()
-                    stop_loss = F.binary_cross_entropy_with_logits(
-                        stop_logit, stop_target, reduction='mean')
+                    stop_bce = F.binary_cross_entropy_with_logits(
+                        stop_logit, stop_target, reduction='none')
+                    if is_stop.any():
+                        stop_loss_pos = stop_bce[is_stop].mean()
+                    else:
+                        stop_loss_pos = torch.tensor(0.0, device=device)
+                    stop_loss_neg = stop_bce[~is_stop].mean()
+                    stop_loss = (stop_loss_pos + stop_loss_neg) / 2.0
                     onset_mask = ~is_stop
                     if onset_mask.any():
                         onset_loss = criterion(onset_logits[onset_mask], target[onset_mask])
@@ -1355,9 +1361,14 @@ def run_benchmarks(model, val_loader, device, amp_enabled=False, multi_target=Fa
             evt_mask = evt_mask.to(device, non_blocking=True)
             cond = cond.to(device, non_blocking=True)
             with torch.autocast("cuda", enabled=amp_enabled):
-                logits = model(mel, evt_off, evt_mask, cond)
-                if isinstance(logits, tuple):
-                    logits = logits[0]
+                output = model(mel, evt_off, evt_mask, cond)
+                if isinstance(output, tuple):
+                    onset_logits, stop_logit = output
+                    # pad to 501 with stop logit
+                    logits = F.pad(onset_logits, (0, 1), value=-10.0)
+                    logits[:, N_CLASSES - 1] = stop_logit * 5.0
+                else:
+                    logits = output
             all_preds.append(logits.argmax(1).cpu().numpy())
             all_targets.append(target.numpy())
 
@@ -1634,9 +1645,13 @@ def run_benchmarks(model, val_loader, device, amp_enabled=False, multi_target=Fa
 
             for step in range(AR_STEPS):
                 with torch.no_grad(), torch.autocast("cuda", enabled=amp_enabled):
-                    logits = model(mel_s, evt_off_s, evt_mask_s, cond_s)
-                    if isinstance(logits, tuple):
-                        logits = logits[0]
+                    output = model(mel_s, evt_off_s, evt_mask_s, cond_s)
+                    if isinstance(output, tuple):
+                        onset_logits, stop_logit = output
+                        logits = F.pad(onset_logits, (0, 1), value=-10.0)
+                        logits[:, N_CLASSES - 1] = stop_logit * 5.0
+                    else:
+                        logits = output
                     probs = torch.softmax(logits.float(), dim=1)
                     pred = logits.argmax(dim=1).item()
                     ent = -(probs * (probs + 1e-10).log()).sum(dim=1).item()
@@ -3410,9 +3425,12 @@ def train(args):
     if args.balanced:
         counts = train_ds.class_counts
         sample_weights = np.zeros(len(train_ds), dtype=np.float64)
+        stop_boost = 20.0 if getattr(args, 'stop_token', False) else 1.0
         for i, (ci, ei) in enumerate(train_ds.samples):
             target = train_ds._get_target(ci, ei)
             w = 1.0 / (counts[target] + 1) ** args.balance_power
+            if target == N_CLASSES - 1 and stop_boost > 1.0:
+                w *= stop_boost
             sample_weights[i] = min(w, 1.0)  # cap to prevent extreme weights on empty classes
         sampler = WeightedRandomSampler(
             weights=sample_weights,
@@ -3713,9 +3731,16 @@ def train(args):
                         is_stop = (target == N_CLASSES - 1)
                         stop_target = is_stop.float()  # 1=stop, 0=onset
 
-                        # stop loss: BCE on the stop logit
-                        stop_loss = F.binary_cross_entropy_with_logits(
-                            stop_logit, stop_target, reduction='mean')
+                        # stop loss: BCE averaged separately for STOP and onset samples
+                        # prevents 47/48 easy onsets from drowning the 1/48 STOP signal
+                        stop_bce = F.binary_cross_entropy_with_logits(
+                            stop_logit, stop_target, reduction='none')
+                        if is_stop.any():
+                            stop_loss_pos = stop_bce[is_stop].mean()
+                        else:
+                            stop_loss_pos = torch.tensor(0.0, device=mel.device)
+                        stop_loss_neg = stop_bce[~is_stop].mean()
+                        stop_loss = (stop_loss_pos + stop_loss_neg) / 2.0
 
                         # onset loss: CE only on non-STOP samples
                         onset_mask = ~is_stop
