@@ -176,7 +176,22 @@ def run_inference(model, mel, conditioning, device, hop_bins=20, max_events=1000
         mask_tensor = torch.from_numpy(evt_mask).unsqueeze(0).to(device)
 
         output = model(mel_tensor, evt_tensor, mask_tensor, cond_tensor)
-        logits = output[0] if isinstance(output, tuple) else output
+        gate_logit = None
+        if isinstance(output, tuple):
+            logits, gate_logit = output
+            # binary stop: check gate first
+            gate_prob = torch.sigmoid(gate_logit).item()
+            if gate_prob < 0.5:  # gate says STOP
+                pred = N_CLASSES - 1
+                cursor_history.append((total_calls, cursor, pred))
+                stop_count += 1
+                stop_positions.append(cursor)
+                cursor += hop_bins
+                continue
+            # gate says onset — pad logits to 501 for compatibility
+            logits = F.pad(logits, (0, 1), value=-10.0)
+        else:
+            logits = output
 
         if threshold is not None:
             # multi-target: threshold scan — take earliest bin above threshold
@@ -1029,6 +1044,7 @@ def main():
             w = ckpt["model"][event_proj_key]
             if w.shape[1] > ckpt_args.get("d_model", 384) * 3:
                 has_gap_ratios = True
+        has_binary_stop = "gate_head.0.weight" in state_keys
         model_kwargs = dict(
             n_mels=N_MELS,
             d_model=ckpt_args.get("d_model", 384),
@@ -1037,6 +1053,7 @@ def main():
             n_classes=N_CLASSES,
             max_events=C_EVENTS,
             gap_ratios=has_gap_ratios,
+            binary_stop=has_binary_stop,
         )
     elif ModelClass == FramewiseOnsetDetector:
         # exp 38+: framewise onset detection

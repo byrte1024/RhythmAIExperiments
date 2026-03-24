@@ -851,13 +851,31 @@ def validate_and_collect(model, loader, criterion, device, amp_enabled=False, si
                 logits = torch.zeros(B_fw, N_CLASSES, device=device)
                 logits[:, :500:4] = onset_probs * 10
             else:
-                logits = model(mel, evt_off, evt_mask, cond)
-                if isinstance(logits, tuple):
-                    logits = logits[0]
-                if multi_target:
-                    loss = criterion(logits, targets_padded, n_tgt)
+                output = model(mel, evt_off, evt_mask, cond)
+                if isinstance(output, tuple):
+                    logits, gate_logit = output
+                    # binary stop validation: combine losses
+                    is_stop = (target == N_CLASSES - 1)
+                    gate_target = (~is_stop).float()
+                    gate_loss = F.binary_cross_entropy_with_logits(
+                        gate_logit, gate_target,
+                        pos_weight=torch.tensor(0.01, device=device)
+                    )
+                    onset_mask = ~is_stop
+                    if onset_mask.any():
+                        onset_loss = criterion(logits[onset_mask], target[onset_mask])
+                    else:
+                        onset_loss = torch.tensor(0.0, device=device)
+                    loss = onset_loss + 2.0 * gate_loss
+                    # pad logits for compat
+                    logits = F.pad(logits, (0, 1), value=-10.0)
+                    logits[:, N_CLASSES - 1] = -gate_logit * 5.0
                 else:
-                    loss = criterion(logits, target)
+                    logits = output
+                    if multi_target:
+                        loss = criterion(logits, targets_padded, n_tgt)
+                    else:
+                        loss = criterion(logits, target)
 
         B = mel.size(0)
         total_loss += loss.item() * B
@@ -3434,6 +3452,7 @@ def train(args):
             n_heads=args.n_heads,
             n_classes=N_CLASSES, max_events=C_EVENTS, dropout=args.dropout,
             gap_ratios=args.gap_ratios,
+            binary_stop=getattr(args, 'binary_stop', False),
         ).to(args.device)
     elif args.model_type == "framewise":
         model = FramewiseOnsetDetector(
@@ -3691,13 +3710,37 @@ def train(args):
                     # put onset_probs into first 125 positions scaled up
                     logits[:, :500:4] = onset_probs * 10  # rough proxy for compat
                 else:
-                    logits = model(mel, evt_off, evt_mask, cond)
-                    if isinstance(logits, tuple):
-                        logits = logits[0]
-                    if use_multi_target:
-                        loss = criterion(logits, targets_padded, n_tgt)
+                    output = model(mel, evt_off, evt_mask, cond)
+                    if isinstance(output, tuple):
+                        logits, gate_logit = output
+                        # binary stop: gate loss + onset loss
+                        is_stop = (target == N_CLASSES - 1)
+                        gate_target = (~is_stop).float()  # 1=onset, 0=stop
+                        # BCE with pos_weight to handle imbalance (99.7% onset)
+                        gate_loss = F.binary_cross_entropy_with_logits(
+                            gate_logit, gate_target,
+                            pos_weight=torch.tensor(0.01, device=mel.device)  # heavily weight STOP
+                        )
+                        # onset loss only on non-STOP samples
+                        onset_mask = ~is_stop
+                        if onset_mask.any():
+                            onset_logits = logits[onset_mask]
+                            onset_target = target[onset_mask]
+                            onset_loss = criterion(onset_logits, onset_target)
+                        else:
+                            onset_loss = torch.tensor(0.0, device=mel.device)
+                        gate_w = getattr(args, 'gate_weight', 2.0)
+                        loss = onset_loss + gate_w * gate_loss
+                        # pad logits to N_CLASSES for compatibility with metrics
+                        logits = F.pad(logits, (0, 1), value=-10.0)  # add STOP column
+                        # override STOP column with gate signal
+                        logits[:, N_CLASSES - 1] = -gate_logit * 5.0  # high gate → low STOP logit
                     else:
-                        loss = criterion(logits, target)
+                        logits = output
+                        if use_multi_target:
+                            loss = criterion(logits, targets_padded, n_tgt)
+                        else:
+                            loss = criterion(logits, target)
 
             # NaN safety: skip batch if loss or logits are NaN
             bs = mel.size(0)
@@ -3984,6 +4027,8 @@ if __name__ == "__main__":
     parser.add_argument("--dropout", type=float, default=0.1)
     parser.add_argument("--gap-ratios", action="store_true", default=True, help="Add gap ratio features to event embeddings (exp 45+)")
     parser.add_argument("--no-gap-ratios", dest="gap_ratios", action="store_false", help="Disable gap ratio features")
+    parser.add_argument("--binary-stop", action="store_true", default=False, help="Use separate binary gate head for STOP (exp 47+)")
+    parser.add_argument("--gate-weight", type=float, default=2.0, help="Loss weight for binary gate head (default: 2.0)")
     parser.add_argument("--focal-gamma", type=float, default=0.0, help="Focal loss gamma (0=disabled, default 0)")
     parser.add_argument("--good-pct", type=float, default=0.03, help="Soft target plateau threshold (ratio, default 3%%)")
     parser.add_argument("--fail-pct", type=float, default=0.20, help="Soft target hard cutoff (ratio, default 20%%)")

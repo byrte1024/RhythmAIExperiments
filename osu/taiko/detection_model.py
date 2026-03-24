@@ -1256,9 +1256,11 @@ class EventEmbeddingDetector(nn.Module):
         dropout=0.1,
         cond_dim=64,
         gap_ratios=False,
+        binary_stop=False,
     ):
         super().__init__()
         self.gap_ratios = gap_ratios
+        self.binary_stop = binary_stop
         self.n_classes = n_classes
         self.d_model = d_model
         self.max_events = max_events
@@ -1311,7 +1313,15 @@ class EventEmbeddingDetector(nn.Module):
 
         # output head
         self.head_norm = nn.LayerNorm(d_model)
-        self.head_proj = nn.Linear(d_model, n_classes)
+        if binary_stop:
+            self.head_proj = nn.Linear(d_model, n_classes - 1)  # 500 onset bins only
+            self.gate_head = nn.Sequential(
+                nn.Linear(d_model, d_model // 4),
+                nn.GELU(),
+                nn.Linear(d_model // 4, 1),
+            )
+        else:
+            self.head_proj = nn.Linear(d_model, n_classes)
         self.head_smooth = nn.Sequential(
             nn.Conv1d(1, 8, kernel_size=5, padding=2),
             nn.GELU(),
@@ -1434,9 +1444,15 @@ class EventEmbeddingDetector(nn.Module):
 
         # extract cursor
         cursor = x[:, 125, :]
+        cursor_norm = self.head_norm(cursor)
 
-        logits = self.head_proj(self.head_norm(cursor))
+        logits = self.head_proj(cursor_norm)
         logits = logits + self.head_smooth(logits.unsqueeze(1)).squeeze(1)
+
+        if self.binary_stop:
+            gate_logit = self.gate_head(cursor_norm).squeeze(-1)  # (B,)
+            return logits, gate_logit
+
         return logits
 
 
