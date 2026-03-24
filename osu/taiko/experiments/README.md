@@ -60,8 +60,18 @@ Each folder contains a README with hypothesis, results, and key graphs.
 | 42-AR | [Human Evaluation](experiment_42ar/) | Epic Fail | Blind A/B/C test: 10 people rank AR-generated charts from exp 14, 35-C, 42. Which model sounds best in practice?, T'was 14 |
 | 42-B | [Pure Hard CE](experiment_42b/) | **Entropy -45%** | hard_alpha=1.0 slashes entropy (2.39→1.32) and flattens distance correlation (+0.58→+0.36). But HIT -4.5pp and skip rate +2.1pp. Confidence ≠ accuracy |
 | 43 | [AR-Resilient Training](experiment_43/) | Backfired | ~43% context corruption rate → model distrusts context (-0.4% delta), metronomes from step 0 (11 unique preds). Worse on both per-sample (-3.7pp) and AR. Augmentation must be much gentler |
-| 44 | [Gentle AR Augmentation](experiment_44/) | Pending | ~14% context corruption (down from 43%). Partial metronome (half only), no blanking, no full replacement. Distort don't destroy |
 | 43-B | [AR Resilience Comparison](experiment_43b/) | **Surprise** | Exp 42 (deepest context) is MOST AR-resilient, not least. Beats exp 14 at every step. Metronome collapse universal across all models |
+| 44 | [Gentle AR Augmentation](experiment_44/) | **New ATH 73.6%** | ~14% context corruption. Distort don't destroy. 2x metronome resilience vs exp 42. Best HIT/MISS ever. Longer training broke through plateau |
+| 44-B | [Metronome Data Analysis](experiment_44b/) | **Key insight** | 43.9% of training targets are "continue the pattern." At streak 8+, 83% correct to continue. Metronome is the statistically optimal prediction |
+| 44-C | [Top-K vs Top-U Oracle](experiment_44c/) | Analysis | Model has 2-4 real options (median 4 at 5% conf). Top-U 3 oracle=91.8% HIT. The model knows the answer, can't pick it |
+| 44-D | [Temperature Sampling](experiment_44d/) | Analysis | Temperature strictly worse on per-sample metrics. No sweet spot. Value is in AR diversity, not accuracy |
+| 45 | [Reliable Density + Gap Ratios](experiment_45/) | Mixed | Gap ratios don't help per-sample. Tighter density jitter improves AR density adherence. Both adopted going forward |
+| 46 | [Hard/Soft Loss Ratio Sweep](experiment_46/) | Analysis | hard_alpha is a precision knob, not behavior knob. Same error structure at all settings. 0.50 has worst metronome delta. Over-prediction bias at high alpha |
+| 47 | [Binary STOP Head](experiment_47/) | Failed | pos_weight backwards. STOP rate 0% |
+| 47-B | [Binary STOP + Focal](experiment_47b/) | Failed | Focal loss mean() drowns STOP. F1=0.066, recall=3% |
+| 47-C | [Binary STOP + Balanced Focal](experiment_47c/) | Failed | Balanced averaging fixed per-class, but gate_weight too low + cursor token wrong for STOP |
+| 47-D | [Binary STOP + Forward-Pool](experiment_47d/) | Failed | Forward-pool gate, still no learning. Binary head approach fundamentally flawed — STOP wins by elimination in softmax, not active prediction |
+| 47-E | [STOP Query Token](experiment_47e/) | **Running** | Learned STOP token in transformer (251 tokens). 20x STOP sampling boost. F1=0.464 at eval 2, no_audio_stop=94%. First working STOP architecture |
 
 ## Key Lessons
 
