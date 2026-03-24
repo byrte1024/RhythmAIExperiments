@@ -71,7 +71,9 @@ Each folder contains a README with hypothesis, results, and key graphs.
 | 47-B | [Binary STOP + Focal](experiment_47b/) | Failed | Focal loss mean() drowns STOP. F1=0.066, recall=3% |
 | 47-C | [Binary STOP + Balanced Focal](experiment_47c/) | Failed | Balanced averaging fixed per-class, but gate_weight too low + cursor token wrong for STOP |
 | 47-D | [Binary STOP + Forward-Pool](experiment_47d/) | Failed | Forward-pool gate, still no learning. Binary head approach fundamentally flawed — STOP wins by elimination in softmax, not active prediction |
-| 47-E | [STOP Query Token](experiment_47e/) | **Running** | Learned STOP token in transformer (251 tokens). 20x STOP sampling boost. F1=0.464 at eval 2, no_audio_stop=94%. First working STOP architecture |
+| 47-E | [STOP Query Token](experiment_47e/) | Success | Learned STOP token in transformer (251 tokens). 20x STOP sampling boost. F1=0.469, no_audio_stop=81.5%. First working STOP architecture. Shelved — STOP not the bottleneck |
+| 48 | [Cross-Model Failure Analysis](experiment_48/) | **Key insight** | 14.2% of failures universal across ALL models. 2x/0.5x metric confusion on ordinary audio. Models predict same wrong bin 80%. Meter awareness needed |
+| 49 | [Virtual Tokens](experiment_49/) | **Running** | V virtual tokens for out-of-window context. 128 events spanning 25s accessible via scatter-add on virtual tokens with learned watermark. Negative sinusoidal position encoding |
 
 ## Key Lessons
 

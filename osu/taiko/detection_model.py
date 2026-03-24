@@ -1257,9 +1257,11 @@ class EventEmbeddingDetector(nn.Module):
         cond_dim=64,
         gap_ratios=False,
         stop_token=False,
+        n_virtual_tokens=0,
     ):
         super().__init__()
         self.gap_ratios = gap_ratios
+        self.n_virtual_tokens = n_virtual_tokens
         self.stop_token = stop_token
         self.n_classes = n_classes
         self.d_model = d_model
@@ -1298,6 +1300,10 @@ class EventEmbeddingDetector(nn.Module):
             nn.GELU(),
             nn.Linear(d_model, d_model),
         )
+
+        # virtual tokens for out-of-window context
+        if n_virtual_tokens > 0:
+            self.virtual_watermark = nn.Parameter(torch.randn(1, 1, d_model) * 0.02)
 
         # self-attention layers
         self.layers = nn.ModuleList([
@@ -1400,12 +1406,14 @@ class EventEmbeddingDetector(nn.Module):
         mel_frames = 500 + event_offsets  # (B, C)
         token_pos = mel_frames // 4  # (B, C) — conv stride 4
 
-        # valid: must be a real event AND map to a past token [0, 124]
-        # (events at token >= 125 are at/after cursor — shouldn't be marked)
-        valid_mask = valid & (token_pos >= 0) & (token_pos < 125)
-        token_pos = token_pos.clamp(0, 249)  # safe index
+        # in-window: real event AND maps to a past audio token [0, 124]
+        in_window = valid & (token_pos >= 0) & (token_pos < 125)
+        token_pos_clamped = token_pos.clamp(0, 249)  # safe index
 
-        return event_embs, token_pos, valid_mask
+        # out-of-window: real event but before the audio window (token_pos < 0)
+        out_of_window = valid & (token_pos < 0)
+
+        return event_embs, token_pos_clamped, in_window, out_of_window, event_offsets
 
     def forward(self, mel, event_offsets, event_mask, conditioning):
         """
@@ -1416,42 +1424,75 @@ class EventEmbeddingDetector(nn.Module):
         Returns: logits (B, 501)
         """
         cond = self.cond_mlp(conditioning)
+        B = mel.size(0)
+        V = self.n_virtual_tokens
 
-        # conv stem → 250 tokens
+        # conv stem → 250 audio tokens
         x = self.conv(mel).transpose(1, 2)  # (B, 250, d_model)
         x = self.conv_norm(x)
-        positions = torch.arange(x.size(1), device=x.device).unsqueeze(0).expand(x.size(0), -1)
-        x = x + self.pos_emb(positions)
+        # position embeddings for audio tokens (0..249, virtual tokens use negative positions)
+        audio_positions = torch.arange(x.size(1), device=x.device).unsqueeze(0).expand(B, -1)
+        x = x + self.pos_emb(audio_positions)
         x = self.film_conv(x, cond)
 
-        # inject event embeddings at event token positions
-        event_embs, token_pos, valid_mask = self._build_event_embeddings(
+        # build event embeddings
+        event_embs, token_pos, in_window, out_of_window, raw_offsets = self._build_event_embeddings(
             event_offsets, event_mask
         )
-        # scatter-add event embeddings to audio tokens
-        # for each valid event, add its embedding to the corresponding audio token
-        B = mel.size(0)
+
+        # scatter-add in-window event embeddings to audio tokens
         for b in range(B):
-            valid_idx = valid_mask[b].nonzero(as_tuple=True)[0]
+            valid_idx = in_window[b].nonzero(as_tuple=True)[0]
             if len(valid_idx) == 0:
                 continue
-            tpos = token_pos[b, valid_idx]  # which tokens to mark
-            embs = event_embs[b, valid_idx]  # embeddings to add
-            # scatter_add: multiple events may map to the same token
+            tpos = token_pos[b, valid_idx]
+            embs = event_embs[b, valid_idx]
             x[b].scatter_add_(0, tpos.unsqueeze(-1).expand(-1, self.d_model), embs)
+
+        # prepend virtual tokens if enabled
+        if V > 0:
+            # create virtual tokens: watermark + sinusoidal position in negative time
+            # virtual token 0 = furthest back, token V-1 = just before audio window
+            # positions: evenly spaced from -V to -1 (same coordinate system as audio 0..249)
+            virt = self.virtual_watermark.expand(B, V, -1).clone()  # (B, V, d_model)
+            virt_positions = torch.arange(-V, 0, device=x.device).unsqueeze(0).expand(B, -1)
+            virt = virt + self.pos_emb(virt_positions)  # same pos_emb as audio, negative time
+            virt = self.film_conv(virt, cond)
+
+            # scatter-add out-of-window event embeddings to virtual tokens
+            for b in range(B):
+                oow_idx = out_of_window[b].nonzero(as_tuple=True)[0]
+                if len(oow_idx) == 0:
+                    continue
+                # map out-of-window offsets to virtual token positions [0, V-1]
+                # offsets are negative (e.g. -600 to -6000), map linearly:
+                # most recent OOW (offset ~ -501) → token V-1
+                # oldest OOW → token 0
+                offsets = raw_offsets[b, oow_idx].float()  # negative values
+                # normalize: -500 → 1.0, -max_offset → 0.0
+                max_oow = offsets.min().item()  # most negative = oldest
+                if max_oow < -500:
+                    t = (offsets - max_oow) / (-500 - max_oow)  # 0=oldest, 1=most recent
+                else:
+                    t = torch.ones_like(offsets)
+                virt_pos = (t * (V - 1)).long().clamp(0, V - 1)
+                embs = event_embs[b, oow_idx]
+                virt[b].scatter_add_(0, virt_pos.unsqueeze(-1).expand(-1, self.d_model), embs)
+
+            x = torch.cat([virt, x], dim=1)  # (B, V+250, d_model)
 
         # append STOP query token if enabled
         if self.stop_token:
-            stop_q = self.stop_query.expand(B, -1, -1)  # (B, 1, d_model)
-            x = torch.cat([x, stop_q], dim=1)  # (B, 251, d_model)
+            stop_q = self.stop_query.expand(B, -1, -1)
+            x = torch.cat([x, stop_q], dim=1)
 
-        # self-attention over 250 (or 251) enriched tokens
+        # self-attention over V+250 (+1 if stop_token) enriched tokens
         for layer, film in zip(self.layers, self.film_layers):
             x = layer(x)
             x = film(x, cond)
 
-        # extract cursor for onset prediction
-        cursor = x[:, 125, :]
+        # extract cursor for onset prediction (offset by V)
+        cursor = x[:, V + 125, :]
         logits = self.head_proj(self.head_norm(cursor))
         logits = logits + self.head_smooth(logits.unsqueeze(1)).squeeze(1)
 

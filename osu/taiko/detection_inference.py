@@ -1045,6 +1045,10 @@ def main():
             if w.shape[1] > ckpt_args.get("d_model", 384) * 3:
                 has_gap_ratios = True
         has_stop_token = "stop_query" in state_keys
+        # detect virtual tokens from virtual_watermark presence + config
+        n_virtual = 0
+        if "virtual_watermark" in state_keys:
+            n_virtual = ckpt_args.get("n_virtual_tokens", 32)
         model_kwargs = dict(
             n_mels=N_MELS,
             d_model=ckpt_args.get("d_model", 384),
@@ -1054,6 +1058,7 @@ def main():
             max_events=C_EVENTS,
             gap_ratios=has_gap_ratios,
             stop_token=has_stop_token,
+            n_virtual_tokens=n_virtual,
         )
     elif ModelClass == FramewiseOnsetDetector:
         # exp 38+: framewise onset detection

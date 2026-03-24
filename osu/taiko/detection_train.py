@@ -3467,6 +3467,7 @@ def train(args):
             n_classes=N_CLASSES, max_events=C_EVENTS, dropout=args.dropout,
             gap_ratios=args.gap_ratios,
             stop_token=getattr(args, 'stop_token', False),
+            n_virtual_tokens=getattr(args, 'n_virtual_tokens', 0),
         ).to(args.device)
     elif args.model_type == "framewise":
         model = FramewiseOnsetDetector(
@@ -4068,6 +4069,7 @@ if __name__ == "__main__":
     parser.add_argument("--gap-ratios", action="store_true", default=True, help="Add gap ratio features to event embeddings (exp 45+)")
     parser.add_argument("--no-gap-ratios", dest="gap_ratios", action="store_false", help="Disable gap ratio features")
     parser.add_argument("--stop-token", action="store_true", default=False, help="Use learned STOP query token (exp 47e+)")
+    parser.add_argument("--n-virtual-tokens", type=int, default=0, help="Virtual tokens for out-of-window context (exp 49+, 0=off)")
     parser.add_argument("--focal-gamma", type=float, default=0.0, help="Focal loss gamma (0=disabled, default 0)")
     parser.add_argument("--good-pct", type=float, default=0.03, help="Soft target plateau threshold (ratio, default 3%%)")
     parser.add_argument("--fail-pct", type=float, default=0.20, help="Soft target hard cutoff (ratio, default 20%%)")
