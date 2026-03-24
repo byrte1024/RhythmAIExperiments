@@ -50,8 +50,58 @@ python detection_train.py taiko_v2 --run-name detect_experiment_46d --model-type
 
 ## Result
 
-*Pending*
+Each sub-experiment ran for 2 evals. Exp 44 (α=0.5) eval 2 used as same-stage baseline.
+
+### Per-sample metrics at eval 2
+
+| α | HIT | Exact | ±1f | AR s0 | AR s1 |
+|---|---|---|---|---|---|
+| 0.00 | 68.2% | 40.1% | 66.3% | 70.6% | 25.6% |
+| **0.25** | **71.1%** | 49.1% | **70.4%** | 72.0% | **40.2%** |
+| 0.50 | 70.9% | **52.0%** | 70.7% | **73.3%** | 40.3% |
+| 0.75 | 70.2% | 50.9% | 70.0% | 69.4% | 38.5% |
+| 1.00 | 68.6% | 50.8% | 68.5% | 67.7% | 39.6% |
+
+### Benchmark deltas (accuracy drop from corruption, lower = more resilient)
+
+| α | Met Δ | Adv Met Δ | No Evt Δ | Time Shift Δ | Rand Evt Δ | no_audio stop |
+|---|---|---|---|---|---|---|
+| 0.00 | +4.0pp | +3.4pp | +5.8pp | +10.8pp | +23.6pp | 66.1% |
+| 0.25 | +4.5pp | +4.0pp | +5.9pp | +8.1pp | +16.5pp | 29.6% |
+| 0.50 | +14.5pp | +6.5pp | +7.6pp | +9.3pp | +12.8pp | 16.5% |
+| **0.75** | **+5.3pp** | **+2.7pp** | **+5.3pp** | **+4.7pp** | **+10.7pp** | 6.6% |
+| 1.00 | +9.5pp | +4.7pp | +7.8pp | +7.9pp | +15.4pp | 10.5% |
+
+### Visual comparison
+
+Side-by-side graphs at eval 2 (α=0.0 | 0.25 | 0.5 | 0.75 | 1.0, left to right):
+
+![Pred vs Target](compare_heatmap.png)
+![Entropy](compare_entropy_heatmap.png)
+![Ratio Confusion](compare_ratio_confusion.png)
+![Ratio Heatmap](compare_ratio_heatmap.png)
+![Metronome Scatter](compare_metronome_scatter.png)
+![Metronome Heatmap](compare_metronome_heatmap.png)
+
+**Pred vs target heatmap:** Diagonal gets tighter with higher α but the same fundamental ray-band error structure persists across all settings. Hard alpha controls precision, not the error pattern.
+
+**Entropy heatmap:** Entropy decreases monotonically with α. Pure soft (α=0.0) has high uncertainty everywhere; pure hard (α=1.0) is very confident. Whether low entropy is beneficial or harmful for AR is unclear.
+
+**Metronome scatter/heatmap:** Effectively identical structure across all α values. The (1,1) continuation cluster dominates regardless. Lower α produces blurrier patches but the same metronome behavior.
+
+**Prediction distribution:** Higher α causes the model to consistently over-predict more than it under-predicts. This directional bias is specifically bad for AR — over-predictions push the cursor too far forward and are unrecoverable, while under-predictions are self-correcting (the model gets another chance).
+
+### Decision
+
+Continuing with α=0.5 (exp 44 baseline). Neither direction offers a clear win:
+- α=0.25 has best HIT and good resilience but blurrier/less precise
+- α=0.75 has best corruption resilience but over-predicts and slightly lower HIT
+- Neither changes the fundamental error structure (ray bands, metronome lock-in)
 
 ## Lesson
 
-*Pending*
+- **Hard alpha is a precision knob, not a behavior knob.** It controls sharpness of predictions but doesn't change what the model gets wrong. The same ray-band errors, same metronome structure, same musical-ratio confusions appear at every setting.
+- **The extremes are clearly bad.** α=0.0 (pure soft) loses 12pp exact accuracy; α=1.0 (pure hard) loses ~2pp HIT. Both extremes underperform the middle range.
+- **Higher α → over-prediction bias.** With pure hard CE, the model learns to overshoot. In AR this is worse than undershooting because over-predictions are unrecoverable (cursor can't go back), while under-predictions self-correct.
+- **α=0.50 has the worst metronome delta** (+14.5pp) — worse than both 0.25 and 0.75. The current default is actually the most vulnerable to metronome corruption. This is worth revisiting if metronome resilience becomes the priority.
+- **The under/over prediction asymmetry is not a loss-resolvable issue.** It's a fundamental consequence of the autoregressive cursor mechanism, not something hard_alpha can fix.
