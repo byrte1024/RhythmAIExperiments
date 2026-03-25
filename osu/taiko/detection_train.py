@@ -3763,6 +3763,13 @@ def train(args):
                         else:
                             loss = criterion(logits, target)
 
+            # anti-entropy: penalize high entropy to force commitment
+            entropy_w = getattr(args, 'entropy_weight', 0.0)
+            if entropy_w > 0:
+                probs = torch.softmax(logits.float(), dim=-1)
+                ent = -(probs * (probs + 1e-10).log()).sum(dim=-1).mean()
+                loss = loss + entropy_w * ent
+
             # NaN safety: skip batch if loss or logits are NaN
             bs = mel.size(0)
             if loss.isnan().item() or logits.isnan().any().item():
@@ -4070,6 +4077,7 @@ if __name__ == "__main__":
     parser.add_argument("--no-gap-ratios", dest="gap_ratios", action="store_false", help="Disable gap ratio features")
     parser.add_argument("--stop-token", action="store_true", default=False, help="Use learned STOP query token (exp 47e+)")
     parser.add_argument("--n-virtual-tokens", type=int, default=0, help="Virtual tokens for out-of-window context (exp 49+, 0=off)")
+    parser.add_argument("--entropy-weight", type=float, default=0.0, help="Anti-entropy loss weight (exp 50+, 0=off)")
     parser.add_argument("--focal-gamma", type=float, default=0.0, help="Focal loss gamma (0=disabled, default 0)")
     parser.add_argument("--good-pct", type=float, default=0.03, help="Soft target plateau threshold (ratio, default 3%%)")
     parser.add_argument("--fail-pct", type=float, default=0.20, help="Soft target hard cutoff (ratio, default 20%%)")

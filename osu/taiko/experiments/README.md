@@ -73,7 +73,8 @@ Each folder contains a README with hypothesis, results, and key graphs.
 | 47-D | [Binary STOP + Forward-Pool](experiment_47d/) | Failed | Forward-pool gate, still no learning. Binary head approach fundamentally flawed — STOP wins by elimination in softmax, not active prediction |
 | 47-E | [STOP Query Token](experiment_47e/) | Success | Learned STOP token in transformer (251 tokens). 20x STOP sampling boost. F1=0.469, no_audio_stop=81.5%. First working STOP architecture. Shelved — STOP not the bottleneck |
 | 48 | [Cross-Model Failure Analysis](experiment_48/) | **Key insight** | 14.2% of failures universal across ALL models. 2x/0.5x metric confusion on ordinary audio. Models predict same wrong bin 80%. Meter awareness needed |
-| 49 | [Virtual Tokens](experiment_49/) | **Running** | V virtual tokens for out-of-window context. 128 events spanning 25s accessible via scatter-add on virtual tokens with learned watermark. Negative sinusoidal position encoding |
+| 49 | [Virtual Tokens](experiment_49/) | Promising | 32 virtual tokens for out-of-window context. 100% AR survival (no metronome ever), but 52% hallucination rate. Solves metronome, creates over-prediction. 72.6% HIT matches exp 44 |
+| 50 | [Anti-Entropy Loss](experiment_50/) | **Running** | Entropy penalty to force model commitment. Based on exp 45 settings. Tests whether sharper distributions improve selection from top 2-4 options |
 
 ## Key Lessons
 
