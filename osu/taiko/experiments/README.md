@@ -74,7 +74,8 @@ Each folder contains a README with hypothesis, results, and key graphs.
 | 47-E | [STOP Query Token](experiment_47e/) | Success | Learned STOP token in transformer (251 tokens). 20x STOP sampling boost. F1=0.469, no_audio_stop=81.5%. First working STOP architecture. Shelved — STOP not the bottleneck |
 | 48 | [Cross-Model Failure Analysis](experiment_48/) | **Key insight** | 14.2% of failures universal across ALL models. 2x/0.5x metric confusion on ordinary audio. Models predict same wrong bin 80%. Meter awareness needed |
 | 49 | [Virtual Tokens](experiment_49/) | Promising | 32 virtual tokens for out-of-window context. 100% AR survival (no metronome ever), but 52% hallucination rate. Solves metronome, creates over-prediction. 72.6% HIT matches exp 44 |
-| 50 | [Anti-Entropy Loss](experiment_50/) | **Running** | Entropy penalty to force model commitment. Based on exp 45 settings. Tests whether sharper distributions improve selection from top 2-4 options |
+| 50 | [Anti-Entropy Loss (w=0.1)](experiment_50/) | Sidegrade | Better corruption resilience (+2.6pp metronome, +1.9pp adv met) but HIT capped at 73.2% vs exp 44's 73.6%. Anti-entropy is a robustness tool, not accuracy tool |
+| 50-B | [Anti-Entropy Loss (w=0.5)](experiment_50b/) | Similar | Bimodal entropy (eliminated disambiguation zone). Same HIT ceiling as w=0.1. Stronger pressure doesn't help further |
 
 ## Key Lessons
 
