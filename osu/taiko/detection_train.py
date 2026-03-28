@@ -25,6 +25,99 @@ WINDOW = A_BINS + B_BINS
 MIN_CURSOR_BIN = 6000  # only train where cursor >= 30s
 MAX_TARGETS = 64        # max onsets per forward window for multi-target training
 
+# streak-ratio loss weighting bins
+STREAK_BINS = [1, 2, 3, 5, 8, 10, 16]
+RATIO_BINS = [1/8, 1/6, 1/4, 1/3, 1/2, 1/1, 2/1, 3/1, 4/1, 6/1, 8/1]
+
+
+def compute_streak_ratio_weights(evt_offsets, evt_mask, targets, power=0.3, cap=50.0,
+                                 _cache={"matrix": None, "max_count": None}):
+    """Compute per-sample loss weights based on streak-ratio cell frequency.
+
+    Returns: (B,) tensor of weights >= 1.0.
+    Uses a lazily-built frequency matrix from the first call.
+    """
+    B, C = evt_offsets.shape
+    device = targets.device
+
+    # lazy-load the precomputed matrix
+    if _cache["matrix"] is None:
+        import json as _json
+        matrix_path = os.path.join(SCRIPT_DIR, "experiments", "streak_ratio_matrix.json")
+        if os.path.exists(matrix_path):
+            data = _json.load(open(matrix_path))
+            _cache["matrix"] = np.array(data["matrix"], dtype=np.float64)
+            _cache["max_count"] = float(_cache["matrix"].max())
+            print(f"  Loaded streak-ratio matrix: {_cache['matrix'].shape}, max={_cache['max_count']:.0f}")
+        else:
+            print(f"  WARNING: streak_ratio_matrix.json not found, streak loss disabled")
+            return torch.ones(B, device=device)
+
+    matrix = _cache["matrix"]
+    max_count = _cache["max_count"]
+
+    weights = torch.ones(B, device=device)
+    eo = evt_offsets.cpu().numpy()
+    em = evt_mask.cpu().numpy()
+    tgt = targets.cpu().numpy()
+    tolerance = 0.05
+
+    for b in range(B):
+        target = tgt[b]
+        if target >= N_CLASSES - 1:
+            continue  # STOP, weight=1
+
+        # get valid past event offsets
+        valid = ~em[b]
+        if valid.sum() < 2:
+            continue
+
+        valid_offsets = eo[b][valid]
+        gaps = np.abs(np.diff(valid_offsets)).astype(np.float64)
+        gaps = gaps[gaps > 0]
+        if len(gaps) < 1:
+            continue
+
+        # streak length
+        recent_gap = gaps[-1]
+        streak = 1
+        for j in range(len(gaps) - 2, -1, -1):
+            if recent_gap > 0 and abs(gaps[j] - recent_gap) / recent_gap <= tolerance:
+                streak += 1
+            else:
+                break
+
+        # classify streak bin
+        streak_idx = 0
+        for si, sb in enumerate(STREAK_BINS):
+            if streak >= sb:
+                streak_idx = si
+
+        # ratio: target / last_gap
+        last_gap = recent_gap
+        if last_gap <= 0:
+            continue
+        ratio = target / last_gap
+
+        # classify ratio bin (within 15%)
+        ratio_idx = -1
+        best_dist = float('inf')
+        for ri, rb in enumerate(RATIO_BINS):
+            if rb > 0:
+                dist = abs(ratio / rb - 1.0)
+                if dist < best_dist:
+                    best_dist = dist
+                    ratio_idx = ri
+        if best_dist > 0.15:
+            continue  # doesn't match any clean ratio
+
+        cell_count = matrix[streak_idx, ratio_idx]
+        if cell_count > 0:
+            w = min(cap, (max_count / cell_count) ** power)
+            weights[b] = max(1.0, w)
+
+    return weights
+
 
 # ═══════════════════════════════════════════════════════════════
 #  Dataset
@@ -3763,6 +3856,15 @@ def train(args):
                         else:
                             loss = criterion(logits, target)
 
+            # streak-ratio loss weighting: amplify loss for rare streak-ratio cells
+            if getattr(args, 'streak_loss', False) and not isinstance(output, tuple):
+                streak_weights = compute_streak_ratio_weights(
+                    evt_off.cpu(), evt_mask.cpu(), target,
+                    power=args.streak_power, cap=args.streak_cap)
+                # recompute loss with per-sample weighting
+                per_sample_loss = F.cross_entropy(logits, target, reduction='none')
+                loss = (per_sample_loss * streak_weights.to(logits.device)).mean()
+
             # anti-entropy: penalize high entropy to force commitment
             entropy_w = getattr(args, 'entropy_weight', 0.0)
             if entropy_w > 0:
@@ -4078,6 +4180,9 @@ if __name__ == "__main__":
     parser.add_argument("--stop-token", action="store_true", default=False, help="Use learned STOP query token (exp 47e+)")
     parser.add_argument("--n-virtual-tokens", type=int, default=0, help="Virtual tokens for out-of-window context (exp 49+, 0=off)")
     parser.add_argument("--entropy-weight", type=float, default=0.0, help="Anti-entropy loss weight (exp 50+, 0=off)")
+    parser.add_argument("--streak-loss", action="store_true", default=False, help="Streak-ratio loss weighting (exp 51+)")
+    parser.add_argument("--streak-power", type=float, default=0.3, help="Streak loss weight power (default 0.3)")
+    parser.add_argument("--streak-cap", type=float, default=50.0, help="Streak loss max weight cap (default 50)")
     parser.add_argument("--focal-gamma", type=float, default=0.0, help="Focal loss gamma (0=disabled, default 0)")
     parser.add_argument("--good-pct", type=float, default=0.03, help="Soft target plateau threshold (ratio, default 3%%)")
     parser.add_argument("--fail-pct", type=float, default=0.20, help="Soft target hard cutoff (ratio, default 20%%)")

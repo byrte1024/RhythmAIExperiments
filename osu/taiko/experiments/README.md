@@ -76,6 +76,7 @@ Each folder contains a README with hypothesis, results, and key graphs.
 | 49 | [Virtual Tokens](experiment_49/) | Promising | 32 virtual tokens for out-of-window context. 100% AR survival (no metronome ever), but 52% hallucination rate. Solves metronome, creates over-prediction. 72.6% HIT matches exp 44 |
 | 50 | [Anti-Entropy Loss (w=0.1)](experiment_50/) | Sidegrade | Better corruption resilience (+2.6pp metronome, +1.9pp adv met) but HIT capped at 73.2% vs exp 44's 73.6%. Anti-entropy is a robustness tool, not accuracy tool |
 | 50-B | [Anti-Entropy Loss (w=0.5)](experiment_50b/) | Similar | Bimodal entropy (eliminated disambiguation zone). Same HIT ceiling as w=0.1. Stronger pressure doesn't help further |
+| 51 | [Streak-Ratio Loss Weighting](experiment_51/) | **Running** | Per-sample loss weight based on streak length x ratio cell frequency. Rare breaks (streak 8+, non-1/1) get up to 50x loss. Expects worse metrics, better AR |
 
 ## Key Lessons
 
