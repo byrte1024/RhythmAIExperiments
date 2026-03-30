@@ -1,5 +1,8 @@
 # Experiment 52 - Audio Window Size Sweep
 
+> **[Full Architecture Specification](ARCHITECTURE.md)** — self-contained reproduction guide with all model, loss, training, and dataset details.
+
+
 ## Hypothesis
 
 The audio window (A_BINS past + B_BINS future) has been 500/500 (2.5s/2.5s) since experiment 5. This is the most fundamental hyperparameter we've never tuned. It controls:

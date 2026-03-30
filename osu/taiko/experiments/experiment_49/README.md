@@ -1,5 +1,8 @@
 # Experiment 49 - Virtual Tokens for Out-of-Window Context
 
+> **[Full Architecture Specification](ARCHITECTURE.md)** — self-contained reproduction guide with all model, loss, training, and dataset details.
+
+
 ## Hypothesis
 
 Exp 48 showed 14.2% of failures are universal across all architectures, with 2x/0.5x metric confusion as the dominant error. The model can't distinguish beat from sub-beat because it only sees 2.5s of audio + 2.5s of in-window events. A full musical phrase at 120 BPM is 8 seconds — the model can't see one.

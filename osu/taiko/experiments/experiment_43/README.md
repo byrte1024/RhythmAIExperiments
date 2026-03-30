@@ -1,5 +1,8 @@
 # Experiment 43 - AR-Resilient Training with Realistic Augmentation
 
+> **[Full Architecture Specification](ARCHITECTURE.md)** — self-contained reproduction guide with all model, loss, training, and dataset details.
+
+
 ## Hypothesis
 
 Exp 42-AR blind self-evaluation (volunteer data still pending) revealed a critical finding: **higher per-sample accuracy doesn't mean better AR generation.** In self-ranking, exp 14 (68.9% HIT, no context) scored nearly equal to exp 42 (73.2% HIT, deep context) because exp 42's context dependency causes:

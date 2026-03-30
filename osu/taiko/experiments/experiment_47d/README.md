@@ -1,5 +1,8 @@
 # Experiment 47-D - Binary STOP Head with Forward-Pool Gate
 
+> **[Full Architecture Specification](ARCHITECTURE.md)** — self-contained reproduction guide with all model, loss, training, and dataset details.
+
+
 ## Hypothesis
 
 47-C showed the gate can't learn from the cursor token alone. The STOP decision requires looking at the whole forward region.

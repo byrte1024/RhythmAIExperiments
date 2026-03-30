@@ -1,5 +1,8 @@
 # Experiment 39 - Overprediction Analysis (Diagnostic)
 
+> **[Full Architecture Specification](ARCHITECTURE.md)** — self-contained reproduction guide with all model, loss, training, and dataset details.
+
+
 ## Hypothesis
 
 The 35-C model (71.6% HIT) has a persistent 2.0x error band — it frequently predicts double the correct bin offset. But what if these "overpredictions" aren't wrong — they're just predicting a REAL onset that's further ahead?

@@ -1,6 +1,6 @@
 # Demos
 
-Generated chart examples using the EventEmbeddingDetector (exp 45). These are slightly cherry-picked for good examples — results vary by song and density settings.
+Generated chart examples using the [EventEmbeddingDetector (exp 45)](experiments/experiment_45/README.md). These are slightly cherry-picked for good examples — results vary by song and density settings.
 
 All charts were generated with:
 ```bash

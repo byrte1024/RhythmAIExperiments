@@ -1,5 +1,8 @@
 # Experiment 35-C - Exponential Decay Ramps + Amplitude Jitter
 
+> **[Full Architecture Specification](ARCHITECTURE.md)** — self-contained reproduction guide with all model, loss, training, and dataset details.
+
+
 ## Hypothesis
 
 Exp 35-B showed full-band mel ramps provide the best sustained context delta (3.5-5%) but two issues remain:

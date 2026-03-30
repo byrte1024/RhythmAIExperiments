@@ -1,5 +1,8 @@
 # Experiment 37-B - Sigmoid Multi-Target (pos_weight=1.0)
 
+> **[Full Architecture Specification](ARCHITECTURE.md)** — self-contained reproduction guide with all model, loss, training, and dataset details.
+
+
 ## Hypothesis
 
 Exp 37 with pos_weight=5.0 caused massive overprediction (468 preds/window). The model activated everything to minimize positive-weighted loss. With focal γ=2 it predicted nothing.

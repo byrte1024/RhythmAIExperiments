@@ -1,5 +1,8 @@
 # Experiment 39-B - Top-K Reranking by Confidence × Proximity
 
+> **[Full Architecture Specification](ARCHITECTURE.md)** — self-contained reproduction guide with all model, loss, training, and dataset details.
+
+
 ## Hypothesis
 
 Exp 39 proved 83.2% of overpredictions match real future onsets. The model sees valid onsets but picks the wrong one (further instead of nearest). The theoretical HIT if we count these is 86.5%.

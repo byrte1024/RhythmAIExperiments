@@ -1,5 +1,8 @@
 # Experiment 09 - Reverted to Light Augmentation
 
+> **[Full Architecture Specification](ARCHITECTURE.md)** — self-contained reproduction guide with all model, loss, training, and dataset details.
+
+
 ## Hypothesis
 
 Exp 07 (heavy augmentation) killed event learning, and exp 08 (lightened augmentation with reduced stop_weight) gave mixed results with dead zones in predictions. The hypothesis for this run is simple: fully revert to the original light augmentation (5% context dropout, 10% truncation) with stop_weight=1.5, and see if the original augmentation strategy at least produces a stable training trajectory. This should establish a clean baseline to compare against before trying any more changes.

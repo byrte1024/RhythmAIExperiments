@@ -1,5 +1,8 @@
 # Experiment 06 - Trapezoid Soft Targets + Ablation Benchmarks
 
+> **[Full Architecture Specification](ARCHITECTURE.md)** — self-contained reproduction guide with all model, loss, training, and dataset details.
+
+
 ## Hypothesis
 
 The Gaussian loss from exp 05 rewards harmonic predictions through its infinite tails, driving the model to become a metronome instead of a beat detector. The solution is a hard cutoff in the loss: if the model errs by more than 20%, that's a total failure - zero credit, same as a random guess. Within 3% is good - full credit. Between 3% and 20% gets linearly decreasing credit. This creates a trapezoid shape in log-ratio space that preserves the proportionality of the error (small targets and large targets are treated equally) but eliminates the harmonic reward that Gaussian tails create.

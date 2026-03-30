@@ -1,5 +1,8 @@
 # Experiment 35-D - Exponential Ramps + Focal Loss (gamma=3)
 
+> **[Full Architecture Specification](ARCHITECTURE.md)** — self-contained reproduction guide with all model, loss, training, and dataset details.
+
+
 ## Hypothesis
 
 Exp 35-C achieved 71.6% HIT with 4.5% sustained context delta — the first breakthrough past 70%. But two issues remain:

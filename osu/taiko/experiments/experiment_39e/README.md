@@ -1,5 +1,8 @@
 # Experiment 39-E - Audio Analysis of Failure Cases
 
+> **[Full Architecture Specification](ARCHITECTURE.md)** — self-contained reproduction guide with all model, loss, training, and dataset details.
+
+
 ## Hypothesis
 
 Exp 39-D showed that when the model is wrong, the correct answer is at rank 1-2 with only 43% the confidence of the wrong pick. The model genuinely believes the wrong answer is correct despite heavy training loss penalizing these errors.

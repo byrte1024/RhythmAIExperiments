@@ -1,5 +1,8 @@
 # Experiment 31 - Dual-Stream Architecture with Late Cross-Attention Fusion
 
+> **[Full Architecture Specification](ARCHITECTURE.md)** — self-contained reproduction guide with all model, loss, training, and dataset details.
+
+
 ## Hypothesis
 
 16 experiments (14-30) tried every training trick to make the unified fusion model use context: augmentation, data volume, focal loss, auxiliary heads, audio masking. None worked — context delta always collapses to ~0-1.5%. The conclusion: **the problem is architectural.**

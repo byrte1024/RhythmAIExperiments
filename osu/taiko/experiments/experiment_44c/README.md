@@ -1,5 +1,8 @@
 # Experiment 44-C - Top-K vs Top-U Oracle Analysis
 
+> **[Full Architecture Specification](ARCHITECTURE.md)** — self-contained reproduction guide with all model, loss, training, and dataset details.
+
+
 ## Hypothesis
 
 From previous top-K scatter plots and prediction distribution analysis, we observed that the model's top predictions often cluster tightly — multiple top-K candidates are within a few bins of each other, representing the same "idea" at slightly different offsets. This means Top-K overstates the model's diversity of options.

@@ -1,5 +1,8 @@
 # Experiment 24 - Additive Context Logits
 
+> **[Full Architecture Specification](ARCHITECTURE.md)** — self-contained reproduction guide with all model, loss, training, and dataset details.
+
+
 ## Hypothesis
 
 9 experiments of top-K reranking (exp 15-23) all produced negative delta. The best result - exp 23 E3 with 64% override accuracy and 4:1 good:bad ratio - still had -3.2pp delta. The discrete override interface is fundamentally at odds with improving on a 70%-correct base model.

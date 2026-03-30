@@ -1,5 +1,8 @@
 # Experiment 41 - Deep Entropy Analysis (Diagnostic)
 
+> **[Full Architecture Specification](ARCHITECTURE.md)** — self-contained reproduction guide with all model, loss, training, and dataset details.
+
+
 ## Hypothesis
 
 The model's entropy rises sharply with target distance. Exp 40 proved this isn't from undertraining — more exposure to distant bins didn't help. The question: **why is entropy higher?**

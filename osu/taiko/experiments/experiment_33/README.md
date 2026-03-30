@@ -1,5 +1,8 @@
 # Experiment 33 - Interleaved Self-Attention + Cross-Attention
 
+> **[Full Architecture Specification](ARCHITECTURE.md)** — self-contained reproduction guide with all model, loss, training, and dataset details.
+
+
 ## Hypothesis
 
 Experiments 31-32 revealed a fundamental tension in dual-stream architectures:

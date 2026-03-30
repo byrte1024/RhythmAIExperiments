@@ -1,5 +1,8 @@
 # Experiment 48 - Cross-Model Failure Analysis
 
+> **[Full Architecture Specification](ARCHITECTURE.md)** — self-contained reproduction guide with all model, loss, training, and dataset details.
+
+
 ## Hypothesis
 
 All our models (exp 14, 35-C, 44, 45) achieve 68-74% HIT despite very different architectures (no context, mel ramps, event embeddings, gap ratios). If they all fail on the **same** validation samples, those failures are structural — inherent to the data, audio, or task — and no architecture change will fix them. If they fail on **different** samples, each architecture has unique blind spots that could be addressed.

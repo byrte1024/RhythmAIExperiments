@@ -1,5 +1,8 @@
 # Experiment 27 - Full Dataset (No Subsample)
 
+> **[Full Architecture Specification](ARCHITECTURE.md)** — self-contained reproduction guide with all model, loss, training, and dataset details.
+
+
 ## Hypothesis
 
 Experiments 25 and 26 both plateau at ~69% HIT with subsample=4 (25% of training data). Exp 26 proved augmentation delays overfitting but doesn't raise the ceiling. The model memorizes the available audio→onset mappings regardless of noise.

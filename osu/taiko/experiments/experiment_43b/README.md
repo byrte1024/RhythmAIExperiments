@@ -1,5 +1,8 @@
 # Experiment 43-B - AR Resilience Comparison (Diagnostic)
 
+> **[Full Architecture Specification](ARCHITECTURE.md)** — self-contained reproduction guide with all model, loss, training, and dataset details.
+
+
 ## Hypothesis
 
 Exp 42-AR human evaluation showed context-dependent models (42, 35-C) don't outperform context-free (14) in real AR generation despite higher per-sample HIT. The AR cascade degradation (75% → 5% over 8 steps in light AR) may explain this.

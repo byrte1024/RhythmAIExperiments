@@ -1,5 +1,8 @@
 # Experiment 19 - Gap-Based Context with Own Encoders
 
+> **[Full Architecture Specification](ARCHITECTURE.md)** — self-contained reproduction guide with all model, loss, training, and dataset details.
+
+
 ## Hypothesis
 
 Across experiments 15-18, every context path failed to add value for timing prediction. A common thread: context operated on representations it didn't control (shared encoder features, detached) and in a feature space (absolute bin positions) that made rhythm patterns implicit rather than explicit.

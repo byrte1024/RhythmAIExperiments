@@ -1,5 +1,8 @@
 # Experiment 36 - Multi-Target Training + Threshold Inference
 
+> **[Full Architecture Specification](ARCHITECTURE.md)** — self-contained reproduction guide with all model, loss, training, and dataset details.
+
+
 ## Hypothesis
 
 The autoregressive single-prediction formulation has a catastrophic asymmetry:

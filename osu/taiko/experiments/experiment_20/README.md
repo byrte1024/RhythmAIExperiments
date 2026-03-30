@@ -1,5 +1,8 @@
 # Experiment 20 - Warm-Start + Frozen Audio, Context-Only Training
 
+> **[Full Architecture Specification](ARCHITECTURE.md)** — self-contained reproduction guide with all model, loss, training, and dataset details.
+
+
 ## Hypothesis
 
 Exp 19 showed the gap-based context architecture is correct - first experiment where context beat audio during training, and delta reached -0.18pp (best ever). But context plateaued around "slightly harmful" because it spent early epochs learning to rerank garbage proposals from an untrained audio model.

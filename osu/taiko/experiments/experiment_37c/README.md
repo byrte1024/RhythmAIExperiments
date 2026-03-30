@@ -1,5 +1,8 @@
 # Experiment 37-C - Focal Dice Multi-Target
 
+> **[Full Architecture Specification](ARCHITECTURE.md)** — self-contained reproduction guide with all model, loss, training, and dataset details.
+
+
 ## Hypothesis
 
 Exp 37 and 37-B proved that sigmoid BCE with soft targets is fundamentally broken for this task — the model either predicts nothing (with focal) or everything (without). The per-bin BCE loss doesn't incentivize sparsity; it just minimizes per-bin error, which is satisfied by moderate activation everywhere.

@@ -1,5 +1,8 @@
 # Experiment 38-C - Framewise with Unweighted BCE
 
+> **[Full Architecture Specification](ARCHITECTURE.md)** — self-contained reproduction guide with all model, loss, training, and dataset details.
+
+
 ## Hypothesis
 
 Exp 38-B proved the framewise architecture works (24% event recall, well above random) but pos_weight=7 causes 3x overprediction (46.7 preds/win vs 16.2 real). Every positive weighting attempt (exp 37, 37-B, 38-B) causes overprediction.

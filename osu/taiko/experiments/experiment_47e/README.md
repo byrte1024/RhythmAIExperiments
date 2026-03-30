@@ -1,5 +1,8 @@
 # Experiment 47-E - STOP Query Token
 
+> **[Full Architecture Specification](ARCHITECTURE.md)** — self-contained reproduction guide with all model, loss, training, and dataset details.
+
+
 ## Hypothesis
 
 47-47D all failed because the binary gate head was a small afterthought that couldn't learn:

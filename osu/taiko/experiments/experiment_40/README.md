@@ -1,5 +1,8 @@
 # Experiment 40 - Stronger Balanced Sampling (power=0.7)
 
+> **[Full Architecture Specification](ARCHITECTURE.md)** — self-contained reproduction guide with all model, loss, training, and dataset details.
+
+
 ## Hypothesis
 
 Exp 39-E revealed the model picks the sharpest transient, not the nearest onset. But exp 39-D showed the model is systematically underconfident for distant predictions — entropy rises sharply with target distance from cursor.

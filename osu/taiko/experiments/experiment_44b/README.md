@@ -1,5 +1,8 @@
 # Experiment 44-B - Metronome Pattern Analysis in Training Data
 
+> **[Full Architecture Specification](ARCHITECTURE.md)** — self-contained reproduction guide with all model, loss, training, and dataset details.
+
+
 ## Hypothesis
 
 The model's metronome collapse during AR generation may not be purely a failure mode — it could be learning the dominant pattern in the data. Taiko charts are fundamentally rhythmic: evenly-spaced hits are the norm, with brief transitions between patterns.

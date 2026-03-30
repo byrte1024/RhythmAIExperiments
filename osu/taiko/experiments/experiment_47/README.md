@@ -1,5 +1,8 @@
 # Experiment 47 - Binary STOP Head
 
+> **[Full Architecture Specification](ARCHITECTURE.md)** — self-contained reproduction guide with all model, loss, training, and dataset details.
+
+
 ## Hypothesis
 
 STOP prediction is broken: F1 ~0.52, precision 40% (60% of STOP predictions are hallucinated), and the model can't reliably stop on silence. The root cause is structural — STOP (class 500) competes with 500 onset bins in a single softmax. The "should I stop?" decision and the "where is the next onset?" decision are entangled.

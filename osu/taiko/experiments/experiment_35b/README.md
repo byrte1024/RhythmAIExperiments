@@ -1,5 +1,8 @@
 # Experiment 35-B - Full-Band Mel Ramps (Nuclear)
 
+> **[Full Architecture Specification](ARCHITECTURE.md)** — self-contained reproduction guide with all model, loss, training, and dataset details.
+
+
 ## Hypothesis
 
 Exp 35 showed edge-band ramps provide 5.0% context delta but the conv filters them out. The ramps need to be inescapable.

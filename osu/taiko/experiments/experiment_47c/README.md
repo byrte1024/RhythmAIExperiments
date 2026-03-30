@@ -1,5 +1,8 @@
 # Experiment 47-C - Binary STOP Head with Balanced Focal Loss
 
+> **[Full Architecture Specification](ARCHITECTURE.md)** — self-contained reproduction guide with all model, loss, training, and dataset details.
+
+
 ## Hypothesis
 
 Same architecture as 47/47-B. Fixes:

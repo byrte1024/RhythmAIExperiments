@@ -1,5 +1,8 @@
 # Experiment 29 - Auxiliary Context Loss
 
+> **[Full Architecture Specification](ARCHITECTURE.md)** — self-contained reproduction guide with all model, loss, training, and dataset details.
+
+
 ## Hypothesis
 
 14 experiments (14-28) confirm the model ignores context regardless of augmentation, data volume, or loss reweighting. The context delta collapses to ~0-1.5% in every run. The gap encoder's representations atrophy because the fusion pathway finds audio-only solutions — there is no gradient pressure forcing the gap encoder to carry useful signal.

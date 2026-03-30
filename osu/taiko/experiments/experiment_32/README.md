@@ -1,5 +1,8 @@
 # Experiment 32 - Dual-Stream with Audio Skip Connection
 
+> **[Full Architecture Specification](ARCHITECTURE.md)** — self-contained reproduction guide with all model, loss, training, and dataset details.
+
+
 ## Hypothesis
 
 Exp 31 proved dual-stream forces context dependence (18.8% delta — highest ever) but predictions collapse to ~80 unique values (banding). Exp 31-B confirmed more cross-attention layers makes it worse (37 unique). Root cause: cross-attention injects coarse gap-level activations (±20) that overwhelm fine-grained audio features (±7) through the residual path. The cursor at position 125 loses precise temporal information.

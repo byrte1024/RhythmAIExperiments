@@ -1,5 +1,8 @@
 # Experiment 50 - Anti-Entropy Loss
 
+> **[Full Architecture Specification](ARCHITECTURE.md)** — self-contained reproduction guide with all model, loss, training, and dataset details.
+
+
 ## Hypothesis
 
 From exp 44-C, the model typically considers 2-4 real options per prediction. It knows the answer is in a small set but can't commit. Entropy analysis (exp 41) showed a trimodal distribution: confident/correct (~1.4 nats), disambiguation zone (~2.3 nats), and uncertain (~3.0 nats). The disambiguation zone is where the model hedges between options instead of picking one.

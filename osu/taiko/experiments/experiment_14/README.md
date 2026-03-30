@@ -1,5 +1,8 @@
 # Experiment 14 - Corrected Data Alignment
 
+> **[Full Architecture Specification](ARCHITECTURE.md)** — self-contained reproduction guide with all model, loss, training, and dataset details.
+
+
 ## Hypothesis
 
 All previous experiments (05-13) trained on a dataset with a fundamental timing misalignment: `BIN_MS` was hardcoded to `5.0ms` but the actual mel frame duration is `HOP_LENGTH / SAMPLE_RATE * 1000 = 110 / 22050 * 1000 = 4.98866ms`. This 0.01134ms-per-frame error compounds over song duration:

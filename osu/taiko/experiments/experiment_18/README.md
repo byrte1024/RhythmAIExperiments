@@ -1,5 +1,8 @@
 # Experiment 18 - Gradient-Isolated Context with Two-Stage Event Focus
 
+> **[Full Architecture Specification](ARCHITECTURE.md)** — self-contained reproduction guide with all model, loss, training, and dataset details.
+
+
 ## Hypothesis
 
 The context path has failed to learn across 3 experiments (15-17). The failures share a common pattern: context either rubber-stamps audio's answer or produces random noise. Three root causes identified:

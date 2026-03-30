@@ -1,5 +1,8 @@
 # Experiment 36-B - Multi-Target with Per-Onset Recall Loss
 
+> **[Full Architecture Specification](ARCHITECTURE.md)** — self-contained reproduction guide with all model, loss, training, and dataset details.
+
+
 ## Hypothesis
 
 Exp 36 showed multi-target training doesn't hurt nearest-target HIT (66.2% = 35-C) but event recall was only 8.2%. Root cause: the normalized soft targets dilute per-onset gradient — missing one of 5 onsets costs only 1/5 of the soft loss. The model rationally underpredicts.

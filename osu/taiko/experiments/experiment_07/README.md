@@ -1,5 +1,8 @@
 # Experiment 07 - Heavy Context Augmentation (Failed)
 
+> **[Full Architecture Specification](ARCHITECTURE.md)** — self-contained reproduction guide with all model, loss, training, and dataset details.
+
+
 ## Hypothesis
 
 Benchmarks from exp 06 showed the model relies on events (no_audio=36.5%) far more than audio (no_events=5.3%). If the model learns during training that event context is unreliable, it should be forced to fall back on audio - the signal we actually want it to use. By aggressively corrupting event context during training (25% full dropout, 15% time-warping, 10% gap-shuffling), the model should learn that events can be misleading and develop stronger audio reliance as compensation.

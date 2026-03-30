@@ -1,5 +1,8 @@
 # Experiment 05 - Gaussian Soft Targets
 
+> **[Full Architecture Specification](ARCHITECTURE.md)** — self-contained reproduction guide with all model, loss, training, and dataset details.
+
+
 ## Hypothesis
 
 The model can't predict larger gap sizes because the loss treats all absolute errors equally - missing by 10 bins on a target of 15 is punished the same as missing by 10 bins on a target of 200, even though the first is a 67% error and the second is a 5% error. By switching to a log-ratio loss with Gaussian soft targets (log_sigma=0.04), the error becomes proportional: guessing frame 4 on target 8 is punished the same as guessing frame 40 on target 80. This should unlock the model's ability to learn across all bin ranges rather than clustering predictions in the low bins.

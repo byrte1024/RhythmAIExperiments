@@ -1,5 +1,8 @@
 # Experiment 11 - Two-Path Architecture, NaN Fixed
 
+> **[Full Architecture Specification](ARCHITECTURE.md)** — self-contained reproduction guide with all model, loss, training, and dataset details.
+
+
 ## Hypothesis
 
 Experiment 10 showed the two-path architecture works but was crippled by a NaN bug: all-masked event attention produced NaN that propagated through the entire model for any sample with no prior events. The fix is simple - unmask a dummy position when all events are masked - but the 6 epochs of exp 10 trained with corrupted gradients on every no-event sample. The context path in particular never learned what to do when events are absent, which is exactly the signal it needs for falling back on audio.

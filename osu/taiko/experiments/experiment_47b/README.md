@@ -1,5 +1,8 @@
 # Experiment 47-B - Binary STOP Head with Focal Loss
 
+> **[Full Architecture Specification](ARCHITECTURE.md)** — self-contained reproduction guide with all model, loss, training, and dataset details.
+
+
 ## Hypothesis
 
 Same as exp 47 — separate binary gate head for STOP prediction. Fixes from 47:

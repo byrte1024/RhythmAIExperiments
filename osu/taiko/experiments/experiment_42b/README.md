@@ -1,5 +1,8 @@
 # Experiment 42-B - Pure Hard CE (Frame Tolerance Only)
 
+> **[Full Architecture Specification](ARCHITECTURE.md)** — self-contained reproduction guide with all model, loss, training, and dataset details.
+
+
 ## Hypothesis
 
 Exp 42's entropy profile is identical to 35-C despite +1.6pp HIT. The proportional soft target (good_pct=3%) creates wider distributions for distant targets — at target=200, 12 bins get full credit. This trains the model to be less confident at distance.

@@ -1,5 +1,8 @@
 # Experiment 15 - Context Aux Loss + Density Benchmarks
 
+> **[Full Architecture Specification](ARCHITECTURE.md)** — self-contained reproduction guide with all model, loss, training, and dataset details.
+
+
 ## Hypothesis
 
 Experiment 14 proved the data alignment fix was transformative (50.5% acc, 69% HIT, 30% miss at E8), but revealed a new bottleneck: the context path is dormant. no_events accuracy (50.2%) matches full accuracy (50.4%), meaning the context path contributes almost nothing to the final prediction. The model's ~50% accuracy ceiling is the audio-only ceiling.

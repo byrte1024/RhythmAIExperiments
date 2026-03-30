@@ -1,5 +1,8 @@
 # Experiment 26 - Heavy Audio Augmentation
 
+> **[Full Architecture Specification](ARCHITECTURE.md)** — self-contained reproduction guide with all model, loss, training, and dataset details.
+
+
 ## Hypothesis
 
 Exp 25 showed the unified fusion architecture matches exp 14 (~68.6% HIT) but overfits from E2 onward (val loss 2.623 → 2.665 while train loss kept falling). Context contribution shrank from 6.8% to 2.3% over 5 epochs. The model memorized audio→onset mappings without learning to leverage gap tokens.

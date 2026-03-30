@@ -1,5 +1,8 @@
 # Experiment 17 - Top-K Reranking Architecture
 
+> **[Full Architecture Specification](ARCHITECTURE.md)** — self-contained reproduction guide with all model, loss, training, and dataset details.
+
+
 ## Hypothesis
 
 Experiments 15-16 proved that loss-function approaches cannot activate the context path. The root cause is architectural: with additive logits (`audio + context → 501 classes`), context's optimal strategy is always to be a no-op (output zeros/uniform). Standard CE (exp 15) had zero effect. Rank-weighted CE (exp 16) forced wrong opinions that actively degraded audio's correct rankings (-5pp top-K).

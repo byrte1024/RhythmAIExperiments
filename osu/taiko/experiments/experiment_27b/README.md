@@ -1,5 +1,8 @@
 # Experiment 27-B - Context Pattern Analysis (Diagnostic)
 
+> **[Full Architecture Specification](ARCHITECTURE.md)** — self-contained reproduction guide with all model, loss, training, and dataset details.
+
+
 ## Hypothesis
 
 Exp 27's best model (eval 8, 69.8% HIT) shows systematic over-prediction: when the correct answer is 75, it predicts 150. Top-3 accuracy is ~90%, meaning the model narrows to a small set of rhythmically valid candidates but picks wrong. Forward error shows predictions cluster at meaningful ratios (1.0x, 0.5x, 2.0x) — the model knows the rhythm vocabulary but can't disambiguate.

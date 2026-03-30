@@ -1,5 +1,8 @@
 # Experiment 41-B - Entropy Progression Over Training (Diagnostic)
 
+> **[Full Architecture Specification](ARCHITECTURE.md)** — self-contained reproduction guide with all model, loss, training, and dataset details.
+
+
 ## Hypothesis
 
 Exp 41 revealed the skip count is the primary failure mode (skip 0 = 85% HIT, skip 1 = 43%). But does this improve over training? If skip-1 HIT rate increases from eval 1→4→8, the model is gradually learning to prefer the nearest onset and we just need to train longer. If it's flat, the architecture can't solve this and we need a different approach.

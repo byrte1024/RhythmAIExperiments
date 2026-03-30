@@ -1,5 +1,8 @@
 # Experiment 44 - Gentle AR Augmentation
 
+> **[Full Architecture Specification](ARCHITECTURE.md)** — self-contained reproduction guide with all model, loss, training, and dataset details.
+
+
 ## Hypothesis
 
 Exp 43 showed that aggressive augmentation (~43% context corruption) backfires — the model distrusts context entirely, metronomes from step 0, and performs worse on both per-sample and AR metrics. Meanwhile, exp 43-B proved that context dependency HELPS AR resilience (exp 42 beats exp 14 at every AR step).

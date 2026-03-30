@@ -1,5 +1,8 @@
 # Experiment 34 - Context as FiLM Conditioning
 
+> **[Full Architecture Specification](ARCHITECTURE.md)** — self-contained reproduction guide with all model, loss, training, and dataset details.
+
+
 ## Hypothesis
 
 Experiments 31-33 proved cross-attention between audio and gap tokens is fundamentally flawed for this task:

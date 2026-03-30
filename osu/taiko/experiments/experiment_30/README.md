@@ -1,5 +1,8 @@
 # Experiment 30 - Cursor-Region Audio Masking
 
+> **[Full Architecture Specification](ARCHITECTURE.md)** — self-contained reproduction guide with all model, loss, training, and dataset details.
+
+
 ## Hypothesis
 
 16 experiments (14-29B) show the model ignores context regardless of architecture, augmentation, data, loss reweighting, or auxiliary losses. The aux context head (exp 29, 29-B) failed because standalone 501-class prediction from gaps is too hard — the head can't learn, so it can't force the gap encoder to improve.

@@ -1,5 +1,8 @@
 # Experiment 42-AR - Human Evaluation of Autoregressive Inference
 
+> **[Full Architecture Specification](ARCHITECTURE.md)** — self-contained reproduction guide with all model, loss, training, and dataset details.
+
+
 ## Hypothesis
 
 Validation metrics (HIT, miss, entropy) measure per-sample accuracy, but real quality is about how the full autoregressive generation FEELS when played. A chart with 70% per-sample HIT might sound great if errors are spread evenly, or terrible if they cascade in one section.

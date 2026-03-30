@@ -1,5 +1,8 @@
 # Experiment 51 - Streak-Ratio Loss Weighting
 
+> **[Full Architecture Specification](ARCHITECTURE.md)** — self-contained reproduction guide with all model, loss, training, and dataset details.
+
+
 ## Hypothesis
 
 The model metronomically continues patterns because the training data overwhelmingly rewards continuation. From the streak-ratio matrix analysis:

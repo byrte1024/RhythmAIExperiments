@@ -1,5 +1,8 @@
 # Experiment 38 - Framewise Onset Detection with Causal Future Prediction
 
+> **[Full Architecture Specification](ARCHITECTURE.md)** — self-contained reproduction guide with all model, loss, training, and dataset details.
+
+
 ## Hypothesis
 
 Experiments 36-37C proved that multi-target prediction from a single cursor token is fundamentally broken — one feature vector can't represent multiple onsets regardless of loss function (softmax, sigmoid BCE, or dice).

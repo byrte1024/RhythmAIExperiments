@@ -1,5 +1,8 @@
 # Experiment 45 - Reliable Density Conditioning
 
+> **[Full Architecture Specification](ARCHITECTURE.md)** — self-contained reproduction guide with all model, loss, training, and dataset details.
+
+
 ## Hypothesis
 
 Exp 44 benchmarks showed random density costs 14pp accuracy and zero density costs 17.9pp. The model uses density conditioning significantly — but the current ±10% jitter at 30% rate during training may be teaching the model to distrust density, weakening a signal that could help more.

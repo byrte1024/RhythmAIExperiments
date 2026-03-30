@@ -1,5 +1,8 @@
 # Experiment 28 - Focal Loss
 
+> **[Full Architecture Specification](ARCHITECTURE.md)** — self-contained reproduction guide with all model, loss, training, and dataset details.
+
+
 ## Hypothesis
 
 Exp 27 achieved 69.8% HIT with 96% top-10 accuracy — the model narrows to the correct answer almost every time but picks wrong on the hard cases. Exp 27-B confirmed that context contains the answer for ~95% of misses, but the model doesn't use it (context delta ~1.5%).

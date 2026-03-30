@@ -1,5 +1,8 @@
 # Experiment 35 - Mel-Embedded Event Ramps
 
+> **[Full Architecture Specification](ARCHITECTURE.md)** — self-contained reproduction guide with all model, loss, training, and dataset details.
+
+
 ## Hypothesis
 
 20 experiments (14-34) tried every fusion approach — concat self-attention, cross-attention, FiLM conditioning — and all fail to make the model use context. The core problem: context features enter through a separate pathway that the model can route around.

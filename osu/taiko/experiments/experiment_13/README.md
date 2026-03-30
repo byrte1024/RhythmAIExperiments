@@ -1,5 +1,8 @@
 # Experiment 13 - AR Augmentation Only (Exp 11 Architecture)
 
+> **[Full Architecture Specification](ARCHITECTURE.md)** — self-contained reproduction guide with all model, loss, training, and dataset details.
+
+
 ## Hypothesis
 
 Experiment 12 showed that increasing the context path capacity while reducing the audio aux loss was catastrophic - the audio proposer collapsed into mode collapse (226 unique preds, horizontal banding in scatter, top-10 only 65%). The lesson: the audio aux loss at 0.2 is load-bearing and the audio path must be strong before the context path can be useful.

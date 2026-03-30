@@ -1,5 +1,8 @@
 # Experiment 23 - Shuffled Candidates with Confidence Scores
 
+> **[Full Architecture Specification](ARCHITECTURE.md)** — self-contained reproduction guide with all model, loss, training, and dataset details.
+
+
 ## Hypothesis
 
 Exp 22 proved that shuffling eliminates positional bias and that context makes reasonable picks (low inaccurate_topK). But without audio confidence, context overrides 50%+ of predictions - it can't tell when audio is confident (and likely correct) vs uncertain (and worth overriding). Delta bottomed out at -4.6pp.

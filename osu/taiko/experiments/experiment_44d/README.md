@@ -1,5 +1,8 @@
 # Experiment 44-D - Temperature Sampling on Top-K and Top-U
 
+> **[Full Architecture Specification](ARCHITECTURE.md)** — self-contained reproduction guide with all model, loss, training, and dataset details.
+
+
 ## Hypothesis
 
 Exp 44-C showed the model knows the right answer 91.8% of the time (Top-U 3 oracle) but only picks it 73.6% of the time (argmax). The gap between "considered" and "selected" is 18pp.

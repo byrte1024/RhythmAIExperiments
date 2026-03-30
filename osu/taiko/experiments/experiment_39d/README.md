@@ -1,5 +1,8 @@
 # Experiment 39-D - Top-K Depth Analysis
 
+> **[Full Architecture Specification](ARCHITECTURE.md)** — self-contained reproduction guide with all model, loss, training, and dataset details.
+
+
 ## Hypothesis
 
 We know top-10 contains the answer ~96% of the time, but two unknowns:

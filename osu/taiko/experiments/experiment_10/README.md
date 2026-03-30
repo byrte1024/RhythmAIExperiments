@@ -1,5 +1,8 @@
 # Experiment 10 - Two-Path Architecture (NaN Bug)
 
+> **[Full Architecture Specification](ARCHITECTURE.md)** — self-contained reproduction guide with all model, loss, training, and dataset details.
+
+
 ## Hypothesis
 
 Three experiments confirmed the audio/event imbalance is architectural. The single-path decoder lets events dominate because both signals compete in the same cross-attention mechanism, and events are an easier signal to learn from. The solution is to separate the model into two paths with structurally distinct roles:

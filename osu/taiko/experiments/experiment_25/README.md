@@ -1,5 +1,8 @@
 # Experiment 25 - Unified Audio + Gap Fusion
 
+> **[Full Architecture Specification](ARCHITECTURE.md)** — self-contained reproduction guide with all model, loss, training, and dataset details.
+
+
 ## Hypothesis
 
 10 experiments (15-24) proved that separate audio and context paths cannot break even. Context without audio access caps at ~53% HIT - it can learn rhythm patterns but can't know when audio is already correct (70%). Whether reranking (discrete override) or additive (soft logit nudging), context's influence is random w.r.t. audio correctness, guaranteeing helped ~ hurt.

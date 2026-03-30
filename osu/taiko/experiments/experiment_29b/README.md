@@ -1,5 +1,8 @@
 # Experiment 29-B - Auxiliary Context Loss (Weight 1.0)
 
+> **[Full Architecture Specification](ARCHITECTURE.md)** — self-contained reproduction guide with all model, loss, training, and dataset details.
+
+
 ## Hypothesis
 
 Exp 29 showed that ctx_loss_weight=0.2 is too weak — the aux head's gradient is ~20% of the gap encoder's total, dominated by fusion which tells it to be quiet. Context delta collapsed identically to every prior experiment. Ctx loss barely dropped (4.2→4.1, near random).

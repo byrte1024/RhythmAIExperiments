@@ -1,5 +1,8 @@
 # Experiment 46 - Hard/Soft Loss Ratio Sweep
 
+> **[Full Architecture Specification](ARCHITECTURE.md)** — self-contained reproduction guide with all model, loss, training, and dataset details.
+
+
 ## Hypothesis
 
 Exp 44 uses hard_alpha=0.5 (50% hard CE + 50% soft targets). Exp 42-B tested hard_alpha=1.0 but only ran 2 evals before being killed — not enough to draw conclusions. The exact-match vs ±1-frame gap is ~19pp, meaning soft targets provide significant gradient signal for near-miss predictions.

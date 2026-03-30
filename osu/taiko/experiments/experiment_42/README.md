@@ -1,5 +1,8 @@
 # Experiment 42 - Event Embedding Detector
 
+> **[Full Architecture Specification](ARCHITECTURE.md)** — self-contained reproduction guide with all model, loss, training, and dataset details.
+
+
 ## Hypothesis
 
 40+ experiments of context fusion have established:

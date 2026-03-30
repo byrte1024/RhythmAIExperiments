@@ -1,5 +1,8 @@
 # Experiment 38-B - Framewise with Weighted BCE
 
+> **[Full Architecture Specification](ARCHITECTURE.md)** — self-contained reproduction guide with all model, loss, training, and dataset details.
+
+
 ## Hypothesis
 
 Exp 38 with dice+BCE failed — the dice smooth term creates a degenerate minimum at all-zero predictions (0% recall, 0 preds/window).

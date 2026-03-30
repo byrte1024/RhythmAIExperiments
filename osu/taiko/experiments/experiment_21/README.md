@@ -1,5 +1,8 @@
 # Experiment 21 - Relative Quality Selection Loss
 
+> **[Full Architecture Specification](ARCHITECTURE.md)** — self-contained reproduction guide with all model, loss, training, and dataset details.
+
+
 ## Hypothesis
 
 Exp 20 proved warm-start + freeze are solid infrastructure (69.5% HIT from step 1, 2x speed), and that the gap-based context architecture (exp 19) is correct. But context's overrides are net-harmful (delta -1.18pp) despite best-ever override F1 (22%). The bottleneck is the loss function.

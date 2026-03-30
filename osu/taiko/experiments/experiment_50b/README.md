@@ -1,5 +1,8 @@
 # Experiment 50-B - Anti-Entropy Loss (Weight 0.5)
 
+> **[Full Architecture Specification](ARCHITECTURE.md)** — self-contained reproduction guide with all model, loss, training, and dataset details.
+
+
 ## Hypothesis
 
 Exp 50 (weight 0.1) produced a sidegrade: better resilience, slightly lower HIT. The pressure was enough to improve robustness but too gentle to force better selection. At 0.1, entropy of ~2.3 nats adds ~0.23 to loss (~8%).

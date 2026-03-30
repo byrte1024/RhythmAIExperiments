@@ -1,5 +1,8 @@
 # Experiment 22 - Blind Selection (Shuffled Candidates, No Audio Scores)
 
+> **[Full Architecture Specification](ARCHITECTURE.md)** — self-contained reproduction guide with all model, loss, training, and dataset details.
+
+
 ## Hypothesis
 
 Exp 21 proved that relative quality loss produces healthy override behavior (F1=46%, accuracy=61%, both records). But delta remained negative (-0.95pp) because context overrides too broadly - it can't distinguish "audio is wrong" from "audio is right."

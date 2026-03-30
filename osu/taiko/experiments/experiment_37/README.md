@@ -1,5 +1,8 @@
 # Experiment 37 - Per-Bin Sigmoid Multi-Target
 
+> **[Full Architecture Specification](ARCHITECTURE.md)** — self-contained reproduction guide with all model, loss, training, and dataset details.
+
+
 ## Hypothesis
 
 Experiments 36 and 36-B proved that softmax is fundamentally wrong for multi-target: bins compete for probability mass, preventing the model from predicting multiple onsets simultaneously. Per-onset recall loss improved precision but couldn't overcome the softmax bottleneck.

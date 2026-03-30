@@ -1,5 +1,8 @@
 # Experiment 16 - Rank-Weighted Context Loss
 
+> **[Full Architecture Specification](ARCHITECTURE.md)** — self-contained reproduction guide with all model, loss, training, and dataset details.
+
+
 ## Hypothesis
 
 Experiment 15 confirmed that standard CE aux loss (0.1) cannot break the context path's rubber-stamping local minimum. After 4 epochs, no_events accuracy never dropped below full accuracy - the context path contributes nothing despite direct gradient pressure.

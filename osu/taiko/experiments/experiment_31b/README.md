@@ -1,5 +1,8 @@
 # Experiment 31-B - Dual-Stream with 4 Cross-Attention Layers
 
+> **[Full Architecture Specification](ARCHITECTURE.md)** — self-contained reproduction guide with all model, loss, training, and dataset details.
+
+
 ## Hypothesis
 
 Exp 31 proved that dual-stream architecture forces context dependence (18.8% context delta — highest ever). But 2 cross-attention layers bottleneck information flow, limiting the model to ~80 unique predictions (vs ~350 for the unified model). The model learns "which common gap value" but not "exactly which bin."

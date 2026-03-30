@@ -1,5 +1,8 @@
 # Experiment 39-C - Entropy-Weighted Reranking
 
+> **[Full Architecture Specification](ARCHITECTURE.md)** — self-contained reproduction guide with all model, loss, training, and dataset details.
+
+
 ## Hypothesis
 
 Exp 39-B showed global proximity reranking only gains +0.9pp because it regresses 1,299 correct predictions. The fix: only apply proximity bias when the model is uncertain.

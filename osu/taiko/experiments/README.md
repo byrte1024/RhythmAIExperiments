@@ -2,11 +2,14 @@
 
 Each folder contains a README with hypothesis, results, and key graphs.
 
+*Experiments 01-04 predate experiment tracking. No data remains.*
+
 | # | Name | Status | Key Result |
 |---|------|--------|------------|
 | 05 | [Gaussian Soft Targets](experiment_05/) | Baseline | First soft target approach, metronome behavior |
 | 06 | [Trapezoid Soft Targets + Ablation Benchmarks](experiment_06/) | Best of early arch | 55.8% HIT E1, introduced 8 ablation benchmarks |
 | 07 | [Heavy Context Augmentation](experiment_07/) | Failed | 25% dropout + time-warp killed event path entirely |
+| 08 | *(crashed mid-run, identical to 09 — typo renamed it to 09, already committed)* | Crashed | — |
 | 09 | [Reverted to Light Augmentation](experiment_09/) | Mixed | Revealed model over-relies on events over audio |
 | 10 | [Two-Path Architecture](experiment_10/) | Bugged | NaN from all-masked attention; benchmarks broken |
 | 11 | [Two-Path, NaN Fixed](experiment_11/) | Best so far | 47.1% acc, 64.8% HIT, top-3 86%, audio > events |
