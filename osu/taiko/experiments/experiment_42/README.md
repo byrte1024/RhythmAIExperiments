@@ -6,12 +6,12 @@
 ## Hypothesis
 
 40+ experiments of context fusion have established:
-- Separate gap tokens get drowned in self-attention (exp 25-30, delta collapses to ~1.5%)
-- Cross-attention creates magnitude imbalance and banding (exp 31-33)
-- FiLM can't encode sequences (exp 34, 64-dim bottleneck)
-- Mel ramps work (exp 35-C, 5% delta, 71.6% HIT) but are synthetic signals the model processes differently from audio
-- Context helps confidence (r=-0.213, exp 41) — more context = lower entropy
-- Skip-1 errors are structural (~11%, exp 41-B) — model picks sharper transient at further onset
+- Separate gap tokens get drowned in self-attention (exp [25](../experiment_25/README.md)-[30](../experiment_30/README.md), delta collapses to ~1.5%)
+- Cross-attention creates magnitude imbalance and banding (exp [31](../experiment_31/README.md)-[33](../experiment_33/README.md))
+- FiLM can't encode sequences (exp [34](../experiment_34/README.md), 64-dim bottleneck)
+- Mel ramps work (exp [35-C](../experiment_35c/README.md), 5% delta, 71.6% HIT) but are synthetic signals the model processes differently from audio
+- Context helps confidence (r=-0.213, exp [41](../experiment_41/README.md)) — more context = lower entropy
+- Skip-1 errors are structural (~11%, exp [41-B](../experiment_41b/README.md)) — model picks sharper transient at further onset
 
 **Event embedding detector** takes the core insight from mel ramps (context in the audio pathway) but implements it properly: instead of synthetic ramps in the mel spectrogram, add **learned embeddings directly to audio tokens** at event positions.
 
@@ -70,7 +70,7 @@ python detection_train.py taiko_v2 --run-name detect_experiment_42 --model-type 
 
 **Comparison with prior bests:**
 
-| | Exp 14 | Exp 27 | Exp 35-C | **Exp 42** |
+| | Exp [14](../experiment_14/README.md) | Exp [27](../experiment_27/README.md) | Exp [35-C](../experiment_35c/README.md) | **Exp 42** |
 |---|---|---|---|---|
 | HIT | 68.9% | 69.8% | 71.6% | **73.2%** |
 | Miss | 30.3% | 29.8% | 27.9% | **26.4%** |
@@ -82,18 +82,18 @@ python detection_train.py taiko_v2 --run-name detect_experiment_42 --model-type 
 **What worked:**
 - **Event embeddings provide deepest context dependency ever.** Metronome benchmark at 25.4% (vs 50.5% when context is ignored). The model genuinely relies on correct event information.
 - **Context delta showed unique trajectory** — rose from 2.0% to 5.0% over evals 1-6 (never seen before — usually collapses), then settled at 3-4%. The model built context pathways during training.
-- **no_audio at 39.3%** — event embeddings alone provide substantial signal, vs 0.4% in exp 27.
+- **no_audio at 39.3%** — event embeddings alone provide substantial signal, vs 0.4% in exp [27](../experiment_27/README.md).
 - **Still improving at kill** — val loss 2.481 still dropping, HIT trending up.
 
 **What didn't work:**
-- **Entropy profile identical to 35-C.** Mean entropy 2.390 vs 2.391 — no change. The model gets more answers right at the same confidence level.
+- **Entropy profile identical to [35-C](../experiment_35c/README.md).** Mean entropy 2.390 vs 2.391 — no change. The model gets more answers right at the same confidence level.
 - **Skip-1 rate unchanged at ~11%.** Event embeddings didn't help with the overprediction skip problem. Gap encoding (gap_before, gap_after) isn't being used for pattern disambiguation.
-- **Improvements come from easy cases only:** Skip-0 HIT 93.7% → 94.5%, underpred HIT 46.5% → 47.6%. The hard cases (skip-1, distant predictions) are unchanged.
+- **Improvements come from easy cases only:** Skip-0 HIT [93.7%](../experiment_41/README.md) → 94.5%, underpred HIT [46.5%](../experiment_41/README.md) → 47.6%. The hard cases (skip-1, distant predictions) are unchanged.
 - **The 2.0x ratio error band persists.** Same distribution of errors, just fewer of them overall.
 
 **Benchmark analysis (eval 8):**
 
-| Benchmark | Exp 27 | Exp 35-C | **Exp 42** |
+| Benchmark | Exp [27](../experiment_27/README.md) | Exp [35-C](../experiment_35c/README.md) | **Exp 42** |
 |---|---|---|---|
 | no_events | 50.0% | 48.1% | 50.9% |
 | random_events | 50.5% | 41.1% | **39.6%** |

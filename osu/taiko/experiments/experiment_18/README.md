@@ -5,9 +5,9 @@
 
 ## Hypothesis
 
-The context path has failed to learn across 3 experiments (15-17). The failures share a common pattern: context either rubber-stamps audio's answer or produces random noise. Three root causes identified:
+The context path has failed to learn across 3 experiments ([15](../experiment_15/README.md)-[17](../experiment_17/README.md)). The failures share a common pattern: context either rubber-stamps audio's answer or produces random noise. Three root causes identified:
 
-1. **Gradient interference** (exp 17): Selection loss corrupted shared encoder representations, dropping audio HIT by 7.5pp.
+1. **Gradient interference** (exp [17](../experiment_17/README.md)): Selection loss corrupted shared encoder representations, dropping audio HIT by 7.5pp.
 2. **Trivial shortcuts**: Without gradient isolation, context can reproduce audio's ranking through shared encoder gradients rather than understanding events.
 3. **Weak event processing**: Context's transformer decoder interleaved event self-attention with cross-attention to audio/candidates from layer 1. Events never got dedicated processing to build temporal pattern understanding before evaluating proposals.
 
@@ -20,7 +20,7 @@ This experiment addresses all three with a clean redesign:
 Audio loss trains: `audio_path` + `audio_encoder` + `event_encoder` + `cond_mlp`
 Selection loss trains: `context_path` ONLY (all encoder outputs detached)
 
-This prevents selection loss from corrupting shared encoder representations (the exp 17 failure mode).
+This prevents selection loss from corrupting shared encoder representations (the exp [17](../experiment_17/README.md) failure mode).
 
 **2. Two-stage context architecture (new)**
 
@@ -106,7 +106,7 @@ Candidate embeddings include audio score + normalized rank. #0 is always audio's
 - Context overrides were net-harmful from E1, getting worse at E2 (damaged 45% > rescued 29%).
 - Two-stage architecture did not prevent rubber-stamping — 94% rank-0 selection.
 - Hard CE did not provide a stronger learning signal than soft trapezoid.
-- Override accuracy 35% — worse than coin flip, worse than exp 17's 52%.
+- Override accuracy 35% — worse than coin flip, worse than exp [17](../experiment_17/README.md)'s 52%.
 
 **Risk #3 from hypothesis confirmed:** Hard CE with imbalanced 20-way classification where class 0 is correct ~95% of the time led to "mostly pick 0, occasionally pick wrong."
 
@@ -126,8 +126,8 @@ Candidate embeddings include audio score + normalized rank. #0 is always audio's
 
 ## Lesson
 
-**The reranking paradigm itself may be fundamentally flawed for this problem.** Across 4 experiments (15-18), no architecture, loss function, or gradient strategy has produced a context path that adds value. The core issue: context needs to determine "is audio wrong here?" — but the signal for that is weak (audio is right ~70% of the time) and the event patterns that would indicate errors are subtle.
+**The reranking paradigm itself may be fundamentally flawed for this problem.** Across 4 experiments ([15](../experiment_15/README.md)-18), no architecture, loss function, or gradient strategy has produced a context path that adds value. The core issue: context needs to determine "is audio wrong here?" — but the signal for that is weak (audio is right ~70% of the time) and the event patterns that would indicate errors are subtle.
 
 - Stop-gradient works and should be kept for any future multi-path architecture.
 - Two-stage event processing (self-attn before cross-attn) is architecturally sound but didn't help because the underlying task — reranking audio's candidates using event patterns — may not be learnable at this scale.
-- 5 experiments of context failure (15-18) suggest the problem isn't architecture or loss — it's that event history doesn't contain enough information to second-guess audio's timing predictions. Context may be more useful for *type* prediction (don vs ka) or *density* modulation rather than timing correction.
+- 5 experiments of context failure ([15](../experiment_15/README.md)-18) suggest the problem isn't architecture or loss — it's that event history doesn't contain enough information to second-guess audio's timing predictions. Context may be more useful for *type* prediction (don vs ka) or *density* modulation rather than timing correction.

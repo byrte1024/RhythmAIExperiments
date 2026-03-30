@@ -29,7 +29,7 @@ During inference:
 
 ### Architecture
 
-Same as exp 44/45 EventEmbeddingDetector base. Changes:
+Same as exp [44](../experiment_44/README.md)/[45](../experiment_45/README.md) EventEmbeddingDetector base. Changes:
 - Remove class 500 (STOP) from the output head
 - Add gate head: cursor token → LayerNorm → Linear(d_model, 1) → sigmoid
 - Onset head: cursor token → existing head → 500 logits (bins 0-499 only)
@@ -56,4 +56,4 @@ Root cause: `pos_weight=0.01` in BCE was backwards. The gate target had 1=onset,
 ## Lesson
 
 - **BCE pos_weight scales the POSITIVE class, not the rare class.** With target 1=onset (99.7%), pos_weight=0.01 made onsets even less important — the opposite of intended.
-- **Fixed in exp 47-B:** Flipped targets (1=stop, 0=onset) and switched to focal BCE (gamma=2) which naturally downweights easy negatives (confident onset predictions) and focuses on the rare positives (STOP boundaries).
+- **Fixed in exp [47-B](../experiment_47b/README.md):** Flipped targets (1=stop, 0=onset) and switched to focal BCE (gamma=2) which naturally downweights easy negatives (confident onset predictions) and focuses on the rare positives (STOP boundaries).

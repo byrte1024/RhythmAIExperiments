@@ -5,13 +5,13 @@
 
 ## Hypothesis
 
-Experiments 15-16 proved that loss-function approaches cannot activate the context path. The root cause is architectural: with additive logits (`audio + context → 501 classes`), context's optimal strategy is always to be a no-op (output zeros/uniform). Standard CE (exp 15) had zero effect. Rank-weighted CE (exp 16) forced wrong opinions that actively degraded audio's correct rankings (-5pp top-K).
+Experiments [15](../experiment_15/README.md)-[16](../experiment_16/README.md) proved that loss-function approaches cannot activate the context path. The root cause is architectural: with additive logits (`audio + context → 501 classes`), context's optimal strategy is always to be a no-op (output zeros/uniform). Standard CE (exp [15](../experiment_15/README.md)) had zero effect. Rank-weighted CE (exp [16](../experiment_16/README.md)) forced wrong opinions that actively degraded audio's correct rankings (-5pp top-K).
 
 **The fix - architectural constraint:** Replace the 501-way context path with a top-K reranking selector. Audio proposes K=20 candidates, context must pick one. Rubber-stamping and no-op are architecturally impossible: context must output a K-way distribution and every choice affects the prediction.
 
 ### Architecture changes
 
-**Old ContextPath (exp 14-16):**
+**Old ContextPath (exp [14](../experiment_14/README.md)-[16](../experiment_16/README.md)):**
 - Event self-attn + audio cross-attn → query token → 501-way logits
 - Combined via `audio_logits + context_logits` (additive in logit space)
 - Context could output zeros = no effect
@@ -38,7 +38,7 @@ Experiments 15-16 proved that loss-function approaches cannot activate the conte
 - **No-op impossible**: context must select one of K candidates. Even uniform selection shifts prediction.
 - **Rubber-stamping impossible**: picking audio's #1 every time will be wrong ~33% of the time (miss rate). The selection loss pushes context to identify when #2/#3 is correct.
 - **Information-rich candidates**: context sees audio's score, rank, AND the audio feature at each candidate position - directly enabling "I see audio ranked bin 48 and bin 96, and from event spacing I know it should be ~48, so pick #1."
-- **Audio path unchanged**: identical to exp 14. Audio aux at full weight keeps proposal quality stable.
+- **Audio path unchanged**: identical to exp [14](../experiment_14/README.md). Audio aux at full weight keeps proposal quality stable.
 
 ### New metrics & charts
 
@@ -52,15 +52,15 @@ Experiments 15-16 proved that loss-function approaches cannot activate the conte
 ### Expected outcomes
 
 - **Context MUST engage**: no_events accuracy should drop below full accuracy since context can't be a no-op
-- **Audio proposals stable**: audio top-K HIT rates should match exp 14 (~95% at top-10)
-- **Accuracy ≥ exp 14**: context selecting well from audio's candidates should beat audio alone (~50%)
+- **Audio proposals stable**: audio top-K HIT rates should match exp [14](../experiment_14/README.md) (~95% at top-10)
+- **Accuracy ≥ exp [14](../experiment_14/README.md)**: context selecting well from audio's candidates should beat audio alone (~50%)
 - **Override rate > 0**: context should learn to override audio's #1 on 10-30% of samples
 - **Override accuracy > random**: when overriding, context should be right more often than chance among top-K
 
 ### Risk
 
-- Selection loss might be too easy (always picking #0 gives ~67% HIT) - if context doesn't learn to override, we get exp 14 performance with extra overhead
-- K=20 might miss some targets (~3% not in top-20 based on exp 14 data) - those samples get no useful context gradient
+- Selection loss might be too easy (always picking #0 gives ~67% HIT) - if context doesn't learn to override, we get exp [14](../experiment_14/README.md) performance with extra overhead
+- K=20 might miss some targets (~3% not in top-20 based on exp [14](../experiment_14/README.md) data) - those samples get no useful context gradient
 - The candidate feature MLP adds parameters and computation - watch for training speed regression
 
 ## Result
@@ -83,15 +83,15 @@ Experiments 15-16 proved that loss-function approaches cannot activate the conte
 
 ### What worked
 
-- **Context path activated for the first time ever.** Override rate rose from 26% (E1) to 50% (E6), proving the architectural constraint forced engagement. Exp 11-16 never achieved this.
-- **no_events benchmark diverged from full accuracy** - E1: 47.7% vs full 45.1%, E7: 42.0% vs full 43.0%. Context IS contributing signal (unlike exp 14-16 where no_events ≈ full).
-- **Architecture > loss tricks confirmed.** Exp 15 aux CE = zero engagement. Exp 16 rank-weighted CE = wrong opinions. Exp 17 top-K constraint = immediate engagement by E1.
+- **Context path activated for the first time ever.** Override rate rose from 26% (E1) to 50% (E6), proving the architectural constraint forced engagement. Exp [11](../experiment_11/README.md)-[16](../experiment_16/README.md) never achieved this.
+- **no_events benchmark diverged from full accuracy** - E1: 47.7% vs full 45.1%, E7: 42.0% vs full 43.0%. Context IS contributing signal (unlike exp [14](../experiment_14/README.md)-[16](../experiment_16/README.md) where no_events ≈ full).
+- **Architecture > loss tricks confirmed.** Exp [15](../experiment_15/README.md) aux CE = zero engagement. Exp [16](../experiment_16/README.md) rank-weighted CE = wrong opinions. Exp 17 top-K constraint = immediate engagement by E1.
 
 ### What didn't work
 
 - **Override accuracy plateaued at ~51-52%**, barely above coin flip for overrides. Context learned to override but not WHEN to override correctly.
 - **Accuracy dropped from E1 (45.1%) as context became more active.** The model was better at E1 with 26% override than at E7 with 47% override. Context overrides are net-negative.
-- **Hit rate stuck at 65.3%**, still 3-4pp below exp 14's audio-only 69%. The reranking overhead costs more than the selection gains.
+- **Hit rate stuck at 65.3%**, still 3-4pp below exp [14](../experiment_14/README.md)'s audio-only 69%. The reranking overhead costs more than the selection gains.
 - **Rank distribution heavily skewed**: ~53% pick #0, ~24% pick #1, ~12% pick #2. Context mostly agrees with audio and when it disagrees, it's wrong half the time.
 - **Selection stats plateau by E5-E6**: override_accuracy, override_rate, and target_in_topk all flat. No sign of continued learning.
 
@@ -99,7 +99,7 @@ Experiments 15-16 proved that loss-function approaches cannot activate the conte
 
 | Benchmark | Accuracy | Notes |
 |-----------|----------|-------|
-| full (normal) | 43.0% | Below exp 14's 50.5% |
+| full (normal) | 43.0% | Below exp [14](../experiment_14/README.md)'s 50.5% |
 | no_events | 42.0% | Context engaged but not helpful |
 | no_audio | 0.3% | Audio is essential (expected) |
 | random_events | 43.3% | ≈ full - context isn't using events well |
@@ -110,9 +110,9 @@ Experiments 15-16 proved that loss-function approaches cannot activate the conte
 | zero_density | 10.3% | Density still load-bearing |
 | random_density | 34.4% | ~9pp drop from full |
 
-### Key numbers vs exp 14
+### Key numbers vs [exp 14](../experiment_14/README.md)
 
-| Metric | Exp 14 (E8) | Exp 17 (E7) | Delta |
+| Metric | [Exp 14](../experiment_14/README.md) (E8) | Exp 17 (E7) | Delta |
 |--------|-------------|-------------|-------|
 | accuracy | 50.5% | 43.0% | -7.5pp |
 | hit_rate | 69.0% | 65.3% | -3.7pp |
@@ -136,6 +136,6 @@ Experiments 15-16 proved that loss-function approaches cannot activate the conte
 ## Lesson
 
 - **Architectural constraint activates context, but activation ≠ value.** The top-K reranking successfully broke rubber-stamping - a first across 6 experiments. But the context path learned to override without learning WHEN to override. 51% override accuracy means context is essentially flipping coins on its disagreements.
-- **The reranking bottleneck hurts audio.** Restricting final output to K=20 candidates with context selection overhead costs 7.5pp accuracy vs audio-only (exp 14). The selection loss competes with the audio loss for shared encoder capacity.
-- **Shared encoders create gradient interference.** Audio and context share the AudioEncoder and EventEncoder. Context's selection loss gradient flows back through these shared paths, potentially degrading audio's proposal quality. This explains why accuracy is BELOW exp 14 despite identical audio architecture.
+- **The reranking bottleneck hurts audio.** Restricting final output to K=20 candidates with context selection overhead costs 7.5pp accuracy vs audio-only (exp [14](../experiment_14/README.md)). The selection loss competes with the audio loss for shared encoder capacity.
+- **Shared encoders create gradient interference.** Audio and context share the AudioEncoder and EventEncoder. Context's selection loss gradient flows back through these shared paths, potentially degrading audio's proposal quality. This explains why accuracy is BELOW exp [14](../experiment_14/README.md) despite identical audio architecture.
 - **Next direction: full path separation.** Give audio and context completely separate losses with stop-gradient between paths. Audio optimizes top-1 proposal quality only. Context optimizes selection quality only. No gradient leakage between the two objectives.

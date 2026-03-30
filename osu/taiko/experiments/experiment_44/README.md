@@ -5,7 +5,7 @@
 
 ## Hypothesis
 
-Exp 43 showed that aggressive augmentation (~43% context corruption) backfires — the model distrusts context entirely, metronomes from step 0, and performs worse on both per-sample and AR metrics. Meanwhile, exp 43-B proved that context dependency HELPS AR resilience (exp 42 beats exp 14 at every AR step).
+Exp [43](../experiment_43/README.md) showed that aggressive augmentation (~43% context corruption) backfires — the model distrusts context entirely, metronomes from step 0, and performs worse on both per-sample and AR metrics. Meanwhile, exp [43-B](../experiment_43b/README.md) proved that context dependency HELPS AR resilience (exp [42](../experiment_42/README.md) beats exp [14](../experiment_14/README.md) at every AR step).
 
 **The fix: distort, never destroy.** Every augmented sample should still have recognizable context and audio. No augmentation blanks or fully replaces context. Partial corruption (half of events) teaches robustness while preserving enough real signal for the model to trust context.
 
@@ -13,7 +13,7 @@ Exp 43 showed that aggressive augmentation (~43% context corruption) backfires �
 
 **Context (~14% total corruption, down from ~43%):**
 
-| Aug | Exp 43 | **Exp 44** |
+| Aug | Exp [43](../experiment_43/README.md) | **Exp 44** |
 |-----|--------|-----------|
 | Event jitter | ±5, 3x recency | **±3, 2x recency** |
 | Event deletion | 15%, 1-4 events | **5%, 1-2 events** |
@@ -42,7 +42,7 @@ Exp 43 showed that aggressive augmentation (~43% context corruption) backfires �
 - **Distort, don't destroy** — jitter and shift events, don't delete or replace them
 
 ### Architecture
-Same as exp 42 (EventEmbeddingDetector, 16.1M params).
+Same as exp [42](../experiment_42/README.md) (EventEmbeddingDetector, 16.1M params).
 
 ### Launch
 
@@ -52,41 +52,41 @@ python detection_train.py taiko_v2 --run-name detect_experiment_44 --model-type 
 
 ## Result
 
-**New ATH across the board.** Stopped at eval 20 (epoch 5). Surpasses exp 42 on per-sample metrics while adding significant metronome resilience.
+**New ATH across the board.** Stopped at eval 20 (epoch 5). Surpasses exp [42](../experiment_42/README.md) on per-sample metrics while adding significant metronome resilience.
 
 ### Per-sample metrics (best: eval 19-20)
 
-| Metric | Exp 44 (eval 19) | Exp 44 (eval 20) | Exp 42 ATH (eval 9) |
+| Metric | Exp 44 (eval 19) | Exp 44 (eval 20) | Exp [42](../experiment_42/README.md) ATH (eval 9) |
 |---|---|---|---|
-| HIT | **73.6%** | 73.5% | 73.2% |
-| MISS | **25.9%** | 26.0% | 26.4% |
+| HIT | **73.6%** | 73.5% | [73.2%](../experiment_42/README.md) |
+| MISS | **25.9%** | 26.0% | [26.4%](../experiment_42/README.md) |
 | Accuracy | 54.7% | 54.7% | — |
 | Context delta | 5.6pp | 4.9pp | 4.3pp |
 
 ### AR resilience
 
-| Metric | Exp 44 (eval 20) | Exp 42 (eval 9) |
+| Metric | Exp 44 (eval 20) | Exp [42](../experiment_42/README.md) (eval 9) |
 |---|---|---|
-| AR step0 | 74.9% | 74.2% |
-| AR step1 | **48.2%** | 46.3% |
-| AR step3 | 22.2% | 26.4% |
-| AR step5 | 16.8% | 22.4% |
+| AR step0 | 74.9% | [74.2%](../experiment_43b/README.md) |
+| AR step1 | **48.2%** | [46.3%](../experiment_43b/README.md) |
+| AR step3 | 22.2% | [26.4%](../experiment_43b/README.md) |
+| AR step5 | 16.8% | [22.4%](../experiment_43b/README.md) |
 
-Step0-1 improved over exp 42. Step3+ still lower — deeper AR cascade remains an open problem.
+Step0-1 improved over exp [42](../experiment_42/README.md). Step3+ still lower — deeper AR cascade remains an open problem.
 
 ### Metronome resilience
 
-| Metric | Exp 44 (eval 20) | Exp 42 (eval 9) |
+| Metric | Exp 44 (eval 20) | Exp [42](../experiment_42/README.md) (eval 9) |
 |---|---|---|
-| Metronome benchmark | **45.7%** | 25.4% |
+| Metronome benchmark | **45.7%** | [25.4%](../experiment_42/README.md) |
 | Advanced metronome | **49.5%** | — |
 | Time shifted | **47.3%** | — |
 
-Nearly 2x exp 42's metronome resilience. The gentle augmentation works — the model maintains accuracy even when context is corrupted to a metronome pattern.
+Nearly 2x exp [42](../experiment_42/README.md)'s metronome resilience. The gentle augmentation works — the model maintains accuracy even when context is corrupted to a metronome pattern.
 
 ### no_audio behavior
 
-| Metric | Exp 44 (eval 20) | Exp 42 (eval 9) |
+| Metric | Exp 44 (eval 20) | Exp [42](../experiment_42/README.md) (eval 9) |
 |---|---|---|
 | no_audio stop rate | 96.6% | 3.1% |
 
@@ -110,6 +110,6 @@ HIT plateaued at ~72.8% from eval 5-15, then broke through to 73.6% at eval 19. 
 
 - **Gentle augmentation works.** ~14% context corruption rate preserves context trust while building resilience. The "distort, don't destroy" principle is validated.
 - **Longer training matters.** HIT appeared plateaued for 10 evals, then broke through. Patience was rewarded.
-- **Metronome resilience and per-sample accuracy are not at odds.** Exp 44 achieves both — better HIT than exp 42 AND 2x the metronome resilience.
+- **Metronome resilience and per-sample accuracy are not at odds.** Exp 44 achieves both — better HIT than exp [42](../experiment_42/README.md) AND 2x the metronome resilience.
 - **no_audio stop rate is unreliable.** Swings wildly between evals (12%-96%). The model has not consistently learned to stop on silence — this needs explicit training or an audio gate mechanism.
-- **The 11.8% metronome failure rate remains** the key target for future work. This is where the model continues a pattern when it should break — the dominant error mode in AR generation (see exp 42-AR human evaluation).
+- **The 11.8% metronome failure rate remains** the key target for future work. This is where the model continues a pattern when it should break — the dominant error mode in AR generation (see exp [42-AR](../experiment_42ar/README.md) human evaluation).

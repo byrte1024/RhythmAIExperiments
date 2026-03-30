@@ -5,13 +5,13 @@
 
 ## Hypothesis
 
-Benchmarks from exp 06 showed the model relies on events (no_audio=36.5%) far more than audio (no_events=5.3%). If the model learns during training that event context is unreliable, it should be forced to fall back on audio - the signal we actually want it to use. By aggressively corrupting event context during training (25% full dropout, 15% time-warping, 10% gap-shuffling), the model should learn that events can be misleading and develop stronger audio reliance as compensation.
+Benchmarks from exp [06](../experiment_06/README.md) showed the model relies on events ([no_audio=36.5%](../experiment_06/README.md)) far more than audio ([no_events=5.3%](../experiment_06/README.md)). If the model learns during training that event context is unreliable, it should be forced to fall back on audio - the signal we actually want it to use. By aggressively corrupting event context during training (25% full dropout, 15% time-warping, 10% gap-shuffling), the model should learn that events can be misleading and develop stronger audio reliance as compensation.
 
 Additionally, stop_weight was increased to 3.0 (3x penalty for missing STOP predictions) to address the model's reluctance to predict STOP.
 
 ## Result
 
-| Metric | Exp 06 E1 | Exp 07 E1 |
+| Metric | [Exp 06](../experiment_06/README.md) E1 | Exp 07 E1 |
 |--------|-----------|-----------|
 | accuracy | 35.3% | **8.1%** |
 | hit_rate | 55.8% | **17.5%** |

@@ -5,7 +5,7 @@
 
 ## Hypothesis
 
-Three experiments confirmed the audio/event imbalance is architectural. The single-path decoder lets events dominate because both signals compete in the same cross-attention mechanism, and events are an easier signal to learn from. The solution is to separate the model into two paths with structurally distinct roles:
+Three experiments ([07](../experiment_07/README.md), 08, [09](../experiment_09/README.md)) confirmed the audio/event imbalance is architectural. The single-path decoder lets events dominate because both signals compete in the same cross-attention mechanism, and events are an easier signal to learn from. The solution is to separate the model into two paths with structurally distinct roles:
 
 - **Audio Path** (proposer): Primarily attends to audio, with light cross-attention to events. Its job is to identify where in the spectrogram beats could plausibly occur - producing broad candidate logits over many possible positions.
 - **Context Path** (selector): Primarily attends to event history, with light cross-attention to audio. Its job is to select which of the audio path's candidates best fits the rhythmic context - producing selection logits that sharpen the final prediction.
@@ -15,7 +15,7 @@ Both paths still cross-attend to each other (audio path sees events, context pat
 
 The event encoder was bottlenecked at d_event=128 (vs d_model=384) to physically limit how much rhythmic information can flow through events. An auxiliary audio-only loss (0.2x weight) forces the audio path to learn useful representations independently of the context path.
 
-1D conv smoothing heads (residual, kernel=5, 8 channels) were added to the output of both paths to prevent dead zones in predictions - the problem observed in exp 08/09 where certain bin classes were never predicted.
+1D conv smoothing heads (residual, kernel=5, 8 channels) were added to the output of both paths to prevent dead zones in predictions - the problem observed in exp 08/[09](../experiment_09/README.md) where certain bin classes were never predicted.
 
 ## Result
 
@@ -29,7 +29,7 @@ The event encoder was bottlenecked at d_event=128 (vs d_model=384) to physically
 | top-10 hit | - | - | 93.1% |
 | unique preds | - | - | 438 |
 
-The model trained and improved steadily for 6 epochs, reaching 40.8% accuracy and a 93.1% top-10 hit rate - meaning the correct answer was in the model's top 10 candidates 93% of the time. The prediction distribution showed 438 unique values, a massive improvement over the dead-zone patterns from exp 09.
+The model trained and improved steadily for 6 epochs, reaching 40.8% accuracy and a 93.1% top-10 hit rate - meaning the correct answer was in the model's top 10 candidates 93% of the time. The prediction distribution showed 438 unique values, a massive improvement over the dead-zone patterns from exp [09](../experiment_09/README.md).
 
 But **val_loss was NaN in every single epoch**. `best.pt` was never saved because NaN < best_val_loss always evaluates to False.
 

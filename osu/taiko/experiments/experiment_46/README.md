@@ -5,13 +5,13 @@
 
 ## Hypothesis
 
-Exp 44 uses hard_alpha=0.5 (50% hard CE + 50% soft targets). Exp 42-B tested hard_alpha=1.0 but only ran 2 evals before being killed — not enough to draw conclusions. The exact-match vs ±1-frame gap is ~19pp, meaning soft targets provide significant gradient signal for near-miss predictions.
+Exp [44](../experiment_44/README.md) uses hard_alpha=0.5 (50% hard CE + 50% soft targets). Exp [42-B](../experiment_42b/README.md) tested hard_alpha=1.0 but only ran 2 evals before being killed — not enough to draw conclusions. The exact-match vs ±1-frame gap is ~19pp, meaning soft targets provide significant gradient signal for near-miss predictions.
 
 **Question:** What is the optimal hard/soft ratio? Soft targets help learning (gradient for near-misses) but may also contribute to metronome behavior by making continuation predictions "close enough." Hard CE forces precision but may be too harsh early in training.
 
 ### Sub-experiments
 
-All identical to exp 44 (EventEmbeddingDetector, gentle augmentation, subsample 1) with two changes adopted from exp 45:
+All identical to exp [44](../experiment_44/README.md) (EventEmbeddingDetector, gentle augmentation, subsample 1) with two changes adopted from exp [45](../experiment_45/README.md):
 - ±2% density jitter @10% (better AR density adherence)
 - Gap ratio features enabled (default on from now)
 
@@ -24,7 +24,7 @@ Only variable is hard_alpha:
 | **46-C** | 0.75 | 25% | 75% | Mostly hard |
 | **46-D** | 1.0 | 0% | 100% | Pure hard CE |
 
-Exp 44 (hard_alpha=0.5) serves as the baseline — no need to rerun.
+Exp [44](../experiment_44/README.md) (hard_alpha=0.5) serves as the baseline — no need to rerun.
 
 All use frame_tolerance=2 (±10ms) and good_pct=0.03 (3%) for the soft target distribution.
 
@@ -42,18 +42,18 @@ python detection_train.py taiko_v2 --run-name detect_experiment_46d --model-type
 - **46-A (pure soft):** Higher HIT than exp 44 (soft targets directly optimize tolerance), but lower exact accuracy and possibly worse metronome behavior (more forgiving = easier to continue patterns).
 - **46-B (0.25):** Slightly better HIT than exp 44, slight exact accuracy drop. Sweet spot candidate.
 - **46-C (0.75):** Slightly lower HIT, better exact accuracy. Could help with metronome if sharper gradients force more decisive predictions at break points.
-- **46-D (pure hard):** Similar to exp 42-B — lower HIT, higher precision. May recover if given enough training time (42-B only had 2 evals).
+- **46-D (pure hard):** Similar to exp [42-B](../experiment_42b/README.md) — lower HIT, higher precision. May recover if given enough training time ([42-B](../experiment_42b/README.md) only had 2 evals).
 
 ### Key metrics to watch
 
 - Exact match vs HIT gap — does hard CE close the 19pp gap?
 - Metronome benchmark — does sharper loss help break patterns?
-- pred_continues_target_breaks — the 11.8% metronome failure rate from exp 44
+- pred_continues_target_breaks — the 11.8% metronome failure rate from exp [44](../experiment_44/README.md)
 - AR step1+ — does precision help or hurt cascade?
 
 ## Result
 
-Each sub-experiment ran for 2 evals. Exp 44 (α=0.5) eval 2 used as same-stage baseline.
+Each sub-experiment ran for 2 evals. Exp [44](../experiment_44/README.md) (α=0.5) eval 2 used as same-stage baseline.
 
 ### Per-sample metrics at eval 2
 
@@ -96,7 +96,7 @@ Side-by-side graphs at eval 2 (α=0.0 | 0.25 | 0.5 | 0.75 | 1.0, left to right):
 
 ### Decision
 
-Continuing with α=0.5 (exp 44 baseline). Neither direction offers a clear win:
+Continuing with α=0.5 (exp [44](../experiment_44/README.md) baseline). Neither direction offers a clear win:
 - α=0.25 has best HIT and good resilience but blurrier/less precise
 - α=0.75 has best corruption resilience but over-predicts and slightly lower HIT
 - Neither changes the fundamental error structure (ray bands, metronome lock-in)

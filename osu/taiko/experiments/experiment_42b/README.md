@@ -5,13 +5,13 @@
 
 ## Hypothesis
 
-Exp 42's entropy profile is identical to 35-C despite +1.6pp HIT. The proportional soft target (good_pct=3%) creates wider distributions for distant targets — at target=200, 12 bins get full credit. This trains the model to be less confident at distance.
+Exp [42](../experiment_42/README.md)'s entropy profile is identical to [35-C](../experiment_35c/README.md) despite +1.6pp HIT. The proportional soft target (good_pct=3%) creates wider distributions for distant targets — at target=200, 12 bins get full credit. This trains the model to be less confident at distance.
 
 **Test: pure hard CE with ±3 frame tolerance.** No soft trapezoid at all (`hard_alpha=1.0`). The model gets credit only for hitting within 3 bins of the exact target, regardless of target distance. This is maximally sharpening — equal precision demanded at all distances.
 
 Expected: worse HIT rate overall (hard CE is less forgiving), but **equally bad across all distances** — the entropy-distance correlation should flatten. The model will be less accurate but uniformly less accurate, rather than confident at short range and uncertain at long range. If the entropy-distance gradient disappears, the proportional soft targets were the cause.
 
-### Changes from exp 42
+### Changes from exp [42](../experiment_42/README.md)
 
 - **hard_alpha: 0.5 → 1.0** (pure hard CE, no soft trapezoid)
 - **frame_tolerance: 2 → 3** (±3 bins acceptable)
@@ -27,9 +27,9 @@ python detection_train.py taiko_v2 --run-name detect_experiment_42b --model-type
 
 **Entropy slashed by 45% — the soft targets WERE the confidence bottleneck. But accuracy drops and skip rate increases.**
 
-### Entropy comparison: 42-B (hard CE) vs 42 (soft targets)
+### Entropy comparison: 42-B (hard CE) vs [42](../experiment_42/README.md) (soft targets)
 
-| Metric | Exp 42 (soft) | **42-B (hard CE)** | Change |
+| Metric | Exp [42](../experiment_42/README.md) (soft) | **42-B (hard CE)** | Change |
 |--------|--------------|-------------------|--------|
 | Mean entropy | 2.390 | **1.320** | **-45%** |
 | Mean confidence | 0.355 | **0.535** | **+51%** |
@@ -40,7 +40,7 @@ python detection_train.py taiko_v2 --run-name detect_experiment_42b --model-type
 
 ### Entropy by distance
 
-| Range | Exp 42 | **42-B** | Drop |
+| Range | Exp [42](../experiment_42/README.md) | **42-B** | Drop |
 |-------|--------|---------|------|
 | 0-15 | 1.899 | **1.200** | -0.70 |
 | 15-30 | 2.017 | **1.157** | -0.86 |
@@ -53,7 +53,7 @@ Biggest improvements at distant predictions — exactly where it was needed most
 
 ### Skip analysis
 
-| Skip | Exp 42 | **42-B** |
+| Skip | Exp [42](../experiment_42/README.md) | **42-B** |
 |------|--------|---------|
 | 0 (HIT) | 50,337 (67.9%) | 48,197 (65.1%) |
 | 1 | 8,242 (11.1%) | **9,779 (13.2%)** |

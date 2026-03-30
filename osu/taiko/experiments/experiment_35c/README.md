@@ -5,7 +5,7 @@
 
 ## Hypothesis
 
-Exp 35-B showed full-band mel ramps provide the best sustained context delta (3.5-5%) but two issues remain:
+Exp [35-B](../experiment_35b/README.md) showed full-band mel ramps provide the best sustained context delta (3.5-5%) but two issues remain:
 1. **Linear ramps are ambiguous** — the model sees a gradual slope but can't pinpoint exact beat positions. This contributes to high entropy across all predictions.
 2. **Fixed 0.5x audio scaling reduces confidence** — weakened audio signal means the model is uncertain even when correct.
 
@@ -13,7 +13,7 @@ Exp 35-B showed full-band mel ramps provide the best sustained context delta (3.
 
 **Amplitude jitter** (0.25-0.75x per sample during training) prevents the model from learning a fixed ramp-to-audio ratio. It must be robust to varying audio strengths, encouraging confidence calibration.
 
-### Changes from exp 35-B
+### Changes from exp [35-B](../experiment_35b/README.md)
 
 - **Ramp shape**: linear (1→0 over gap) → exponential decay (spike + fast falloff, half-life = 3% of gap)
 - **Audio scaling**: fixed 0.5 → random 0.25-0.75 per sample during training (0.5 at eval)
@@ -50,7 +50,7 @@ Exp 35-B showed full-band mel ramps provide the best sustained context delta (3.
 
 **Comparison with prior bests:**
 
-| | Exp 14 (E8) | Exp 27 (eval 8) | **Exp 35-C (eval 8)** |
+| | Exp [14](../experiment_14/README.md) (E8) | Exp [27](../experiment_27/README.md) (eval 8) | **Exp 35-C (eval 8)** |
 |---|---|---|---|
 | HIT | 68.9% | 69.8% | **71.6%** |
 | Miss | 30.3% | 29.8% | **27.9%** |
@@ -79,5 +79,5 @@ Exp 35-B showed full-band mel ramps provide the best sustained context delta (3.
 ## Lesson
 
 - **Embedding context directly in the audio signal works.** After 20+ experiments trying separate context pathways, the solution was to put context where the model already looks — in the mel spectrogram.
-- **Exponential decay > linear ramps.** Linear ramps collapsed to 3.5% delta. Exponential stabilized at ~5%.
+- **Exponential decay > linear ramps.** [Linear ramps](../experiment_35b/README.md) collapsed to 3.5% delta. Exponential stabilized at ~5%.
 - **The model uses context but can't fully disambiguate.** The 2.0x error band persists. Focal loss (gamma=3) should help by focusing on these hard cases where context is most useful.

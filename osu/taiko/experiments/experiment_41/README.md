@@ -5,7 +5,7 @@
 
 ## Hypothesis
 
-The model's entropy rises sharply with target distance. Exp 40 proved this isn't from undertraining — more exposure to distant bins didn't help. The question: **why is entropy higher?**
+The model's entropy rises sharply with target distance. Exp [40](../experiment_40/README.md) proved this isn't from undertraining — more exposure to distant bins didn't help. The question: **why is entropy higher?**
 
 Two competing explanations:
 - **A) More valid onsets in the window** — at target=200, there might be 5 onsets between cursor and target. The model correctly hedges across all of them. Entropy reflects genuine ambiguity.
@@ -96,5 +96,5 @@ Entropy rises with distance, but HIT only drops significantly at 100+ bins. The 
 - **Density/future onsets are the same signal as distance (r=-0.543/-0.544).** Dense sections have short gaps = easy. Sparse sections have long gaps = hard. Not because of distance but because sparse sections have more competing onsets per window.
 - **Two problems to solve:**
   1. **Entropy increasing with target distance** — partly fundamental (sparse sections are harder), partly the cursor bottleneck. Context correlation (-0.213) suggests room to improve.
-  2. **Skip-1 overpredictions (11.2%)** — model predicts the 2nd onset instead of the 1st. The sharper transient at the further onset (exp 39-E: 78% have stronger flux) pulls the model past the nearest one.
+  2. **Skip-1 overpredictions (11.2%)** — model predicts the 2nd onset instead of the 1st. The sharper transient at the further onset (exp [39-E](../experiment_39e/README.md): 78% have stronger flux) pulls the model past the nearest one.
   3. **Underpredictions (19.3%)** — model predicts too early. Some are near-misses (46.5% HIT), others are genuine hallucinations or rhythm interpolation errors.

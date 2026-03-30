@@ -5,7 +5,7 @@
 
 ## Hypothesis
 
-Exp 37 and 37-B proved that sigmoid BCE with soft targets is fundamentally broken for this task — the model either predicts nothing (with focal) or everything (without). The per-bin BCE loss doesn't incentivize sparsity; it just minimizes per-bin error, which is satisfied by moderate activation everywhere.
+Exp [37](../experiment_37/README.md) and [37-B](../experiment_37b/README.md) proved that sigmoid BCE with soft targets is fundamentally broken for this task — the model either predicts nothing (with focal) or everything (without). The per-bin BCE loss doesn't incentivize sparsity; it just minimizes per-bin error, which is satisfied by moderate activation everywhere.
 
 **Dice loss** directly optimizes set overlap:
 ```
@@ -23,7 +23,7 @@ This is the standard loss for sparse segmentation (medical imaging, where tumors
 
 A small BCE component (10% weight) is added for stable per-bin gradients — pure dice can have vanishing gradients for bins far from any onset.
 
-### Changes from exp 37-B
+### Changes from exp [37-B](../experiment_37b/README.md)
 
 - **Loss**: `FocalDiceMultiTargetLoss` (dice_weight=1.0, bce_weight=0.1)
 - No pos_weight, no focal_gamma — dice handles balance inherently
@@ -46,6 +46,6 @@ Dice loss does avoid the over/underprediction extremes of sigmoid BCE, but the f
 ## Lesson
 
 - **Dice loss shows promise** (avoids the extremes of sigmoid BCE) but is slow — the overlap signal is weak when predictions are initially random.
-- **The architecture is wrong for multi-target.** Experiments 36-37C all attempted multi-target by changing only the loss/output interpretation. The model (single cursor → 501 logits) was never designed for this. Multi-target needs a fundamentally different output formulation.
-- **Three experiments (37, 37-B, 37-C) with three different losses all fail to produce reasonable multi-target predictions from a single cursor token.** The problem is structural.
-- **Exp 38 should either**: (A) redesign the architecture for multi-target (framewise detection), or (B) return to single-target (which works at 71.6%) and improve from there.
+- **The architecture is wrong for multi-target.** Experiments [36](../experiment_36/README.md)-37C all attempted multi-target by changing only the loss/output interpretation. The model (single cursor → 501 logits) was never designed for this. Multi-target needs a fundamentally different output formulation.
+- **Three experiments ([37](../experiment_37/README.md), [37-B](../experiment_37b/README.md), 37-C) with three different losses all fail to produce reasonable multi-target predictions from a single cursor token.** The problem is structural.
+- **Exp [38](../experiment_38/README.md) should either**: (A) redesign the architecture for multi-target (framewise detection), or (B) return to single-target (which works at [71.6%](../experiment_35c/README.md)) and improve from there.

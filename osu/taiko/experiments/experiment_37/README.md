@@ -5,7 +5,7 @@
 
 ## Hypothesis
 
-Experiments 36 and 36-B proved that softmax is fundamentally wrong for multi-target: bins compete for probability mass, preventing the model from predicting multiple onsets simultaneously. Per-onset recall loss improved precision but couldn't overcome the softmax bottleneck.
+Experiments [36](../experiment_36/README.md) and [36-B](../experiment_36b/README.md) proved that softmax is fundamentally wrong for multi-target: bins compete for probability mass, preventing the model from predicting multiple onsets simultaneously. Per-onset recall loss improved precision but couldn't overcome the softmax bottleneck.
 
 **Per-bin sigmoid** replaces the softmax with 501 independent binary classifiers. Each bin independently predicts P(onset here) with no competition between bins. The model can say "YES at bin 35 AND YES at bin 70" simultaneously.
 
@@ -19,7 +19,7 @@ The loss uses the same log-ratio trapezoid soft labels from OnsetLoss, but as pe
 
 Identical model (OnsetDetector with mel ramps). The output head still produces (B, 501) logits — the interpretation changes from softmax to sigmoid. No architectural changes.
 
-### Changes from exp 36-B
+### Changes from exp [36-B](../experiment_36b/README.md)
 
 - **Loss**: `SigmoidMultiTargetLoss` replaces `MultiTargetOnsetLoss`. Per-bin BCE instead of softmax CE.
 - **Probabilities**: `sigmoid(logits)` instead of `softmax(logits)` — each bin is independent.

@@ -5,13 +5,13 @@
 
 ## Hypothesis
 
-Same as exp 47 — separate binary gate head for STOP prediction. Fixes from 47:
+Same as exp [47](../experiment_47/README.md) — separate binary gate head for STOP prediction. Fixes from [47](../experiment_47/README.md):
 - **Flipped gate targets:** 1=stop, 0=onset (STOP is the positive/rare class)
 - **Focal BCE (gamma=2):** Downweights easy negatives (confident onset predictions), focuses on hard positives (STOP boundaries). Designed for extreme class imbalance (0.3% STOP).
 
 ### Architecture
 
-Same as exp 47: EventEmbeddingDetector with binary_stop=True.
+Same as exp [47](../experiment_47/README.md): EventEmbeddingDetector with binary_stop=True.
 - Gate head: cursor token → MLP → 1 logit → sigmoid → P(stop)
 - Onset head: cursor token → 500-class softmax (onset bins only)
 - Gate loss: focal BCE (gamma=2), weight controlled by --gate-weight
@@ -38,4 +38,4 @@ The math confirms focal is working correctly per-sample (STOP gets 2.75x more gr
 ## Lesson
 
 - **Focal loss helps per-sample but doesn't solve the averaging problem.** With 0.3% STOP, even with focal weighting, the mean loss is dominated by the 99.7% onset class.
-- **Fix for 47-C:** Average STOP and onset focal losses separately, then combine. This ensures STOP loss has equal standing regardless of class ratio.
+- **Fix for [47-C](../experiment_47c/README.md):** Average STOP and onset focal losses separately, then combine. This ensures STOP loss has equal standing regardless of class ratio.

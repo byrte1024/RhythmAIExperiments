@@ -5,7 +5,7 @@
 
 ## Hypothesis
 
-47-C showed the gate can't learn from the cursor token alone. The STOP decision requires looking at the whole forward region.
+[47-C](../experiment_47c/README.md) showed the gate can't learn from the cursor token alone. The STOP decision requires looking at the whole forward region.
 
 ### Architecture change
 
@@ -25,13 +25,13 @@ The forward-pool approach didn't help. Mean-pooling 124 abstract tokens is too l
 
 ## Lesson
 
-**The binary head approach is fundamentally flawed for this problem.** After 4 iterations (47, 47-B, 47-C, 47-D), every variant failed:
+**The binary head approach is fundamentally flawed for this problem.** After 4 iterations ([47](../experiment_47/README.md), [47-B](../experiment_47b/README.md), [47-C](../experiment_47c/README.md), 47-D), every variant failed:
 
 | Exp | Issue | Result |
 |---|---|---|
-| 47 | pos_weight backwards | STOP rate 0% |
-| 47-B | focal loss mean() drowns STOP | F1=0.066, recall=3% |
-| 47-C | gate_weight too low, cursor token not right | F1=0.15, stuck |
+| [47](../experiment_47/README.md) | pos_weight backwards | STOP rate 0% |
+| [47-B](../experiment_47b/README.md) | focal loss mean() drowns STOP | F1=0.066, recall=3% |
+| [47-C](../experiment_47c/README.md) | gate_weight too low, cursor token not right | F1=0.15, stuck |
 | 47-D | forward-pool gate, still low weight | F1=0.09, stuck |
 
 The root cause isn't loss weighting or read-out position — it's that **STOP isn't a separate decision from onset prediction.** In the softmax, STOP naturally wins when no onset bin has high confidence — it's the "default when uncertain." A binary gate has to actively learn to fire against a 99.7% onset base rate, and no amount of loss engineering overcame this.

@@ -5,7 +5,7 @@
 
 ## Hypothesis
 
-Exp 48 showed 14.2% of failures are universal across all architectures, with 2x/0.5x metric confusion as the dominant error. The model can't distinguish beat from sub-beat because it only sees 2.5s of audio + 2.5s of in-window events. A full musical phrase at 120 BPM is 8 seconds — the model can't see one.
+Exp [48](../experiment_48/README.md) showed 14.2% of failures are universal across all architectures, with 2x/0.5x metric confusion as the dominant error. The model can't distinguish beat from sub-beat because it only sees 2.5s of audio + 2.5s of in-window events. A full musical phrase at 120 BPM is 8 seconds — the model can't see one.
 
 The model HAS 128 context events spanning ~25 seconds of history, but events outside the 2.5s audio window are discarded because there's no audio token to place them on.
 
@@ -53,7 +53,7 @@ python detection_train.py taiko_v2 --run-name detect_experiment_49 --model-type 
 
 ### Per-sample metrics
 
-| Metric | Eval 3 | Eval 9 | Exp 44 eval 9 |
+| Metric | Eval 3 | Eval 9 | Exp [44](../experiment_44/README.md) eval 9 |
 |---|---|---|---|
 | HIT | 71.2% | 72.6% | 72.7% |
 | MISS | 28.4% | 27.0% | 26.8% |
@@ -62,7 +62,7 @@ python detection_train.py taiko_v2 --run-name detect_experiment_49 --model-type 
 | Time shifted | 39.7% | 45.0% | 44.6% |
 | stop_f1 | 0.533 | 0.530 | 0.523 |
 
-Per-sample HIT matches exp 44 at the same eval point. Metronome and time-shifted resilience are better. Context delta is notably lower (3.4pp vs 6.7pp).
+Per-sample HIT matches exp [44](../experiment_44/README.md) at the same eval point. Metronome and time-shifted resilience are better. Context delta is notably lower (3.4pp vs 6.7pp).
 
 ### AR generation — the key finding
 
@@ -81,23 +81,23 @@ In manual AR testing, the model almost never falls into metronome patterns. But 
 
 ### The tradeoff
 
-| | Exp 44 | Exp 49 |
+| | Exp [44](../experiment_44/README.md) | Exp 49 |
 |---|---|---|
 | Metronome | Frequent collapse | Almost never |
 | Precision | High (few hallucinations) | Low (52% hallucinated) |
 | AR survival | Degrades after step 10 | 100% at step 30 |
 | Error type | Locks into patterns | Over-predicts sub-beats |
 
-Exp 44's errors compound (metronome cascade). Exp 49's errors are varied and recoverable but numerous.
+Exp [44](../experiment_44/README.md)'s errors compound (metronome cascade). Exp 49's errors are varied and recoverable but numerous.
 
 ## Lesson
 
-- **Virtual tokens solve metronome collapse.** With 25s of rhythm history visible, the model maintains variety instead of locking into patterns. This was the #1 quality problem identified in exp 42-AR.
-- **But they cause over-prediction.** The model finds the right rhythmic grid but at double resolution — inserting sub-beat notes that don't exist. The 2x/0.5x confusion from exp 48 manifests in the opposite direction.
+- **Virtual tokens solve metronome collapse.** With 25s of rhythm history visible, the model maintains variety instead of locking into patterns. This was the #1 quality problem identified in exp [42-AR](../experiment_42ar/README.md).
+- **But they cause over-prediction.** The model finds the right rhythmic grid but at double resolution — inserting sub-beat notes that don't exist. The 2x/0.5x confusion from exp [48](../experiment_48/README.md) manifests in the opposite direction.
 - **32 virtual tokens may be too coarse.** Each token covers ~0.8s = ~4 events. Multiple events blend into one token, losing individual gap information. The model gets meter-level structure but not precise gap sequences. This may explain the low context delta (3.4pp) and hallucinations.
 - **Context delta dropped but that's not necessarily bad.** The model may be using virtual tokens for rhythm structure while relying on audio for timing — a healthier split than over-relying on recent context (which causes metronome lock-in).
 - **Next directions:**
   - More virtual tokens (64 or 128) for finer resolution
   - Logarithmic mapping — more tokens for recent history, fewer for distant
   - Combine with density tightening to constrain over-prediction
-  - Human evaluation: despite worse per-sample metrics, AR charts may sound better than exp 44 due to no metronome
+  - Human evaluation: despite worse per-sample metrics, AR charts may sound better than exp [44](../experiment_44/README.md) due to no metronome

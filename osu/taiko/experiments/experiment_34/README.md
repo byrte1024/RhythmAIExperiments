@@ -5,10 +5,10 @@
 
 ## Hypothesis
 
-Experiments 31-33 proved cross-attention between audio and gap tokens is fundamentally flawed for this task:
-- **Exp 31**: Late cross-attention → context works (18.8% delta) but banding (gap activations overwhelm audio)
-- **Exp 32**: Skip connection → banding fixed but context bypassed (-1.8% delta)
-- **Exp 33**: Interleaved → cold start failure, can't even learn (19% HIT)
+Experiments [31](../experiment_31/README.md)-[33](../experiment_33/README.md) proved cross-attention between audio and gap tokens is fundamentally flawed for this task:
+- **Exp [31](../experiment_31/README.md)**: Late cross-attention → context works (18.8% delta) but banding (gap activations overwhelm audio)
+- **Exp [32](../experiment_32/README.md)**: Skip connection → banding fixed but context bypassed (-1.8% delta)
+- **Exp [33](../experiment_33/README.md)**: Interleaved → cold start failure, can't even learn (19% HIT)
 
 The root cause: cross-attention mixes fine-grained audio tokens (250, ±7 activation) with coarse gap tokens (128, ±20 activation) in the same attention operation. This either overwrites audio precision or gets bypassed entirely.
 
@@ -37,25 +37,25 @@ cursor = audio[125] → output head → 501 logits
 
 | Component | Params | Notes |
 |-----------|--------|-------|
-| AudioEncoder (conv + 4 transformer layers) | ~8.0M | Same as exp 25-27 |
-| GapEncoder (snippet enc + 2 transformer layers) | ~3.5M | Same as exp 25-27 |
+| AudioEncoder (conv + 4 transformer layers) | ~8.0M | Same as exp [25](../experiment_25/README.md)-[27](../experiment_27/README.md) |
+| GapEncoder (snippet enc + 2 transformer layers) | ~3.5M | Same as exp [25](../experiment_25/README.md)-[27](../experiment_27/README.md) |
 | Context pooling (attention + MLP) | ~0.5M | New: learned query → gap tokens |
 | Audio fusion (4 self-attention layers) | ~7.5M | Audio-only attention (no gap tokens) |
 | Context FiLM (4 layers) | ~0.2M | New: gap-derived FiLM at each fusion layer |
 | Density FiLM (4 layers) | ~0.2M | Same as before |
 | Output head | ~0.2M | Same |
-| **Total** | **~20M** | Similar to exp 25-27 (~19M) |
+| **Total** | **~20M** | Similar to exp [25](../experiment_25/README.md)-[27](../experiment_27/README.md) (~19M) |
 
 ### Key differences from prior architectures
 
-- **vs Unified (exp 25-27)**: No gap tokens in fusion attention. Context enters only through FiLM modulation.
-- **vs Cross-attention (exp 31-33)**: No cross-attention at all. No magnitude imbalance, no banding, no cold start.
+- **vs Unified (exp [25](../experiment_25/README.md)-[27](../experiment_27/README.md))**: No gap tokens in fusion attention. Context enters only through FiLM modulation.
+- **vs Cross-attention (exp [31](../experiment_31/README.md)-[33](../experiment_33/README.md))**: No cross-attention at all. No magnitude imbalance, no banding, no cold start.
 - **vs Density conditioning**: Same FiLM mechanism but context is learned from gap tokens (d_model→cond_dim) instead of 3 scalar statistics.
 
 ### Expected outcomes
 
 1. **No banding** — audio self-attention is pure audio, no coarse gap features injected.
-2. **Fast convergence** — identical audio pathway to exp 27. Audio bootstraps normally.
+2. **Fast convergence** — identical audio pathway to [exp 27](../experiment_27/README.md). Audio bootstraps normally.
 3. **Context delta > 0** — FiLM conditioning is proven to work (density FiLM is load-bearing). Context FiLM should provide at least some signal.
 4. **The question**: is FiLM expressive enough to carry pattern-level information? A cond_dim=64 vector must encode "the pattern is 150 150 75 75 and we're at position 3 in the cycle."
 
@@ -74,11 +74,11 @@ cursor = audio[125] → output head → 501 logits
 | 1 | 1.25 | 66.5% | 32.8% | 0.305 | 47.7% | 467 | 2.699 | 43.6% | 4.2% |
 
 **What worked:**
-- **No banding, no cold start** — 467 unique predictions, 66.5% HIT at eval 1, matching exp 27 exactly. The architecture is clean and trains normally.
-- **Context FiLM is non-destructive** — audio pathway bootstraps identically to exp 27, FiLM adds context on top without interfering.
+- **No banding, no cold start** — 467 unique predictions, 66.5% HIT at eval 1, matching exp [27](../experiment_27/README.md) exactly. The architecture is clean and trains normally.
+- **Context FiLM is non-destructive** — audio pathway bootstraps identically to exp [27](../experiment_27/README.md), FiLM adds context on top without interfering.
 
 **What didn't work:**
-- **4.2% context delta is too low** — while positive (better than exp 32's -1.8%), it's well below exp 31's 18.8%. FiLM conditioning is too weak a mechanism to force meaningful context usage.
+- **4.2% context delta is too low** — while positive (better than exp [32](../experiment_32/README.md)'s -1.8%), it's well below exp [31](../experiment_31/README.md)'s 18.8%. FiLM conditioning is too weak a mechanism to force meaningful context usage.
 - **cond_dim=64 bottleneck** — compressing 128 gap tokens into a 64-dim vector loses most of the pattern information. FiLM can modulate "generally shorter/longer predictions" but can't encode "the pattern is 150 150 75 75 at position 3."
 - **Global modulation is too coarse** — FiLM applies the same scale+shift to all 250 audio tokens. It can't target specific positions, which is what pattern disambiguation requires.
 

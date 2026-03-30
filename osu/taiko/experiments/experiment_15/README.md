@@ -5,7 +5,7 @@
 
 ## Hypothesis
 
-Experiment 14 proved the data alignment fix was transformative (50.5% acc, 69% HIT, 30% miss at E8), but revealed a new bottleneck: the context path is dormant. no_events accuracy (50.2%) matches full accuracy (50.4%), meaning the context path contributes almost nothing to the final prediction. The model's ~50% accuracy ceiling is the audio-only ceiling.
+Experiment [14](../experiment_14/README.md) proved the data alignment fix was transformative (50.5% acc, 69% HIT, 30% miss at E8), but revealed a new bottleneck: the context path is dormant. no_events accuracy (50.2%) matches full accuracy (50.4%), meaning the context path contributes almost nothing to the final prediction. The model's ~50% accuracy ceiling is the audio-only ceiling.
 
 **Why the context path is dormant:** The context path found a local minimum - just amplify whatever audio already ranks highest. Since audio is right ~69% of the time, agreeing with audio is a safe strategy. The context path has no incentive to develop independent opinions or override audio's ranking. This manifests as:
 - no_events ≈ full accuracy (context adds nothing)
@@ -13,7 +13,7 @@ Experiment 14 proved the data alignment fix was transformative (50.5% acc, 69% H
 - Ray patterns in scatter (harmonic confusion that event spacing would directly resolve, but context doesn't intervene)
 - Inference ignoring density conditioning
 
-**Why this approach failed in exp 12 but should work now:** Experiment 12 tried `main + 0.1 audio_aux + 0.1 context_aux` and the audio path collapsed into mode collapse. But that was on misaligned data where audio couldn't learn effectively - stealing gradient from it was fatal. Now on clean data, audio is strong and self-sufficient (49-50% accuracy with no events at all). Adding context aux gradient on top rather than redistributing from audio should be safe.
+**Why this approach failed in exp [12](../experiment_12/README.md) but should work now:** Experiment [12](../experiment_12/README.md) tried `main + 0.1 audio_aux + 0.1 context_aux` and the audio path collapsed into mode collapse. But that was on misaligned data where audio couldn't learn effectively - stealing gradient from it was fatal. Now on clean data, audio is strong and self-sufficient (49-50% accuracy with no events at all). Adding context aux gradient on top rather than redistributing from audio should be safe.
 
 ### Changes
 
@@ -27,7 +27,7 @@ Experiment 14 proved the data alignment fix was transformative (50.5% acc, 69% H
 - **Zero density**: conditioning vector set to [0, 0, 0] - tests if density affects predictions at all
 - **Random density**: conditioning randomized - tests if the model uses density information or ignores it
 
-Everything else identical to exp 14: same architecture (~21M params), same dataset (taiko_v2 with correct BIN_MS), same AR augmentations.
+Everything else identical to exp [14](../experiment_14/README.md): same architecture (~21M params), same dataset (taiko_v2 with correct BIN_MS), same AR augmentations.
 
 ### Expected outcomes
 
@@ -40,7 +40,7 @@ Everything else identical to exp 14: same architecture (~21M params), same datas
 ### Risk
 
 Adding 0.1 context aux increases total gradient. If the model destabilizes, the context aux may need to be reduced to 0.05. Watch for:
-- val_loss increasing or oscillating compared to exp 14
+- val_loss increasing or oscillating compared to exp [14](../experiment_14/README.md)
 - no_events accuracy *increasing* (would mean audio is degrading)
 - Pred distribution collapsing (spikiness, fewer unique values)
 
@@ -57,9 +57,9 @@ Adding 0.1 context aux increases total gradient. If the model destabilizes, the 
 |   3 | 2.674 | 48.8% | 66.8% | 32.4% | 0.476 |  157 | 49.8% |  0.3% | 48.2% | 49.0% |
 |   4 | 2.701 | 48.6% | 66.4% | 32.8% | 0.440 |  151 | 48.5% |  0.2% | 45.0% | 49.3% |
 
-### vs Exp 14 (same epochs)
+### vs [Exp 14](../experiment_14/README.md) (same epochs)
 
-| Metric | Exp 14 E4 | Exp 15 E4 |
+| Metric | [Exp 14](../experiment_14/README.md) E4 | Exp 15 E4 |
 |--------|-----------|-----------|
 | accuracy | 49.5% | 48.6% |
 | hit_rate | 68.0% | 66.4% |
@@ -67,7 +67,7 @@ Adding 0.1 context aux increases total gradient. If the model destabilizes, the 
 | p99 | 150 | 151 |
 | no_events | 50.8% | 48.5% |
 
-Consistently ~1% behind exp 14 on accuracy/hit. The context aux added gradient noise without benefit - the context path's rubber-stamping is a deeper problem than insufficient gradient.
+Consistently ~1% behind exp [14](../experiment_14/README.md) on accuracy/hit. The context aux added gradient noise without benefit - the context path's rubber-stamping is a deeper problem than insufficient gradient.
 
 ### Density Benchmarks (key discovery)
 

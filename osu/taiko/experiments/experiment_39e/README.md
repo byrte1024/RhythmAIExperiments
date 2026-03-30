@@ -5,9 +5,9 @@
 
 ## Hypothesis
 
-Exp 39-D showed that when the model is wrong, the correct answer is at rank 1-2 with only 43% the confidence of the wrong pick. The model genuinely believes the wrong answer is correct despite heavy training loss penalizing these errors.
+Exp [39-D](../experiment_39d/README.md) showed that when the model is wrong, the correct answer is at rank 1-2 with only 43% the confidence of the wrong pick. The model genuinely believes the wrong answer is correct despite heavy training loss penalizing these errors.
 
-**Theory: the audio at the target and predicted positions will be nearly identical.** Both positions are real onsets (exp 39 showed 83% of overpredictions match future onsets), so both have real transients. The model isn't picking a louder transient over a quieter one — it's choosing between two equally valid audio events and can't determine which is nearer.
+**Theory: the audio at the target and predicted positions will be nearly identical.** Both positions are real onsets (exp [39](../experiment_39/README.md) showed 83% of overpredictions match future onsets), so both have real transients. The model isn't picking a louder transient over a quieter one — it's choosing between two equally valid audio events and can't determine which is nearer.
 
 If the audio energy/flux/onset strength is similar at both positions, the failure isn't an audio saliency problem — it's a proximity/ordering problem. The model detects onsets correctly but lacks the mechanism to rank them by distance from cursor.
 
@@ -52,5 +52,5 @@ For each failure case where the correct answer is in top-K:
 - **The model confuses audio saliency with temporal order** — it picks the sharpest transient, not the nearest onset. This is rational for a model that learned "sharp transient = onset" but wasn't taught "prefer nearer."
 - **~80% of overpredictions are saliency-driven** — the model isn't randomly wrong, it's systematically picking the more prominent audio event.
 - **~20% of failures have other causes** — not all errors are from transient saliency. Some may be context/pattern errors, noise, or genuinely ambiguous cases.
-- **Context ramps partially address this** (5% delta) — they encode "there's an onset nearer" — but the saliency signal overwhelms the ramp signal for ~80% of failures.
+- **Context ramps partially address this** ([5% delta](../experiment_35c/README.md)) — they encode "there's an onset nearer" — but the saliency signal overwhelms the ramp signal for ~80% of failures.
 - **A training fix needs to either**: (1) reduce the model's reliance on transient sharpness for ordering, or (2) amplify the proximity signal to compete with saliency.

@@ -5,13 +5,13 @@
 
 ## Hypothesis
 
-Across experiments 15-18, every context path failed to add value for timing prediction. A common thread: context operated on representations it didn't control (shared encoder features, detached) and in a feature space (absolute bin positions) that made rhythm patterns implicit rather than explicit.
+Across experiments [15](../experiment_15/README.md)-[18](../experiment_18/README.md), every context path failed to add value for timing prediction. A common thread: context operated on representations it didn't control (shared encoder features, detached) and in a feature space (absolute bin positions) that made rhythm patterns implicit rather than explicit.
 
 Two key insights drive this redesign:
 
 1. **Rhythm is about gaps, not positions.** A sequence of events at bins [-500, -350, -200, -100, -50] is hard to reason about. The gaps [150, 150, 100, 50] immediately reveal a regular rhythm that's accelerating. Candidates should be expressed the same way - "this candidate proposes a 65-bin gap after the last event" instead of "this candidate is at bin 15."
 
-2. **Context needs its own audio understanding.** Previous context paths either had no audio (exp 15-16), grabbed audio tokens from the shared encoder (exp 17-18), or relied entirely on event positions. But context needs to know *what events sounded like* - "past events were on drum transients, this candidate also has a drum transient" is exactly the signal needed to distinguish good from bad candidates.
+2. **Context needs its own audio understanding.** Previous context paths either had no audio (exp [15](../experiment_15/README.md)-[16](../experiment_16/README.md)), grabbed audio tokens from the shared encoder (exp [17](../experiment_17/README.md)-[18](../experiment_18/README.md)), or relied entirely on event positions. But context needs to know *what events sounded like* - "past events were on drum transients, this candidate also has a drum transient" is exactly the signal needed to distinguish good from bad candidates.
 
 ### Core changes
 
@@ -67,18 +67,18 @@ Context operates at d_ctx=192 instead of d_model=384. The task (gap pattern matc
 
 ### Loss
 
-Same as exp 18: hard CE on selection (closest candidate to true target) + standard onset loss on audio logits. Audio loss trains encoders + audio path. Selection loss trains context path only.
+Same as exp [18](../experiment_18/README.md): hard CE on selection (closest candidate to true target) + standard onset loss on audio logits. Audio loss trains encoders + audio path. Selection loss trains context path only.
 
 ### Metrics
 
-Same as exp 18:
+Same as exp [18](../experiment_18/README.md):
 - `audio_metrics`: full suite from `audio_logits.argmax` alone
 - `selection_stats`: override_rate, override_accuracy, audio_hit_rate, final_hit_rate, context_delta, rescued_rate, damaged_rate
 
 ### Expected outcomes
 
 1. **Audio HIT ~69%** - context is fully isolated, can't affect audio.
-2. **Context override accuracy > 50%** - gap patterns give explicit rhythm signal that was missing in exp 15-18. When context disagrees, it should have a reason (rhythm mismatch).
+2. **Context override accuracy > 50%** - gap patterns give explicit rhythm signal that was missing in exp [15](../experiment_15/README.md)-[18](../experiment_18/README.md). When context disagrees, it should have a reason (rhythm mismatch).
 3. **Context delta ≥ 0** - even break-even would be a first. A positive delta proves rhythm patterns are learnable.
 4. **Rescued > damaged** - overrides should be net-positive.
 
@@ -112,7 +112,7 @@ Same as exp 18:
 **What worked:**
 - Gap-based representation is the right framing. During training, context consistently beat audio (54.2% vs 52.5% HIT at 58% through E1). First time context ever outperformed audio on any metric.
 - Own encoders with direct gradient signal - context path trained without detach, gradient isolation is structural (no shared encoder outputs used).
-- Override accuracy (36-40%) is better than exp 18's declining 35%, and E2 hit 40.4%.
+- Override accuracy (36-40%) is better than exp [18](../experiment_18/README.md)'s declining 35%, and E2 hit 40.4%.
 - Delta reached -0.18pp at E2 - closest to break-even any context experiment has achieved.
 - New metrics (override F1, decision categories) give clear diagnostic signal.
 
@@ -145,4 +145,4 @@ Context learns to rerank proposals from an audio model that is itself still lear
 
 - **Gap representation works** - inter-onset intervals + local audio snippets + own encoders is the right architecture for context. First experiment where context showed positive signal during training.
 - **Unstable proposer poisons the selector** - context can't learn to rerank well when the proposals themselves are changing. The ~29% false_top1 rate (missed overrides) suggests context is too conservative, possibly because early noisy overrides were punished.
-- **Next step: warm-start audio from exp 14** - load trained audio weights, freeze them, only train the 2.5M context path against stable high-quality proposals. Also mask selection loss when target isn't in top-K to remove impossible training signal.
+- **Next step: warm-start audio from exp [14](../experiment_14/README.md)** - load trained audio weights, freeze them, only train the 2.5M context path against stable high-quality proposals. Also mask selection loss when target isn't in top-K to remove impossible training signal.

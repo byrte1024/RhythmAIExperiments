@@ -72,5 +72,5 @@ Ramps in reserved edge bands (0-2, 77-79) are too easy for the conv to filter ou
 
 ## Lesson
 
-- **Edge-band ramps provide some signal** (5.0% delta, better than FiLM's 4.2%) but the conv learns to ignore specific bands.
+- **Edge-band ramps provide some signal** (5.0% delta, better than FiLM's [4.2%](../experiment_34/README.md)) but the conv learns to ignore specific bands.
 - **Ramps need to be everywhere** — the model must process them alongside audio features, not in separable frequency bands.

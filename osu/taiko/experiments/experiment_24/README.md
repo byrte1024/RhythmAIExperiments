@@ -5,19 +5,19 @@
 
 ## Hypothesis
 
-9 experiments of top-K reranking (exp 15-23) all produced negative delta. The best result - exp 23 E3 with 64% override accuracy and 4:1 good:bad ratio - still had -3.2pp delta. The discrete override interface is fundamentally at odds with improving on a 70%-correct base model.
+9 experiments of top-K reranking (exp [15](../experiment_15/README.md)-[23](../experiment_23/README.md)) all produced negative delta. The best result - exp [23](../experiment_23/README.md) E3 with 64% override accuracy and 4:1 good:bad ratio - still had -3.2pp delta. The discrete override interface is fundamentally at odds with improving on a 70%-correct base model.
 
 **The paradigm shift: additive logits instead of reranking.**
 
 Context produces its own 501-way logit distribution, added to audio's logits before softmax. Instead of a hard "keep or replace" decision, context applies soft influence - nudging probability mass between nearby bins. A small positive value at bin 47 and negative at bin 52 shifts audio's distribution slightly without catastrophic replacement.
 
-This is actually how the LegacyOnsetDetector (exp 11-16) worked, but with shared encoders and no gap representation. Now we combine the additive approach with the proven gap-based architecture from exp 19-23.
+This is actually how the LegacyOnsetDetector (exp [11](../experiment_11/README.md)-[16](../experiment_16/README.md)) worked, but with shared encoders and no gap representation. Now we combine the additive approach with the proven gap-based architecture from exp [19](../experiment_19/README.md)-[23](../experiment_23/README.md).
 
-### Changes from exp 23
+### Changes from exp [23](../experiment_23/README.md)
 
 **1. New ContextPath - additive output instead of K-way selection**
 
-The gap encoder is preserved (gap_emb + snippet_encoder + self-attention + FiLM). But instead of cross-attending to K candidates and dot-product scoring, a cursor token is appended after the gap encoder, gets one more self-attention pass to attend to the rhythm representation, then projects directly to 501 logits via an output head.
+The gap encoder is preserved from exp [19](../experiment_19/README.md)-[23](../experiment_23/README.md) (gap_emb + snippet_encoder + self-attention + FiLM). But instead of cross-attending to K candidates and dot-product scoring, a cursor token is appended after the gap encoder, gets one more self-attention pass to attend to the rhythm representation, then projects directly to 501 logits via an output head.
 
 No top-K extraction, no candidate building, no selection. Context independently predicts "where should the next note go?" in the same 501-way space as audio.
 
@@ -43,7 +43,7 @@ Same trapezoid soft-target loss on audio_logits and context_logits independently
 - If context learns useful patterns, it shifts the combined distribution
 
 **4. Same infrastructure**
-- Warm-start from exp 14 (audio components)
+- Warm-start from exp [14](../experiment_14/README.md) (audio components)
 - Freeze audio components
 - Only train context path
 
@@ -51,10 +51,10 @@ Same trapezoid soft-target loss on audio_logits and context_logits independently
 
 | Component | Params | Training |
 |-----------|--------|----------|
-| AudioEncoder | 8.0M | **Frozen** (from exp 14) |
-| EventEncoder | 0.5M | **Frozen** (from exp 14) |
-| AudioPath | 5.0M | **Frozen** (from exp 14) |
-| cond_mlp | ~8K | **Frozen** (from exp 14) |
+| AudioEncoder | 8.0M | **Frozen** (from exp [14](../experiment_14/README.md)) |
+| EventEncoder | 0.5M | **Frozen** (from exp [14](../experiment_14/README.md)) |
+| AudioPath | 5.0M | **Frozen** (from exp [14](../experiment_14/README.md)) |
+| cond_mlp | ~8K | **Frozen** (from exp [14](../experiment_14/README.md)) |
 | Context gap encoder | 0.9M | Training |
 | Context snippet encoder | 0.2M | Training |
 | Context cursor + output head | ~0.13M | Training |
@@ -62,7 +62,7 @@ Same trapezoid soft-target loss on audio_logits and context_logits independently
 
 ### Context path flow
 
-1. Compute gaps from event offsets (same as exp 19-23)
+1. Compute gaps from event offsets (same as exp [19](../experiment_19/README.md)-[23](../experiment_23/README.md))
 2. Extract ~50ms mel snippets at each event position (same)
 3. Gap encoder: gap_emb + snippet_feat → 2 self-attention layers + FiLM → rhythm representation
 4. Append cursor token → one more self-attention pass (cursor attends to rhythm)
@@ -74,7 +74,7 @@ Same trapezoid soft-target loss on audio_logits and context_logits independently
 2. **Context HIT > 0** - context should learn some timing from rhythm patterns alone, even if low (maybe 10-30%).
 3. **Combined HIT ≥ 69.5%** - if context learns ANY useful signal, additive combination should improve or at least not hurt. Even random context with small magnitude is safe (near-zero logits = no influence).
 4. **context_hurt near 0%** - additive with small context magnitudes means low risk of catastrophic damage.
-5. **context_helped > 0%** - if gap patterns are informative (proven in exp 19-23), context should fix some audio mistakes.
+5. **context_helped > 0%** - if gap patterns are informative (proven in exp [19](../experiment_19/README.md)-[23](../experiment_23/README.md)), context should fix some audio mistakes.
 
 ### Risk
 
@@ -100,7 +100,7 @@ Same trapezoid soft-target loss on audio_logits and context_logits independently
 | Val loss | 5.917 | 5.884 | 5.877 | 5.772 | 5.739 |
 
 **What worked:**
-- Additive paradigm is fundamentally safer than reranking - delta -0.64pp at best vs reranking's best of -0.77pp (exp 21 E1), and less volatile.
+- Additive paradigm is fundamentally safer than reranking - delta -0.64pp at best vs reranking's best of -0.77pp (exp [21](../experiment_21/README.md) E1), and less volatile.
 - Context learned real signal: 48.7% → 53.8% standalone HIT from gaps + snippets alone. The cursor architecture produces meaningful 501-way distributions.
 - Val loss consistently dropped - context was genuinely learning better timing predictions.
 - context_hurt tracked downward E1-E4 (6.72% → 6.15%), confirming context learned where NOT to push.
@@ -112,7 +112,7 @@ Same trapezoid soft-target loss on audio_logits and context_logits independently
 
 **The core insight from 10 experiments (15-24):**
 
-Every approach - reranking (exp 15-23) and additive logits (exp 24) - treats context as a separate system that either overrides or nudges audio. But context without audio access is fundamentally limited: it can learn rhythm patterns (~53% HIT) but can't know when audio is already correct (70% of the time). This means context's influence is essentially random with respect to audio's correctness, guaranteeing net-negative delta.
+Every approach - reranking (exp [15](../experiment_15/README.md)-[23](../experiment_23/README.md)) and additive logits (exp 24) - treats context as a separate system that either overrides or nudges audio. But context without audio access is fundamentally limited: it can learn rhythm patterns (~53% HIT) but can't know when audio is already correct (70% of the time). This means context's influence is essentially random with respect to audio's correctness, guaranteeing net-negative delta.
 
 ## Graphs
 
@@ -131,5 +131,5 @@ Every approach - reranking (exp 15-23) and additive logits (exp 24) - treats con
 
 - **Additive logits are safer than reranking** - soft influence self-regulates early (small magnitudes = safe default), but magnitude growth eventually causes the same problems.
 - **Context in isolation caps at ~53% HIT** - gap patterns + snippets without full audio are not sufficient to reliably predict onset positions. Useful signal exists but not enough to improve on a 70% audio model.
-- **Separate paths cannot break even** - 10 experiments across two paradigms (reranking and additive) prove that any architecture where context operates without seeing audio's full representation will have context_hurt ≈ context_helped. The information asymmetry is the bottleneck, not the output interface.
+- **Separate paths cannot break even** - 10 experiments (exp [15](../experiment_15/README.md)-24) across two paradigms (reranking and additive) prove that any architecture where context operates without seeing audio's full representation will have context_hurt ≈ context_helped. The information asymmetry is the bottleneck, not the output interface.
 - **The path forward is unification** - a single model where audio and context features (gaps, rhythm) are jointly attended to, not separate paths combined post-hoc. The model needs to see both "what does the audio say?" and "what does the rhythm pattern say?" simultaneously when making each prediction.

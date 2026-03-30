@@ -5,11 +5,11 @@
 
 ## Hypothesis
 
-Exp 37 with pos_weight=5.0 caused massive overprediction (468 preds/window). The model activated everything to minimize positive-weighted loss. With focal γ=2 it predicted nothing.
+Exp [37](../experiment_37/README.md) with pos_weight=5.0 caused massive overprediction (468 preds/window). The model activated everything to minimize positive-weighted loss. With focal γ=2 it predicted nothing.
 
 **pos_weight=1.0** removes the explicit upweighting. The natural class imbalance (~16 positives in 500 bins) means the model will be biased toward predicting "no onset" at most bins — which is correct. The soft trapezoid targets still provide gradient at onset positions; the model just won't be pushed to activate aggressively.
 
-### Changes from exp 37
+### Changes from exp [37](../experiment_37/README.md)
 
 - **pos_weight: 5.0 → 1.0**
 - **focal_gamma: 0.0** (no focal)
@@ -23,7 +23,7 @@ python detection_train.py taiko_v2 --run-name detect_experiment_37b --model-type
 
 ## Result
 
-**Same overprediction as exp 37 — pos_weight isn't the issue, soft targets are.** Killed after eval 4.
+**Same overprediction as exp [37](../experiment_37/README.md) — pos_weight isn't the issue, soft targets are.** Killed after eval 4.
 
 | eval | epoch | HIT | Miss | eRecall | pPrec | F1 | Preds/win | Hall |
 |------|-------|-----|------|---------|-------|----|-----------|------|
@@ -41,6 +41,6 @@ No improvement across 4 evals. The model activates ~460 of 500 bins regardless o
 
 ## Lesson
 
-- **pos_weight is not the problem** — same behavior at 5.0 and 1.0. The soft targets themselves cause over-activation.
+- **pos_weight is not the problem** — same behavior at [5.0](../experiment_37/README.md) and 1.0. The soft targets themselves cause over-activation.
 - **BCE with soft targets doesn't incentivize sparsity** — the model can satisfy the loss by predicting ~0.3 everywhere, which after thresholding at 0.05 activates nearly everything.
 - **Need a loss that optimizes set overlap, not per-bin error** — dice loss directly measures how well the predicted onset set matches the real onset set. Predicting everything gives low dice (huge denominator).

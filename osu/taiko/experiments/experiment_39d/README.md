@@ -5,7 +5,7 @@
 
 ## Hypothesis
 
-We know top-10 contains the answer ~96% of the time, but two unknowns:
+We know top-10 contains the answer [~96%](../experiment_27/README.md) of the time, but two unknowns:
 
 1. **How many HITs per sample?** If top-10 has 5 candidates that all match the target (near-duplicate bins like 74, 75, 76), the model is concentrated but imprecise. If it has exactly 1 match, the model knows the answer but ranks it wrong.
 
@@ -54,5 +54,5 @@ Of the 17,989 fixable errors:
 - **The model concentrates probability correctly** — 3 adjacent correct bins in top-10 (74.5% of samples). The predicted region is right, just not always the peak.
 - **When wrong, the answer is usually the 2nd or 3rd choice** — 73.8% at rank 1-2. But the confidence gap is 2.3x, too large for post-hoc reranking to overcome.
 - **This is a confidence/calibration problem, not a detection problem.** The model sees the right region but can't confidently commit to the nearest onset when multiple valid onsets exist in the window.
-- **The 2.5x confidence gap explains why reranking only gets +1pp** — no weighting scheme can reliably flip a 28% vs 11% confidence decision without also breaking correct predictions.
+- **The 2.5x confidence gap explains why [reranking only gets +1pp](../experiment_39b/README.md)** — no weighting scheme can reliably flip a 28% vs 11% confidence decision without also breaking correct predictions.
 - **Fix must happen at training time** — the model needs to learn to be more confident about nearest onsets specifically.

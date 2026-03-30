@@ -5,11 +5,11 @@
 
 ## Hypothesis
 
-Exp 50 (weight 0.1) produced a sidegrade: better resilience, slightly lower HIT. The pressure was enough to improve robustness but too gentle to force better selection. At 0.1, entropy of ~2.3 nats adds ~0.23 to loss (~8%).
+Exp [50](../experiment_50/README.md) (weight 0.1) produced a sidegrade: better resilience, slightly lower HIT. The pressure was enough to improve robustness but too gentle to force better selection. At 0.1, entropy of ~2.3 nats adds ~0.23 to loss (~8%).
 
 At weight 0.5, entropy adds ~1.15 to loss (~40% of onset loss). This is aggressive — the model will be strongly incentivized to produce peaked distributions. The question is whether this forces better discrimination between candidates or causes mode collapse.
 
-### Changes from exp 50
+### Changes from exp [50](../experiment_50/README.md)
 
 - `--entropy-weight 0.5` (was 0.1)
 
@@ -27,11 +27,11 @@ python detection_train.py taiko_v2 --run-name detect_experiment_50b --model-type
 
 ## Result
 
-**Converged at eval 10. Same HIT ceiling as w=0.1, no additional benefit from stronger pressure.**
+**Converged at eval 10. Same HIT ceiling as w=0.1 (exp [50](../experiment_50/README.md)), no additional benefit from stronger pressure.**
 
 ### Progression
 
-| Metric | Eval 3 | Eval 8 | Eval 10 | 50 (w=0.1) e10 | Exp 44 ATH |
+| Metric | Eval 3 | Eval 8 | Eval 10 | [50](../experiment_50/README.md) (w=0.1) e10 | Exp [44](../experiment_44/README.md) ATH |
 |---|---|---|---|---|---|
 | HIT | 70.9% | 72.1% | 72.5% | 72.3% | **73.6%** |
 | Exact | 52.4% | 53.3% | 53.7% | 53.6% | 54.7% |
@@ -49,7 +49,7 @@ Despite this cleaner entropy structure, HIT didn't improve over w=0.1.
 
 ### 50 vs 50-B comparison
 
-| | w=0.1 (exp 50) | w=0.5 (exp 50-B) |
+| | w=0.1 (exp [50](../experiment_50/README.md)) | w=0.5 (exp 50-B) |
 |---|---|---|
 | Entropy contribution to loss | ~8% | ~40% |
 | HIT at convergence | 72.9-73.2% | 72.5% |
@@ -62,7 +62,7 @@ AR step1 is notably worse at w=0.5 — the model commits too hard to wrong predi
 
 ## Lesson
 
-- **Stronger anti-entropy doesn't help.** w=0.5 produces a cleaner entropy structure but the same HIT ceiling and worse AR cascade than w=0.1.
+- **Stronger anti-entropy doesn't help.** w=0.5 produces a cleaner entropy structure but the same HIT ceiling and worse AR cascade than w=0.1 (exp [50](../experiment_50/README.md)).
 - **The disambiguation zone isn't the problem.** Eliminating it (bimodal entropy) didn't improve accuracy. The model's hedging was informative, not harmful.
 - **Anti-entropy hurts AR at high weight.** Over-committed wrong predictions cascade worse than uncertain ones. w=0.1 is the sweet spot if using anti-entropy at all.
-- **The HIT ceiling at ~73% is not an entropy problem.** Both weights converge to the same place. The remaining errors are structural (exp 48: 2x/0.5x metric confusion), not a confidence issue.
+- **The HIT ceiling at ~73% is not an entropy problem.** Both weights converge to the same place. The remaining errors are structural (exp [48](../experiment_48/README.md): 2x/0.5x metric confusion), not a confidence issue.

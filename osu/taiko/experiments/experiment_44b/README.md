@@ -51,6 +51,8 @@ Report: for each streak length K in context, what % of samples continue it?
 
 **43.9% of all training samples ask the model to repeat the previous gap.** Once context shows 8+ same-gap events, continuing the pattern is correct 83% of the time. At 32+ it's 97%.
 
+*(See also exp [44](../experiment_44/README.md) for the model trained with gentle augmentation, and exp [42-AR](../experiment_42ar/README.md) for human evaluation of metronome collapse.)*
+
 ## Lesson
 
 - **Metronome behavior is the statistically correct response** for nearly half of all samples. The model isn't broken — it's learning the dominant pattern in the data.

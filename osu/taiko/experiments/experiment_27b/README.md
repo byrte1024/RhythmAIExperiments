@@ -5,7 +5,7 @@
 
 ## Hypothesis
 
-Exp 27's best model (eval 8, 69.8% HIT) shows systematic over-prediction: when the correct answer is 75, it predicts 150. Top-3 accuracy is ~90%, meaning the model narrows to a small set of rhythmically valid candidates but picks wrong. Forward error shows predictions cluster at meaningful ratios (1.0x, 0.5x, 2.0x) — the model knows the rhythm vocabulary but can't disambiguate.
+Exp [27](../experiment_27/README.md)'s best model (eval 8, 69.8% HIT) shows systematic over-prediction: when the correct answer is 75, it predicts 150. Top-3 accuracy is ~90%, meaning the model narrows to a small set of rhythmically valid candidates but picks wrong. Forward error shows predictions cluster at meaningful ratios (1.0x, 0.5x, 2.0x) — the model knows the rhythm vocabulary but can't disambiguate.
 
 **If the model could detect and continue repeating gap patterns from its context, how many misses would it fix?**
 
@@ -93,11 +93,11 @@ The model's errors are **not random**. They are systematic:
 - **Context** to know which gaps are rhythmically plausible (pattern continuation)
 - **Audio** to know when to follow vs break the pattern (section transitions, new rhythmic ideas)
 
-This is exactly what the unified fusion architecture (exp 25-27) was designed to do, but isn't doing — context delta collapsed to ~1.5% in all experiments. The information is there; the model just doesn't learn to use it.
+This is exactly what the unified fusion architecture (exp [25](../experiment_25/README.md)-[27](../experiment_27/README.md)) was designed to do, but isn't doing — context delta collapsed to ~1.5% in all experiments. The information is there; the model just doesn't learn to use it.
 
 ## Lesson
 
 - **Context contains the answer for the vast majority of misses.** The target gap value appears in recent context for ~95% of non-STOP misses with sufficient history. The model's ~70% HIT ceiling is not due to missing information.
 - **Strict pattern matching is too rigid for real taiko rhythms.** Taiko patterns have timing drift (±1 bin), interruptions (pauses, transitions), and hierarchical structure (30/60/120 relationships). A block-repetition detector catches only the cleanest cases.
 - **The model needs both context AND audio to disambiguate.** Context says "75 and 150 are both valid here." Audio says "this is a dense section, use 75" or "this is a transition, break the pattern." Neither signal alone is sufficient — the model must learn to fuse them.
-- **The ~70% ceiling is a context utilization problem, not a data or capacity problem.** Experiments 25-27 proved the architecture has capacity and data. Experiment 27-B proves the information exists in context. The gap is in how the model routes attention between audio and context features.
+- **The ~70% ceiling is a context utilization problem, not a data or capacity problem.** Experiments [25](../experiment_25/README.md)-[27](../experiment_27/README.md) proved the architecture has capacity and data. Experiment 27-B proves the information exists in context. The gap is in how the model routes attention between audio and context features.

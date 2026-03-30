@@ -5,7 +5,7 @@
 
 ## Hypothesis
 
-Exp 39 proved 83.2% of overpredictions match real future onsets. The model sees valid onsets but picks the wrong one (further instead of nearest). The theoretical HIT if we count these is 86.5%.
+Exp [39](../experiment_39/README.md) proved [83.2% of overpredictions match real future onsets](../experiment_39/README.md). The model sees valid onsets but picks the wrong one (further instead of nearest). The theoretical HIT if we count these is [86.5%](../experiment_39/README.md).
 
 **Rerank the top-K candidates** by a weighted score combining confidence rank and position proximity:
 ```
@@ -18,7 +18,7 @@ Also track regression: how many current HITs become misses from reranking (we do
 
 ### Method
 
-1. Run 35-C eval 8 on val set, collect top-10 predictions with probabilities
+1. Run [35-C](../experiment_35c/README.md) eval 8 on val set, collect top-10 predictions with probabilities
 2. For each weight combination, rerank top-10 and pick the highest-scoring candidate
 3. Measure: HIT rate, improvements (miss→hit), regressions (hit→miss), net gain
 
@@ -35,7 +35,7 @@ Improvement: +0.9%
   Net: +695
 ```
 
-The theoretical ceiling from exp 39 is +14.9pp, but reranking only recovers +0.9pp. The problem: a global position weight helps overpredictions but hurts correct distant predictions. When the nearest onset IS far, the proximity bias pushes toward a spurious close candidate.
+The theoretical ceiling from exp [39](../experiment_39/README.md) is [+14.9pp](../experiment_39/README.md), but reranking only recovers +0.9pp. The problem: a global position weight helps overpredictions but hurts correct distant predictions. When the nearest onset IS far, the proximity bias pushes toward a spurious close candidate.
 
 **conf_w=0 is catastrophic** (-59.3%) — pure proximity picks the smallest bin regardless of confidence, destroying everything.
 

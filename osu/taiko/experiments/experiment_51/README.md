@@ -68,7 +68,7 @@ Getting a streak-16 break wrong costs 40x more than getting a streak-1 continuat
 - **Metronome benchmark should improve significantly.** The model learns to distrust long streaks.
 
 ### Architecture
-Same as exp 45 (EventEmbeddingDetector, gap ratios, tight density jitter). Only change is the per-sample loss multiplier.
+Same as exp [45](../experiment_45/README.md) (EventEmbeddingDetector, gap ratios, tight density jitter). Only change is the per-sample loss multiplier.
 
 ### Launch
 
@@ -82,10 +82,10 @@ python detection_train.py taiko_v2 --run-name detect_experiment_51 --model-type 
 
 ### Progression
 
-| Metric | Eval 1 | Eval 4 | Eval 9 | Exp 45 eval 8 | Exp 44 ATH |
+| Metric | Eval 1 | Eval 4 | Eval 9 | Exp [45](../experiment_45/README.md) eval 8 | Exp [44](../experiment_44/README.md) ATH |
 |---|---|---|---|---|---|
-| HIT | 60.5% | 65.2% | 67.5% | 71.9% | **73.6%** |
-| MISS | 38.8% | 34.3% | 32.0% | 27.5% | **25.9%** |
+| HIT | 60.5% | 65.2% | 67.5% | [71.9%](../experiment_45/README.md) | [**73.6%**](../experiment_44/README.md) |
+| MISS | 38.8% | 34.3% | 32.0% | [27.5%](../experiment_45/README.md) | [**25.9%**](../experiment_44/README.md) |
 | Exact | 43.5% | 47.8% | 49.6% | — | 54.7% |
 | Ctx delta | 2.7pp | 4.2pp | 4.5pp | 7.6pp | 5.6pp |
 | AR step0 | 65.1% | 66.9% | 63.3% | 73.5% | 76.7% |
@@ -94,14 +94,14 @@ python detection_train.py taiko_v2 --run-name detect_experiment_51 --model-type 
 | Adv metronome | 44.3% | 45.6% | 48.6% | 49.7% | 50.1% |
 | Time shifted | 42.2% | 41.4% | 44.6% | — | 47.3% |
 
-HIT at 67.5% — 6.1pp below exp 44 ATH and 4.4pp below exp 45 at the same eval. The streak-ratio loss weighting successfully diverted model capacity from common continuations to rare breaks, but the cost to overall accuracy was too high. AR metrics didn't improve enough to compensate — step0 at 63.3% is lower than every previous experiment.
+HIT at 67.5% — 6.1pp below exp [44](../experiment_44/README.md) ATH and 4.4pp below exp [45](../experiment_45/README.md) at the same eval. The streak-ratio loss weighting successfully diverted model capacity from common continuations to rare breaks, but the cost to overall accuracy was too high. AR metrics didn't improve enough to compensate — step0 at 63.3% is lower than every previous experiment.
 
-Metronome resilience at 47.2% is good but not dramatically better than exp 50 (46.9%) which achieved it without sacrificing HIT.
+Metronome resilience at 47.2% is good but not dramatically better than [exp 50](../experiment_50/README.md) (46.9% at eval 12) which achieved it without sacrificing HIT.
 
 ## Lesson
 
 - **Streak-ratio loss weighting hurts accuracy more than it helps AR.** A 6pp HIT loss is too much — the model spent too much capacity on rare cells (0.02-0.10% of data) that don't contribute to overall quality.
 - **The cap and power weren't enough to prevent over-correction.** Even with power=0.3 and cap=50, the rare-cell boost dominated the loss landscape too much for the common cases that drive HIT.
-- **Metronome resilience is better achieved through anti-entropy (exp 50) or virtual tokens (exp 49).** Both got similar metronome scores without sacrificing HIT.
-- **Exp 45 remains the best overall model.** Best balance of HIT, resilience, and AR quality across all experiments.
+- **Metronome resilience is better achieved through anti-entropy (exp [50](../experiment_50/README.md)) or virtual tokens (exp [49](../experiment_49/README.md)).** Both got similar metronome scores without sacrificing HIT.
+- **Exp [45](../experiment_45/README.md) remains the best overall model.** Best balance of HIT, resilience, and AR quality across all experiments.
 - **The streak-ratio data itself is valuable.** The matrix revealed the training distribution imbalance clearly. Future approaches might use it more subtly — e.g., curriculum learning where streak-break examples are gradually introduced, or targeted augmentation that creates synthetic break samples.

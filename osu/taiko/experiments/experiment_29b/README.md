@@ -5,11 +5,11 @@
 
 ## Hypothesis
 
-Exp 29 showed that ctx_loss_weight=0.2 is too weak — the aux head's gradient is ~20% of the gap encoder's total, dominated by fusion which tells it to be quiet. Context delta collapsed identically to every prior experiment. Ctx loss barely dropped (4.2→4.1, near random).
+Exp [29](../experiment_29/README.md) showed that ctx_loss_weight=0.2 is too weak — the aux head's gradient is ~20% of the gap encoder's total, dominated by fusion which tells it to be quiet. Context delta collapsed identically to every prior experiment. Ctx loss barely dropped (4.2→4.1, near random).
 
 **Increase weight to 1.0** so the aux gradient matches the main loss gradient on the gap encoder. The gap encoder should feel equal pressure from both the standalone prediction head and the fusion pathway. This may finally break the audio-dominance equilibrium.
 
-### Changes from exp 29
+### Changes from exp [29](../experiment_29/README.md)
 
 **ctx_loss_weight: 0.2 → 1.0.** Everything else identical.
 
@@ -33,8 +33,8 @@ Exp 29 showed that ctx_loss_weight=0.2 is too weak — the aux head's gradient i
 
 **What happened:**
 - **Same collapse.** Context delta: 4.7% → 0.3% by eval 6. Identical pattern to every prior experiment.
-- **Ctx loss still barely moved** — 4.215 → 4.014 over 6 evals. Slightly faster than exp 29 (0.2 weight) but still near random (~6.2). The gap encoder can't produce representations useful for standalone 501-class prediction regardless of gradient strength.
-- **HIT ~0.5pp behind exp 27** — the heavier aux loss is a drag on the main pathway without providing benefit.
+- **Ctx loss still barely moved** — 4.215 → 4.014 over 6 evals. Slightly faster than exp [29](../experiment_29/README.md) (0.2 weight) but still near random (~6.2). The gap encoder can't produce representations useful for standalone 501-class prediction regardless of gradient strength.
+- **HIT ~0.5pp behind exp [27](../experiment_27/README.md)** — the heavier aux loss is a drag on the main pathway without providing benefit.
 
 **The fundamental issue:**
 The aux head approach fails not because of gradient weight, but because **501-class prediction from gap tokens alone is too hard**. The aux head can't learn → can't reward the gap encoder → gap encoder never improves. The bottleneck is the task difficulty for the aux head, not gradient magnitude.

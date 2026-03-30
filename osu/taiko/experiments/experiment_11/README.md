@@ -5,9 +5,9 @@
 
 ## Hypothesis
 
-Experiment 10 showed the two-path architecture works but was crippled by a NaN bug: all-masked event attention produced NaN that propagated through the entire model for any sample with no prior events. The fix is simple - unmask a dummy position when all events are masked - but the 6 epochs of exp 10 trained with corrupted gradients on every no-event sample. The context path in particular never learned what to do when events are absent, which is exactly the signal it needs for falling back on audio.
+Experiment [10](../experiment_10/README.md) showed the two-path architecture works but was crippled by a NaN bug: all-masked event attention produced NaN that propagated through the entire model for any sample with no prior events. The fix is simple - unmask a dummy position when all events are masked - but the 6 epochs of exp [10](../experiment_10/README.md) trained with corrupted gradients on every no-event sample. The context path in particular never learned what to do when events are absent, which is exactly the signal it needs for falling back on audio.
 
-The hypothesis is that starting fresh with valid gradients from epoch 1 will produce significantly better results than exp 10, especially on the benchmarks that were previously broken (no_events, no_events_no_audio). The architecture is identical - the only change is the NaN guard.
+The hypothesis is that starting fresh with valid gradients from epoch 1 will produce significantly better results than exp [10](../experiment_10/README.md), especially on the benchmarks that were previously broken (no_events, no_events_no_audio). The architecture is identical - the only change is the NaN guard.
 
 ## Result
 
@@ -21,7 +21,7 @@ The hypothesis is that starting fresh with valid gradients from epoch 1 will pro
 | frame_error_p99 | 366 | 212 | 180 | 210 | **180** |
 | exact_match | 36.6% | 43.2% | 44.8% | 45.6% | **47.0%** |
 
-Massive improvement. At E1, this run already surpassed exp 10 E6 on accuracy (36.7% vs 40.8% is close, and by E2 it passed it). val_loss is real, smooth, and decreasing - `best.pt` saves correctly.
+Massive improvement. At E1, this run already surpassed exp [10](../experiment_10/README.md) E6 on accuracy (36.7% vs 40.8% is close, and by E2 it passed it). val_loss is real, smooth, and decreasing - `best.pt` saves correctly.
 
 **Top-K accuracy at E2** revealed how close the model is to much higher performance:
 
@@ -49,7 +49,7 @@ The correct answer is in the top 3 candidates 84% of the time, and in the top 10
 
 For the first time in the entire experiment series: **no_events (36.8%) >> no_audio (15.5%)**. The model relies more on audio than on events. In every previous experiment, this was reversed. The two-path architecture with valid gradients achieves the balance that three experiments of augmentation tuning could not.
 
-no_events_no_audio correctly predicts STOP 97-100% of the time - it was 0% in exp 10 and only 64% in earlier experiments.
+no_events_no_audio correctly predicts STOP 97-100% of the time - it was 0% in exp [10](../experiment_10/README.md) and only [64% in earlier experiments](../experiment_09/README.md).
 
 **Inference on real songs** showed great per-prediction accuracy but compounding autoregressive drift. The model trains on ground truth event history but during inference it sees its own (noisy) predictions. Each small error shifts subsequent predictions, accumulating over the duration of a song.
 
@@ -57,7 +57,7 @@ no_events_no_audio correctly predicts STOP 97-100% of the time - it was 0% in ex
 
 ### Comparison vs Exp 10 at Same Epoch Count
 
-| Metric | Exp 10 E5 | Exp 11 E5 |
+| Metric | [Exp 10](../experiment_10/README.md) E5 | Exp 11 E5 |
 |--------|-----------|-----------|
 | val_loss | NaN | **2.747** |
 | accuracy | 39.1% | **47.1%** |
@@ -75,7 +75,7 @@ Every single metric improved, most dramatically the previously-broken benchmarks
 
 ## Lesson
 
-The NaN fix had a far larger impact than expected - not just fixing reporting, but fundamentally improving training. Every no-event sample was producing NaN gradients in exp 10, meaning the model never learned how to behave when events are absent. With valid gradients, the model learns that "no events" means "rely entirely on audio" - which is exactly right, and teaches the audio path to be self-sufficient.
+The NaN fix had a far larger impact than expected - not just fixing reporting, but fundamentally improving training. Every no-event sample was producing NaN gradients in exp [10](../experiment_10/README.md), meaning the model never learned how to behave when events are absent. With valid gradients, the model learns that "no events" means "rely entirely on audio" - which is exactly right, and teaches the audio path to be self-sufficient.
 
 Two problems remain and motivate the next experiment:
 

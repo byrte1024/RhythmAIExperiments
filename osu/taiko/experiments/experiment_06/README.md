@@ -5,7 +5,7 @@
 
 ## Hypothesis
 
-The Gaussian loss from exp 05 rewards harmonic predictions through its infinite tails, driving the model to become a metronome instead of a beat detector. The solution is a hard cutoff in the loss: if the model errs by more than 20%, that's a total failure - zero credit, same as a random guess. Within 3% is good - full credit. Between 3% and 20% gets linearly decreasing credit. This creates a trapezoid shape in log-ratio space that preserves the proportionality of the error (small targets and large targets are treated equally) but eliminates the harmonic reward that Gaussian tails create.
+The Gaussian loss from exp [05](../experiment_05/README.md) rewards harmonic predictions through its infinite tails, driving the model to become a metronome instead of a beat detector. The solution is a hard cutoff in the loss: if the model errs by more than 20%, that's a total failure - zero credit, same as a random guess. Within 3% is good - full credit. Between 3% and 20% gets linearly decreasing credit. This creates a trapezoid shape in log-ratio space that preserves the proportionality of the error (small targets and large targets are treated equally) but eliminates the harmonic reward that Gaussian tails create.
 
 Soft targets remain critical - the model still needs partial credit for near-misses to learn from. The change is purely in the shape of the credit function: trapezoid with hard walls instead of Gaussian with infinite tails.
 
@@ -15,7 +15,7 @@ Additionally, 8 ablation benchmarks were introduced to systematically probe mode
 
 ## Result
 
-| Metric | Exp 05 E5 | Exp 06 E1 |
+| Metric | [Exp 05](../experiment_05/README.md) E5 | Exp 06 E1 |
 |--------|-----------|-----------|
 | accuracy | 33.0% | **35.3%** |
 | hit_rate | 53.2% | **55.8%** |
@@ -23,7 +23,7 @@ Additionally, 8 ablation benchmarks were introduced to systematically probe mode
 | frame_error_median | 1.0 | 1.0 |
 | within_2_frames | 54.9% | **57.6%** |
 
-At just epoch 1, the trapezoid loss surpassed exp 05's best results from epoch 5. Stop F1 jumped almost 4x, meaning the model finally started learning when to predict STOP. But running inference on real songs still showed metronoming behavior. Top-K analysis revealed why: top-5 jumped from 35% to 64% hit rate, and top-10 reached 77%. The correct answers were in the model's top candidates - it just wasn't ranking them first. It was taking "safe bets," predicting at the dominant tempo because that maximizes expected reward.
+At just epoch 1, the trapezoid loss surpassed exp [05](../experiment_05/README.md)'s best results from epoch 5. Stop F1 jumped almost 4x, meaning the model finally started learning when to predict STOP. But running inference on real songs still showed metronoming behavior. Top-K analysis revealed why: top-5 jumped from 35% to 64% hit rate, and top-10 reached 77%. The correct answers were in the model's top candidates - it just wasn't ranking them first. It was taking "safe bets," predicting at the dominant tempo because that maximizes expected reward.
 
 The ablation benchmarks exposed a much deeper problem:
 

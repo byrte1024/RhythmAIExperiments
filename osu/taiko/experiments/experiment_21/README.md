@@ -5,7 +5,7 @@
 
 ## Hypothesis
 
-Exp 20 proved warm-start + freeze are solid infrastructure (69.5% HIT from step 1, 2x speed), and that the gap-based context architecture (exp 19) is correct. But context's overrides are net-harmful (delta -1.18pp) despite best-ever override F1 (22%). The bottleneck is the loss function.
+Exp [20](../experiment_20/README.md) proved warm-start + freeze are solid infrastructure (69.5% HIT from step 1, 2x speed), and that the gap-based context architecture (exp [19](../experiment_19/README.md)) is correct. But context's overrides are net-harmful (delta -1.18pp) despite best-ever override F1 (22%). The bottleneck is the loss function.
 
 **The problem with hard CE on selection:** Hard cross-entropy rewards only exact correctness - "pick the candidate closest to the true target." This creates three failure modes:
 
@@ -15,7 +15,7 @@ Exp 20 proved warm-start + freeze are solid infrastructure (69.5% HIT from step 
 
 The result: "always pick #1" is a stable local minimum under hard CE, since #1 is correct ~70% of the time.
 
-### Changes from exp 20
+### Changes from exp [20](../experiment_20/README.md)
 
 **1. SelectionLoss (replaces hard CE for K-way selection)**
 
@@ -41,21 +41,21 @@ This explicitly punishes conservatism when overriding would have helped.
 
 **Step 5 - Skip impossible samples:** If no candidate has any quality (all zero weight), the sample is excluded from the loss. No impossible training signal.
 
-**2. Same infrastructure as exp 20**
-- Warm-start from exp 14 best checkpoint
+**2. Same infrastructure as exp [20](../experiment_20/README.md)**
+- Warm-start from exp [14](../experiment_14/README.md) best checkpoint
 - Freeze all audio components
 - Only train 2.5M context params
 
 ### Architecture
 
-Identical to exp 20 (gap-based context with own encoders).
+Identical to exp [20](../experiment_20/README.md) (gap-based context with own encoders).
 
 | Component | Params | Training |
 |-----------|--------|----------|
-| AudioEncoder | 8.0M | **Frozen** (from exp 14) |
-| EventEncoder | 0.5M | **Frozen** (from exp 14) |
-| AudioPath | 5.0M | **Frozen** (from exp 14) |
-| cond_mlp | ~8K | **Frozen** (from exp 14) |
+| AudioEncoder | 8.0M | **Frozen** (from exp [14](../experiment_14/README.md)) |
+| EventEncoder | 0.5M | **Frozen** (from exp [14](../experiment_14/README.md)) |
+| AudioPath | 5.0M | **Frozen** (from exp [14](../experiment_14/README.md)) |
+| cond_mlp | ~8K | **Frozen** (from exp [14](../experiment_14/README.md)) |
 | Context gap encoder | 0.9M | Training |
 | Context snippet encoder | 0.2M | Training |
 | Context selection head | 1.2M | Training |
@@ -64,7 +64,7 @@ Identical to exp 20 (gap-based context with own encoders).
 
 ### Loss comparison
 
-| Aspect | Exp 20 (hard CE) | Exp 21 (SelectionLoss) |
+| Aspect | Exp [20](../experiment_20/README.md) (hard CE) | Exp 21 (SelectionLoss) |
 |--------|-------------------|------------------------|
 | Target | One-hot at closest candidate | Soft distribution peaked at best, suppressing below-baseline |
 | "Better than #1" | Same loss as any correct pick | High weight in soft target (rewarded) |
@@ -74,7 +74,7 @@ Identical to exp 20 (gap-based context with own encoders).
 
 ### Expected outcomes
 
-1. **Audio HIT = 69.5%** - frozen, identical to exp 20.
+1. **Audio HIT = 69.5%** - frozen, identical to exp [20](../experiment_20/README.md).
 2. **Context delta > 0** - the relative loss directly rewards improvement over #1. Even small positive delta would be a breakthrough.
 3. **Override accuracy > 50%** - context should learn to override only when it has a better candidate, not randomly.
 4. **Fewer false_topK** - suppressing below-baseline candidates should reduce bad overrides.
@@ -103,7 +103,7 @@ python detection_train.py \
 
 **Best override quality ever, but delta still negative.** Killed after E2.
 
-| Metric | Exp 20 E1 | Exp 21 E1 | Exp 21 E2 |
+| Metric | Exp [20](../experiment_20/README.md) E1 | Exp 21 E1 | Exp 21 E2 |
 |--------|-----------|-----------|-----------|
 | Audio HIT | 69.5% | 69.5% | 69.5% |
 | Final HIT | 68.3% | 68.7% | 68.5% |
@@ -122,7 +122,7 @@ python detection_train.py \
 **What worked:**
 - Relative quality loss transformed context behavior. Override F1 doubled (22% → 46%), override accuracy above coin flip for the first time (61.4%).
 - Context got progressively bolder (11% → 28% → 37% override rate) with improving accuracy. The loss is clearly giving useful gradient signal.
-- false_top1 dropped from ~30% (exp 19-20) to 17.4% - context is catching more of audio's mistakes.
+- false_top1 dropped from ~30% (exp [19](../experiment_19/README.md)-[20](../experiment_20/README.md)) to 17.4% - context is catching more of audio's mistakes.
 - Selection analysis charts looked much healthier than any previous experiment.
 
 **What didn't work:**

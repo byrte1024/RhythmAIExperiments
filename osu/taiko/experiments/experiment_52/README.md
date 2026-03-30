@@ -5,7 +5,7 @@
 
 ## Hypothesis
 
-The audio window (A_BINS past + B_BINS future) has been 500/500 (2.5s/2.5s) since experiment 5. This is the most fundamental hyperparameter we've never tuned. It controls:
+The audio window (A_BINS past + B_BINS future) has been 500/500 (2.5s/2.5s) since experiment [5](../experiment_05/README.md). This is the most fundamental hyperparameter we've never tuned. It controls:
 - How much past audio context the model sees (A_BINS)
 - How far ahead the model can predict (B_BINS) — also sets N_CLASSES = B_BINS + 1
 - Total attention cost scales with (A_BINS + B_BINS)^2
@@ -27,18 +27,18 @@ The audio window (A_BINS past + B_BINS future) has been 500/500 (2.5s/2.5s) sinc
 | 52-K | 500 | 75 | 2.5s | 0.375s | 76 | 144 | 0.33x |
 | 52-L | 500 | 33 | 2.5s | 0.165s | 34 | 133 | 0.28x |
 
-52-E is exp 45 baseline — no need to rerun.
+52-E is exp [45](../experiment_45/README.md) baseline — no need to rerun.
 
 ### Predictions
 
-- **More future audio (higher B_BINS) should help most.** The model currently guesses 2.5s ahead. At B=1000 (5s), it can see a full musical phrase and should resolve the 2x/0.5x metric confusion.
+- **More future audio (higher B_BINS) should help most.** The model currently guesses 2.5s ahead. At B=1000 (5s), it can see a full musical phrase and should resolve the 2x/0.5x metric confusion (exp [48](../experiment_48/README.md)).
 - **More past audio (higher A_BINS) helps less.** Past audio is mostly used for spectral context, not timing. Event embeddings already carry rhythm info.
 - **B=250 will hurt.** Only 1.25s lookahead means more STOP predictions and worse accuracy on distant onsets.
 - **The diagonal (250/250, 500/500, 1000/1000) tests balanced scaling.** Larger windows give more context but cost quadratically.
 
 ### Architecture
 
-All use exp 45 settings (EventEmbeddingDetector, gap ratios, tight density jitter). Conv stem stride 4 is unchanged — token count scales with window size.
+All use exp [45](../experiment_45/README.md) settings (EventEmbeddingDetector, gap ratios, tight density jitter). Conv stem stride 4 is unchanged — token count scales with window size.
 
 ### Launch
 
@@ -82,7 +82,7 @@ Run in this order to maximize information per GPU-hour. Each result informs whet
 
 ### 52-A: 250/250 (1.25s/1.25s) — stopped at eval 7
 
-| Metric | Eval 3 | Eval 5 | Eval 7 | Exp 45 eval 7 (500/500) |
+| Metric | Eval 3 | Eval 5 | Eval 7 | Exp [45](../experiment_45/README.md) eval 7 (500/500) |
 |---|---|---|---|---|
 | HIT | 69.6% | 71.1% | 70.6% | 71.2% |
 | Exact | 50.6% | 51.8% | 51.6% | 52.5% |
@@ -108,7 +108,7 @@ Run in this order to maximize information per GPU-hour. Each result informs whet
 
 ### 52-L: 500/33 (2.5s/0.165s) — stopped at eval 2
 
-| Metric | Eval 1 | Eval 2 | Exp 45 eval 2 (500/500) |
+| Metric | Eval 1 | Eval 2 | Exp [45](../experiment_45/README.md) eval 2 (500/500) |
 |---|---|---|---|
 | HIT | 73.5% | **74.2%** | 70.5% |
 | MISS | 25.1% | **23.9%** | 28.2% |
@@ -121,7 +121,7 @@ Run in this order to maximize information per GPU-hour. Each result informs whet
 | no_audio_stop | 44.0% | 58.7% | — |
 | AR step0 | 75.0% | **81.5%** | 71.5% |
 
-**Per-sample metrics are the best we've ever seen.** HIT 74.2% (new ATH, beats exp 44's 73.6%). MISS 23.9% (new ATH). Stop F1 0.837 (unprecedented). Metronome 68.0% (untouchable). The 34-class problem converges immediately — eval 1 already matched exp 44's ATH.
+**Per-sample metrics are the best we've ever seen.** HIT 74.2% (new ATH, beats exp [44](../experiment_44/README.md)'s [73.6%](../experiment_44/README.md)). MISS 23.9% (new ATH). Stop F1 0.837 (unprecedented). Metronome 68.0% (untouchable). The 34-class problem converges immediately — eval 1 already matched exp [44](../experiment_44/README.md)'s ATH.
 
 **BUT: AR quality is poor despite great metrics.**
 - Model always finds the closest possible beat (most beats are in the ~75 bin range, which is ~375ms). With a 33-bin (165ms) window, the optimal strategy is to predict the nearest transient regardless of density conditioning.

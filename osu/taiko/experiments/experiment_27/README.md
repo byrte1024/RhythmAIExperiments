@@ -5,13 +5,13 @@
 
 ## Hypothesis
 
-Experiments 25 and 26 both plateau at ~69% HIT with subsample=4 (25% of training data). Exp 26 proved augmentation delays overfitting but doesn't raise the ceiling. The model memorizes the available audio→onset mappings regardless of noise.
+Experiments [25](../experiment_25/README.md) and [26](../experiment_26/README.md) both plateau at ~69% HIT with subsample=4 (25% of training data). Exp [26](../experiment_26/README.md) proved augmentation delays overfitting but doesn't raise the ceiling. The model memorizes the available audio→onset mappings regardless of noise.
 
 **Real data diversity as regularization.** Subsample=4 means the model sees the same 25% of samples every epoch. Going to subsample=1 gives 4x more unique training examples — fundamentally different from augmentation which adds variation to the same underlying samples. More unique cursor positions, more unique audio contexts, more unique gap histories. Harder to memorize.
 
-### Changes from exp 26
+### Changes from exp [26](../experiment_26/README.md)
 
-**Architecture: identical.** Same unified fusion model (~19M params), same heavy audio augmentation from exp 26.
+**Architecture: identical.** Same unified fusion model (~19M params), same heavy audio augmentation from exp [26](../experiment_26/README.md).
 
 **Training change: subsample 4 → 1.** Full dataset (~600K samples vs ~150K). ~4x slower per epoch but 4x more unique data.
 
@@ -48,14 +48,14 @@ Everything else unchanged — lr=3e-4, batch=48 (reduced from 64 for memory), tr
 | 10 | 3.50 | 69.2% | 30.4% | 0.335 | 51.4% | 12.4 | 0.494 | 2.856 | 2.590 | 1.6% |
 
 **What worked:**
-- **New all-time highs.** 69.8% HIT (eval 8), first time breaking the ~69% ceiling that held across exp 14, 25, and 26. Also: 29.8% miss (first below 30%), 0.343 score, 51.5% accuracy, 2.560 val loss.
-- **Slower overfitting.** Val loss dropped until eval 8 (epoch 2.0) before rising — exp 26 peaked at eval 4 (epoch 4 with subsample=4, same effective training). The full dataset provided ~2 extra useful epochs of training.
-- **Faster convergence per wall-clock.** Reached exp 26 E7-level performance (68.8% HIT) by eval 3 (~0.75 epochs), because each mini-batch contains unique samples rather than repeated subsampled data.
+- **New all-time highs.** 69.8% HIT (eval 8), first time breaking the ~69% ceiling that held across exp [14](../experiment_14/README.md), [25](../experiment_25/README.md), and [26](../experiment_26/README.md). Also: 29.8% miss (first below 30%), 0.343 score, 51.5% accuracy, 2.560 val loss.
+- **Slower overfitting.** Val loss dropped until eval 8 (epoch 2.0) before rising — exp [26](../experiment_26/README.md) peaked at eval 4 (epoch 4 with subsample=4, same effective training). The full dataset provided ~2 extra useful epochs of training.
+- **Faster convergence per wall-clock.** Reached exp [26](../experiment_26/README.md) E7-level performance (68.8% HIT) by eval 3 (~0.75 epochs), because each mini-batch contains unique samples rather than repeated subsampled data.
 
 **What didn't work:**
-- **Plateau still occurred.** HIT oscillated 69.0-69.8% from eval 5 onward. Val loss crept from 2.560 (eval 8) to 2.590 (eval 10) while train loss kept falling. Same overfitting dynamic as exp 25/26, just delayed.
+- **Plateau still occurred.** HIT oscillated 69.0-69.8% from eval 5 onward. Val loss crept from 2.560 (eval 8) to 2.590 (eval 10) while train loss kept falling. Same overfitting dynamic as exp [25](../experiment_25/README.md)/[26](../experiment_26/README.md), just delayed.
 - **Context contribution still collapsed.** 8.1% (eval 1) → 1.2-2.4% (eval 4+). More diverse gap histories did not prevent the model from converging to audio dominance.
-- **Ceiling raised only ~1pp.** 69.8% vs 68.9% (exp 14) / 68.8% (exp 26). Meaningful but not transformative.
+- **Ceiling raised only ~1pp.** 69.8% vs 68.9% (exp [14](../experiment_14/README.md)) / 68.8% (exp [26](../experiment_26/README.md)). Meaningful but not transformative.
 
 **Qualitative analysis (from inference and graphs):**
 
@@ -67,7 +67,7 @@ The model's errors are systematic, not random:
 
 **Comparison across experiments 14, 25, 26, 27:**
 
-| | Exp 14 | Exp 25 | Exp 26 | Exp 27 |
+| | Exp [14](../experiment_14/README.md) | Exp [25](../experiment_25/README.md) | Exp [26](../experiment_26/README.md) | Exp 27 |
 |---|---|---|---|---|
 | Architecture | Audio+cross-attn | Unified fusion | Unified fusion | Unified fusion |
 | Augmentation | Standard | Light | Heavy | Heavy |
@@ -103,6 +103,6 @@ Best eval (eval 8, epoch 2.0):
 
 - **Data diversity raises the ceiling, but only modestly.** 4x more unique data → ~1pp improvement (68.9% → 69.8%). Diminishing returns — the bottleneck is not data volume.
 - **Overfitting is delayed, not eliminated.** More data pushes the overfitting onset later but the same dynamic eventually plays out. The model exhausts what it can learn from audio and starts memorizing.
-- **The ~70% ceiling is architectural, not data-limited.** Three experiments varying augmentation (25 vs 26) and data volume (26 vs 27) converge to the same range. The next improvement must come from how the model uses information, not how much information it sees.
+- **The ~70% ceiling is architectural, not data-limited.** Three experiments varying augmentation ([25](../experiment_25/README.md) vs [26](../experiment_26/README.md)) and data volume ([26](../experiment_26/README.md) vs 27) converge to the same range. The next improvement must come from how the model uses information, not how much information it sees.
 - **Pattern disambiguation is the key remaining problem.** The model predicts rhythmically valid candidates (96% top-10) but can't distinguish between them. This is exactly what context should solve but doesn't. Hyperparameter tuning (focal loss, loss asymmetry) or architectural changes (ratio-space prediction, learnable cursor) are the next levers.
 - **Full dataset is worth keeping** for future experiments — it consistently outperforms subsample=4 and the slower epochs are offset by faster convergence per eval.

@@ -11,13 +11,13 @@ From previous top-K scatter plots and prediction distribution analysis, we obser
 
 ### Predictions
 
-- **Top-K 10 oracle HIT ~96%, Top-K 5 ~93%** (supported by raw top-K data from exp 44 evals)
+- **Top-K 10 oracle HIT ~96%, Top-K 5 ~93%** (supported by raw top-K data from exp [44](../experiment_44/README.md) evals)
 - **Top-U 3 oracle HIT ~95%** — because merging removes redundant near-duplicates, fewer unique options should reach the same accuracy. If Top-U 3 matches Top-K 5, it means ~40% of the top-5 raw predictions are redundant clusters of the same onset.
 - **Threshold analysis** will show that most samples have only 2-3 unique clusters above 5% normalized confidence, with a long tail of low-confidence alternatives. This would confirm the model is fundamentally choosing between a small number of distinct options, not spreading probability across many.
 
 ### Method
 
-Run exp 44 (eval 20 checkpoint) on the val set (subsample 8). For each sample:
+Run exp [44](../experiment_44/README.md) (eval 20 checkpoint) on the val set (subsample 8). For each sample:
 
 **Top-K oracle:** For K=1..10, pick the top-K predictions by raw confidence. Oracle selects the one closest to target. Measure HIT/GOOD/MISS.
 
@@ -35,7 +35,7 @@ Run exp 44 (eval 20 checkpoint) on the val set (subsample 8). For each sample:
 
 ## Result
 
-74,075 non-STOP val samples (subsample 8, exp 44 eval 20 checkpoint).
+74,075 non-STOP val samples (subsample 8, exp [44](../experiment_44/README.md) eval 20 checkpoint).
 
 ### Top-K vs Top-U Oracle HIT Rate
 
@@ -94,4 +94,4 @@ Top-K predictions confirmed. Top-U 3 was overestimated — the model's top 3 uni
 - **Top-K is wasteful.** ~40% of top-5 raw predictions are redundant near-duplicates. Top-U extracts more information from fewer slots.
 - **Top-U 5 ≈ Top-K 7.** Merging within 5% tolerance saves ~2 slots worth of redundancy. This matters for any reranking or multi-candidate inference strategy.
 - **The answer is almost always in the top 3 unique options.** Top-U 3 at 91.8% HIT and 7.7% MISS means the model rarely fails to even *consider* the right onset — the problem is *selecting* the right one from its short list.
-- **Implication for AR:** If we could oracle-select from Top-U 3 at each AR step, we'd have 91.8% HIT — far above the current 73.6%. The gap between "model knows" and "model picks" is the key opportunity. Reranking strategies (context-aware, audio-energy-aware) could exploit this.
+- **Implication for AR:** If we could oracle-select from Top-U 3 at each AR step, we'd have 91.8% HIT — far above the current [73.6%](../experiment_44/README.md). The gap between "model knows" and "model picks" is the key opportunity. Reranking strategies (context-aware, audio-energy-aware) could exploit this.

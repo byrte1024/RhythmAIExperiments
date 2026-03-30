@@ -5,7 +5,7 @@
 
 ## Hypothesis
 
-Exp 36 showed multi-target training doesn't hurt nearest-target HIT (66.2% = 35-C) but event recall was only 8.2%. Root cause: the normalized soft targets dilute per-onset gradient — missing one of 5 onsets costs only 1/5 of the soft loss. The model rationally underpredicts.
+Exp [36](../experiment_36/README.md) showed multi-target training doesn't hurt nearest-target HIT (66.2% = [35-C](../experiment_35c/README.md)) but event recall was only 8.2%. Root cause: the normalized soft targets dilute per-onset gradient — missing one of 5 onsets costs only 1/5 of the soft loss. The model rationally underpredicts.
 
 **Per-onset recall loss** directly penalizes `-log(prob[target_bin])` for EACH real onset independently. Every missed onset costs the same regardless of how many others exist in the window. Combined with the existing soft CE and hard CE:
 
@@ -17,7 +17,7 @@ loss = hard_alpha * hard_CE(nearest)
 
 The recall term creates direct gradient pressure at each real onset bin — the model must put probability mass there or pay.
 
-### Changes from exp 36
+### Changes from exp [36](../experiment_36/README.md)
 
 - **recall_weight=1.0** (new) — per-onset `-log(prob)` loss, equal weight to the CE terms
 - **Threshold sweep optimized** — 11 thresholds (was 42) + 4x subsampling + tqdm progress bar
@@ -45,4 +45,4 @@ Precision improved significantly but recall barely moved. The model makes fewer,
 
 - **Per-onset recall loss works for precision** (+10.8pp) but can't overcome the softmax bottleneck for recall.
 - **Softmax is single-target by design.** Multi-target requires per-bin independent outputs (sigmoid) or a fundamentally different output architecture.
-- **The loss-only approach (36, 36-B) proves that multi-target needs an architecture change**, not just a loss change.
+- **The loss-only approach ([36](../experiment_36/README.md), 36-B) proves that multi-target needs an architecture change**, not just a loss change.

@@ -5,18 +5,18 @@
 
 ## Hypothesis
 
-Exp 42-AR blind self-evaluation (volunteer data still pending) revealed a critical finding: **higher per-sample accuracy doesn't mean better AR generation.** In self-ranking, exp 14 (68.9% HIT, no context) scored nearly equal to exp 42 (73.2% HIT, deep context) because exp 42's context dependency causes:
+Exp [42-AR](../experiment_42ar/README.md) blind self-evaluation (volunteer data still pending) revealed a critical finding: **higher per-sample accuracy doesn't mean better AR generation.** In self-ranking, exp [14](../experiment_14/README.md) (68.9% HIT, no context) scored nearly equal to exp [42](../experiment_42/README.md) (73.2% HIT, deep context) because exp [42](../experiment_42/README.md)'s context dependency causes:
 - Metronome regression — model locks into repeating gaps
 - AR cascade errors — wrong predictions corrupt context, degrading subsequent predictions
 - Inconsistent density — some songs get 2x too many or too few events
 
-Exp 42's metronome benchmark at 25.4% (vs 50.5% for exp 14) confirms the fragility — wrong context is catastrophic.
+Exp [42](../experiment_42/README.md)'s metronome benchmark at 25.4% (vs 50.5% for exp [14](../experiment_14/README.md)) confirms the fragility — wrong context is catastrophic.
 
 **Solution: train with realistic AR-failure augmentation** so the model learns to recover from its own mistakes.
 
 ### Augmentation changes (from exp 42)
 
-| Augmentation | Exp 42 | **Exp 43** | Simulates |
+| Augmentation | Exp [42](../experiment_42/README.md) | **Exp 43** | Simulates |
 |---|---|---|---|
 | Event jitter | ±2 bins, 2x recency | **±5 bins, 3x recency** | Prediction errors |
 | Event deletion | 4%, 1-2 events | **15%, 1-4 events** | Skip errors |
@@ -42,7 +42,7 @@ Exp 42's metronome benchmark at 25.4% (vs 50.5% for exp 14) confirms the fragili
 
 ### Architecture
 
-Same as exp 42 (EventEmbeddingDetector, 16.1M params). Only augmentation and benchmarks change.
+Same as exp [42](../experiment_42/README.md) (EventEmbeddingDetector, 16.1M params). Only augmentation and benchmarks change.
 
 ### Launch
 
@@ -64,11 +64,11 @@ python detection_train.py taiko_v2 --run-name detect_experiment_43 --model-type 
 | 4 | 68.9% | 30.4% | 0.334 | 2.631 | -0.9% |
 | 5 | 68.3% | 31.1% | 0.323 | 2.654 | -0.4% |
 
-Exp 42 at eval 5: 72.0% HIT, 4.3% ctx delta. Exp 43 is **-3.7pp HIT** and **negative context delta**.
+Exp [42](../experiment_42/README.md) at eval 5: 72.0% HIT, 4.3% ctx delta. Exp 43 is **-3.7pp HIT** and **negative context delta**.
 
-### AR resilience (vs exp 42 from 43-B)
+### AR resilience (vs exp [42](../experiment_42/README.md) from [43-B](../experiment_43b/README.md))
 
-| Step | Exp 42 | Exp 43 | Delta |
+| Step | Exp [42](../experiment_42/README.md) | Exp 43 | Delta |
 |------|--------|--------|-------|
 | 0 | 74.2% | 66.4% | -7.8pp |
 | 1 | 46.3% | 39.2% | -7.1pp |
@@ -80,7 +80,7 @@ Worse at EVERY step. The AR augmentation didn't improve AR resilience — it deg
 
 ### Metronome collapse
 
-| Step | Exp 42 unique | Exp 43 unique |
+| Step | Exp [42](../experiment_42/README.md) unique | Exp 43 unique |
 |------|--------------|--------------|
 | 0 | 36 | **11** |
 | 5 | 21 | **7** |
@@ -90,7 +90,7 @@ Exp 43 starts with only 11 unique predictions (vs 36) and collapses to 3-4 by st
 
 ### AR set matching
 
-| Metric | Exp 42 (43-B) | Exp 43 |
+| Metric | Exp [42](../experiment_42/README.md) ([43-B](../experiment_43b/README.md)) | Exp 43 |
 |--------|--------------|--------|
 | Event HIT | 33.9% | **43.2%** |
 | Hallucination | 51.5% | 53.5% |
@@ -109,6 +109,6 @@ The augmentation rates were too aggressive:
 ## Lesson
 
 - **Aggressive context augmentation backfires catastrophically.** The model needs to see MOSTLY correct context with OCCASIONAL corruption. ~43% corruption rate taught it to ignore context.
-- **Context dependency is fragile.** Exp 42's 5% context delta was built over careful training with mild augmentation. Heavy corruption destroyed it instantly.
+- **Context dependency is fragile.** Exp [42](../experiment_42/README.md)'s 5% context delta was built over careful training with mild augmentation. Heavy corruption destroyed it instantly.
 - **The augmentation created the exact failure mode it was designed to prevent.** Ironic but informative — the metronome behavior comes from context distrust, and the augmentation maximized distrust.
 - **Next: much gentler augmentation rates** — maybe 2-3% for each catastrophic augmentation (metronome, burst, shift) instead of 5%. Or a curriculum: start with clean context, gradually introduce corruption.

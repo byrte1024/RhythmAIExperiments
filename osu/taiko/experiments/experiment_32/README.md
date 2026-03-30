@@ -5,7 +5,7 @@
 
 ## Hypothesis
 
-Exp 31 proved dual-stream forces context dependence (18.8% delta — highest ever) but predictions collapse to ~80 unique values (banding). Exp 31-B confirmed more cross-attention layers makes it worse (37 unique). Root cause: cross-attention injects coarse gap-level activations (±20) that overwhelm fine-grained audio features (±7) through the residual path. The cursor at position 125 loses precise temporal information.
+Exp [31](../experiment_31/README.md) proved dual-stream forces context dependence (18.8% delta — highest ever) but predictions collapse to ~80 unique values (banding). Exp [31-B](../experiment_31b/README.md) confirmed more cross-attention layers makes it worse (37 unique). Root cause: cross-attention injects coarse gap-level activations (±20) that overwhelm fine-grained audio features (±7) through the residual path. The cursor at position 125 loses precise temporal information.
 
 **Audio skip connection** preserves fine-grained audio features by adding the pre-cross-attention cursor feature back after fusion:
 ```
@@ -20,7 +20,7 @@ This should eliminate banding while maintaining the context dependence that dual
 
 ### Architecture
 
-Same as exp 31 (2 cross-attention layers) + skip connection on cursor token.
+Same as exp [31](../experiment_31/README.md) (2 cross-attention layers) + skip connection on cursor token.
 
 ```
 mel → AudioEncoder (4 layers) → 250 audio tokens
@@ -37,15 +37,15 @@ events → GapEncoder (4 layers) → C gap tokens     │
 | Component | Params | Notes |
 |-----------|--------|-------|
 | AudioEncoder | ~8.0M | Same |
-| GapEncoder (4 layers) | ~5.0M | Same as exp 31 |
+| GapEncoder (4 layers) | ~5.0M | Same as exp [31](../experiment_31/README.md) |
 | CrossAttentionFusion (2 layers) | ~5.0M | Back to 2 layers (not 4) |
 | Output head | ~0.2M | Same |
-| **Total** | **~23.3M** | Same as exp 31 |
+| **Total** | **~23.3M** | Same as exp [31](../experiment_31/README.md) |
 
 ### Changes from exp 31
 
 **Architecture**: + audio skip connection on cursor token. Back to 2 cross-attention layers.
-**Training**: Same as exp 27/31 — full dataset, batch=48, evals-per-epoch=4.
+**Training**: Same as exp [27](../experiment_27/README.md)/[31](../experiment_31/README.md) — full dataset, batch=48, evals-per-epoch=4.
 
 ### Expected outcomes
 
@@ -70,7 +70,7 @@ events → GapEncoder (4 layers) → C gap tokens     │
 
 **What worked:**
 - **Banding completely eliminated** — 363 unique predictions, matching the unified model. The skip connection restores fine-grained audio resolution.
-- **Much faster convergence** — 64.1% HIT at eval 1 vs exp 31's 44.9%. The direct audio gradient path bootstraps fast.
+- **Much faster convergence** — 64.1% HIT at eval 1 vs exp [31](../experiment_31/README.md)'s 44.9%. The direct audio gradient path bootstraps fast.
 
 **What didn't work:**
 - **Context delta is negative (-1.8%)** — the model performs WORSE with context than without. The skip connection gives audio a direct shortcut to the output head, bypassing cross-attention entirely.
@@ -79,7 +79,7 @@ events → GapEncoder (4 layers) → C gap tokens     │
 ![Heatmap](eval_001_heatmap.png)
 
 **The tradeoff:**
-- Exp 31 (no skip): 18.8% context delta but banding (53 unique)
+- Exp [31](../experiment_31/README.md) (no skip): 18.8% context delta but banding (53 unique)
 - Exp 32 (with skip): -1.8% context delta but no banding (363 unique)
 
 The skip connection and context usage are in direct tension. The model needs fine-grained audio (from skip) AND context awareness (from cross-attention) but a simple additive skip lets it choose one or the other.

@@ -5,7 +5,7 @@
 
 ## Hypothesis
 
-16 experiments (14-29B) show the model ignores context regardless of architecture, augmentation, data, loss reweighting, or auxiliary losses. The aux context head (exp 29, 29-B) failed because standalone 501-class prediction from gaps is too hard — the head can't learn, so it can't force the gap encoder to improve.
+16 experiments ([14](../experiment_14/README.md)-[29-B](../experiment_29b/README.md)) show the model ignores context regardless of architecture, augmentation, data, loss reweighting, or auxiliary losses. The aux context head (exp [29](../experiment_29/README.md), [29-B](../experiment_29b/README.md)) failed because standalone 501-class prediction from gaps is too hard — the head can't learn, so it can't force the gap encoder to improve.
 
 **The nuclear option: remove the audio.** For 20% of training samples, zero out the mel spectrogram around the cursor (100-300 frames centered on position 500 of the 1000-frame window). When the cursor region is blank, the model literally cannot predict from local audio. The only remaining signal is:
 1. Gap tokens (context) — the rhythm pattern history
@@ -16,14 +16,14 @@ This is structurally different from all prior approaches: instead of incentivizi
 
 ### Architecture
 
-**Identical to exp 27.** No aux head, no extra parameters. Same ~19M param unified fusion model.
+**Identical to exp [27](../experiment_27/README.md).** No aux head, no extra parameters. Same ~19M param unified fusion model.
 
 ### Augmentation change
 
 Added to `_augment()`:
 - **Cursor-region masking (20%)**: zero out 100-300 mel frames centered on the cursor (position 500). This covers the audio region the model relies on most for prediction.
 
-All other augmentations unchanged (heavy audio aug from exp 26 + full dataset from exp 27).
+All other augmentations unchanged (heavy audio aug from exp [26](../experiment_26/README.md) + full dataset from exp [27](../experiment_27/README.md)).
 
 ### Expected outcomes
 
@@ -48,16 +48,16 @@ All other augmentations unchanged (heavy audio aug from exp 26 + full dataset fr
 | 2 | 1.50 | 67.9% | 31.6% | 0.322 | 49.3% | 2.628 | 46.1% | 3.3% |
 
 **Observations:**
-- Context delta 6.8% → 3.3% — collapsing, same as every prior experiment. Higher than exp 27 at eval 2 (2.3%) but the trend is clear.
-- HIT slightly ahead of exp 27 (67.9% vs 67.5% at eval 2) — masking works as regularization but not as context forcing.
+- Context delta 6.8% → 3.3% — collapsing, same as every prior experiment. Higher than exp [27](../experiment_27/README.md) at eval 2 (2.3%) but the trend is clear.
+- HIT slightly ahead of exp [27](../experiment_27/README.md) (67.9% vs 67.5% at eval 2) — masking works as regularization but not as context forcing.
 - no_audio benchmark was 0.4% accuracy despite 20% of training having masked audio. The model learned "zeroed mel = use context" as a detectable mode, not "always consider context."
-- Val loss lower than exp 27 (2.628 vs 2.635) — better generalization from harder training.
+- Val loss lower than exp [27](../experiment_27/README.md) (2.628 vs 2.635) — better generalization from harder training.
 
 **Why it was stopped early:**
-After 16 experiments (14-30) trying augmentation, loss, and training tricks, the conclusion is clear: **the problem is architectural, not training-related.** The model has 250 audio tokens vs ~128 gap tokens, 4 audio encoder layers vs 2 gap encoder layers. Audio dominates fusion by design. No training trick can overcome a 2:1 architectural advantage. The next step is rebalancing the architecture itself.
+After 16 experiments ([14](../experiment_14/README.md)-30) trying augmentation, loss, and training tricks, the conclusion is clear: **the problem is architectural, not training-related.** The model has 250 audio tokens vs ~128 gap tokens, 4 audio encoder layers vs 2 gap encoder layers. Audio dominates fusion by design. No training trick can overcome a 2:1 architectural advantage. The next step is rebalancing the architecture itself.
 
 ## Lesson
 
 - **Cursor-region masking works as regularization** (lower val loss, slightly higher HIT) but doesn't force persistent context usage on unmasked samples.
 - **Zero-masking is detectable** — the model switches to "context mode" when it sees zeroed mel, not when it genuinely needs context. Noise-based corruption would remove this shortcut but likely still won't overcome the architectural imbalance.
-- **16 experiments confirm: training tricks cannot overcome architectural audio dominance.** Augmentation, focal loss, aux heads, audio masking — none change the ~1.5% context delta endpoint. The architecture must be rebalanced.
+- **16 experiments ([14](../experiment_14/README.md)-30) confirm: training tricks cannot overcome architectural audio dominance.** Augmentation, focal loss, aux heads, audio masking — none change the ~1.5% context delta endpoint. The architecture must be rebalanced.

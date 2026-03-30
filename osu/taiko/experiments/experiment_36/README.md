@@ -14,11 +14,11 @@ The model has learned this — it rationally prefers conservative short predicti
 - Why **context disambiguation never worked** (the model ignores context when the safe choice is always "pick the shorter one")
 - The **conservative bias** toward undershooting
 
-21 experiments (14-35D) tried to fix this through architecture, loss, augmentation, and data. Exp 35-D proved focal loss can't fix it either — it's structural, not a loss or context problem.
+21 experiments ([14](../experiment_14/README.md)-[35-D](../experiment_35d/README.md)) tried to fix this through architecture, loss, augmentation, and data. Exp [35-D](../experiment_35d/README.md) proved focal loss can't fix it either — it's structural, not a loss or context problem.
 
 **The fix: multi-target training.** Instead of predicting the single next onset, train the model to predict ALL onsets in the forward window. The model can say "I see beats at 35 AND 70" without choosing. At inference, take the earliest prediction above a confidence threshold.
 
-### Changes from exp 35-C
+### Changes from exp [35-C](../experiment_35c/README.md)
 
 1. **Multi-target soft labels**: Target is all onsets in the forward window, not just the nearest. Soft target = normalized sum of trapezoids (same log-ratio math). Empty windows get all mass on bin 500.
 2. **MultiTargetOnsetLoss**: Hard CE against nearest target (30%) + soft CE against multi-target distribution (70%). `hard_alpha=0.3` (down from 0.5) because the soft target now carries more information.
@@ -29,7 +29,7 @@ Everything else identical: same model (OnsetDetector/unified), exponential mel r
 
 ### Architecture
 
-Identical to exp 35-C. Model outputs (B, 501) logits — the interpretation changes, not the architecture.
+Identical to exp [35-C](../experiment_35c/README.md). Model outputs (B, 501) logits — the interpretation changes, not the architecture.
 
 ### Expected outcomes
 
@@ -46,7 +46,7 @@ Identical to exp 35-C. Model outputs (B, 501) logits — the interpretation chan
 
 ### Why train from scratch (not warm-start)
 
-The 35-C model was optimized to produce **peaked single-mode distributions** — all mass on one bin. Multi-target training wants **multi-modal distributions** with mass at multiple onset positions. Warm-starting from a single-mode optimum would fight against the new loss landscape:
+The [35-C](../experiment_35c/README.md) model was optimized to produce **peaked single-mode distributions** — all mass on one bin. Multi-target training wants **multi-modal distributions** with mass at multiple onset positions. Warm-starting from a single-mode optimum would fight against the new loss landscape:
 - The output head's smoothing conv learned to sharpen peaks
 - The fusion transformer's attention patterns route toward a single confident answer
 - The entire model is a local minimum optimized for the wrong output shape
@@ -56,7 +56,7 @@ The AudioEncoder and GapEncoder representations should transfer (they encode aud
 
 ## Result
 
-**Nearest-target HIT matches 35-C (66.2%), but multi-target metrics very poor. Threshold sweep bottleneck killed training.** Stopped after eval 1.
+**Nearest-target HIT matches [35-C](../experiment_35c/README.md) (66.2%), but multi-target metrics very poor. Threshold sweep bottleneck killed training.** Stopped after eval 1.
 
 | Metric | Value | vs 35-C eval1 |
 |--------|-------|---------------|
@@ -81,6 +81,6 @@ The AudioEncoder and GapEncoder representations should transfer (they encode aud
 
 ## Lesson
 
-- **Multi-target training paradigm is sound** — nearest-target HIT matches 35-C, proving the multi-target loss doesn't hurt single-prediction quality.
+- **Multi-target training paradigm is sound** — nearest-target HIT matches [35-C](../experiment_35c/README.md), proving the multi-target loss doesn't hurt single-prediction quality.
 - **The loss must directly penalize missing individual onsets.** Normalized soft targets dilute the per-onset gradient. Need per-onset recall loss: `-log(prob[real_onset_bin])` for each real onset independently.
 - **Threshold sweep must be fast.** Reduced from 42→11 thresholds with 4x subsampling for future experiments.

@@ -5,7 +5,7 @@
 
 ## Hypothesis
 
-Experiment 11 showed the two-path architecture working well - audio is now the primary signal (no_events=36.8% >> no_audio=15.5%) and the audio path proposes excellent candidates (top-3 = 84%, top-10 = 95%). But two problems remain:
+Experiment [11](../experiment_11/README.md) showed the two-path architecture working well - audio is now the primary signal ([no_events=36.8% >> no_audio=15.5%](../experiment_11/README.md)) and the audio path proposes excellent candidates ([top-3 = 84%, top-10 = 95%](../experiment_11/README.md)). But two problems remain:
 
 **1. The context path is the selection bottleneck.**
 
@@ -29,7 +29,7 @@ To address this, event augmentation was redesigned to simulate the kinds of erro
 - **Random insertion (8%)**: Add 1 to N/6 spurious events at random positions within the existing event range, simulating false positive predictions.
 - Existing augmentations (5% full dropout, 10% truncation) remain unchanged.
 
-The augmentation rates are deliberately light - the goal is to expose the model to slightly messy event histories that resemble real inference output, not to corrupt the data so heavily that events become useless (the lesson from experiment 07).
+The augmentation rates are deliberately light - the goal is to expose the model to slightly messy event histories that resemble real inference output, not to corrupt the data so heavily that events become useless (the lesson from experiment [07](../experiment_07/README.md)).
 
 ## Result
 
@@ -44,7 +44,7 @@ The augmentation rates are deliberately light - the goal is to expose the model 
 | top-10 HIT | ~65% | 65.7% |
 | unique preds | 226 | 288 |
 
-Compare to exp 11 E1: 36.7% accuracy, 56.3% HIT, 430 unique preds, top-10 95%.
+Compare to exp [11](../experiment_11/README.md) E1: 36.7% accuracy, 56.3% HIT, 430 unique preds, top-10 95%.
 
 **Prediction distribution** showed severe mode collapse - spiky, concentrated on a handful of "safe" bins (~15, ~25, ~50, ~65) with massive peaks. The scatter plot showed horizontal banding: the model predicted the same few y-values regardless of target.
 
@@ -57,7 +57,7 @@ Compare to exp 11 E1: 36.7% accuracy, 56.3% HIT, 430 unique preds, top-10 95%.
 | ne_na STOP | 99.8% | 90.4% |
 | metronome | 5.6% | 1.6% |
 
-The audio proposer was crippled - it couldn't spread across the output space. Top-10 only reached 65.7% (exp 11 E2 was 95%). With bad candidates, the bigger context path had nothing useful to select from.
+The audio proposer was crippled - it couldn't spread across the output space. Top-10 only reached 65.7% (exp [11](../experiment_11/README.md) E2 was 95%). With bad candidates, the bigger context path had nothing useful to select from.
 
 ## Lesson
 

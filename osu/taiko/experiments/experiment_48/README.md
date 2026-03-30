@@ -5,7 +5,7 @@
 
 ## Hypothesis
 
-All our models (exp 14, 35-C, 44, 45) achieve 68-74% HIT despite very different architectures (no context, mel ramps, event embeddings, gap ratios). If they all fail on the **same** validation samples, those failures are structural — inherent to the data, audio, or task — and no architecture change will fix them. If they fail on **different** samples, each architecture has unique blind spots that could be addressed.
+All our models (exp [14](../experiment_14/README.md), [35-C](../experiment_35c/README.md), [44](../experiment_44/README.md), [45](../experiment_45/README.md)) achieve 68-74% HIT despite very different architectures (no context, mel ramps, event embeddings, gap ratios). If they all fail on the **same** validation samples, those failures are structural — inherent to the data, audio, or task — and no architecture change will fix them. If they fail on **different** samples, each architecture has unique blind spots that could be addressed.
 
 ### Method
 
@@ -25,16 +25,16 @@ Then analyze:
 
 | Label | Experiment | HIT | Architecture |
 |---|---|---|---|
-| exp14 | Exp 14 | 68.9% | No context, audio-only |
-| exp35c | Exp 35-C | 71.6% | Mel-embedded exponential ramps |
-| exp44 | Exp 44 | 73.6% | Event embeddings, gentle augmentation |
-| exp45 | Exp 45 | 71.9% | Event embeddings + gap ratios + tight density |
+| exp14 | Exp [14](../experiment_14/README.md) | 68.9% | No context, audio-only |
+| exp35c | Exp [35-C](../experiment_35c/README.md) | 71.6% | Mel-embedded exponential ramps |
+| exp44 | Exp [44](../experiment_44/README.md) | 73.6% | Event embeddings, gentle augmentation |
+| exp45 | Exp [45](../experiment_45/README.md) | 71.9% | Event embeddings + gap ratios + tight density |
 
 ### Predictions
 
 - **Most failures will be shared.** The same audio sections (ambiguous transients, polyrhythmic sections, quiet passages) will trip up every model.
-- **Context models (44, 45) will have fewer unique failures** than no-context (14), since context resolves some ambiguity.
-- **When models fail on the same sample, they'll predict similar wrong bins** — the "sharper transient at wrong position" pattern from exp 39-E.
+- **Context models ([44](../experiment_44/README.md), [45](../experiment_45/README.md)) will have fewer unique failures** than no-context ([14](../experiment_14/README.md)), since context resolves some ambiguity.
+- **When models fail on the same sample, they'll predict similar wrong bins** — the "sharper transient at wrong position" pattern from exp [39-E](../experiment_39e/README.md).
 
 ### Scripts
 
@@ -116,7 +116,7 @@ exp14 (no context) has the most unique failures — context resolves ~2.5pp of f
 | exp44 | | | 1.000 | 0.627 |
 | exp45 | | | | 1.000 |
 
-Moderate correlation (0.55-0.64). Models agree on easy/hard but have meaningful independence on medium-difficulty samples. Context models (exp44/45) correlate more with each other than with exp14.
+Moderate correlation (0.55-0.64). Models agree on easy/hard but have meaningful independence on medium-difficulty samples. Context models (exp [44](../experiment_44/README.md)/[45](../experiment_45/README.md)) correlate more with each other than with exp [14](../experiment_14/README.md).
 
 ### Visual comparisons
 
@@ -139,6 +139,6 @@ Animated GIFs cycling through models (2s per frame):
 
 - **14.2% of samples are structurally unsolvable** by any model we've built. These aren't edge cases — they're normal songs with clear patterns.
 - **The 2x/0.5x error is the dominant universal failure mode.** Median error ratio 1.89x, consistent across every architecture. The model can't distinguish beat from sub-beat.
-- **Context doesn't fix the metric hierarchy problem.** Even with deep context (exp44, 73.5% HIT), the model makes the same 2x error on the same samples as no-context (exp14, 69.1%). Context resolves ~2.5pp of unique failures but can't touch the shared 14%.
+- **Context doesn't fix the metric hierarchy problem.** Even with deep context (exp [44](../experiment_44/README.md), 73.5% HIT), the model makes the same 2x error on the same samples as no-context (exp [14](../experiment_14/README.md), 69.1%). Context resolves ~2.5pp of unique failures but can't touch the shared 14%.
 - **The model needs meter awareness.** A human resolves beat/sub-beat ambiguity by understanding musical meter ("this is 4/4 at 120 BPM"). The model has density conditioning but not metric structure. The 2.5s audio window + 2.5s of in-window events can't capture a full musical phrase (8s at 120 BPM).
 - **This motivates the virtual token architecture.** With virtual tokens for out-of-window context, the model could see 25+ seconds of rhythm history and potentially infer the metric structure. The current 128-event context (25s of history) exists but is discarded because events can only be placed on in-window audio tokens.

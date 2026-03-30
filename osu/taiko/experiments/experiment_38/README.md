@@ -5,7 +5,7 @@
 
 ## Hypothesis
 
-Experiments 36-37C proved that multi-target prediction from a single cursor token is fundamentally broken — one feature vector can't represent multiple onsets regardless of loss function (softmax, sigmoid BCE, or dice).
+Experiments [36](../experiment_36/README.md)-[37-C](../experiment_37c/README.md) proved that multi-target prediction from a single cursor token is fundamentally broken — one feature vector can't represent multiple onsets regardless of loss function (softmax, sigmoid BCE, or dice).
 
 **Framewise detection** is a complete paradigm shift. Instead of extracting one cursor token and classifying into 501 bins, the model predicts onset probability at EVERY position in the future audio window. Each token independently answers "is there an onset here?" — naturally multi-target with no competition between positions.
 
@@ -35,13 +35,13 @@ Output: (B, 125) onset probabilities at ~20ms resolution
 
 **Onset feedback (teacher forcing)**: During training, a learned "onset embedding" is added to future tokens where the PREVIOUS position had a ground truth onset. The model learns "I just predicted an onset, don't predict another immediately." During inference, model's own predictions are used instead.
 
-**Mel-embedded ramps (from exp 35-C)**: Past events are encoded as exponential decay spikes in the mel. The model sees past rhythm patterns directly through the audio pathway.
+**Mel-embedded ramps (from exp [35-C](../experiment_35c/README.md))**: Past events are encoded as exponential decay spikes in the mel. The model sees past rhythm patterns directly through the audio pathway.
 
 **Sliding window inference**: Slide the window by N frames, collect onset probabilities from each position, merge overlapping predictions via vote/max/avg, threshold to extract final onsets.
 
 ### What's different from all prior experiments
 
-| | Exp 14-35 (single-target) | Exp 36-37 (multi-target) | **Exp 38 (framewise)** |
+| | Exp [14](../experiment_14/README.md)-[35](../experiment_35/README.md) (single-target) | Exp [36](../experiment_36/README.md)-[37](../experiment_37/README.md) (multi-target) | **Exp 38 (framewise)** |
 |---|---|---|---|
 | Output | 501-class softmax | 501-class sigmoid/softmax | **125 independent sigmoids** |
 | Extraction | Single cursor token | Single cursor token | **All future tokens** |

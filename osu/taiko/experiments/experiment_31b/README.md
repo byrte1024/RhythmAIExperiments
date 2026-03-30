@@ -5,15 +5,15 @@
 
 ## Hypothesis
 
-Exp 31 proved that dual-stream architecture forces context dependence (18.8% context delta — highest ever). But 2 cross-attention layers bottleneck information flow, limiting the model to ~80 unique predictions (vs ~350 for the unified model). The model learns "which common gap value" but not "exactly which bin."
+Exp [31](../experiment_31/README.md) proved that dual-stream architecture forces context dependence (18.8% context delta — highest ever). But 2 cross-attention layers bottleneck information flow, limiting the model to ~80 unique predictions (vs ~350 for the unified model). The model learns "which common gap value" but not "exactly which bin."
 
 **Double the cross-attention layers (2→4)** to allow richer information exchange between audio and context streams while maintaining the stream separation that forces context dependence.
 
-### Changes from exp 31
+### Changes from exp [31](../experiment_31/README.md)
 
 **cross_attn_layers: 2 → 4.** Everything else identical.
 
-This adds ~5M params (total ~28M), making the model larger than exp 27 (~19M). If it works, we can optimize later.
+This adds ~5M params (total ~28M), making the model larger than exp [27](../experiment_27/README.md) (~19M). If it works, we can optimize later.
 
 
 ## Result
@@ -24,11 +24,11 @@ This adds ~5M params (total ~28M), making the model larger than exp 27 (~19M). I
 |------|-------|-----|------|-------|-----|----------|--------|-----------|-------|
 | 1 | 1.25 | 18.6% | 60.1% | -0.127 | 6.9% | 4.144 | 37 | 4.9% | 2.0% |
 
-Compared to exp 31 eval 1 (44.9% HIT, 53 unique) — dramatically worse. More cross-attention layers made things worse, not better.
+Compared to exp [31](../experiment_31/README.md) eval 1 (44.9% HIT, 53 unique) — dramatically worse. More cross-attention layers made things worse, not better.
 
 **NaN instability:** Training hit NaN at batch ~3360 and again at ~12752. Root cause: GapEncoder produces activations at ±20 (vs audio's ±7). Through 4 cross-attention residual layers, rare inputs push values beyond float32 range. Fixed with activation clamping (±1e4) and NaN batch skipping.
 
-**Banding problem persists and worsens:** Only 37 unique predictions — the model snaps to ~12 common gap values. The horizontal bands in the heatmap are even more severe than exp 31.
+**Banding problem persists and worsens:** Only 37 unique predictions — the model snaps to ~12 common gap values. The horizontal bands in the heatmap are even more severe than exp [31](../experiment_31/README.md).
 
 ![Heatmap](eval_001_heatmap.png)
 ![Scatter](eval_001_scatter.png)
@@ -39,7 +39,7 @@ Compared to exp 31 eval 1 (44.9% HIT, 53 unique) — dramatically worse. More cr
 ```
 cursor = post_fusion_audio[125] + pre_fusion_audio[125]
 ```
-This guarantees the output head always sees fine-grained audio features regardless of what cross-attention learned, while still receiving context information from the fusion layers. Restarted with 2 cross-attention layers (back to exp 31 config) + skip connection.
+This guarantees the output head always sees fine-grained audio features regardless of what cross-attention learned, while still receiving context information from the fusion layers. Restarted with 2 cross-attention layers (back to exp [31](../experiment_31/README.md) config) + skip connection.
 
 ## Lesson
 

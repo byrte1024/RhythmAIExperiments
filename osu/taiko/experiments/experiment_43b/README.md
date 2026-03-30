@@ -5,12 +5,12 @@
 
 ## Hypothesis
 
-Exp 42-AR human evaluation showed context-dependent models (42, 35-C) don't outperform context-free (14) in real AR generation despite higher per-sample HIT. The AR cascade degradation (75% → 5% over 8 steps in light AR) may explain this.
+Exp [42-AR](../experiment_42ar/README.md) human evaluation showed context-dependent models ([42](../experiment_42/README.md), [35-C](../experiment_35c/README.md)) don't outperform context-free ([14](../experiment_14/README.md)) in real AR generation despite higher per-sample HIT. The AR cascade degradation (75% → 5% over 8 steps in light AR) may explain this.
 
 **Compare AR resilience across models:**
-- **Exp 14** (68.9% HIT, no context) — expected most resilient, no context to corrupt
-- **Exp 35-C** (71.6% HIT, mel ramps) — medium context dependency
-- **Exp 42** (73.2% HIT, event embeddings) — deepest context dependency, expected least resilient
+- **Exp [14](../experiment_14/README.md)** (68.9% HIT, no context) — expected most resilient, no context to corrupt
+- **Exp [35-C](../experiment_35c/README.md)** (71.6% HIT, mel ramps) — medium context dependency
+- **Exp [42](../experiment_42/README.md)** (73.2% HIT, event embeddings) — deepest context dependency, expected least resilient
 
 ### Metrics tracked
 - Light AR: per-step HIT rate curve (cascade degradation)
@@ -21,7 +21,7 @@ Exp 42-AR human evaluation showed context-dependent models (42, 35-C) don't outp
 
 ## Result
 
-**Surprise: exp 42 (deepest context) is the MOST AR-resilient, not the least.** 1000 samples, 32 steps each.
+**Surprise: exp [42](../experiment_42/README.md) (deepest context) is the MOST AR-resilient, not the least.** 1000 samples, 32 steps each.
 
 ### Light AR HIT curve (cascade degradation)
 
@@ -34,7 +34,7 @@ Exp 42-AR human evaluation showed context-dependent models (42, 35-C) don't outp
 | 8 | 9.9% | 11.9% | **12.8%** |
 | 15 | 4.2% | 5.5% | **6.0%** |
 
-**Exp 42 beats exp 14 at every single step.** Context dependency doesn't hurt AR resilience — it helps.
+**Exp [42](../experiment_42/README.md) beats exp [14](../experiment_14/README.md) at every single step.** Context dependency doesn't hurt AR resilience — it helps.
 
 ### AR set matching
 
@@ -46,7 +46,7 @@ Exp 42-AR human evaluation showed context-dependent models (42, 35-C) don't outp
 | AR hallucination | 52.1% | 51.8% | **51.5%** |
 | Density ratio | 1.35x | 1.28x | **1.26x** |
 
-Exp 42 has the best set matching too — highest event HIT (33.9%), lowest miss (5.5%), lowest hallucination (51.5%), and closest density ratio to target (1.26x vs 1.35x for exp14).
+Exp [42](../experiment_42/README.md) has the best set matching too — highest event HIT (33.9%), lowest miss (5.5%), lowest hallucination (51.5%), and closest density ratio to target (1.26x vs 1.35x for [exp14](../experiment_14/README.md)).
 
 ### Metronome collapse (unique predictions)
 
@@ -64,8 +64,8 @@ All three models collapse to ~15 unique values by step 10. The metronome behavio
 
 ## Lesson
 
-- **Context dependency HELPS AR resilience, not hurts.** Exp 42 degrades slower at every step than exp 14. Having event embedding context — even corrupted from AR errors — provides a stabilizing signal that pure audio lacks.
-- **The human evaluation preference for exp 14 is NOT about AR resilience.** The per-step accuracy data shows exp 42 is strictly better. The preference must be about output style/consistency (exp 14 is more conservative, less adventurous with patterns, which humans may perceive as "safer").
+- **Context dependency HELPS AR resilience, not hurts.** Exp [42](../experiment_42/README.md) degrades slower at every step than exp [14](../experiment_14/README.md). Having event embedding context — even corrupted from AR errors — provides a stabilizing signal that pure audio lacks.
+- **The [human evaluation](../experiment_42ar/README.md) preference for exp [14](../experiment_14/README.md) is NOT about AR resilience.** The per-step accuracy data shows exp [42](../experiment_42/README.md) is strictly better. The preference must be about output style/consistency ([exp 14](../experiment_14/README.md) is more conservative, less adventurous with patterns, which humans may perceive as "safer").
 - **Metronome collapse is universal.** All models converge to ~15 unique predictions by step 10. This is a fundamental property of the autoregressive architecture, not a context issue.
 - **The ~52% hallucination rate is consistent across models.** All three predict ~2x too many onsets. The density ratio confirms this: 1.26-1.35x overproduction.
-- **Exp 35-C sits in the middle on everything** — medium context dependency, medium resilience, medium collapse rate. Confirms the context-resilience correlation is monotonic.
+- **Exp [35-C](../experiment_35c/README.md) sits in the middle on everything** — medium context dependency, medium resilience, medium collapse rate. Confirms the context-resilience correlation is monotonic.

@@ -5,7 +5,7 @@
 
 ## Hypothesis
 
-Exp 07 (heavy augmentation) killed event learning, and exp 08 (lightened augmentation with reduced stop_weight) gave mixed results with dead zones in predictions. The hypothesis for this run is simple: fully revert to the original light augmentation (5% context dropout, 10% truncation) with stop_weight=1.5, and see if the original augmentation strategy at least produces a stable training trajectory. This should establish a clean baseline to compare against before trying any more changes.
+Exp [07](../experiment_07/README.md) (heavy augmentation) killed event learning, and exp 08 (lightened augmentation with reduced stop_weight) gave mixed results with dead zones in predictions. The hypothesis for this run is simple: fully revert to the original light augmentation (5% context dropout, 10% truncation) with stop_weight=1.5, and see if the original augmentation strategy at least produces a stable training trajectory. This should establish a clean baseline to compare against before trying any more changes.
 
 ## Result
 
@@ -43,6 +43,6 @@ Dead zones were also observed in the prediction distribution - certain bin class
 
 ## Lesson
 
-Three consecutive experiments of augmentation tuning (07, 08, 09) all show the same fundamental pattern: no_audio >> no_events regardless of how much or how little context corruption is applied. Heavy augmentation makes the model ignore events. Light augmentation lets the model over-rely on events. No augmentation level produces the desired balance where the model uses audio as the primary signal and events as secondary.
+Three consecutive experiments of augmentation tuning ([07](../experiment_07/README.md), 08, 09) all show the same fundamental pattern: no_audio >> no_events regardless of how much or how little context corruption is applied. Heavy augmentation makes the model ignore events. Light augmentation lets the model over-rely on events. No augmentation level produces the desired balance where the model uses audio as the primary signal and events as secondary.
 
 The conclusion is unavoidable: the audio/event imbalance is architectural, not a training data problem. In the single-path decoder, event tokens participate in cross-attention alongside audio tokens, and the model learns to rely on whichever signal gives easier gradient flow - which is events, because rhythmic patterns in events are simpler to latch onto than spectral patterns in audio. The architecture needs to be redesigned so that audio and events have structurally separate roles.

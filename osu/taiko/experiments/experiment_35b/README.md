@@ -5,7 +5,7 @@
 
 ## Hypothesis
 
-Exp 35 showed edge-band ramps provide 5.0% context delta but the conv filters them out. The ramps need to be inescapable.
+Exp [35](../experiment_35/README.md) showed edge-band ramps provide [5.0% context delta](../experiment_35/README.md) but the conv filters them out. The ramps need to be inescapable.
 
 **Nuclear approach**: halve all audio energy, then add ramps to ALL 80 mel bands:
 ```
@@ -39,8 +39,8 @@ The ramp signal is uniform across all frequency bands. The conv stem cannot lear
 | 4 | 2.25 | 67.9% | 31.6% | 0.321 | 50.1% | 461 | 2.594 | 46.6% | **3.5%** |
 
 **What worked:**
-- **Highest sustained context delta** — settled at 3.5-5% through evals 2-4, compared to ~1.5% for exp 27 at the same stage. The full-band ramps provide ~2-3pp more context contribution than any prior approach except cross-attention (exp 31).
-- **Fast convergence** — 69.5% HIT at eval 3, matching exp 27's best trajectory. The 0.5x audio scaling didn't hurt audio quality.
+- **Highest sustained context delta** — settled at 3.5-5% through evals 2-4, compared to [~1.5%](../experiment_27/README.md) for exp 27 at the same stage. The full-band ramps provide ~2-3pp more context contribution than any prior approach except cross-attention (exp [31](../experiment_31/README.md)).
+- **Fast convergence** — 69.5% HIT at eval 3, matching exp [27](../experiment_27/README.md)'s best trajectory. The 0.5x audio scaling didn't hurt audio quality.
 - **No banding** — 445-461 unique predictions throughout. Full-band ramps don't interfere with prediction diversity.
 - **Model correctly decomposes ramps from audio** — the uniform cross-band signal is separable from natural spectral variation, allowing the model to attend to both independently.
 
@@ -53,7 +53,7 @@ The ramp signal is uniform across all frequency bands. The conv stem cannot lear
 
 **Comparison across mel-embedding approaches:**
 
-| | Exp 35 (edge bands) | Exp 35-B (full band) |
+| | Exp [35](../experiment_35/README.md) (edge bands) | Exp 35-B (full band) |
 |---|---|---|
 | Ctx Δ at eval 1 | 5.0% | **11.6%** |
 | Ctx Δ at eval 3-4 | — | **3.5-5.4%** |
@@ -62,7 +62,7 @@ The ramp signal is uniform across all frequency bands. The conv stem cannot lear
 
 ## Lesson
 
-- **Full-band mel ramps provide the best sustained context delta outside of cross-attention** — 3.5% at eval 4 vs ~1.5% for all prior unified architectures. The approach works.
+- **Full-band mel ramps provide the best sustained context delta outside of cross-attention** — 3.5% at eval 4 vs [~1.5%](../experiment_27/README.md) for all prior unified architectures. The approach works.
 - **Linear ramps are too gradual** — the model sees a smooth slope but can't easily pinpoint exact beat positions. Exponential decay (sharp spike at event, fast falloff) would make beat positions much clearer.
 - **Fixed 0.5x audio scaling reduces confidence** — the model sees weaker audio, leading to high entropy. Variable amplitude (0.25-0.75 jitter) would make the model robust to different ramp-to-audio ratios.
 - **The mel-embedding approach is worth iterating on** — it's the first data-level change that meaningfully affects context usage without architectural complexity.

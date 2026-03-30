@@ -5,7 +5,7 @@
 
 ## Hypothesis
 
-16 experiments (14-30) tried every training trick to make the unified fusion model use context: augmentation, data volume, focal loss, auxiliary heads, audio masking. None worked — context delta always collapses to ~0-1.5%. The conclusion: **the problem is architectural.**
+16 experiments ([14](../experiment_14/README.md)-[30](../experiment_30/README.md)) tried every training trick to make the unified fusion model use context: augmentation, data volume, focal loss, auxiliary heads, audio masking. None worked — context delta always collapses to ~0-1.5%. The conclusion: **the problem is architectural.**
 
 The current unified fusion model concatenates 250 audio tokens + 128 gap tokens and runs self-attention over all 378. Audio tokens outnumber gap tokens 2:1 and carry stronger signal, so self-attention learns to route through audio and ignore context. No training trick can overcome this structural advantage.
 
@@ -15,11 +15,11 @@ The current unified fusion model concatenates 250 audio tokens + 128 gap tokens 
 2. **Context stream**: GapEncoder (4 self-attention layers, up from 2) → 128 tokens. Processes gap patterns independently.
 3. **Late cross-attention fusion**: 2 bidirectional cross-attention layers where audio attends to gap AND gap attends to audio.
 
-Key differences from unified fusion (exp 25-30):
+Key differences from unified fusion (exp [25](../experiment_25/README.md)-[30](../experiment_30/README.md)):
 - **No shared self-attention** — gap tokens never compete with audio tokens for attention bandwidth
 - **Context has its own depth** — 4 dedicated layers (was 2 encoder + shared with audio in 4 fusion layers)
 - **Cross-attention forces interaction** — audio MUST attend to gap tokens in the fusion layers (they're the only key/value source). In unified self-attention, audio could attend to other audio tokens and ignore gaps entirely.
-- **Bidirectional** — gap tokens also attend to audio, so context knows what audio is saying (addresses the exp 15-24 finding that context needs audio access)
+- **Bidirectional** — gap tokens also attend to audio, so context knows what audio is saying (addresses the exp [15](../experiment_15/README.md)-[24](../experiment_24/README.md) finding that context needs audio access)
 
 See [THE_CONTEXT_ISSUE.md](../../THE_CONTEXT_ISSUE.md) for full background.
 
@@ -39,17 +39,17 @@ events (B, C)      → GapEncoder (4 layers)   → C gap tokens (d=384)
 
 | Component | Params | Notes |
 |-----------|--------|-------|
-| AudioEncoder (conv + 4 transformer layers) | ~8.0M | Same as exp 25-30 |
+| AudioEncoder (conv + 4 transformer layers) | ~8.0M | Same as exp [25](../experiment_25/README.md)-[30](../experiment_30/README.md) |
 | GapEncoder (snippet enc + 4 transformer layers) | ~5.0M | Deeper (was 2 layers, ~3.5M) |
 | CrossAttentionFusion (2 bidirectional layers) | ~5.0M | Replaces 4-layer concat self-attention (~7.5M) |
 | Output head (norm + proj + smoothing) | ~0.2M | Same as before |
 | cond_mlp | ~8K | Same |
-| **Total** | **~23.3M** | Larger than exp 25-30 (~19M) due to deeper GapEncoder + dual FFN in cross-attn |
+| **Total** | **~23.3M** | Larger than exp [25](../experiment_25/README.md)-[30](../experiment_30/README.md) (~19M) due to deeper GapEncoder + dual FFN in cross-attn |
 
 ### Changes from exp 27
 
 **Architecture**: Unified concat self-attention → dual-stream with late cross-attention. GapEncoder 2→4 layers. No concat fusion layers.
-**Training**: Same as exp 27 — full dataset (subsample=1), batch=48, evals-per-epoch=4, heavy audio augmentation, train from scratch.
+**Training**: Same as exp [27](../experiment_27/README.md) — full dataset (subsample=1), batch=48, evals-per-epoch=4, heavy audio augmentation, train from scratch.
 
 ### Expected outcomes
 
@@ -80,8 +80,8 @@ events (B, C)      → GapEncoder (4 layers)   → C gap tokens (d=384)
 - **Learned the gap vocabulary** — the model quickly identified ~20 common gap values (visible as horizontal bands in the heatmap) and began placing them more accurately.
 
 **What didn't work:**
-- **Prediction diversity bottleneck** — only 82 unique predictions (metronome benchmark) vs exp 27's ~350. The model snaps to a small codebook of common gap values rather than predicting the full continuous range.
-- **HIT far behind** — 50.8% at eval 2 vs exp 27's 67.5%. The cross-attention bottleneck limits fine-grained information flow.
+- **Prediction diversity bottleneck** — only 82 unique predictions (metronome benchmark) vs exp [27](../experiment_27/README.md)'s ~350. The model snaps to a small codebook of common gap values rather than predicting the full continuous range.
+- **HIT far behind** — 50.8% at eval 2 vs exp [27](../experiment_27/README.md)'s 67.5%. The cross-attention bottleneck limits fine-grained information flow.
 - **Horizontal bands in heatmap** — predictions cluster at fixed gap values regardless of target, getting more accurate but not more diverse over training.
 - **Cross-attention is too narrow** — 2 layers of cross-attention can only communicate coarse information ("which common gap") not fine-grained details ("exactly how many bins"). The unified model's 4 layers of full self-attention allowed richer information exchange.
 

@@ -8,9 +8,9 @@
 Validation metrics (HIT, miss, entropy) measure per-sample accuracy, but real quality is about how the full autoregressive generation FEELS when played. A chart with 70% per-sample HIT might sound great if errors are spread evenly, or terrible if they cascade in one section.
 
 **Blind human evaluation** comparing three models on full AR-generated charts:
-- **Exp 14** (68.9% HIT) — baseline, no context
-- **Exp 35-C** (71.6% HIT) — mel ramps, first real context
-- **Exp 42** (73.2% HIT) — event embeddings, deepest context
+- **Exp [14](../experiment_14/README.md)** (68.9% HIT) — baseline, no context
+- **Exp [35-C](../experiment_35c/README.md)** (71.6% HIT) — mel ramps, first real context
+- **Exp [42](../experiment_42/README.md)** (73.2% HIT) — event embeddings, deepest context
 
 Each evaluator sees 3 videos of one song — one per model, randomized order, no labels. They rank which generation they think is best.
 
@@ -71,13 +71,13 @@ Each evaluator sees 3 videos of one song — one per model, randomized order, no
 
 ### Expected outcome
 
-Exp 42 should rank best most often — the +4.3pp HIT over exp 14 and context dependency should produce more rhythmically coherent charts with fewer skipped/extra notes. But AR error cascading (exp 42's metronome at 25.4%) could hurt if early errors snowball.
+Exp [42](../experiment_42/README.md) should rank best most often — the +4.3pp HIT over exp [14](../experiment_14/README.md) and context dependency should produce more rhythmically coherent charts with fewer skipped/extra notes. But AR error cascading (exp [42](../experiment_42/README.md)'s metronome at 25.4%) could hurt if early errors snowball.
 
 ### Inference stats
 
 **Aggregate:**
 
-| Metric | Exp 14 | Exp 35-C | Exp 42 |
+| Metric | Exp [14](../experiment_14/README.md) | Exp [35-C](../experiment_35c/README.md) | Exp [42](../experiment_42/README.md) |
 |--------|--------|----------|--------|
 | Total events | 6,394 | 6,725 | **7,182** |
 | Mean events/sec | 3.8 | 4.3 | 4.2 |
@@ -85,13 +85,13 @@ Exp 42 should rank best most often — the +4.3pp HIT over exp 14 and context de
 | Total STOPs | 1,172 | 1,108 | 1,251 |
 | Total inference time | 161s | 143s | **115s** |
 
-**Key finding: Exp 35-C is wildly inconsistent** (std 1.8 events/sec vs 0.4 for exp 42). The mel ramps cause erratic AR behavior — Weird Nightmare gets 8.6 events/sec (double the norm) while Ordinary gets only 1.9. The mel ramp approach amplifies AR errors because corrupted ramps cascade through the audio signal.
+**Key finding: Exp [35-C](../experiment_35c/README.md) is wildly inconsistent** (std 1.8 events/sec vs 0.4 for exp [42](../experiment_42/README.md)). The mel ramps cause erratic AR behavior — Weird Nightmare gets 8.6 events/sec (double the norm) while Ordinary gets only 1.9. The mel ramp approach amplifies AR errors because corrupted ramps cascade through the audio signal.
 
-**Exp 42 is the most consistent** (std 0.4) — event embeddings produce stable density across genres. Also fastest at inference (115s total vs 161s for exp 14).
+**Exp [42](../experiment_42/README.md) is the most consistent** (std 0.4) — event embeddings produce stable density across genres. Also fastest at inference (115s total vs 161s for exp [14](../experiment_14/README.md)).
 
 **Per-song events/sec:**
 
-| Song | Exp 14 | Exp 35-C | Exp 42 |
+| Song | Exp [14](../experiment_14/README.md) | Exp [35-C](../experiment_35c/README.md) | Exp [42](../experiment_42/README.md) |
 |------|--------|----------|--------|
 | Ordinary (pop) | 3.5 | **1.9** | 3.8 |
 | Time Machine (chiptune) | 3.4 | 2.6 | **4.2** |
@@ -104,7 +104,7 @@ Exp 42 should rank best most often — the +4.3pp HIT over exp 14 and context de
 | KIKYU (electro) | 2.7 | **4.9** | 4.0 |
 | DARK GAME (hyperpop) | 3.8 | 3.9 | **4.6** |
 
-Exp 35-C's outliers (bold): Weird Nightmare at 8.6 eps and Ordinary at 1.9 eps show the mel ramp AR instability. Exp 42 stays in a tight 3.8-5.0 range across all genres.
+Exp [35-C](../experiment_35c/README.md)'s outliers (bold): Weird Nightmare at 8.6 eps and Ordinary at 1.9 eps show the mel ramp AR instability. Exp [42](../experiment_42/README.md) stays in a tight 3.8-5.0 range across all genres.
 
 ## Result
 
@@ -139,16 +139,16 @@ On songs with both self and volunteer votes, self and volunteers agreed on 1st p
 
 ### Common feedback themes
 
-**Metronome regression** — the #1 complaint across all evaluators. Every evaluator noted models "falling into" repetitive patterns. Context models (exp42, exp35c) suffer more because their context dependency creates a positive feedback loop: once the model starts repeating a gap, the context reinforces it.
+**Metronome regression** — the #1 complaint across all evaluators. Every evaluator noted models "falling into" repetitive patterns. Context models ([exp42](../experiment_42/README.md), [exp35c](../experiment_35c/README.md)) suffer more because their context dependency creates a positive feedback loop: once the model starts repeating a gap, the context reinforces it.
 
 Volunteer quotes:
 - *"beta just feels like going straight tak tak tak tak tak"* (Lusai on exp42)
 - *"it keeps putting just the same notes over for a few seconds and it gets old"* (x3nd3n)
 - *"Alpha is fucked up... it's like spamming"* (FixelStyle on exp35c)
 
-**Pattern variety** — exp14 wins because it produces more varied patterns. Without context to lock into, it relies purely on audio, which naturally varies. Self-notes: *"Alpha... changes"*, *"Beta [exp42] regresses from unique patterns to metronome"*.
+**Pattern variety** — [exp14](../experiment_14/README.md) wins because it produces more varied patterns. Without context to lock into, it relies purely on audio, which naturally varies. Self-notes: *"Alpha... changes"*, *"Beta [exp42] regresses from unique patterns to metronome"*.
 
-**exp35c instability** — mel ramps cause erratic density (std 1.8 events/sec vs 0.4 for exp42). Multiple evaluators noted exp35c as "worse gamma" or spam-heavy on certain songs.
+**[exp35c](../experiment_35c/README.md) instability** — mel ramps cause erratic density (std 1.8 events/sec vs 0.4 for [exp42](../experiment_42/README.md)). Multiple evaluators noted exp35c as "worse gamma" or spam-heavy on certain songs.
 
 ### Genre breakdown (self-rankings only, 10 songs)
 
@@ -171,20 +171,20 @@ Due to recruitment constraints, only 6 unique volunteers participated (8 votes �
 
 | Model | Per-sample HIT | Human ranking |
 |---|---|---|
-| exp14 | 68.9% | **1st (43pts)** |
-| exp35c | 71.6% | 3rd (31pts) |
-| exp42 | 73.2% | 2nd (34pts) |
+| [exp14](../experiment_14/README.md) | 68.9% | **1st (43pts)** |
+| [exp35c](../experiment_35c/README.md) | 71.6% | 3rd (31pts) |
+| [exp42](../experiment_42/README.md) | 73.2% | 2nd (34pts) |
 
 The ranking is *inversely correlated* with per-sample accuracy. Context dependency helps per-sample prediction but hurts AR generation through metronome lock-in.
 
 ## Lesson
 
-- **Per-sample metrics are misleading for AR quality.** The best per-sample model (exp42, 73.2% HIT) lost to the worst (exp14, 68.9% HIT) in human evaluation. Optimizing per-sample accuracy may actively harm generation quality by deepening context dependency.
-- **Metronome regression is the dominant failure mode.** Not hallucination, not skipping, not density — it's the inability to break out of repeating patterns. Exp 44-B confirmed this is data-driven: 47% of training samples ask the model to continue the previous gap, rising to 83% when a streak of 8+ exists.
+- **Per-sample metrics are misleading for AR quality.** The best per-sample model ([exp42](../experiment_42/README.md), 73.2% HIT) lost to the worst ([exp14](../experiment_14/README.md), 68.9% HIT) in human evaluation. Optimizing per-sample accuracy may actively harm generation quality by deepening context dependency.
+- **Metronome regression is the dominant failure mode.** Not hallucination, not skipping, not density — it's the inability to break out of repeating patterns. Exp [44-B](../experiment_44b/README.md) confirmed this is data-driven: [47% [?]](../experiment_44b/README.md) of training samples ask the model to continue the previous gap, rising to [83%](../experiment_44b/README.md) when a streak of 8+ exists.
 - **Context dependency is a double-edged sword.** It improves per-sample accuracy but creates AR vulnerability. The model needs to use context without becoming enslaved to it.
 - **Blind human evaluation works.** Even with limited volunteers, the method produced a clear, consistent ranking. Self and volunteer rankings agreed. Worth repeating for future model comparisons.
 ### Thanks
 
 Thanks to Flufonyx, Lusai, x3nd3n, Tinky Winky, FixelStyle, Egroish, and Mawdi for volunteering their time to blind-evaluate generated charts. Your feedback directly shaped the direction of this project.
 
-- **Next steps:** Many possible directions — loss function changes (streak-break upweighting, adversarial metronome penalty), architecture changes (explicit streak features, two-stage continue/break prediction), data sampling (oversampling pattern-break samples), or training curriculum. The 44-B data analysis gives us the tools to measure progress on the actual problem.
+- **Next steps:** Many possible directions — loss function changes (streak-break upweighting, adversarial metronome penalty), architecture changes (explicit streak features, two-stage continue/break prediction), data sampling (oversampling pattern-break samples), or training curriculum. The [44-B](../experiment_44b/README.md) data analysis gives us the tools to measure progress on the actual problem.
