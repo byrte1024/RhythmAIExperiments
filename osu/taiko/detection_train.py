@@ -2034,10 +2034,10 @@ def save_benchmark_data(results, eval_step, run_dir):
 
         # ── prediction distribution ──
         fig, axes = plt.subplots(2, 1, figsize=(10, 6))
-        axes[0].hist(t_ns, bins=200, range=(0, 500), color="#4a90d9", alpha=0.8)
+        axes[0].hist(t_ns, bins=200, range=(0, N_CLASSES - 1), color="#4a90d9", alpha=0.8)
         axes[0].set_title(f"{name} - Eval {eval_step}: Original Targets (non-STOP)")
         axes[0].set_ylabel("Count")
-        axes[1].hist(p_ns, bins=200, range=(0, 500), color="#e8834a", alpha=0.8)
+        axes[1].hist(p_ns, bins=200, range=(0, N_CLASSES - 1), color="#e8834a", alpha=0.8)
         n_stop = (preds == stop).sum()
         axes[1].set_title(
             f"{name} - Eval {eval_step}: Predictions "
@@ -2056,7 +2056,7 @@ def save_benchmark_data(results, eval_step, run_dir):
             ax.set_facecolor("black")
             nbins = 250
             h, xe, ye = np.histogram2d(t_ns, p_ns, bins=nbins,
-                                        range=[[0, 500], [0, 500]])
+                                        range=[[0, N_CLASSES - 1], [0, N_CLASSES - 1]])
             h = gaussian_filter(h.astype(np.float64), sigma=1.0)
             h[h < 0.5] = np.nan
             ax.imshow(h.T, origin="lower", aspect="auto", extent=[0, 500, 0, 500],
@@ -2368,12 +2368,12 @@ def save_eval_graphs(targets, preds, metrics, eval_step, run_dir, extra=None, mt
     # ── 0. Prediction distribution histogram ──
     fig, axes = plt.subplots(2, 1, figsize=(12, 8))
     # target distribution
-    axes[0].hist(t_ns, bins=250, range=(0, 500), color="#4a90d9", alpha=0.8)
+    axes[0].hist(t_ns, bins=250, range=(0, N_CLASSES - 1), color="#4a90d9", alpha=0.8)
     axes[0].set_title(f"Eval {eval_step}: Target Distribution (non-STOP)")
     axes[0].set_xlabel("Bin offset")
     axes[0].set_ylabel("Count")
     # predicted distribution
-    axes[1].hist(p_ns, bins=250, range=(0, 500), color="#e8834a", alpha=0.8)
+    axes[1].hist(p_ns, bins=250, range=(0, N_CLASSES - 1), color="#e8834a", alpha=0.8)
     axes[1].set_title(f"Eval {eval_step}: Predicted Distribution - {len(np.unique(p_ns))} unique values")
     axes[1].set_xlabel("Bin offset")
     axes[1].set_ylabel("Count")
@@ -2398,7 +2398,7 @@ def save_eval_graphs(targets, preds, metrics, eval_step, run_dir, extra=None, mt
     fig, ax = plt.subplots(figsize=(8, 8))
     fig.patch.set_facecolor("black")
     ax.set_facecolor("black")
-    h, xedges, yedges = np.histogram2d(t_ns, p_ns, bins=250, range=[[0, 500], [0, 500]])
+    h, xedges, yedges = np.histogram2d(t_ns, p_ns, bins=250, range=[[0, N_CLASSES - 1], [0, N_CLASSES - 1]])
     h = gaussian_filter(h.astype(np.float64), sigma=1.0)
     h[h < 0.5] = np.nan
     ax.imshow(h.T, origin="lower", aspect="auto", extent=[0, 500, 0, 500],
@@ -3472,6 +3472,17 @@ def split_by_song(manifest, val_ratio=0.1):
 # ═══════════════════════════════════════════════════════════════
 
 def train(args):
+    # allow overriding window sizes from args
+    global A_BINS, B_BINS, N_CLASSES, WINDOW
+    if hasattr(args, 'a_bins') and args.a_bins != 500:
+        A_BINS = args.a_bins
+    if hasattr(args, 'b_bins') and args.b_bins != 500:
+        B_BINS = args.b_bins
+    N_CLASSES = B_BINS + 1  # 0 to B_BINS-1 + STOP
+    WINDOW = A_BINS + B_BINS
+    if A_BINS != 500 or B_BINS != 500:
+        print(f"Window: A_BINS={A_BINS} B_BINS={B_BINS} WINDOW={WINDOW} N_CLASSES={N_CLASSES}")
+
     ds_dir = os.path.join(SCRIPT_DIR, "datasets", args.dataset)
     with open(os.path.join(ds_dir, "manifest.json"), "r", encoding="utf-8") as f:
         manifest = json.load(f)
@@ -3561,6 +3572,7 @@ def train(args):
             gap_ratios=args.gap_ratios,
             stop_token=getattr(args, 'stop_token', False),
             n_virtual_tokens=getattr(args, 'n_virtual_tokens', 0),
+            a_bins=A_BINS, b_bins=B_BINS,
         ).to(args.device)
     elif args.model_type == "framewise":
         model = FramewiseOnsetDetector(
@@ -4180,6 +4192,8 @@ if __name__ == "__main__":
     parser.add_argument("--stop-token", action="store_true", default=False, help="Use learned STOP query token (exp 47e+)")
     parser.add_argument("--n-virtual-tokens", type=int, default=0, help="Virtual tokens for out-of-window context (exp 49+, 0=off)")
     parser.add_argument("--entropy-weight", type=float, default=0.0, help="Anti-entropy loss weight (exp 50+, 0=off)")
+    parser.add_argument("--a-bins", type=int, default=500, help="Past audio context in mel bins (default 500 = 2.5s)")
+    parser.add_argument("--b-bins", type=int, default=500, help="Future audio context in mel bins (default 500 = 2.5s)")
     parser.add_argument("--streak-loss", action="store_true", default=False, help="Streak-ratio loss weighting (exp 51+)")
     parser.add_argument("--streak-power", type=float, default=0.3, help="Streak loss weight power (default 0.3)")
     parser.add_argument("--streak-cap", type=float, default=50.0, help="Streak loss max weight cap (default 50)")

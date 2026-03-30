@@ -1058,6 +1058,12 @@ def main():
         n_virtual = 0
         if "virtual_watermark" in state_keys:
             n_virtual = ckpt_args.get("n_virtual_tokens", 32)
+        # override globals if checkpoint used different window sizes
+        global A_BINS, B_BINS, N_CLASSES
+        A_BINS = ckpt_args.get("a_bins", 500)
+        B_BINS = ckpt_args.get("b_bins", 500)
+        N_CLASSES = B_BINS + 1
+
         model_kwargs = dict(
             n_mels=N_MELS,
             d_model=ckpt_args.get("d_model", 384),
@@ -1068,6 +1074,7 @@ def main():
             gap_ratios=has_gap_ratios,
             stop_token=has_stop_token,
             n_virtual_tokens=n_virtual,
+            a_bins=A_BINS, b_bins=B_BINS,
         )
     elif ModelClass == FramewiseOnsetDetector:
         # exp 38+: framewise onset detection

@@ -75,8 +75,30 @@ python detection_train.py taiko_v2 --run-name detect_experiment_51 --model-type 
 
 ## Result
 
-*Pending*
+**Stopped at eval 9. Per-sample metrics significantly worse. AR not better enough to justify the cost.**
+
+### Progression
+
+| Metric | Eval 1 | Eval 4 | Eval 9 | Exp 45 eval 8 | Exp 44 ATH |
+|---|---|---|---|---|---|
+| HIT | 60.5% | 65.2% | 67.5% | 71.9% | **73.6%** |
+| MISS | 38.8% | 34.3% | 32.0% | 27.5% | **25.9%** |
+| Exact | 43.5% | 47.8% | 49.6% | — | 54.7% |
+| Ctx delta | 2.7pp | 4.2pp | 4.5pp | 7.6pp | 5.6pp |
+| AR step0 | 65.1% | 66.9% | 63.3% | 73.5% | 76.7% |
+| AR step1 | 38.2% | 39.2% | 37.8% | 43.0% | 48.2% |
+| Metronome | 46.4% | 43.0% | 47.2% | 44.8% | 42.9% |
+| Adv metronome | 44.3% | 45.6% | 48.6% | 49.7% | 50.1% |
+| Time shifted | 42.2% | 41.4% | 44.6% | — | 47.3% |
+
+HIT at 67.5% — 6.1pp below exp 44 ATH and 4.4pp below exp 45 at the same eval. The streak-ratio loss weighting successfully diverted model capacity from common continuations to rare breaks, but the cost to overall accuracy was too high. AR metrics didn't improve enough to compensate — step0 at 63.3% is lower than every previous experiment.
+
+Metronome resilience at 47.2% is good but not dramatically better than exp 50 (46.9%) which achieved it without sacrificing HIT.
 
 ## Lesson
 
-*Pending*
+- **Streak-ratio loss weighting hurts accuracy more than it helps AR.** A 6pp HIT loss is too much — the model spent too much capacity on rare cells (0.02-0.10% of data) that don't contribute to overall quality.
+- **The cap and power weren't enough to prevent over-correction.** Even with power=0.3 and cap=50, the rare-cell boost dominated the loss landscape too much for the common cases that drive HIT.
+- **Metronome resilience is better achieved through anti-entropy (exp 50) or virtual tokens (exp 49).** Both got similar metronome scores without sacrificing HIT.
+- **Exp 45 remains the best overall model.** Best balance of HIT, resilience, and AR quality across all experiments.
+- **The streak-ratio data itself is valuable.** The matrix revealed the training distribution imbalance clearly. Future approaches might use it more subtly — e.g., curriculum learning where streak-break examples are gradually introduced, or targeted augmentation that creates synthetic break samples.

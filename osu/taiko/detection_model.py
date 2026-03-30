@@ -1258,10 +1258,16 @@ class EventEmbeddingDetector(nn.Module):
         gap_ratios=False,
         stop_token=False,
         n_virtual_tokens=0,
+        a_bins=500,
+        b_bins=500,
     ):
         super().__init__()
         self.gap_ratios = gap_ratios
         self.n_virtual_tokens = n_virtual_tokens
+        self.a_bins = a_bins
+        self.b_bins = b_bins
+        self.n_audio_tokens = (a_bins + b_bins) // 4
+        self.cursor_token = a_bins // 4
         self.stop_token = stop_token
         self.n_classes = n_classes
         self.d_model = d_model
@@ -1401,14 +1407,13 @@ class EventEmbeddingDetector(nn.Module):
         event_embs = self.event_proj(combined)  # (B, C, d_model)
 
         # map event offsets to audio token positions
-        # cursor is at mel frame 500 = token 125 (after 4x conv stride)
-        # event at offset -100 = mel frame 400 = token 100
-        mel_frames = 500 + event_offsets  # (B, C)
+        # cursor is at mel frame a_bins = token cursor_token (after 4x conv stride)
+        mel_frames = self.a_bins + event_offsets  # (B, C)
         token_pos = mel_frames // 4  # (B, C) — conv stride 4
 
-        # in-window: real event AND maps to a past audio token [0, 124]
-        in_window = valid & (token_pos >= 0) & (token_pos < 125)
-        token_pos_clamped = token_pos.clamp(0, 249)  # safe index
+        # in-window: real event AND maps to a past audio token [0, cursor_token-1]
+        in_window = valid & (token_pos >= 0) & (token_pos < self.cursor_token)
+        token_pos_clamped = token_pos.clamp(0, self.n_audio_tokens - 1)  # safe index
 
         # out-of-window: real event but before the audio window (token_pos < 0)
         out_of_window = valid & (token_pos < 0)
@@ -1492,7 +1497,7 @@ class EventEmbeddingDetector(nn.Module):
             x = film(x, cond)
 
         # extract cursor for onset prediction (offset by V)
-        cursor = x[:, V + 125, :]
+        cursor = x[:, V + self.cursor_token, :]
         logits = self.head_proj(self.head_norm(cursor))
         logits = logits + self.head_smooth(logits.unsqueeze(1)).squeeze(1)
 
