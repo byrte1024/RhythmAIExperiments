@@ -14,7 +14,7 @@ Exp 35-C checkpoints at three stages: eval 1, eval 4, eval 8. OnsetDetector (uni
 
 ## Data Analyzed
 
-Validation set predictions from three exp 35-C checkpoints. For each checkpoint, the same analysis as exp 41:
+Validation set predictions from three exp 35-C checkpoints. For each checkpoint, the following metrics are computed:
 - Skip count distribution
 - Entropy statistics
 - Confidence statistics
@@ -24,7 +24,7 @@ Validation set predictions from three exp 35-C checkpoints. For each checkpoint,
 
 ## Method
 
-1. Run the entropy/skip analysis from exp 41 on three checkpoints: eval 1, eval 4, eval 8
+1. Run the entropy/skip analysis on three checkpoints: eval 1, eval 4, eval 8
 2. Compare all metrics side by side across training stages
 3. Track: overall HIT rate, mean entropy, mean confidence, skip-0 HIT, overprediction rate, distance-binned HIT rates
 

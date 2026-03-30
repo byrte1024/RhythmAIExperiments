@@ -24,7 +24,7 @@ Predict the next onset timing in an osu!taiko rhythm game chart, given audio + p
 
 **Total parameters: ~16.1M**
 
-Base architecture is EventEmbeddingDetector from exp 44/45. Key change from exp 47-C: gate reads from mean-pooled forward tokens instead of the cursor token.
+Base architecture is EventEmbeddingDetector (single-pathway: learned event embeddings added to audio tokens at event positions, unified self-attention) with binary STOP gate. The gate reads from mean-pooled forward tokens instead of the cursor token.
 
 ### 1. Conditioning MLP
 

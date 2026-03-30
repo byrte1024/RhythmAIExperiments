@@ -24,7 +24,7 @@ Predict the next onset timing in an osu!taiko rhythm game chart, given audio + p
 
 **Total parameters: ~16.1M**
 
-Base architecture is EventEmbeddingDetector from exp 44/45. Fixes from exp 47-B:
+Base architecture is EventEmbeddingDetector (single-pathway: learned event embeddings added to audio tokens at event positions, unified self-attention) with binary STOP gate. Key improvement:
 - **Balanced focal averaging**: STOP and onset focal losses are averaged separately, then combined with equal weight, ensuring STOP loss has equal standing regardless of class ratio
 
 ### 1. Conditioning MLP

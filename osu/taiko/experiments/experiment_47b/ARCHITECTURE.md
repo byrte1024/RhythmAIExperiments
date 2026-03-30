@@ -24,7 +24,7 @@ Predict the next onset timing in an osu!taiko rhythm game chart, given audio + p
 
 **Total parameters: ~16.1M**
 
-Base architecture is EventEmbeddingDetector from exp 44/45. Fixes from exp 47:
+Base architecture is EventEmbeddingDetector (single-pathway: learned event embeddings added to audio tokens at event positions, unified self-attention) with binary STOP gate. Key improvements:
 - **Flipped gate targets**: 1=stop, 0=onset (STOP is the positive/rare class)
 - **Focal BCE (gamma=2)**: downweights easy negatives (confident onset predictions), focuses on hard positives (STOP boundaries)
 

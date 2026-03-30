@@ -145,9 +145,9 @@ STOP samples get `stop_weight=3.0x` multiplier.
 | Gradient clipping | 1.0 |
 | Evals per epoch | 4 |
 
-Each sub-experiment ran for 2 evals. Two changes adopted from exp 45:
+Each sub-experiment ran for 2 evals. Two configuration changes:
 - Conditioning jitter tightened to ±2% at 10% rate (better AR density adherence)
-- Gap ratio features enabled (default on from exp 45 forward)
+- Gap ratio features enabled
 
 ## Augmentation (~14% context corruption rate)
 

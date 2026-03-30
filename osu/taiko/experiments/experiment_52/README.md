@@ -60,17 +60,17 @@ python detection_train.py taiko_v2 --run-name detect_experiment_52l --model-type
 
 Run in this order to maximize information per GPU-hour. Each result informs whether to skip later experiments.
 
-1. [x] **52-A (250/250)** — cheapest grid (0.25x). HIT 70.6%, metronome 50.4%. Smaller window barely hurts HIT but best corruption resilience.
-2. [ ] **52-L (500/33)** — cheapest new (0.28x), tests extreme: can the model predict with almost no future? If this works at all, short future is viable.
-3. [ ] **52-J (500/125)** — cheap (0.39x), the practical minimum. If 52-L fails but 52-J works, the sweet spot is between 33-125.
-4. [ ] **52-B (500/250)** — cheap (0.56x), halved future. Compare with 52-A (250/250) to isolate past vs future contribution.
-5. [ ] **52-D (250/500)** — cheap (0.56x), halved past. Same future as baseline — does past audio matter?
-6. [ ] **52-F (1000/500)** — moderate (2.25x), doubled past. If 52-D shows past doesn't matter, skip this.
-7. [ ] **52-H (500/1000)** — moderate (2.25x), doubled future. The key "does more future help?" test. If 52-B shows halved future barely hurts, skip this.
-8. [ ] **52-C (1000/250)** — moderate (1.56x), lots of past + short future. Only if past matters (from 52-D vs 52-E).
-9. [ ] **52-G (250/1000)** — moderate (1.56x), little past + lots of future. Only if future matters (from 52-H).
-10. [ ] **52-I (1000/1000)** — expensive (4.0x). Only if both past AND future help.
-11. [ ] **52-K (500/75)** — cheap (0.33x), between L and J. Only if 52-L and 52-J show interesting tradeoff to narrow down.
+1. [x] **52-A (250/250)** — HIT 70.6%, metronome 50.4%. Smaller window barely hurts HIT but best corruption resilience.
+2. [x] **52-L (500/33)** — HIT 74.2% (new ATH!) but AR quality poor: spams transients, ignores density. Model NEEDS future audio.
+3. [x] ~~**52-J (500/125)**~~ — Skipped. 52-L showed very small B_BINS needs B_AUDIO/B_PRED split to work.
+4. [x] ~~**52-K (500/75)**~~ — Skipped. Same reasoning as 52-J.
+5. [ ] **52-B (500/250)** — cheap (0.56x), halved future. Compare with 52-A to isolate past vs future contribution.
+6. [ ] **52-D (250/500)** — cheap (0.56x), halved past. Same future as baseline — does past audio matter?
+7. [ ] **52-F (1000/500)** — moderate (2.25x), doubled past. If 52-D shows past doesn't matter, skip this.
+8. [ ] **52-H (500/1000)** — moderate (2.25x), doubled future. The key "does more future help?" test.
+9. [ ] **52-C (1000/250)** — moderate (1.56x), lots of past + short future. Only if past matters.
+10. [ ] **52-G (250/1000)** — moderate (1.56x), little past + lots of future. Only if future matters.
+11. [ ] **52-I (1000/1000)** — expensive (4.0x). Only if both past AND future help.
 
 **Skip rules:**
 - If 52-L (33 future) completely fails → skip 52-K, the minimum viable future is >33
@@ -106,10 +106,25 @@ Run in this order to maximize information per GPU-hour. Each result informs whet
 - Same metronome pattern visible in graphs as 500/500 — the fundamental error structure doesn't change with window size.
 - Some graph axes still show 500 range (no data there) — cosmetic issue, not functional.
 
-### Other sub-experiments
+### 52-L: 500/33 (2.5s/0.165s) — stopped at eval 2
 
-*Pending — remaining configs not yet run*
+| Metric | Eval 1 | Eval 2 | Exp 45 eval 2 (500/500) |
+|---|---|---|---|
+| HIT | 73.5% | **74.2%** | 70.5% |
+| MISS | 25.1% | **23.9%** | 28.2% |
+| Exact | 53.2% | 54.8% | 51.7% |
+| Accuracy | 65.6% | **67.8%** | — |
+| stop_f1 | 0.828 | **0.837** | 0.533 |
+| stop_recall | 0.825 | 0.857 | — |
+| Ctx delta | -3.5pp | -1.6pp | 7.2pp |
+| Metronome | 67.6% | **68.0%** | 44.3% |
+| no_audio_stop | 44.0% | 58.7% | — |
+| AR step0 | 75.0% | **81.5%** | 71.5% |
 
-## Lesson
+**Per-sample metrics are the best we've ever seen.** HIT 74.2% (new ATH, beats exp 44's 73.6%). MISS 23.9% (new ATH). Stop F1 0.837 (unprecedented). Metronome 68.0% (untouchable). The 34-class problem converges immediately — eval 1 already matched exp 44's ATH.
 
-*Pending — need more configs to draw conclusions*
+**BUT: AR quality is poor despite great metrics.**
+- Model always finds the closest possible beat (most beats are in the ~75 bin range, which is ~375ms). With a 33-bin (165ms) window, the optimal strategy is to predict the nearest transient regardless of density conditioning.
+- Density has almost no effect — the model spams onsets regardless of what density is requested. Without future audio context, it can't see upcoming silent sections or lower-density passages.
+- Errors are "brittle" — with 33 bins, a wrong prediction is either garbage or a false STOP. No graceful degradation to nearby musical positions like with 500 bins.
+- The frequent STOP-hopping creates a scanning pattern that produces notes at every detected transient, ignoring chart-level structure.
