@@ -2068,9 +2068,9 @@ def save_benchmark_data(results, eval_step, run_dir):
                                         range=[[0, N_CLASSES - 1], [0, N_CLASSES - 1]])
             h = gaussian_filter(h.astype(np.float64), sigma=1.0)
             h[h < 0.5] = np.nan
-            ax.imshow(h.T, origin="lower", aspect="auto", extent=[0, 500, 0, 500],
+            ax.imshow(h.T, origin="lower", aspect="auto", extent=[0, max_bin, 0, max_bin],
                       cmap="inferno", interpolation="bilinear")
-            ax.plot([0, 500], [0, 500], "r--", alpha=0.4, linewidth=1)
+            ax.plot([0, max_bin], [0, max_bin], "r--", alpha=0.4, linewidth=1)
             ax.set_xlabel("Target", color="white")
             ax.set_ylabel("Predicted", color="white")
             ax.set_title(f"{name} - Eval {eval_step}: Heatmap", color="white")
@@ -2128,13 +2128,13 @@ def save_benchmark_data(results, eval_step, run_dir):
                     p = steps[ss]["_preds"]
                     t = steps[ss]["_targets"]
                     ax.scatter(t, p, s=2, alpha=0.3, color="#4a90d9")
-                    ax.plot([0, 500], [0, 500], "r-", linewidth=0.5, alpha=0.5)
+                    ax.plot([0, max_bin], [0, max_bin], "r-", linewidth=0.5, alpha=0.5)
                     hit_r = steps[ss].get("hit_rate", 0)
                     ax.set_title(f"Step {ss} (HIT={hit_r:.0%})")
                 else:
                     ax.set_title(f"Step {ss} (no data)")
-                ax.set_xlim(0, 500)
-                ax.set_ylim(0, 500)
+                ax.set_xlim(0, max_bin)
+                ax.set_ylim(0, max_bin)
                 ax.set_xlabel("Target")
                 if idx == 0:
                     ax.set_ylabel("Predicted")
@@ -2367,6 +2367,7 @@ def save_eval_graphs(targets, preds, metrics, eval_step, run_dir, extra=None, mt
 
     eval_dir = os.path.join(run_dir, "evals")
     os.makedirs(eval_dir, exist_ok=True)
+    max_bin = N_CLASSES - 1  # for graph ranges (was hardcoded 500)
     prefix = os.path.join(eval_dir, f"eval_{eval_step:03d}")
 
     stop = N_CLASSES - 1
@@ -2393,12 +2394,12 @@ def save_eval_graphs(targets, preds, metrics, eval_step, run_dir, extra=None, mt
     # ── 1. Scatter: target vs predicted ──
     fig, ax = plt.subplots(figsize=(8, 8))
     ax.scatter(t_ns, p_ns, alpha=0.02, s=1, color="#4a90d9")
-    ax.plot([0, 500], [0, 500], "r--", alpha=0.5, linewidth=1)
+    ax.plot([0, max_bin], [0, max_bin], "r--", alpha=0.5, linewidth=1)
     ax.set_xlabel("Target bin offset")
     ax.set_ylabel("Predicted bin offset")
     ax.set_title(f"Eval {eval_step}: Target vs Predicted")
-    ax.set_xlim(0, 500)
-    ax.set_ylim(0, 500)
+    ax.set_xlim(0, max_bin)
+    ax.set_ylim(0, max_bin)
     fig.tight_layout()
     fig.savefig(f"{prefix}_scatter.png", dpi=120)
     plt.close(fig)
@@ -2410,9 +2411,9 @@ def save_eval_graphs(targets, preds, metrics, eval_step, run_dir, extra=None, mt
     h, xedges, yedges = np.histogram2d(t_ns, p_ns, bins=250, range=[[0, N_CLASSES - 1], [0, N_CLASSES - 1]])
     h = gaussian_filter(h.astype(np.float64), sigma=1.0)
     h[h < 0.5] = np.nan
-    ax.imshow(h.T, origin="lower", aspect="auto", extent=[0, 500, 0, 500],
+    ax.imshow(h.T, origin="lower", aspect="auto", extent=[0, max_bin, 0, max_bin],
               norm=LogNorm(vmin=1), cmap="viridis")
-    ax.plot([0, 500], [0, 500], "r--", alpha=0.5, linewidth=1)
+    ax.plot([0, max_bin], [0, max_bin], "r--", alpha=0.5, linewidth=1)
     ax.set_xlabel("Target bin offset", color="white")
     ax.set_ylabel("Predicted bin offset", color="white")
     ax.set_title(f"Eval {eval_step}: Prediction Density", color="white")
@@ -2426,15 +2427,15 @@ def save_eval_graphs(targets, preds, metrics, eval_step, run_dir, extra=None, mt
     if entropy is not None and len(t_ns) > 0:
         ent_ns = entropy[ns]
         n_bins = 250
-        bin_range = [[0, 500], [0, 500]]
+        bin_range = [[0, max_bin], [0, max_bin]]
 
         # Accumulate entropy sums and counts per (target, pred) bin
         ent_sum = np.zeros((n_bins, n_bins), dtype=np.float64)
         counts = np.zeros((n_bins, n_bins), dtype=np.float64)
 
         # Digitize targets and preds into bin indices
-        t_idx = np.clip(((t_ns.astype(np.float64)) / 500 * n_bins).astype(int), 0, n_bins - 1)
-        p_idx = np.clip(((p_ns.astype(np.float64)) / 500 * n_bins).astype(int), 0, n_bins - 1)
+        t_idx = np.clip(((t_ns.astype(np.float64)) / max_bin * n_bins).astype(int), 0, n_bins - 1)
+        p_idx = np.clip(((p_ns.astype(np.float64)) / max_bin * n_bins).astype(int), 0, n_bins - 1)
 
         np.add.at(ent_sum, (t_idx, p_idx), ent_ns)
         np.add.at(counts, (t_idx, p_idx), 1)
@@ -2478,8 +2479,8 @@ def save_eval_graphs(targets, preds, metrics, eval_step, run_dir, extra=None, mt
         fig, ax = plt.subplots(figsize=(8, 8))
         fig.patch.set_facecolor("black")
         ax.set_facecolor("black")
-        ax.imshow(rgb.transpose(1, 0, 2), origin="lower", aspect="auto", extent=[0, 500, 0, 500])
-        ax.plot([0, 500], [0, 500], "w--", alpha=0.4, linewidth=1)
+        ax.imshow(rgb.transpose(1, 0, 2), origin="lower", aspect="auto", extent=[0, max_bin, 0, max_bin])
+        ax.plot([0, max_bin], [0, max_bin], "w--", alpha=0.4, linewidth=1)
         ax.set_xlabel("Target bin offset", color="white")
         ax.set_ylabel("Predicted bin offset", color="white")
         ax.set_title(f"Eval {eval_step}: Entropy Heatmap (R=entropy, G=count, B=confident)", color="white")
@@ -2501,7 +2502,7 @@ def save_eval_graphs(targets, preds, metrics, eval_step, run_dir, extra=None, mt
         ax.set_title(f"Eval {eval_step}: Relative Error")
         ax.set_ylim(0.1, 10.0)
         ax.set_yscale("log")
-        ax.set_xlim(0, 500)
+        ax.set_xlim(0, max_bin)
         fig.tight_layout()
         fig.savefig(f"{prefix}_ratio_scatter.png", dpi=120)
         plt.close(fig)
@@ -2514,12 +2515,12 @@ def save_eval_graphs(targets, preds, metrics, eval_step, run_dir, extra=None, mt
         log_ratio = np.log10(ratio_clipped)
         h, xedges, yedges = np.histogram2d(
             t_ns.astype(float), log_ratio, bins=[250, 100],
-            range=[[0, 500], [-1, 1]]  # ratio 0.1x to 10x
+            range=[[0, max_bin], [-1, 1]]  # ratio 0.1x to 10x
         )
         h = gaussian_filter(h.astype(np.float64), sigma=1.0)
         h[h < 0.5] = np.nan
         ax.imshow(h.T, origin="lower", aspect="auto",
-                  extent=[0, 500, -1, 1], norm=LogNorm(vmin=1), cmap="inferno")
+                  extent=[0, max_bin, -1, 1], norm=LogNorm(vmin=1), cmap="inferno")
         ax.axhline(0.0, color="white", linestyle="--", alpha=0.5)
         ax.set_xlabel("Target bin offset", color="white")
         ax.set_ylabel("log10(ratio)", color="white")
@@ -2639,12 +2640,12 @@ def save_eval_graphs(targets, preds, metrics, eval_step, run_dir, extra=None, mt
         fig, ax = plt.subplots(figsize=(10, 10))
         ax.set_facecolor("black")
         ax.scatter(t_ns[ds_idx], p_ns[ds_idx], c=d_colors[ds_idx], s=2, alpha=0.5, rasterized=True)
-        ax.plot([0, 500], [0, 500], color="gray", linewidth=0.5, alpha=0.5)
+        ax.plot([0, max_bin], [0, max_bin], color="gray", linewidth=0.5, alpha=0.5)
         ax.set_xlabel("Target bin offset")
         ax.set_ylabel("Predicted bin offset")
         ax.set_title(f"Eval {eval_step}: Density Scatter (Red=dense chart, Blue=sparse chart)")
-        ax.set_xlim(0, 500)
-        ax.set_ylim(0, 500)
+        ax.set_xlim(0, max_bin)
+        ax.set_ylim(0, max_bin)
         from matplotlib.patches import Patch
         ax.legend(handles=[
             Patch(facecolor="red", label="High density"),
@@ -3051,12 +3052,12 @@ def save_eval_graphs(targets, preds, metrics, eval_step, run_dir, extra=None, mt
             )
 
         # diagonal
-        ax.plot([0, 500], [0, 500], color="gray", linewidth=0.5, alpha=0.5)
+        ax.plot([0, max_bin], [0, max_bin], color="gray", linewidth=0.5, alpha=0.5)
         ax.set_xlabel("Target bin offset")
         ax.set_ylabel("Predicted bin offset (top-K)")
         ax.set_title(f"Eval {eval_step}: Top-K Candidate Scatter (n={len(t_sub)})")
-        ax.set_xlim(0, 500)
-        ax.set_ylim(0, 500)
+        ax.set_xlim(0, max_bin)
+        ax.set_ylim(0, max_bin)
         ax.legend(fontsize=8, loc="upper left", framealpha=0.7)
         fig.tight_layout()
         fig.savefig(f"{prefix}_topk_scatter.png", dpi=120)
@@ -3068,7 +3069,7 @@ def save_eval_graphs(targets, preds, metrics, eval_step, run_dir, extra=None, mt
         dx_all = p_ns.astype(np.float64) - t_ns.astype(np.float64)
         dy_all = -log_ratio
 
-        x_bins_rpf = np.linspace(0, 500, 76)  # 75 bins
+        x_bins_rpf = np.linspace(0, max_bin, 76)  # 75 bins
         y_bins_rpf = np.linspace(-3, 3, 73)   # 72 bins
         x_centers_rpf = (x_bins_rpf[:-1] + x_bins_rpf[1:]) / 2
         y_centers_rpf = (y_bins_rpf[:-1] + y_bins_rpf[1:]) / 2
@@ -3138,7 +3139,7 @@ def save_eval_graphs(targets, preds, metrics, eval_step, run_dir, extra=None, mt
         ax.set_xlabel("Target bin offset")
         ax.set_ylabel("Avg dir")
         ax.set_title(f"Eval {eval_step}: Column-wise Average Error Direction (red=over, blue=under, green=correct)")
-        ax.set_xlim(0, 500)
+        ax.set_xlim(0, max_bin)
         ax.set_ylim(-3, 3)
         ax.set_yticks([])
         fig.tight_layout()
@@ -3151,7 +3152,7 @@ def save_eval_graphs(targets, preds, metrics, eval_step, run_dir, extra=None, mt
 
         count_plot = np.where(grid_count > 0, np.log10(grid_count + 1), np.nan)
         ax.imshow(count_plot, aspect="auto", origin="lower", cmap="magma", alpha=0.5,
-                  extent=[0, 500, -3, 3], interpolation="nearest")
+                  extent=[0, max_bin, -3, 3], interpolation="nearest")
 
         arrow_scale = min(cell_w * 0.4, cell_h * 0.4) / max(max_mag, 1e-6)
         for yi_idx in range(len(y_centers_rpf)):
@@ -3182,7 +3183,7 @@ def save_eval_graphs(targets, preds, metrics, eval_step, run_dir, extra=None, mt
         ax.set_xlabel("Target bin offset")
         ax.set_ylabel("log2(prediction / target)")
         ax.set_title(f"Eval {eval_step}: Ratio Pointer Field (avg direction per cell, min 3 samples)")
-        ax.set_xlim(0, 500)
+        ax.set_xlim(0, max_bin)
         ax.set_ylim(-3, 3)
         ax.set_yticks([-3, -2, -1, 0, 1, 2, 3])
         ax.set_yticklabels(["0.125x", "0.25x", "0.5x", "1x", "2x", "4x", "8x"])
@@ -3216,7 +3217,7 @@ def save_eval_graphs(targets, preds, metrics, eval_step, run_dir, extra=None, mt
             h[h < 0.5] = np.nan
             ax.imshow(h.T, origin="lower", aspect="auto", extent=[0, 502, 0, 502],
                       norm=LogNorm(vmin=1), cmap="viridis")
-            ax.plot([0, 500], [0, 500], "r--", alpha=0.5, linewidth=1)
+            ax.plot([0, max_bin], [0, max_bin], "r--", alpha=0.5, linewidth=1)
             ax.axhline(501, color="yellow", alpha=0.3, linewidth=0.5)
             ax.axvline(501, color="yellow", alpha=0.3, linewidth=0.5)
             ax.set_xlabel("Real onset bin (501=hallucination)", color="white")
