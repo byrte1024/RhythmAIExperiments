@@ -232,6 +232,14 @@ def run_inference(model, mel, conditioning, device, hop_bins=20, max_events=1000
                         cand_bins = [f[0] for f in filtered]
                         cand_confs = [f[1] for f in filtered]
 
+            # near-only: keep only candidates with lower bin offset than argmax
+            if sample_cfg.get("near_only", False) and len(cand_bins) > 1:
+                argmax_bin = cand_bins[0]  # highest confidence candidate
+                closer = [(b, c) for b, c in zip(cand_bins, cand_confs) if b <= argmax_bin]
+                if closer:
+                    cand_bins = [f[0] for f in closer]
+                    cand_confs = [f[1] for f in closer]
+
             # near-weight: upweight candidates close to previous gap
             near_w = sample_cfg.get("near_weight", 0.0)
             if near_w > 0 and len(event_offsets) > 0:
@@ -958,6 +966,7 @@ def main():
     parser.add_argument("--topx", type=int, default=5, help="Max candidates for sampling, 0=uncapped (default: 5)")
     parser.add_argument("--min-conf", type=float, default=0.0, help="Min normalized confidence to include a candidate (default: 0=off)")
     parser.add_argument("--near-weight", type=float, default=0.0, help="Upweight candidates near previous gap (0=off, 1=strong, default: 0)")
+    parser.add_argument("--near-only", action="store_true", default=False, help="Only consider candidates with lower bin offset than argmax")
     parser.add_argument("--metronome-weight", type=str, default="0", help="Metronome weight: single value or suppress,temp for both mode (default: 0)")
     parser.add_argument("--metronome-halflife", type=float, default=20.0, help="Half-life: in pp mode, pp outside peak where closeness halves; in frame mode, bin distance (default: 20)")
     parser.add_argument("--metronome-window", type=float, default=2.0, help="Metronome lookback window in seconds (default: 2.0)")
@@ -1228,6 +1237,7 @@ def main():
                 "temperature": args.temperature,
                 "topx": args.topx,
                 "near_weight": args.near_weight,
+                "near_only": args.near_only,
                 "min_conf": args.min_conf,
                 "topu_range": args.topu_range,
                 "metronome_suppress_weight": met_suppress_w,
