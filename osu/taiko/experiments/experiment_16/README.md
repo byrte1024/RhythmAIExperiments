@@ -112,8 +112,8 @@ Context leaned heavily into density as a crutch - zero_density crashed to 6% (vs
 
 ## Lesson
 
-**You can't loss-function your way out of a structural problem.** Both exp [15](../experiment_15/README.md) (flat context aux) and exp 16 (rank-weighted context aux) failed to activate the context path. The root cause is architectural: with additive logits (`audio + context`), context's optimal strategy is always to be a no-op or amplify audio. The path of least resistance will always win regardless of loss weighting.
+**You can't loss-function your way out of a structural problem.** Both [exp 15](../experiment_15/README.md) (flat context aux) and exp 16 (rank-weighted context aux) failed to activate the context path. The root cause is architectural: with additive logits (`audio + context`), context's optimal strategy is always to be a no-op or amplify audio. The path of least resistance will always win regardless of loss weighting.
 
-**Wrong opinions are worse than no opinions.** Exp [15](../experiment_15/README.md)'s rubber-stamping was at least neutral (matched exp [14](../experiment_14/README.md)). Exp 16's forced opinions were actively harmful - context corrupted audio's correct rankings, dropping top-K by 3-5pp.
+**Wrong opinions are worse than no opinions.** [Exp 15](../experiment_15/README.md)'s rubber-stamping was at least neutral (matched [exp 14](../experiment_14/README.md)). Exp 16's forced opinions were actively harmful - context corrupted audio's correct rankings, dropping top-K by 3-5pp.
 
 **Next direction: architectural change.** The context path needs to be structurally forced into a selector role. Top-K reranking - where audio proposes K candidates and context must pick among them - makes rubber-stamping and no-op architecturally impossible.

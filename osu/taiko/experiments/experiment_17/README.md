@@ -135,7 +135,7 @@ Experiments [15](../experiment_15/README.md)-[16](../experiment_16/README.md) pr
 
 ## Lesson
 
-- **Architectural constraint activates context, but activation ≠ value.** The top-K reranking successfully broke rubber-stamping - a first across 6 experiments. But the context path learned to override without learning WHEN to override. 51% override accuracy means context is essentially flipping coins on its disagreements.
-- **The reranking bottleneck hurts audio.** Restricting final output to K=20 candidates with context selection overhead costs 7.5pp accuracy vs audio-only (exp [14](../experiment_14/README.md)). The selection loss competes with the audio loss for shared encoder capacity.
+- **Architectural constraint activates context, but activation ≠ value.** The top-K reranking successfully broke rubber-stamping - a first across 6 experiments ([exp 11](../experiment_11/README.md)-[16](../experiment_16/README.md)). But the context path learned to override without learning WHEN to override. 51% override accuracy means context is essentially flipping coins on its disagreements.
+- **The reranking bottleneck hurts audio.** Restricting final output to K=20 candidates with context selection overhead costs 7.5pp accuracy vs audio-only ([exp 14](../experiment_14/README.md)). The selection loss competes with the audio loss for shared encoder capacity.
 - **Shared encoders create gradient interference.** Audio and context share the AudioEncoder and EventEncoder. Context's selection loss gradient flows back through these shared paths, potentially degrading audio's proposal quality. This explains why accuracy is BELOW exp [14](../experiment_14/README.md) despite identical audio architecture.
 - **Next direction: full path separation.** Give audio and context completely separate losses with stop-gradient between paths. Audio optimizes top-1 proposal quality only. Context optimizes selection quality only. No gradient leakage between the two objectives.

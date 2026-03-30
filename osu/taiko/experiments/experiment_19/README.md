@@ -145,4 +145,4 @@ Context learns to rerank proposals from an audio model that is itself still lear
 
 - **Gap representation works** - inter-onset intervals + local audio snippets + own encoders is the right architecture for context. First experiment where context showed positive signal during training.
 - **Unstable proposer poisons the selector** - context can't learn to rerank well when the proposals themselves are changing. The ~29% false_top1 rate (missed overrides) suggests context is too conservative, possibly because early noisy overrides were punished.
-- **Next step: warm-start audio from exp [14](../experiment_14/README.md)** - load trained audio weights, freeze them, only train the 2.5M context path against stable high-quality proposals. Also mask selection loss when target isn't in top-K to remove impossible training signal.
+- **Next step: warm-start audio from [exp 14](../experiment_14/README.md)** - load trained audio weights, freeze them, only train the 2.5M context path against stable high-quality proposals. Also mask selection loss when target isn't in top-K to remove impossible training signal.

@@ -110,4 +110,4 @@ Identical to exp [19](../experiment_19/README.md) - gap-based context with own e
 ## Lesson
 
 - **Warm-start + freeze are proven infrastructure** - should be used going forward. Audio at full quality from step 1, 2x training speed, clean gradient isolation.
-- **The loss function is now the bottleneck.** Architecture (exp [19](../experiment_19/README.md): gap-based) and training dynamics (exp 20: stable proposals) are solved. Context overrides more and with better accuracy than ever, but hard CE doesn't reward "improvement over audio" - only "exact match." Next: relative quality loss that rewards getting closer to the target than #1, not just finding the exact answer.
+- **The loss function is now the bottleneck.** Architecture ([exp 19](../experiment_19/README.md): gap-based) and training dynamics (exp 20: stable proposals) are solved. Context overrides more and with better accuracy than ever, but hard CE doesn't reward "improvement over audio" - only "exact match." Next: relative quality loss that rewards getting closer to the target than #1, not just finding the exact answer.

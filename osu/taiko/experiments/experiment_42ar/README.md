@@ -180,7 +180,7 @@ The ranking is *inversely correlated* with per-sample accuracy. Context dependen
 ## Lesson
 
 - **Per-sample metrics are misleading for AR quality.** The best per-sample model ([exp42](../experiment_42/README.md), 73.2% HIT) lost to the worst ([exp14](../experiment_14/README.md), 68.9% HIT) in human evaluation. Optimizing per-sample accuracy may actively harm generation quality by deepening context dependency.
-- **Metronome regression is the dominant failure mode.** Not hallucination, not skipping, not density — it's the inability to break out of repeating patterns. Exp [44-B](../experiment_44b/README.md) confirmed this is data-driven: [47% [?]](../experiment_44b/README.md) of training samples ask the model to continue the previous gap, rising to [83%](../experiment_44b/README.md) when a streak of 8+ exists.
+- **Metronome regression is the dominant failure mode.** Not hallucination, not skipping, not density — it's the inability to break out of repeating patterns. [Exp 44-B](../experiment_44b/README.md) confirmed this is data-driven: [47%](../experiment_44b/README.md) of training samples ask the model to continue the previous gap, rising to [83%](../experiment_44b/README.md) when a streak of 8+ exists.
 - **Context dependency is a double-edged sword.** It improves per-sample accuracy but creates AR vulnerability. The model needs to use context without becoming enslaved to it.
 - **Blind human evaluation works.** Even with limited volunteers, the method produced a clear, consistent ranking. Self and volunteer rankings agreed. Worth repeating for future model comparisons.
 ### Thanks

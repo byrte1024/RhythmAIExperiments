@@ -130,4 +130,4 @@ Candidate embeddings include audio score + normalized rank. #0 is always audio's
 
 - Stop-gradient works and should be kept for any future multi-path architecture.
 - Two-stage event processing (self-attn before cross-attn) is architecturally sound but didn't help because the underlying task — reranking audio's candidates using event patterns — may not be learnable at this scale.
-- 5 experiments of context failure ([15](../experiment_15/README.md)-18) suggest the problem isn't architecture or loss — it's that event history doesn't contain enough information to second-guess audio's timing predictions. Context may be more useful for *type* prediction (don vs ka) or *density* modulation rather than timing correction.
+- 5 experiments of context failure ([exp 15](../experiment_15/README.md)-18) suggest the problem isn't architecture or loss — it's that event history doesn't contain enough information to second-guess audio's timing predictions. Context may be more useful for *type* prediction (don vs ka) or *density* modulation rather than timing correction.
