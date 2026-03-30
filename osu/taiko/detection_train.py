@@ -132,6 +132,11 @@ class OnsetDataset(Dataset):
         self.charts = [manifest["charts"][i] for i in chart_indices]
         self.augment = augment
         self.multi_target = multi_target
+        # capture current window config (for Windows spawn workers)
+        self._a_bins = A_BINS
+        self._b_bins = B_BINS
+        self._n_classes = N_CLASSES
+        self._window = WINDOW
 
         self.events = []
         evt_dir = os.path.join(ds_dir, "events")
@@ -143,7 +148,7 @@ class OnsetDataset(Dataset):
         self.samples = []
         for ci, evt in enumerate(self.events):
             for ei in range(len(evt)):
-                cursor = max(0, int(evt[0]) - B_BINS) if ei == 0 else int(evt[ei - 1])
+                cursor = max(0, int(evt[0]) - self._b_bins) if ei == 0 else int(evt[ei - 1])
                 if cursor >= MIN_CURSOR_BIN:
                     self.samples.append((ci, ei))
             if len(evt) > 0 and int(evt[-1]) >= MIN_CURSOR_BIN:
@@ -154,7 +159,7 @@ class OnsetDataset(Dataset):
             self.samples = self.samples[::subsample]
 
         # precompute class distribution
-        self.class_counts = np.zeros(N_CLASSES, dtype=np.int64)
+        self.class_counts = np.zeros(self._n_classes, dtype=np.int64)
         for ci_idx, ei_idx in self.samples:
             self.class_counts[self._get_target(ci_idx, ei_idx)] += 1
 
@@ -164,13 +169,13 @@ class OnsetDataset(Dataset):
     def _get_target(self, ci, ei):
         evt = self.events[ci]
         if ei == 0:
-            cursor = max(0, int(evt[0]) - B_BINS) if len(evt) > 0 else 0
+            cursor = max(0, int(evt[0]) - self._b_bins) if len(evt) > 0 else 0
         else:
             cursor = int(evt[ei - 1])
         if ei < len(evt):
             offset = max(0, int(evt[ei]) - cursor)
-            return N_CLASSES - 1 if offset >= B_BINS else offset
-        return N_CLASSES - 1
+            return self._n_classes - 1 if offset >= self._b_bins else offset
+        return self._n_classes - 1
 
     def _get_mel(self, mel_file):
         if mel_file not in self._mel_cache:
@@ -189,22 +194,22 @@ class OnsetDataset(Dataset):
         evt = self.events[ci]
 
         if ei == 0:
-            cursor = max(0, evt[0] - B_BINS) if len(evt) > 0 else 0
+            cursor = max(0, evt[0] - self._b_bins) if len(evt) > 0 else 0
         else:
             cursor = int(evt[ei - 1])
 
         # target(s)
         if ei < len(evt):
             offset = max(0, int(evt[ei]) - cursor)
-            target = N_CLASSES - 1 if offset >= B_BINS else offset
+            target = self._n_classes - 1 if offset >= self._b_bins else offset
         else:
-            target = N_CLASSES - 1
+            target = self._n_classes - 1
 
-        # mel window (stored as float16, convert 1000-frame slice to float32)
+        # mel window
         mel = self._get_mel(chart["mel_file"])
         total_frames = mel.shape[1]
-        start = cursor - A_BINS
-        end = cursor + B_BINS
+        start = cursor - self._a_bins
+        end = cursor + self._b_bins
         pad_left = max(0, -start)
         pad_right = max(0, end - total_frames)
         mel_window = mel[:, max(0, start):min(total_frames, end)].astype(np.float32)
@@ -242,9 +247,9 @@ class OnsetDataset(Dataset):
 
         # multi-target: all onsets in forward window
         if self.multi_target:
-            future_mask = (evt > cursor) & (evt <= cursor + B_BINS)
+            future_mask = (evt > cursor) & (evt <= cursor + self._b_bins)
             future_bins = (evt[future_mask].astype(np.int64) - cursor)
-            future_bins = np.clip(future_bins, 0, B_BINS - 1)
+            future_bins = np.clip(future_bins, 0, self._b_bins - 1)
 
             n_targets = len(future_bins)
             targets_padded = np.full(MAX_TARGETS, -1, dtype=np.int64)
@@ -820,12 +825,16 @@ def print_class_distribution(dataset):
     nonzero = (counts > 0).sum().item()
 
     print(f"\nClass distribution ({total:.0f} total samples):")
+    stop = N_CLASSES - 1
     print(f"  Non-empty classes: {nonzero}/{N_CLASSES}")
-    print(f"  STOP class (500): {counts[-1]:.0f} ({counts[-1]/total*100:.1f}%)")
-    for lo, hi in [(0, 10), (10, 25), (25, 50), (50, 100), (100, 200), (200, 500)]:
+    print(f"  STOP class ({stop}): {counts[stop]:.0f} ({counts[stop]/total*100:.1f}%)")
+    for lo, hi in [(0, 10), (10, 25), (25, 50), (50, 100), (100, 200), (200, stop)]:
+        if lo >= stop:
+            break
+        hi = min(hi, stop)
         c = counts[lo:hi].sum().item()
         print(f"  Offset {lo:>3}-{hi:>3}: {c:>10.0f} ({c/total*100:5.1f}%)")
-    top_k = torch.topk(counts[:500], 10)
+    top_k = torch.topk(counts[:stop], min(10, stop))
     print(f"  Top 10 offsets: {', '.join(f'{i}={int(c)}' for i, c in zip(top_k.indices.tolist(), top_k.values.tolist()))}\n")
 
 
