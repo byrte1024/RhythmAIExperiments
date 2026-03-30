@@ -2007,6 +2007,7 @@ def _serializable(results):
 def save_benchmark_data(results, eval_step, run_dir):
     """Save per-benchmark eval JSON + per-eval prediction distribution graph.
 
+    max_bin used for graph axis scaling.
     Folder structure:
       run_dir/benchmarks/<bench_name>/eval_001.json
       run_dir/benchmarks/<bench_name>/eval_001_pred_dist.png
@@ -2020,6 +2021,7 @@ def save_benchmark_data(results, eval_step, run_dir):
 
     bench_root = os.path.join(run_dir, "benchmarks")
     stop = N_CLASSES - 1
+    max_bin = N_CLASSES - 1
 
     for name, r in results.items():
         # skip AR benchmarks — they have different structure, handled separately below
