@@ -8,6 +8,8 @@ import os
 import json
 import time
 import argparse
+import subprocess
+import glob
 import numpy as np
 import torch
 import torch.nn.functional as F
@@ -417,6 +419,8 @@ def run_inference(model, mel, conditioning, device, hop_bins=20, max_events=1000
                 # add all candidates as events, advance cursor to the furthest
                 added = sorted(set(cand_bins))
                 added = [b for b in added if b > 0 and b < N_CLASSES - 1]
+                if fakeframewise > 0:
+                    added = [b for b in added if b <= fakeframewise]
                 if added:
                     for b in added:
                         event_bin = cursor + b
@@ -999,6 +1003,31 @@ def main():
         if not args.audio:
             print("No file selected, exiting.")
             return
+
+    # download from YouTube if URL provided
+    if args.audio and ("youtube.com" in args.audio or "youtu.be" in args.audio):
+        import tempfile
+        yt_url = args.audio
+        tmp_dir = tempfile.mkdtemp(prefix="beatdetect_yt_")
+        print(f"Downloading from YouTube: {yt_url}")
+        yt_out = os.path.join(tmp_dir, "%(title)s.%(ext)s")
+        yt_cmd = [
+            "yt-dlp", "-x", "--audio-format", "wav",
+            "--audio-quality", "0",
+            "-o", yt_out,
+            yt_url,
+        ]
+        yt_result = subprocess.run(yt_cmd, capture_output=True, text=True)
+        if yt_result.returncode != 0:
+            print(f"yt-dlp failed: {yt_result.stderr}")
+            return
+        # find the downloaded wav
+        wavs = glob.glob(os.path.join(tmp_dir, "*.wav"))
+        if not wavs:
+            print(f"No wav file found in {tmp_dir}")
+            return
+        args.audio = wavs[0]
+        print(f"Downloaded: {os.path.basename(args.audio)}")
 
     t_total_start = time.perf_counter()
 
