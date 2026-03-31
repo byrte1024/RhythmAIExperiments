@@ -67,10 +67,10 @@ Run in this order to maximize information per GPU-hour. Each result informs whet
 5. [ ] **52-B (500/250)** — cheap (0.56x), halved future. Compare with 52-A to isolate past vs future contribution.
 6. [ ] **52-D (250/500)** — cheap (0.56x), halved past. Same future as baseline — does past audio matter?
 7. [ ] **52-F (1000/500)** — moderate (2.25x), doubled past. If 52-D shows past doesn't matter, skip this.
-8. [ ] **52-H (500/1000)** — moderate (2.25x), doubled future. The key "does more future help?" test.
-9. [ ] **52-C (1000/250)** — moderate (1.56x), lots of past + short future. Only if past matters.
-10. [ ] **52-G (250/1000)** — moderate (1.56x), little past + lots of future. Only if future matters.
-11. [ ] **52-I (1000/1000)** — expensive (4.0x). Only if both past AND future help.
+8. [x] **52-H (500/1000)** — Stopped at eval 4. HIT 71.5% (similar to 500/500). STOP broken: no_events_no_audio dropped to 73%. 554/1001 unique preds — model ignores the extra range. More future doesn't help.
+9. [x] ~~**52-C (1000/250)**~~ — Skipped. Past doesn't need testing until 52-D runs.
+10. [x] ~~**52-G (250/1000)**~~ — Skipped. 52-H showed 1000 future bins breaks STOP and wastes class space.
+11. [x] ~~**52-I (1000/1000)**~~ — Skipped. Both 52-H (1000 future) failed. No point in 1000/1000.
 
 **Skip rules:**
 - If 52-L (33 future) completely fails → skip 52-K, the minimum viable future is >33
@@ -82,7 +82,7 @@ Run in this order to maximize information per GPU-hour. Each result informs whet
 
 ### 52-A: 250/250 (1.25s/1.25s) — stopped at eval 7
 
-| Metric | Eval 3 | Eval 5 | Eval 7 | Exp [45](../experiment_45/README.md) eval 7 (500/500) |
+| Metric | Eval 3 | Eval 5 | Eval 7 | [Exp 45](../experiment_45/README.md) eval 7 (500/500) |
 |---|---|---|---|---|
 | HIT | 69.6% | 71.1% | 70.6% | 71.2% |
 | Exact | 50.6% | 51.8% | 51.6% | 52.5% |
@@ -108,7 +108,7 @@ Run in this order to maximize information per GPU-hour. Each result informs whet
 
 ### 52-L: 500/33 (2.5s/0.165s) — stopped at eval 2
 
-| Metric | Eval 1 | Eval 2 | Exp [45](../experiment_45/README.md) eval 2 (500/500) |
+| Metric | Eval 1 | Eval 2 | [Exp 45](../experiment_45/README.md) eval 2 (500/500) |
 |---|---|---|---|
 | HIT | 73.5% | **74.2%** | 70.5% |
 | MISS | 25.1% | **23.9%** | 28.2% |
@@ -128,3 +128,25 @@ Run in this order to maximize information per GPU-hour. Each result informs whet
 - Density has almost no effect — the model spams onsets regardless of what density is requested. Without future audio context, it can't see upcoming silent sections or lower-density passages.
 - Errors are "brittle" — with 33 bins, a wrong prediction is either garbage or a false STOP. No graceful degradation to nearby musical positions like with 500 bins.
 - The frequent STOP-hopping creates a scanning pattern that produces notes at every detected transient, ignoring chart-level structure.
+
+### 52-H: 500/1000 (2.5s/5.0s) — stopped at eval 4
+
+| Metric | Eval 1 | Eval 4 | [Exp 45](../experiment_45/README.md) eval 4 (500/500) |
+|---|---|---|---|
+| HIT | 68.6% | 71.5% | 70.2% |
+| MISS | 30.6% | 27.9% | 29.1% |
+| Ctx delta | 6.9pp | 5.6pp | 7.8pp |
+| stop_f1 | 0.530 | 0.547 | 0.515 |
+| AR step0 | 67.4% | 73.4% | 72.0% |
+| Metronome | 49.2% | 47.0% | 40.5% |
+| Unique preds | 610 | 554 | 460 |
+| no_audio_stop | 32.1% | **5.9%** | 13.3% |
+| no_evt_no_audio_stop | 88.2% | **73.7%** | 100.0% |
+
+**Per-sample HIT is similar to 500/500** — no clear advantage from doubled future audio.
+
+**STOP is broken.** With only 0.2% STOP targets (11,575 out of 5.25M), the model can't learn to stop. no_events_no_audio_stop DECREASED from 88%→74% over training — the model gets worse at stopping even when there's literally nothing. no_audio_stop at 5.9%.
+
+**554/1001 unique predictions** — 45% of the class space is dead. The 200-1000 bin range has only 48K samples across 800 bins. Most bins have single-digit training examples.
+
+**Conclusion:** 1000 future bins is too many. Classification too hard, STOP too rare, sparse long-range bins undertrained.
