@@ -1096,7 +1096,10 @@ def main():
         global A_BINS, B_BINS, N_CLASSES
         A_BINS = ckpt_args.get("a_bins", 500)
         B_BINS = ckpt_args.get("b_bins", 500)
-        N_CLASSES = B_BINS + 1
+        b_pred = ckpt_args.get("b_pred", 0)
+        if b_pred <= 0:
+            b_pred = B_BINS
+        N_CLASSES = b_pred + 1
 
         model_kwargs = dict(
             n_mels=N_MELS,

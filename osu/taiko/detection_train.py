@@ -134,7 +134,8 @@ class OnsetDataset(Dataset):
         self.multi_target = multi_target
         # capture current window config (for Windows spawn workers)
         self._a_bins = A_BINS
-        self._b_bins = B_BINS
+        self._b_bins = B_BINS  # audio window (mel frames)
+        self._b_pred = N_CLASSES - 1  # prediction range (may be < _b_bins)
         self._n_classes = N_CLASSES
         self._window = WINDOW
 
@@ -148,7 +149,7 @@ class OnsetDataset(Dataset):
         self.samples = []
         for ci, evt in enumerate(self.events):
             for ei in range(len(evt)):
-                cursor = max(0, int(evt[0]) - self._b_bins) if ei == 0 else int(evt[ei - 1])
+                cursor = max(0, int(evt[0]) - self._b_pred) if ei == 0 else int(evt[ei - 1])
                 if cursor >= MIN_CURSOR_BIN:
                     self.samples.append((ci, ei))
             if len(evt) > 0 and int(evt[-1]) >= MIN_CURSOR_BIN:
@@ -169,12 +170,12 @@ class OnsetDataset(Dataset):
     def _get_target(self, ci, ei):
         evt = self.events[ci]
         if ei == 0:
-            cursor = max(0, int(evt[0]) - self._b_bins) if len(evt) > 0 else 0
+            cursor = max(0, int(evt[0]) - self._b_pred) if len(evt) > 0 else 0
         else:
             cursor = int(evt[ei - 1])
         if ei < len(evt):
             offset = max(0, int(evt[ei]) - cursor)
-            return self._n_classes - 1 if offset >= self._b_bins else offset
+            return self._n_classes - 1 if offset >= self._b_pred else offset
         return self._n_classes - 1
 
     def _get_mel(self, mel_file):
@@ -194,18 +195,18 @@ class OnsetDataset(Dataset):
         evt = self.events[ci]
 
         if ei == 0:
-            cursor = max(0, evt[0] - self._b_bins) if len(evt) > 0 else 0
+            cursor = max(0, evt[0] - self._b_pred) if len(evt) > 0 else 0
         else:
             cursor = int(evt[ei - 1])
 
-        # target(s)
+        # target: uses b_pred (prediction range)
         if ei < len(evt):
             offset = max(0, int(evt[ei]) - cursor)
-            target = self._n_classes - 1 if offset >= self._b_bins else offset
+            target = self._n_classes - 1 if offset >= self._b_pred else offset
         else:
             target = self._n_classes - 1
 
-        # mel window
+        # mel window: uses b_bins (audio lookahead, may be larger than b_pred)
         mel = self._get_mel(chart["mel_file"])
         total_frames = mel.shape[1]
         start = cursor - self._a_bins
@@ -247,9 +248,9 @@ class OnsetDataset(Dataset):
 
         # multi-target: all onsets in forward window
         if self.multi_target:
-            future_mask = (evt > cursor) & (evt <= cursor + self._b_bins)
+            future_mask = (evt > cursor) & (evt <= cursor + self._b_pred)
             future_bins = (evt[future_mask].astype(np.int64) - cursor)
-            future_bins = np.clip(future_bins, 0, self._b_bins - 1)
+            future_bins = np.clip(future_bins, 0, self._b_pred - 1)
 
             n_targets = len(future_bins)
             targets_padded = np.full(MAX_TARGETS, -1, dtype=np.int64)
@@ -3490,10 +3491,15 @@ def train(args):
         A_BINS = args.a_bins
     if hasattr(args, 'b_bins') and args.b_bins != 500:
         B_BINS = args.b_bins
-    N_CLASSES = B_BINS + 1  # 0 to B_BINS-1 + STOP
+    # B_PRED: prediction range (can be smaller than B_BINS audio window)
+    b_pred = getattr(args, 'b_pred', 0)
+    if b_pred <= 0:
+        b_pred = B_BINS  # default: prediction range = audio window
+    N_CLASSES = b_pred + 1
     WINDOW = A_BINS + B_BINS
-    if A_BINS != 500 or B_BINS != 500:
-        print(f"Window: A_BINS={A_BINS} B_BINS={B_BINS} WINDOW={WINDOW} N_CLASSES={N_CLASSES}")
+    args._b_pred = b_pred  # store for dataset
+    if A_BINS != 500 or B_BINS != 500 or b_pred != B_BINS:
+        print(f"Window: A_BINS={A_BINS} B_BINS={B_BINS} B_PRED={b_pred} WINDOW={WINDOW} N_CLASSES={N_CLASSES}")
 
     ds_dir = os.path.join(SCRIPT_DIR, "datasets", args.dataset)
     with open(os.path.join(ds_dir, "manifest.json"), "r", encoding="utf-8") as f:
@@ -4206,6 +4212,7 @@ if __name__ == "__main__":
     parser.add_argument("--entropy-weight", type=float, default=0.0, help="Anti-entropy loss weight (exp 50+, 0=off)")
     parser.add_argument("--a-bins", type=int, default=500, help="Past audio context in mel bins (default 500 = 2.5s)")
     parser.add_argument("--b-bins", type=int, default=500, help="Future audio context in mel bins (default 500 = 2.5s)")
+    parser.add_argument("--b-pred", type=int, default=0, help="Prediction range in bins, 0=same as b-bins (exp 53+). N_CLASSES = b_pred + 1")
     parser.add_argument("--streak-loss", action="store_true", default=False, help="Streak-ratio loss weighting (exp 51+)")
     parser.add_argument("--streak-power", type=float, default=0.3, help="Streak loss weight power (default 0.3)")
     parser.add_argument("--streak-cap", type=float, default=50.0, help="Streak loss max weight cap (default 50)")
