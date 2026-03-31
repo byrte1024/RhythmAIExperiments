@@ -85,7 +85,7 @@ def parse_args():
     parser.add_argument("--gif", default=None, help="Path to GIF file for beat-synced animation window")
     parser.add_argument("--gif-cycles", type=int, default=1, help="Events per full GIF animation cycle (default: 1)")
     parser.add_argument("--render", default=None, help="Render to video file (e.g. output.mp4) instead of interactive mode")
-    parser.add_argument("--render-fps", type=int, default=60, help="Video FPS for render mode (default 60)")
+    parser.add_argument("--render-fps", type=int, default=120, help="Video FPS for render mode (default 120)")
     return parser.parse_args()
 
 
@@ -1576,8 +1576,8 @@ class Viewer:
             fade = (1.0 - (np.arange(n_tick) / n_tick) ** 0.5)  # fast decay
             return (noise * fade * vol * 32767).astype(np.int16)
 
-        don_tick = make_noise_tick(vol=0.7)
-        ka_tick = make_noise_tick(vol=0.5)
+        don_tick = make_noise_tick(vol=1.4)
+        ka_tick = make_noise_tick(vol=1.0)
 
         # load source audio as wav for mixing
         audio_data = None
@@ -1649,13 +1649,13 @@ class Viewer:
                 wf.setframerate(sr)
                 wf.writeframes(mixed_pcm)
             ffmpeg_cmd += ["-i", tmp_audio.name]  # audio input
-            ffmpeg_cmd += ["-c:v", "libx264", "-preset", "fast", "-crf", "23",
-                          "-pix_fmt", "yuv420p",
+            ffmpeg_cmd += ["-c:v", "libx264", "-preset", "fast", "-crf", "20",
+                          "-pix_fmt", "yuv420p", "-vsync", "cfr",
                           "-c:a", "aac", "-b:a", "192k",
                           "-shortest", output_path]
         else:
-            ffmpeg_cmd += ["-c:v", "libx264", "-preset", "fast", "-crf", "23",
-                          "-pix_fmt", "yuv420p",
+            ffmpeg_cmd += ["-c:v", "libx264", "-preset", "fast", "-crf", "20",
+                          "-pix_fmt", "yuv420p", "-vsync", "cfr",
                           output_path]
 
         proc = subprocess.Popen(ffmpeg_cmd, stdin=subprocess.PIPE)

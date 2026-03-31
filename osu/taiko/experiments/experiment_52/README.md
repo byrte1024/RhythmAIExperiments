@@ -64,7 +64,7 @@ Run in this order to maximize information per GPU-hour. Each result informs whet
 2. [x] **52-L (500/33)** — HIT 74.2% (new ATH!) but AR quality poor: spams transients, ignores density. Model NEEDS future audio.
 3. [x] ~~**52-J (500/125)**~~ — Skipped. 52-L showed very small B_BINS needs B_AUDIO/B_PRED split to work.
 4. [x] ~~**52-K (500/75)**~~ — Skipped. Same reasoning as 52-J.
-5. [ ] **52-B (500/250)** — cheap (0.56x), halved future. Compare with 52-A to isolate past vs future contribution.
+5. [x] **52-B (500/250)** — HIT 71.9%, zero_density_stop 69-74%. Healthiest density dependence. Tracks exp 45 pace with 251 classes.
 6. [ ] **52-D (250/500)** — cheap (0.56x), halved past. Same future as baseline — does past audio matter?
 7. [ ] **52-F (1000/500)** — moderate (2.25x), doubled past. If 52-D shows past doesn't matter, skip this.
 8. [x] **52-H (500/1000)** — Stopped at eval 4. HIT 71.5% (similar to 500/500). STOP broken: no_events_no_audio dropped to 73%. 554/1001 unique preds — model ignores the extra range. More future doesn't help.
@@ -128,6 +128,30 @@ Run in this order to maximize information per GPU-hour. Each result informs whet
 - Density has almost no effect — the model spams onsets regardless of what density is requested. Without future audio context, it can't see upcoming silent sections or lower-density passages.
 - Errors are "brittle" — with 33 bins, a wrong prediction is either garbage or a false STOP. No graceful degradation to nearby musical positions like with 500 bins.
 - The frequent STOP-hopping creates a scanning pattern that produces notes at every detected transient, ignoring chart-level structure.
+
+### 52-B: 500/250 (2.5s/1.25s) — stopped at eval 5
+
+| Metric | Eval 1 | Eval 4 | Eval 5 | [Exp 45](../experiment_45/README.md) eval 5 (500/500) |
+|---|---|---|---|---|
+| HIT | 67.6% | 72.0% | 71.9% | 71.0% |
+| MISS | 31.6% | 27.5% | 27.6% | 28.6% |
+| Ctx delta | 8.1pp | 6.7pp | 6.2pp | — |
+| stop_f1 | 0.506 | 0.536 | 0.523 | 0.553 |
+| AR step0 | 65.3% | 69.3% | 71.0% | 68.4% |
+| Metronome | 43.2% | 45.1% | 44.9% | 44.7% |
+| Adv metronome | — | 48.7% | **50.8%** | 48.7% |
+| Time shifted | — | 45.2% | **46.9%** | 43.0% |
+| zero_density_stop | — | **74.3%** | 69.1% | ~7% |
+| Unique preds | 242 | 247 | — | ~450 |
+| nane_stop | 100% | — | — | 100% |
+
+**HIT tracks [exp 45](../experiment_45/README.md) closely** — 71.9% vs 71.0% at eval 5. The 251-class problem converges slightly faster.
+
+**Density dependence is the standout finding.** zero_density_stop at 69-74% means the model uses density as the primary STOP controller — "if density says nothing, stop." Compare to 500/500 models at 7-8% zero_density_stop where the model ignores density for STOP decisions.
+
+Random density costs -15.6pp accuracy (similar to 500/500's -14pp), but zero density costs **-43.8pp** (vs 500/500's -17.9pp). The model has learned a much healthier density relationship.
+
+**Corruption resilience is strong.** Metronome 44.9%, adv metronome 50.8%, time shifted 46.9% — all comparable to or better than 500/500.
 
 ### 52-H: 500/1000 (2.5s/5.0s) — stopped at eval 4
 

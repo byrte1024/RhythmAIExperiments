@@ -1403,7 +1403,7 @@ def main():
     print(f"Wrote stats to {stats_path}")
 
     if args.andlaunch:
-        import subprocess, sys
+        import sys
         viewer_path = os.path.join(SCRIPT_DIR, "viewer.py")
         print(f"\nLaunching viewer: {args.output}")
         cmd = [sys.executable, viewer_path, args.output, "--audio", args.audio,
