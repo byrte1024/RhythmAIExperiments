@@ -111,7 +111,7 @@ def _sample_from_candidates(candidates, confs, temperature, rng):
 
 
 def run_inference(model, mel, conditioning, device, hop_bins=20, max_events=10000,
-                  threshold=None, sample_cfg=None, addall_cfg=None):
+                  threshold=None, sample_cfg=None, addall_cfg=None, fakeframewise=0):
     """Autoregressive inference: predict events one at a time.
 
     sample_cfg: optional dict with keys {seed, mode, temperature, topx} for
@@ -436,6 +436,10 @@ def run_inference(model, mel, conditioning, device, hop_bins=20, max_events=1000
             top_u = _compute_top_u(prob, max_u=5, tolerance=0.05)
             cands = [(b, float(c), float(c)) for b, c in top_u]
             candidate_history.append((cursor, pred, cands))
+
+        # fakeframewise: reject predictions beyond X bins
+        if fakeframewise > 0 and pred != N_CLASSES - 1 and pred > fakeframewise:
+            pred = N_CLASSES - 1  # treat as STOP
 
         cursor_history.append((total_calls, cursor, pred))
 
@@ -957,6 +961,7 @@ def main():
     parser.add_argument("--density-peak", type=float, default=8.0, help="Target peak density")
     parser.add_argument("--density-std", type=float, default=1.5, help="Target density std")
     parser.add_argument("--hop-ms", type=float, default=100, help="Cursor hop on STOP prediction (ms, default 100)")
+    parser.add_argument("--fakeframewise", type=int, default=0, help="Only accept predictions within X bins of cursor (0=off). If prediction > X, treat as STOP.")
     parser.add_argument("--slide-frames", type=int, default=200, help="Slide step for framewise inference (mel frames, default 200)")
     parser.add_argument("--fw-threshold", type=float, default=0.3, help="Onset threshold for framewise inference (default 0.3)")
     parser.add_argument("--fw-merge", default="max", choices=["max", "avg", "vote"], help="Merge method for overlapping framewise windows")
@@ -1277,7 +1282,8 @@ def main():
             print(f"  AddAll: mode={args.random_mode} top={args.topx} min_conf={args.min_conf} topu_range={args.topu_range} met_suppress={met_suppress_w}")
 
         events, run_stats = run_inference(model, mel, conditioning, args.device, hop_bins=hop_bins,
-                                          sample_cfg=sample_cfg, addall_cfg=addall_cfg)
+                                          sample_cfg=sample_cfg, addall_cfg=addall_cfg,
+                                          fakeframewise=args.fakeframewise)
     print(f"  Predicted {len(events)} events ({len(events) / duration:.1f}/s)")
 
     # Add extra info to stats
