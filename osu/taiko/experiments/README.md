@@ -80,7 +80,7 @@ Each folder contains a README with hypothesis, results, and key graphs.
 | 50 | [Anti-Entropy Loss (w=0.1)](experiment_50/) | Sidegrade | Better corruption resilience (+2.6pp metronome, +1.9pp adv met) but HIT capped at 73.2% vs exp [44](experiment_44/)'s [73.6%](experiment_44/README.md). Anti-entropy is a robustness tool, not accuracy tool |
 | 50-B | [Anti-Entropy Loss (w=0.5)](experiment_50b/) | Similar | Bimodal entropy (eliminated disambiguation zone). Same HIT ceiling as w=0.1. Stronger pressure doesn't help further |
 | 51 | [Streak-Ratio Loss Weighting](experiment_51/) | Failed | Per-sample loss weight based on streak-ratio cell frequency. HIT dropped 6pp (67.5% vs 73.6%). Too much capacity diverted to rare cells. Anti-entropy (exp 50) achieves similar metronome resilience without HIT cost |
-| 52 | [Audio Window Size Sweep](experiment_52/) | **Running** | 12-way sweep of A/B bins. 52-A (250/250): HIT 70.6%, met 50.4%. 52-L (500/33): HIT 74.2% ATH but AR spams — model needs future audio. Small B_BINS needs B_AUDIO/B_PRED split |
+| 52 | [Audio Window Size Sweep](experiment_52/) | **Key finding** | 6 configs tested. 250 past sufficient (saves 50% compute). 500 future optimal. 1000 future breaks STOP. 33 future spams. B=250 gives healthiest density dependence. Best: 250/500 matches exp 45 at 0.56x cost |
 
 ## Key Lessons
 

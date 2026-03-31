@@ -174,3 +174,57 @@ Random density costs -15.6pp accuracy (similar to 500/500's -14pp), but zero den
 **554/1001 unique predictions** — 45% of the class space is dead. The 200-1000 bin range has only 48K samples across 800 bins. Most bins have single-digit training examples.
 
 **Conclusion:** 1000 future bins is too many. Classification too hard, STOP too rare, sparse long-range bins undertrained.
+
+### 52-D: 250/500 (1.25s/2.5s) — stopped at eval 4
+
+| Metric | Eval 1 | Eval 2 | Eval 3 | Eval 4 | [Exp 45](../experiment_45/README.md) eval 4 |
+|---|---|---|---|---|---|
+| HIT | 68.9% | 69.3% | 70.2% | 70.9% | 70.2% |
+| MISS | 30.3% | 30.1% | 29.1% | 28.5% | 29.1% |
+| Ctx delta | 10.1pp | 5.7pp | 8.3pp | 7.2pp | 7.8pp |
+| stop_f1 | 0.478 | 0.528 | 0.525 | 0.542 | 0.537 |
+| AR step0 | 70.4% | 69.1% | 71.3% | 73.1% | 72.0% |
+| Metronome | 48.1% | 48.2% | 49.4% | 49.3% | 40.5% |
+| zero_density_stop | 1.9% | 2.8% | 21.4% | 18.3% | 5.0% |
+
+**Outperforms [exp 45](../experiment_45/README.md) (500/500) at half the past audio compute.** HIT 70.9% vs 70.2%. Best corruption resilience of any config: metronome 49.3%, adv metronome 50.7%, time shifted 49.1%.
+
+**250 past bins is sufficient.** The extra 250 past bins in 500/500 add no measurable benefit — identical HIT, slightly worse corruption resilience.
+
+### Full comparison matrix (all configs at eval 4)
+
+| Benchmark | 52-A (250/250) | 52-B (500/250) | 52-D (250/500) | [exp45](../experiment_45/README.md) (500/500) |
+|---|---|---|---|---|
+| **HIT** | 70.0% | **72.0%** | 70.9% | 70.2% |
+| **MISS** | 29.4% | **27.5%** | 28.5% | 29.1% |
+| **NE acc** | 43.5% | **46.0%** | 44.9% | 43.7% |
+| **NA stop** | **61.7%** | 26.9% | 2.9% | 13.3% |
+| **NENA stop** | **100%** | **100%** | 99.3% | **100%** |
+| **TS acc** | 47.4% | 45.2% | **49.1%** | 44.2% |
+| **M acc** | 49.2% | 45.1% | **49.3%** | 40.5% |
+| **AM acc** | 48.6% | 48.7% | **50.7%** | 49.1% |
+| **ZD acc** | 11.5% | 8.8% | 11.5% | **28.8%** |
+| **ZD stop** | 8.7% | **74.3%** | 18.3% | 5.0% |
+| **RD acc** | 34.4% | **37.0%** | 31.0% | 35.5% |
+| **stop_f1** | 0.530 | 0.536 | **0.542** | 0.537 |
+| **Compute** | **0.25x** | 0.56x | 0.56x | 1.0x |
+
+### Skipped sub-experiments
+
+- **52-C (1000/250)**: Skipped. 52-D showed past doesn't matter — 1000 past bins would waste compute.
+- **52-F (1000/500)**: Skipped. Same reasoning.
+- **52-G (250/1000)**: Skipped. [52-H](../experiment_52/README.md) showed 1000 future bins breaks STOP.
+- **52-I (1000/1000)**: Skipped. Both dimensions showed diminishing/negative returns beyond 500.
+- **52-J (500/125)**: Skipped. [52-L](../experiment_52/README.md) showed very small B_BINS needs B_AUDIO/B_PRED split.
+- **52-K (500/75)**: Skipped. Same reasoning.
+
+## Lesson
+
+- **Past audio beyond 250 bins doesn't help.** 52-D (250/500) matches [exp 45](../experiment_45/README.md) (500/500) exactly — the extra 250 past bins are wasted compute. Source: 52-D vs exp 45 comparison.
+- **Future audio is what matters.** 250→500 future bins gives +0.9pp HIT (52-A vs 52-D). 500→1000 gives nothing useful and breaks STOP (52-H). Source: 52-A/52-D/52-H comparison.
+- **Smaller B_BINS forces healthier density dependence.** B=250: zero_density_stop 74% (density drives STOP). B=500: zero_density_stop 5-18% (audio drives STOP). The model uses density as a rate controller when it can't see far enough ahead. Source: 52-B zero_density analysis.
+- **Smaller B_BINS = better corruption resilience.** 250/250 and 250/500 both get ~49% metronome vs 500/500's 40%. Fewer classes = less to corrupt. Source: full comparison matrix.
+- **Smaller B_BINS = faster convergence.** 251 classes converges faster than 501 (52-B HIT 72.0% at eval 4 vs exp 45's 70.2%). Source: 52-B vs exp 45.
+- **Too few future bins (33) degrades to transient-spamming.** The model needs enough lookahead for chart-level structure. Source: [52-L](../experiment_52/README.md).
+- **Too many future bins (1000) breaks STOP and wastes class space.** 0.2% STOP rate, 45% dead classes, NENA stop declining. Source: [52-H](../experiment_52/README.md).
+- **The optimal base config appears to be 250/500 or 250/250.** Both outperform 500/500 at lower compute. The B_AUDIO/B_PRED split (future experiment) could combine 500-bin audio with 250-bin prediction for the best of both.
