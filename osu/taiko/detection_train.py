@@ -3298,6 +3298,52 @@ def save_eval_graphs(targets, preds, metrics, eval_step, run_dir, extra=None, mt
                 plt.close(fig)
 
 
+def _save_step_graph(step_history, run_dir):
+    """Save per-step live training graph (updated every 1k steps)."""
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+
+    if len(step_history) < 2:
+        return
+
+    steps = [s[0] for s in step_history]
+    losses = [s[1] for s in step_history]
+    hits = [s[2] for s in step_history]
+    misses = [s[3] for s in step_history]
+    scores = [s[4] for s in step_history]
+    accs = [s[5] for s in step_history]
+    sf1s = [s[6] for s in step_history]
+
+    fig, ax1 = plt.subplots(figsize=(14, 7))
+    ax2 = ax1.twinx()
+
+    # left axis: rates (0-1)
+    ax1.plot(steps, hits, label="HIT", linewidth=2, color="#6bc46d")
+    ax1.plot(steps, misses, label="MISS", linewidth=1.5, color="#eb4528")
+    ax1.plot(steps, accs, label="Accuracy (<=3%)", linewidth=1, color="#4a90d9", linestyle="--")
+    ax1.plot(steps, sf1s, label="Stop F1", linewidth=1, color="#c76dba", linestyle="--")
+    ax1.set_xlabel("Step", fontsize=12)
+    ax1.set_ylabel("Rate", fontsize=12)
+    ax1.set_ylim(0, 1)
+    ax1.grid(True, alpha=0.2)
+
+    # right axis: loss and score
+    ax2.plot(steps, losses, label="Loss", linewidth=1.5, color="#ff9900", linestyle=":")
+    ax2.plot(steps, scores, label="Score", linewidth=1.5, color="#00cccc", linestyle=":")
+    ax2.set_ylabel("Loss / Score", fontsize=12, color="#ff9900")
+    ax2.tick_params(axis="y", labelcolor="#ff9900")
+
+    lines1, labels1 = ax1.get_legend_handles_labels()
+    lines2, labels2 = ax2.get_legend_handles_labels()
+    ax1.legend(lines1 + lines2, labels1 + labels2, loc="center right", fontsize=9)
+
+    ax1.set_title(f"Live Training (step {steps[-1]:,d})", fontsize=14)
+    fig.tight_layout()
+    fig.savefig(os.path.join(run_dir, "live_training.png"), dpi=100)
+    plt.close(fig)
+
+
 def save_training_curves(history, run_dir):
     """Save loss and metric curves across all evals."""
     import matplotlib
@@ -3344,7 +3390,7 @@ def save_training_curves(history, run_dir):
         ax.plot(epochs, vals, label=label, linewidth=2, color=color)
     ax.set_xlabel("Eval Step")
     ax.set_ylabel("Score")
-    ax.set_title("STOP Class (500): F1 / Precision / Recall")
+    ax.set_title(f"STOP Class ({N_CLASSES - 1}): F1 / Precision / Recall")
     ax.legend()
     ax.set_ylim(0, 1)
     ax.grid(True, alpha=0.3)
@@ -3456,6 +3502,42 @@ def save_training_curves(history, run_dir):
     ax.grid(True, alpha=0.3)
     fig.tight_layout()
     fig.savefig(os.path.join(run_dir, "model_score.png"), dpi=150)
+    plt.close(fig)
+
+    # ── MASTER: HIT, MISS, SCORE, ACCURACY, LOSS, STOP_F1 on one graph ──
+    fig, ax1 = plt.subplots(figsize=(14, 7))
+    ax2 = ax1.twinx()
+
+    # left axis: rates (0-1)
+    ax1.plot(epochs, [h["val_metrics"].get("hit_rate", 0) for h in history],
+             label="HIT", linewidth=2.5, color="#6bc46d", marker="o", markersize=3)
+    ax1.plot(epochs, [h["val_metrics"].get("miss_rate", 0) for h in history],
+             label="MISS", linewidth=2, color="#eb4528", marker="s", markersize=3)
+    ax1.plot(epochs, [h["val_metrics"].get("accuracy", 0) for h in history],
+             label="Accuracy", linewidth=1.5, color="#4a90d9", linestyle="--")
+    ax1.plot(epochs, [h["val_metrics"].get("stop_f1", 0) for h in history],
+             label="Stop F1", linewidth=1.5, color="#c76dba", linestyle="--")
+    ax1.set_xlabel("Eval Step", fontsize=12)
+    ax1.set_ylabel("Rate / Score", fontsize=12)
+    ax1.set_ylim(0, 1)
+    ax1.grid(True, alpha=0.2)
+
+    # right axis: loss and model score
+    ax2.plot(epochs, [h["val_loss"] for h in history],
+             label="Val Loss", linewidth=1.5, color="#ff9900", linestyle=":")
+    ax2.plot(epochs, [h["val_metrics"].get("model_score", 0) for h in history],
+             label="Model Score", linewidth=1.5, color="#00cccc", linestyle=":")
+    ax2.set_ylabel("Loss / Score", fontsize=12, color="#ff9900")
+    ax2.tick_params(axis="y", labelcolor="#ff9900")
+
+    # combined legend
+    lines1, labels1 = ax1.get_legend_handles_labels()
+    lines2, labels2 = ax2.get_legend_handles_labels()
+    ax1.legend(lines1 + lines2, labels1 + labels2, loc="center right", fontsize=9)
+
+    ax1.set_title("Master Training Dashboard", fontsize=14)
+    fig.tight_layout()
+    fig.savefig(os.path.join(run_dir, "master.png"), dpi=150)
     plt.close(fig)
 
 
@@ -3771,6 +3853,11 @@ def train(args):
     if args.resume and history:
         eval_step = len(history)
 
+    # step-level history for live training graph (updated every 1k steps)
+    step_history = []  # list of (global_step, loss, hit, miss, score, accuracy, stop_f1)
+    step_buf = []  # accumulates per-batch: (loss, hit_rate, miss_rate, score, acc, sf1)
+    global_step = 0
+
     for epoch in range(start_epoch, args.epochs + 1):
         # ── train ──
         model.train()
@@ -4017,6 +4104,32 @@ def train(args):
                 else:
                     stats = f"L={avg_loss:.3f}|{r_loss:.3f}"
                 epoch_bar.set_postfix_str(stats)
+
+            global_step += 1
+
+            # accumulate per-batch metrics for step graph
+            if b_ns > 0:
+                step_buf.append((
+                    loss.item(),
+                    b_hit / b_ns,
+                    b_miss / b_ns,
+                    b_score / b_ns,
+                    train_w3_sum / train_ns_total if train_ns_total > 0 else 0,
+                    b_stop_f1,
+                ))
+
+            # ── step-level live graph (every 500 steps) ──
+            if global_step % 500 == 0 and len(step_buf) > 0:
+                # sample ~50 evenly-spaced points from the last 500 steps' buffer
+                buf_len = len(step_buf)
+                n_points = min(50, buf_len)
+                indices = [int(i * buf_len / n_points) for i in range(n_points)]
+                base_step = global_step - 500
+                for pi, idx in enumerate(indices):
+                    s = step_buf[idx]
+                    step_history.append((base_step + int((pi + 1) * 500 / n_points), s[0], s[1], s[2], s[3], s[4], s[5]))
+                step_buf.clear()
+                _save_step_graph(step_history, run_dir)
 
             # ── mid-epoch eval checkpoint ──
             if batch_idx in eval_at:
