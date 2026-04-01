@@ -91,4 +91,4 @@ The B_AUDIO/B_PRED split successfully combines large audio context with a small 
 
 The architecture is sound — large future audio window for spectral context, small prediction range for fast convergence and healthy density dependence. Training peaked early (eval 14, epoch 4.5) and regressed afterward, suggesting the model overfits or loses calibration with extended training.
 
-[Exp 53-B](../experiment_53b/README.md) tests A_BINS=500 (doubled past context) to see if more past audio improves pattern variety on complex rhythmic material.
+The plateau at 72.1% HIT matching [exp 45](../experiment_45/README.md) exactly is notable — exp 45 used A_BINS=500 (the default), so A_BINS=250 may be a bottleneck. [Exp 53-B](../experiment_53b/README.md) tests A_BINS=500 to isolate whether the reduced past context is limiting.
