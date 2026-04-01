@@ -39,8 +39,56 @@ python detection_train.py taiko_v2 --run-name detect_experiment_53 --model-type 
 
 ## Result
 
-*Pending*
+Stopped at eval 20 (epoch 5.0). **Peak at eval 14 (epoch 4.5).**
+
+### Peak (eval 14) metrics:
+
+| Metric | Value |
+|---|---|
+| HIT% | 72.1% |
+| GOOD% | 72.5% |
+| MISS% | 27.3% |
+| Accuracy | 53.3% |
+| Stop F1 | 0.547 |
+| Model score | 0.369 |
+
+### Benchmark highlights (eval 14):
+
+| Benchmark | Value |
+|---|---|
+| Metronome resilience | 52.5% |
+| no_audio_stop | 98.6% |
+| no_events_no_audio_stop | 100.0% |
+| zero_density_stop | 9.7% |
+
+### Progression summary:
+
+| Eval | Epoch | HIT% | Stop F1 | Score | Metro% | NoAudio Stop% |
+|------|-------|------|---------|-------|--------|---------------|
+| 1 | 1.2 | 68.6 | 0.507 | 0.332 | 46.0 | 25.8 |
+| 7 | 2.7 | 71.6 | 0.544 | 0.363 | 48.6 | 68.5 |
+| **14** | **4.5** | **72.1** | **0.547** | **0.369** | **52.5** | **98.6** |
+| 17 | 5.2 | 72.0 | 0.542 | 0.367 | 52.0 | 83.9 |
+| 20 | 5.0 | 70.7 | 0.509 | 0.350 | 48.5 | 90.4 |
+
+Peaked at eval 14 then regressed. Eval 20 dropped to 70.7% HIT with degraded benchmarks (zero_density_stop crashed to 4.3%).
+
+### vs [Exp 45](../experiment_45/README.md) (best comparison):
+
+| Metric | Exp 45 (eval 5) | Exp 53 (eval 14) |
+|--------|-----------------|------------------|
+| HIT% | 72.1% | 72.1% |
+| GOOD% | 72.5% | 72.5% |
+| MISS% | 27.3% | 27.3% |
+| Stop F1 | 0.553 | 0.547 |
+| Score | 0.368 | 0.369 |
+
+Per-sample metrics are **identical** at peaks. The differentiation is entirely in benchmarks: exp 53 has vastly better corruption resilience and no_audio_stop behavior.
 
 ## Lesson
 
-*Pending*
+The B_AUDIO/B_PRED split successfully combines large audio context with a small prediction range. Per-sample metrics match [exp 45](../experiment_45/README.md) exactly, while benchmark behaviors (corruption resilience, STOP behavior) are substantially better.
+
+The architecture is sound — large future audio window for spectral context, small prediction range for fast convergence and healthy density dependence. Training peaked early (eval 14, epoch 4.5) and regressed afterward, suggesting the model overfits or loses calibration with extended training.
+
+[Exp 53-B](../experiment_53b/README.md) tests A_BINS=500 (doubled past context) to see if more past audio improves pattern variety on complex rhythmic material.
