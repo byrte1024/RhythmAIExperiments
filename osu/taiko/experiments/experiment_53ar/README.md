@@ -77,6 +77,12 @@ Audio files stored locally in `audio/` (gitignored).
 | `gather_stats.py` | Compare inference stats across models |
 | `results/tally_votes.py` | Tally votes and reveal winner |
 
+### Visual aid: beat-synced taiko animation
+
+![Gawr Gura playing taiko](gawr-gura-hololive.gif)
+
+All rendered videos include a beat-synced animation of Gawr Gura playing a taiko drum (2 notes per full animation cycle). This serves as an intuitive visual aid for evaluators — when the character's drumming feels "in sync" with the music, the chart mapping is good. When it feels off-beat or monotonous, the mapping has problems. This makes rhythm quality immediately visible without requiring evaluators to understand the note highway visualization.
+
 ### Evaluation structure
 
 - `results/votes.json` — all rankings (self + evaluators)

@@ -65,11 +65,10 @@ def main():
             video_path = model_videos[model]
             concat_inputs.extend(["-i", video_path])
 
-            # add label overlay to each segment
+            # add persistent label overlay to each segment
             filter_parts.append(
-                f"[{i}:v]drawtext=text='{label}':fontsize=36:fontcolor=white:"
-                f"x=10:y=10:box=1:boxcolor=black@0.6:boxborderw=5:"
-                f"enable='between(t,0,3)'[v{i}]"
+                f"[{i}:v]drawtext=text='{label}':fontsize=48:fontcolor=white:"
+                f"x=10:y=10:box=1:boxcolor=black@0.7:boxborderw=8[v{i}]"
             )
 
         # concat all segments
