@@ -82,6 +82,7 @@ Each folder contains a README with hypothesis, results, and key graphs.
 | 51 | [Streak-Ratio Loss Weighting](experiment_51/) | Failed | Per-sample loss weight based on streak-ratio cell frequency. HIT dropped 6pp (67.5% vs 73.6%). Too much capacity diverted to rare cells. Anti-entropy (exp 50) achieves similar metronome resilience without HIT cost |
 | 52 | [Audio Window Size Sweep](experiment_52/) | **Key finding** | 6 configs tested. 250 past sufficient (saves 50% compute). 500 future optimal. 1000 future breaks STOP. 33 future spams. B=250 gives healthiest density dependence. Best: 250/500 matches exp 45 at 0.56x cost |
 | 53 | [B_AUDIO/B_PRED Split](experiment_53/) | **Running** | A=250, B_AUDIO=500, B_PRED=250. Full future audio (500) with easy classification (251 classes). Combines exp 52's best findings |
+| 53-AR | [Human Evaluation Round 2](experiment_53ar/) | **Preparing** | Blind A/B/C/D test: exp 14, 44, 45, 53 on 10 new songs. Does exp 53's anti-metronome resilience beat exp 14's context-free variety? |
 
 ## Key Lessons
 

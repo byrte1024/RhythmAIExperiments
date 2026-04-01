@@ -179,7 +179,7 @@ def run_inference(model, mel, conditioning, device, hop_bins=20, max_events=1000
         mask_tensor = torch.from_numpy(evt_mask).unsqueeze(0).to(device)
 
         output = model(mel_tensor, evt_tensor, mask_tensor, cond_tensor)
-        if isinstance(output, tuple):
+        if isinstance(output, tuple) and len(output) == 2 and output[1].dim() == 1:
             onset_logits, stop_logit = output
             # stop token: check stop logit first
             stop_prob = torch.sigmoid(stop_logit).item()
@@ -192,6 +192,9 @@ def run_inference(model, mel, conditioning, device, hop_bins=20, max_events=1000
                 continue
             # pad to 501 for compatibility with downstream code
             logits = F.pad(onset_logits, (0, 1), value=-10.0)
+        elif isinstance(output, tuple):
+            # legacy models return (logits, ...) — take first element
+            logits = output[0]
         else:
             logits = output
 

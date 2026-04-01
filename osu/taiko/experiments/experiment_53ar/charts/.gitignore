@@ -1,0 +1,6 @@
+*.csv
+*_mel.npy
+*_wave.npy
+*_sampling.npy
+*_candidates.json
+*_stats.json
