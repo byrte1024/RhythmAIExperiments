@@ -98,9 +98,56 @@ Audio files stored locally in `audio/` (gitignored).
 - **exp14 may still win** — audio-only avoids ALL context problems, and the 42-AR volunteers strongly preferred it
 - **The real test**: does exp53's metronome benchmark improvement (52.5% vs 25-43%) translate to perceptible chart quality improvement?
 
+## Pre-Video Analysis (inference stats)
+
+### Density & Consistency
+
+| Model | Total Events | Mean eps | Std eps | Density conditioning |
+|---|---|---|---|---|
+| exp14 | 9,300 | 4.3 | **1.2** (most variable) | 5.75 mean / 11.1 peak |
+| exp44 | 8,322 | 3.9 | 0.8 | 5.75 mean / 11.1 peak |
+| exp45 | 9,042 | 4.3 | 0.8 | 5.75 mean / 11.1 peak |
+| **exp53** | **9,679** | **4.6** | **0.6** (most consistent) | 5.75 mean / 11.1 peak |
+
+exp53 produces the most events and is the most consistent across genres (std 0.6). [exp44](../experiment_44/README.md) is most conservative (fewest events). [exp14](../experiment_14/README.md) is most variable (std 1.2), same finding as [42-AR](../experiment_42ar/README.md).
+
+### Per-Song Event Counts
+
+| Song | exp14 | exp44 | exp45 | exp53 |
+|---|---|---|---|---|
+| Arashi - Five | 1,237 | 1,153 | 1,428 | 1,273 |
+| Sakurazaka46 - Growing up train | **2,287** | 1,579 | 1,415 | 1,798 |
+| Camellia - Denkoh Sekka | 982 | 941 | 998 | 1,011 |
+| REDALiCE × t+pazolite - Xterfusion | 716 | 738 | 865 | 828 |
+| Courtney Barnett - Stay in Your Lane | 636 | 751 | 853 | 794 |
+| Mon Rovîa - Heavy Foot | 599 | **409** | 503 | 564 |
+| RoccoW - When the Leaves Leaf | 1,034 | 1,110 | 1,132 | **1,214** |
+| supernovayuli - One More Time | 715 | **558** | 714 | 758 |
+| Conan Gray - The Best | 556 | 628 | 697 | **873** |
+| Miley Cyrus - Younger You | 548 | 465 | 447 | 576 |
+
+Biggest variance: Sakurazaka46 (1,415-2,287), Heavy Foot (409-599). Tightest: Camellia (941-1,011), Xterfusion (716-865) — the rhythm game tracks are most consistent across models.
+
+### Metronome Behavior (8s sliding window)
+
+| Model | Mean | Median | Min | Max | Std |
+|---|---|---|---|---|---|
+| [exp14](../experiment_14/README.md) | 63.1% | 61.7% | 14.3% | 100.0% | 17.1% |
+| [exp44](../experiment_44/README.md) | **58.4%** | **57.6%** | 9.1% | 100.0% | **13.7%** |
+| [exp45](../experiment_45/README.md) | 61.3% | 60.7% | 15.0% | 100.0% | 17.0% |
+| [exp53](../experiment_53/README.md) | 64.1% | 63.6% | 16.7% | 100.0% | 15.5% |
+
+**Surprising finding: exp53 is the MOST metronomic by this metric (64.1%)** despite having the best metronome *benchmark* ([52.5%](../experiment_53/README.md)). exp44 is the LEAST metronomic (58.4%) despite being the most metronome-vulnerable in benchmarks.
+
+**Important caveat:** This metric measures "% of gaps matching the dominant gap in an 8s window." But real music IS often metronomic — a well-charted song at 120 BPM has consistent ~250ms gaps, and a model correctly following the beat scores high. The metric doesn't distinguish "good metronomic" (following the real rhythm) from "bad metronomic" (locked into a pattern regardless of audio).
+
+In [42-AR](../experiment_42ar/README.md), exp14 scored as the 2nd most metronomic by gap consistency but was ranked LEAST metronomic by human evaluators. What humans perceive as "metronomic" is about pattern changes feeling forced/delayed — not gap consistency itself.
+
+**Metronome benchmark resilience ≠ less metronomic AR output.** The benchmark measures resistance to external metronome corruption. AR metronomicity is the model's own tendency toward regular patterns — a different phenomenon. A proper "bad metronome" metric would need to measure gap consistency specifically in sections where the audio changes (energy shifts, transitions) vs steady sections.
+
 ## Result
 
-*Pending*
+*Pending — awaiting human evaluation*
 
 ## Lesson
 

@@ -1,0 +1,42 @@
+{
+  "exp14": {
+    "total_events": 9300,
+    "mean_events_per_sec": 4.299853329118319,
+    "std_events_per_sec": 1.205839041035512,
+    "metronome_mean": 63.139928979877524,
+    "metronome_median": 61.702127659574465,
+    "metronome_std": 17.066303581618367,
+    "metronome_min": 14.285714285714285,
+    "metronome_max": 100.0
+  },
+  "exp44": {
+    "total_events": 8322,
+    "mean_events_per_sec": 3.8806171450081393,
+    "std_events_per_sec": 0.7947598933165936,
+    "metronome_mean": 58.43883966418448,
+    "metronome_median": 57.57575757575758,
+    "metronome_std": 13.739807817965675,
+    "metronome_min": 9.090909090909092,
+    "metronome_max": 100.0
+  },
+  "exp45": {
+    "total_events": 9042,
+    "mean_events_per_sec": 4.261146796401678,
+    "std_events_per_sec": 0.8153418995132112,
+    "metronome_mean": 61.29857281206509,
+    "metronome_median": 60.71428571428571,
+    "metronome_std": 16.98950602949429,
+    "metronome_min": 15.0,
+    "metronome_max": 100.0
+  },
+  "exp53": {
+    "total_events": 9679,
+    "mean_events_per_sec": 4.556100310578726,
+    "std_events_per_sec": 0.6156787083739428,
+    "metronome_mean": 64.14863640650941,
+    "metronome_median": 63.63636363636363,
+    "metronome_std": 15.540397921769868,
+    "metronome_min": 16.666666666666664,
+    "metronome_max": 100.0
+  }
+}
