@@ -1260,12 +1260,16 @@ class EventEmbeddingDetector(nn.Module):
         n_virtual_tokens=0,
         a_bins=500,
         b_bins=500,
+        ratio_head=False,
+        n_ratio_bins=201,
     ):
         super().__init__()
         self.gap_ratios = gap_ratios
         self.n_virtual_tokens = n_virtual_tokens
         self.a_bins = a_bins
         self.b_bins = b_bins
+        self.ratio_head_enabled = ratio_head
+        self.n_ratio_bins = n_ratio_bins
         self.n_audio_tokens = (a_bins + b_bins) // 4
         self.cursor_token = a_bins // 4
         self.stop_token = stop_token
@@ -1342,6 +1346,16 @@ class EventEmbeddingDetector(nn.Module):
             nn.GELU(),
             nn.Conv1d(8, 1, kernel_size=5, padding=2),
         )
+
+        # auxiliary ratio head (exp 55+): predicts in log10-ratio space during training only
+        if ratio_head:
+            self.ratio_head_norm = nn.LayerNorm(d_model)
+            self.ratio_head_proj = nn.Linear(d_model, n_ratio_bins)
+            self.ratio_head_smooth = nn.Sequential(
+                nn.Conv1d(1, 8, kernel_size=5, padding=2),
+                nn.GELU(),
+                nn.Conv1d(8, 1, kernel_size=5, padding=2),
+            )
 
     def _build_event_embeddings(self, event_offsets, event_mask):
         """Build event embeddings and map them to token positions.
@@ -1506,6 +1520,12 @@ class EventEmbeddingDetector(nn.Module):
             stop_repr = x[:, -1, :]  # (B, d_model)
             stop_logit = self.stop_head(stop_repr).squeeze(-1)  # (B,)
             return logits, stop_logit
+
+        # auxiliary ratio head: predict in log10-ratio space (training + validation)
+        if self.ratio_head_enabled:
+            ratio_logits = self.ratio_head_proj(self.ratio_head_norm(cursor))
+            ratio_logits = ratio_logits + self.ratio_head_smooth(ratio_logits.unsqueeze(1)).squeeze(1)
+            return logits, ratio_logits
 
         return logits
 

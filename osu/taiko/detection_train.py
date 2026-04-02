@@ -29,6 +29,12 @@ MAX_TARGETS = 64        # max onsets per forward window for multi-target trainin
 STREAK_BINS = [1, 2, 3, 5, 8, 10, 16]
 RATIO_BINS = [1/8, 1/6, 1/4, 1/3, 1/2, 1/1, 2/1, 3/1, 4/1, 6/1, 8/1]
 
+# ratio head constants (exp 55+)
+N_RATIO_BINS = 201
+LOG10_MIN = -1.30103  # log10(0.05)
+LOG10_MAX = 1.30103   # log10(20.0)
+RATIO_BIN_WIDTH = (LOG10_MAX - LOG10_MIN) / (N_RATIO_BINS - 1)
+
 
 def compute_streak_ratio_weights(evt_offsets, evt_mask, targets, power=0.3, cap=50.0,
                                  _cache={"matrix": None, "max_count": None}):
@@ -127,11 +133,12 @@ class OnsetDataset(Dataset):
     """Yields (mel_window, event_offsets, event_mask, conditioning, target) samples."""
 
     def __init__(self, manifest, ds_dir, chart_indices, augment=False, subsample=1,
-                 multi_target=False):
+                 multi_target=False, ratio_head=False):
         self.mel_dir = os.path.join(ds_dir, "mels")
         self.charts = [manifest["charts"][i] for i in chart_indices]
         self.augment = augment
         self.multi_target = multi_target
+        self._ratio_head = ratio_head
         # capture current window config (for Windows spawn workers)
         self._a_bins = A_BINS
         self._b_bins = B_BINS  # audio window (mel frames)
@@ -246,6 +253,20 @@ class OnsetDataset(Dataset):
             chart.get("density_std", 1.5),
         ], dtype=np.float32) * cond_jitter
 
+        # ratio target: log10(target / prev_gap) discretized (exp 55+)
+        # Uses single-target `target` (nearest onset offset) even in multi_target mode
+        ratio_target = -1  # sentinel: masked in loss
+        if self._ratio_head:
+            is_stop = (target == self._n_classes - 1)
+            if n_past >= 2 and not is_stop:
+                prev_gap = abs(int(past_bins[-1]) - int(past_bins[-2]))
+                if prev_gap > 0 and target > 0:
+                    ratio = target / prev_gap
+                    ratio = max(0.05, min(20.0, ratio))
+                    log10_ratio = math.log10(ratio)
+                    ratio_target = round((log10_ratio - LOG10_MIN) / RATIO_BIN_WIDTH)
+                    ratio_target = max(0, min(N_RATIO_BINS - 1, ratio_target))
+
         # multi-target: all onsets in forward window
         if self.multi_target:
             future_mask = (evt > cursor) & (evt <= cursor + self._b_pred)
@@ -267,6 +288,7 @@ class OnsetDataset(Dataset):
                 torch.from_numpy(cond),
                 torch.from_numpy(targets_padded),
                 torch.tensor(n_targets, dtype=torch.long),
+                torch.tensor(ratio_target, dtype=torch.long),
             )
 
         return (
@@ -275,6 +297,7 @@ class OnsetDataset(Dataset):
             torch.from_numpy(event_mask),
             torch.from_numpy(cond),
             torch.tensor(target, dtype=torch.long),
+            torch.tensor(ratio_target, dtype=torch.long),
         )
 
     def _augment(self, mel_window, past_bins):
@@ -487,6 +510,64 @@ class OnsetLoss(nn.Module):
         if self.gamma > 0:
             pt = torch.exp(log_probs.gather(1, targets.unsqueeze(1)).squeeze(1))
             ce = ((1 - pt) ** self.gamma) * ce
+
+        return ce.mean()
+
+
+class RatioLoss(nn.Module):
+    """Symmetric trapezoid CE in log10-ratio space.
+
+    The soft targets are symmetric by construction because log10(2x) = -log10(0.5x).
+    This is the key advantage over OnsetLoss which is asymmetric in bin space.
+    """
+
+    def __init__(self, n_ratio_bins=201, good_pct=0.03, fail_pct=0.20, hard_alpha=0.0):
+        super().__init__()
+        self.n_ratio_bins = n_ratio_bins
+        self.hard_alpha = hard_alpha
+        # In log10 space, good/fail zones
+        self.log_good = math.log10(1 + good_pct)  # ~0.0128
+        self.log_fail = math.log10(1 + fail_pct)   # ~0.0792
+
+    def _make_soft_targets(self, targets, n_bins, device):
+        B = targets.size(0)
+
+        bin_centers = torch.linspace(LOG10_MIN, LOG10_MAX, n_bins, device=device)
+        target_centers = bin_centers[targets]  # (B,)
+
+        # distance in log10 space (already symmetric!)
+        dist = torch.abs(bin_centers.unsqueeze(0) - target_centers.unsqueeze(1))
+
+        # trapezoid
+        ramp_width = self.log_fail - self.log_good
+        weights = ((self.log_fail - dist) / ramp_width).clamp(0, 1)
+        soft = weights / weights.sum(dim=1, keepdim=True).clamp(min=1e-8)
+
+        return soft
+
+    def forward(self, logits, targets):
+        """
+        logits: (B, n_ratio_bins)
+        targets: (B,) ratio bin indices, -1 = masked (skip)
+        """
+        valid = targets >= 0
+        if not valid.any():
+            return torch.tensor(0.0, device=logits.device)
+
+        logits = logits[valid]
+        targets = targets[valid]
+
+        log_probs = F.log_softmax(logits, dim=-1).clamp(min=-100)
+
+        # hard CE
+        hard_ce = F.cross_entropy(logits, targets, reduction="none")
+
+        # soft CE
+        soft_targets = self._make_soft_targets(targets, self.n_ratio_bins, logits.device)
+        soft_ce = -(soft_targets * log_probs).sum(dim=-1)
+
+        # mix
+        ce = self.hard_alpha * hard_ce + (1 - self.hard_alpha) * soft_ce
 
         return ce.mean()
 
@@ -905,7 +986,7 @@ def _top3_gap_peaks(gaps, tolerance=0.05):
 
 @torch.no_grad()
 def validate_and_collect(model, loader, criterion, device, amp_enabled=False, sigmoid_mode=False, framewise=False,
-                         multi_target=False):
+                         multi_target=False, ratio_criterion=None):
     """Single pass: compute val loss AND collect predictions + extra data for graphs."""
     model.eval()
     all_targets = []       # single-target: (N,), multi-target: not used
@@ -919,16 +1000,18 @@ def validate_and_collect(model, loader, criterion, device, amp_enabled=False, si
     all_probs = []         # full softmax (multi-target only)
     all_targets_padded = []  # (N, MAX_TARGETS) (multi-target only)
     all_n_targets = []     # (N,) (multi-target only)
+    all_ratio_preds = []   # ratio head predictions (exp 55+)
+    all_ratio_targets = [] # ratio head targets (exp 55+)
     total_loss = 0.0
     total_n = 0
 
     for batch in tqdm(loader, desc="Validating", leave=False):
         if multi_target:
-            mel, evt_off, evt_mask, cond, targets_padded, n_tgt = batch
+            mel, evt_off, evt_mask, cond, targets_padded, n_tgt, _ratio_target = batch
             targets_padded = targets_padded.to(device, non_blocking=True)
             n_tgt = n_tgt.to(device, non_blocking=True)
         else:
-            mel, evt_off, evt_mask, cond, target = batch
+            mel, evt_off, evt_mask, cond, target, _ratio_target = batch
             target = target.to(device, non_blocking=True)
 
         mel = mel.to(device, non_blocking=True)
@@ -955,7 +1038,18 @@ def validate_and_collect(model, loader, criterion, device, amp_enabled=False, si
                 logits[:, :500:4] = onset_probs * 10
             else:
                 output = model(mel, evt_off, evt_mask, cond)
-                if isinstance(output, tuple):
+                if isinstance(output, tuple) and ratio_criterion is not None:
+                    # ratio head mode: onset logits + ratio logits
+                    onset_logits, ratio_logits_val = output
+                    logits = onset_logits
+                    if multi_target:
+                        loss = criterion(logits, targets_padded, n_tgt)
+                    else:
+                        loss = criterion(logits, target)
+                    # collect ratio predictions
+                    all_ratio_preds.append(ratio_logits_val.argmax(1).cpu().numpy())
+                    all_ratio_targets.append(_ratio_target.numpy())
+                elif isinstance(output, tuple):
                     onset_logits, stop_logit = output
                     is_stop = (target == N_CLASSES - 1)
                     stop_target = is_stop.float()
@@ -1047,6 +1141,9 @@ def validate_and_collect(model, loader, criterion, device, amp_enabled=False, si
         extra["n_targets"] = np.concatenate(all_n_targets)
     else:
         extra["topk"] = np.concatenate(all_topk)
+    if all_ratio_preds:
+        extra["ratio_preds"] = np.concatenate(all_ratio_preds)
+        extra["ratio_targets"] = np.concatenate(all_ratio_targets)
     return val_loss, extra
 
 
@@ -1448,13 +1545,13 @@ def run_benchmarks(model, val_loader, device, amp_enabled=False, multi_target=Fa
         all_targets = []
         for batch in batches:
             if multi_target:
-                mel, evt_off, evt_mask, cond, targets_padded, n_tgt = batch
+                mel, evt_off, evt_mask, cond, targets_padded, n_tgt, _ratio_target = batch
                 # nearest target for benchmark metrics
                 target = targets_padded[:, 0].clone()
                 target[n_tgt == 0] = stop
                 target = target.clamp(0, stop)
             else:
-                mel, evt_off, evt_mask, cond, target = batch
+                mel, evt_off, evt_mask, cond, target, _ratio_target = batch
 
             mel, evt_off, evt_mask, cond = corrupt_fn(
                 mel.clone(), evt_off.clone(), evt_mask.clone(), cond.clone(), target
@@ -1672,9 +1769,9 @@ def run_benchmarks(model, val_loader, device, amp_enabled=False, multi_target=Fa
         sample_idx = 0
         for batch in batches:
             if multi_target:
-                mel, evt_off, evt_mask, cond, targets_padded, n_tgt = batch
+                mel, evt_off, evt_mask, cond, targets_padded, n_tgt, _ratio_target = batch
             else:
-                mel, evt_off, evt_mask, cond, target = batch
+                mel, evt_off, evt_mask, cond, target, _ratio_target = batch
 
             B = mel.size(0)
             for b in range(B):
@@ -3627,11 +3724,12 @@ def train(args):
     print(f"Train: {len(train_idx)} charts, Val: {len(val_idx)} charts")
 
     use_multi_target = args.multi_target or args.model_type == "framewise"
+    use_ratio_head = getattr(args, 'ratio_head', False)
     sub = args.subsample
     train_ds = OnsetDataset(manifest, ds_dir, train_idx, augment=True, subsample=sub,
-                            multi_target=use_multi_target)
+                            multi_target=use_multi_target, ratio_head=use_ratio_head)
     val_ds = OnsetDataset(manifest, ds_dir, val_idx, augment=False, subsample=sub,
-                          multi_target=use_multi_target)
+                          multi_target=use_multi_target, ratio_head=use_ratio_head)
     if sub > 1:
         print(f"Subsample: 1/{sub}")
     print(f"Train samples: {len(train_ds)}, Val samples: {len(val_ds)}")
@@ -3687,6 +3785,7 @@ def train(args):
             stop_token=getattr(args, 'stop_token', False),
             n_virtual_tokens=getattr(args, 'n_virtual_tokens', 0),
             a_bins=A_BINS, b_bins=B_BINS,
+            ratio_head=getattr(args, 'ratio_head', False),
         ).to(args.device)
     elif args.model_type == "framewise":
         model = FramewiseOnsetDetector(
@@ -3805,6 +3904,17 @@ def train(args):
             hard_alpha=args.hard_alpha, frame_tolerance=args.frame_tolerance,
             stop_weight=args.stop_weight,
         ).to(args.device)
+
+    # ratio head loss (exp 55+)
+    ratio_criterion = None
+    if getattr(args, 'ratio_head', False):
+        ratio_criterion = RatioLoss(
+            n_ratio_bins=N_RATIO_BINS,
+            good_pct=args.good_pct, fail_pct=args.fail_pct,
+            hard_alpha=0.0,  # pure soft CE for ratio head
+        ).to(args.device)
+        print(f"Ratio head: ON (weight={args.ratio_weight}, n_bins={N_RATIO_BINS})")
+
     # Only pass trainable params to optimizer
     optimizer = torch.optim.AdamW(
         [p for p in model.parameters() if p.requires_grad],
@@ -3916,16 +4026,18 @@ def train(args):
 
         for batch_idx, batch in enumerate(train_loader):
             if use_multi_target:
-                mel, evt_off, evt_mask, cond, targets_padded, n_tgt = batch
+                mel, evt_off, evt_mask, cond, targets_padded, n_tgt, ratio_target = batch
                 targets_padded = targets_padded.to(args.device, non_blocking=True)
                 n_tgt = n_tgt.to(args.device, non_blocking=True)
+                ratio_target = ratio_target.to(args.device, non_blocking=True)
                 # nearest target for batch metrics
                 target = targets_padded[:, 0].clone()
                 target[n_tgt == 0] = N_CLASSES - 1
                 target = target.clamp(0, N_CLASSES - 1)
             else:
-                mel, evt_off, evt_mask, cond, target = batch
+                mel, evt_off, evt_mask, cond, target, ratio_target = batch
                 target = target.to(args.device, non_blocking=True)
+                ratio_target = ratio_target.to(args.device, non_blocking=True)
 
             mel = mel.to(args.device, non_blocking=True)
             evt_off = evt_off.to(args.device, non_blocking=True)
@@ -3954,7 +4066,18 @@ def train(args):
                     logits[:, :500:4] = onset_probs * 10  # rough proxy for compat
                 else:
                     output = model(mel, evt_off, evt_mask, cond)
-                    if isinstance(output, tuple):
+                    ratio_mode = getattr(args, 'ratio_head', False)
+                    if isinstance(output, tuple) and ratio_mode:
+                        # ratio head mode (exp 55+): onset logits + ratio logits
+                        onset_logits, ratio_logits_out = output
+                        logits = onset_logits
+                        if use_multi_target:
+                            onset_loss = criterion(logits, targets_padded, n_tgt)
+                        else:
+                            onset_loss = criterion(logits, target)
+                        ratio_loss = ratio_criterion(ratio_logits_out, ratio_target)
+                        loss = onset_loss + args.ratio_weight * ratio_loss
+                    elif isinstance(output, tuple):
                         onset_logits, stop_logit = output
                         # stop token mode: separate onset + stop losses
                         is_stop = (target == N_CLASSES - 1)
@@ -4078,7 +4201,8 @@ def train(args):
             b_stop_loss = 0.0
             b_stop_f1 = 0.0
             b_stop_rate = 0.0
-            if isinstance(output, tuple):
+            b_ratio_loss = 0.0
+            if isinstance(output, tuple) and not getattr(args, 'ratio_head', False):
                 b_stop_loss = stop_loss.item()
                 with torch.no_grad():
                     sp = (torch.sigmoid(stop_logit) > 0.5)
@@ -4091,7 +4215,9 @@ def train(args):
                     train_stop_tp += tp
                     train_stop_fp += fp
                     train_stop_fn += fn
-            recent_buf.append((b_loss_x_bs, b_bs, b_ns, b_hit, b_miss, b_score, b_stop_loss, b_stop_f1, b_stop_rate))
+            if getattr(args, 'ratio_head', False) and isinstance(output, tuple):
+                b_ratio_loss = ratio_loss.item()
+            recent_buf.append((b_loss_x_bs, b_bs, b_ns, b_hit, b_miss, b_score, b_stop_loss, b_stop_f1, b_stop_rate, b_ratio_loss))
 
             # update bars
             epoch_bar.update(1)
@@ -4124,6 +4250,10 @@ def train(args):
                         t_sf1_denom = 2*train_stop_tp + train_stop_fp + train_stop_fn
                         t_sf1 = 2*train_stop_tp / t_sf1_denom if t_sf1_denom > 0 else 0.0
                         stats += f" sF1={t_sf1:.2f}|{r_sF1:.2f} sR={r_sR:.3f}"
+                    # ratio head stats
+                    r_rL = sum(r[9] for r in recent_buf) / len(recent_buf) if recent_buf else 0
+                    if r_rL > 0:
+                        stats += f" rL={r_rL:.3f}"
                 else:
                     stats = f"L={avg_loss:.3f}|{r_loss:.3f}"
                 epoch_bar.set_postfix_str(stats)
@@ -4212,11 +4342,37 @@ def _run_eval(model, val_loader, criterion, args, amp_enabled,
     val_loss, val_extra = validate_and_collect(
         model, val_loader, criterion, args.device, amp_enabled=amp_enabled,
         sigmoid_mode=use_sigmoid, multi_target=use_mt, framewise=is_framewise,
+        ratio_criterion=ratio_criterion,
     )
     # backward-compat: nearest-target metrics (always computed)
     val_targets = val_extra["targets"]
     val_preds = val_extra["preds"]
     val_metrics = compute_metrics(val_targets, val_preds)
+
+    # ratio head metrics (exp 55+)
+    if "ratio_preds" in val_extra:
+        r_preds = val_extra["ratio_preds"]
+        r_targets = val_extra["ratio_targets"]
+        valid = r_targets >= 0
+        if valid.sum() > 0:
+            r_p = r_preds[valid]
+            r_t = r_targets[valid]
+            val_metrics["ratio_accuracy"] = (r_p == r_t).mean().item()
+            val_metrics["ratio_unique_preds"] = int(len(np.unique(r_p)))
+            # convert to log10 space for error metrics
+            bin_centers = np.linspace(LOG10_MIN, LOG10_MAX, N_RATIO_BINS)
+            pred_log = bin_centers[r_p]
+            target_log = bin_centers[r_t]
+            log_err = np.abs(pred_log - target_log)
+            val_metrics["ratio_log_error_mean"] = log_err.mean().item()
+            val_metrics["ratio_log_error_median"] = np.median(log_err).item()
+            # ratio hit/miss using same thresholds
+            log_good = math.log10(1.03)
+            log_fail = math.log10(1.20)
+            val_metrics["ratio_hit_rate"] = (log_err <= log_good).mean().item()
+            val_metrics["ratio_good_rate"] = (log_err <= log_fail).mean().item()
+            val_metrics["ratio_miss_rate"] = (log_err > log_fail).mean().item()
+            val_metrics["ratio_valid_pct"] = valid.mean().item()
 
     # multi-target metrics
     mt_metrics = None
@@ -4349,6 +4505,8 @@ if __name__ == "__main__":
     parser.add_argument("--a-bins", type=int, default=500, help="Past audio context in mel bins (default 500 = 2.5s)")
     parser.add_argument("--b-bins", type=int, default=500, help="Future audio context in mel bins (default 500 = 2.5s)")
     parser.add_argument("--b-pred", type=int, default=0, help="Prediction range in bins, 0=same as b-bins (exp 53+). N_CLASSES = b_pred + 1")
+    parser.add_argument("--ratio-head", action="store_true", default=False, help="Add auxiliary ratio head for training (exp 55+)")
+    parser.add_argument("--ratio-weight", type=float, default=0.3, help="Loss weight for ratio head")
     parser.add_argument("--streak-loss", action="store_true", default=False, help="Streak-ratio loss weighting (exp 51+)")
     parser.add_argument("--streak-power", type=float, default=0.3, help="Streak loss weight power (default 0.3)")
     parser.add_argument("--streak-cap", type=float, default=50.0, help="Streak loss max weight cap (default 50)")
