@@ -35,8 +35,32 @@ python detection_train.py taiko_v2 --run-name detect_experiment_54 --model-type 
 
 ## Result
 
-*Pending*
+Stopped at eval 1 (epoch 1.2). STOP head architecture not worth the cost.
+
+### Eval 1 metrics:
+
+| Metric | Exp 54 | 53-B (eval 1) | 47-E (eval 1) |
+|--------|--------|---------------|---------------|
+| HIT% | 65.9% | 68.4% | 66.8% |
+| Stop F1 | 0.392 | 0.479 | 0.377 |
+| Stop precision | 0.261 | — | 0.240 |
+| Stop recall | 0.794 | — | 0.880 |
+| no_audio_stop | 97.2% | 95.4% | 99.9% |
+| no_events_stop | 21.0% | — | — |
+| Val loss | 2.806 | 2.637 | 2.732 |
+
+### Why stopped
+
+1. **Stop F1 (0.392) is worse than 53-B's softmax STOP (0.479)** at the same eval. The separate binary head underperforms the integrated STOP class.
+2. **Stop precision is terrible (26.1%)** — 74% of STOP predictions are false positives. The head is trigger-happy.
+3. **no_events_stop only 21%** — when context is stripped, the model barely uses STOP. It learned "STOP when audio is quiet" but not "STOP when uncertain."
+4. **HIT 2.5pp behind 53-B** — the 20x STOP sampling boost steals onset training samples (~13% of batches are STOP), slowing onset learning with no payoff.
+5. **STOP is still not the bottleneck.** The softmax STOP class in 53-B already works adequately (F1=0.562 at peak). A separate head adds complexity without benefit.
 
 ## Lesson
 
-*Pending*
+The STOP query token architecture from [exp 47-E](../experiment_47e/README.md) does not improve when combined with the B_AUDIO/B_PRED split. Despite STOP being more prevalent (0.8% vs 0.3%) and 60% of STOPs being "informed" (next onset visible in audio beyond B_PRED), the separate binary head still underperforms the simple softmax STOP class.
+
+The fundamental issue: the STOP head learns audio-based shortcuts ("silence = stop") rather than uncertainty-based reasoning ("I can't confidently predict = stop"). The softmax STOP class naturally competes with onset predictions, giving it implicit uncertainty awareness that a separate binary head lacks.
+
+**STOP head experiments are exhausted.** 47-47D (binary gate) failed. 47-E (query token) worked but wasn't needed. Exp 54 (query token + B_PRED split) underperformed the baseline. The softmax STOP class is sufficient — inference hop spacing handles the rest.
