@@ -3315,22 +3315,36 @@ def _save_step_graph(step_history, run_dir):
     accs = [s[5] for s in step_history]
     sf1s = [s[6] for s in step_history]
 
+    # rolling average helper
+    def rolling_avg(vals, window=20):
+        out = []
+        for i in range(len(vals)):
+            start = max(0, i - window + 1)
+            out.append(sum(vals[start:i+1]) / (i - start + 1))
+        return out
+
     fig, ax1 = plt.subplots(figsize=(14, 7))
     ax2 = ax1.twinx()
 
-    # left axis: rates (0-1)
-    ax1.plot(steps, hits, label="HIT", linewidth=2, color="#6bc46d")
-    ax1.plot(steps, misses, label="MISS", linewidth=1.5, color="#eb4528")
-    ax1.plot(steps, accs, label="Accuracy (<=3%)", linewidth=1, color="#4a90d9", linestyle="--")
-    ax1.plot(steps, sf1s, label="Stop F1", linewidth=1, color="#c76dba", linestyle="--")
+    # left axis: rates (0-1) — raw lines at low opacity, rolling avg opaque
+    ax1.plot(steps, hits, linewidth=1, color="#6bc46d", alpha=0.25)
+    ax1.plot(steps, rolling_avg(hits), label="HIT", linewidth=2, color="#6bc46d")
+    ax1.plot(steps, misses, linewidth=1, color="#eb4528", alpha=0.25)
+    ax1.plot(steps, rolling_avg(misses), label="MISS", linewidth=1.5, color="#eb4528")
+    ax1.plot(steps, accs, linewidth=1, color="#4a90d9", alpha=0.2)
+    ax1.plot(steps, rolling_avg(accs), label="Accuracy (<=3%)", linewidth=1, color="#4a90d9", linestyle="--")
+    ax1.plot(steps, sf1s, linewidth=1, color="#c76dba", alpha=0.2)
+    ax1.plot(steps, rolling_avg(sf1s), label="Stop F1", linewidth=1, color="#c76dba", linestyle="--")
     ax1.set_xlabel("Step", fontsize=12)
     ax1.set_ylabel("Rate", fontsize=12)
     ax1.set_ylim(0, 1)
     ax1.grid(True, alpha=0.2)
 
-    # right axis: loss and score
-    ax2.plot(steps, losses, label="Loss", linewidth=1.5, color="#ff9900", linestyle=":")
-    ax2.plot(steps, scores, label="Score", linewidth=1.5, color="#00cccc", linestyle=":")
+    # right axis: loss and score — raw at low opacity, rolling avg opaque
+    ax2.plot(steps, losses, linewidth=1, color="#ff9900", alpha=0.2)
+    ax2.plot(steps, rolling_avg(losses), label="Loss", linewidth=1.5, color="#ff9900", linestyle=":")
+    ax2.plot(steps, scores, linewidth=1, color="#00cccc", alpha=0.2)
+    ax2.plot(steps, rolling_avg(scores), label="Score", linewidth=1.5, color="#00cccc", linestyle=":")
     ax2.set_ylabel("Loss / Score", fontsize=12, color="#ff9900")
     ax2.tick_params(axis="y", labelcolor="#ff9900")
 
@@ -3870,6 +3884,10 @@ def train(args):
         train_w3_sum = 0
         train_hit_sum = 0
         train_score_sum = 0.0
+        # stop token accumulators
+        train_stop_tp = 0
+        train_stop_fp = 0
+        train_stop_fn = 0
 
         # compute batch indices where we trigger eval
         if evals_per_epoch > 1:
@@ -4070,6 +4088,9 @@ def train(args):
                     fn = (~sp & is_s).sum().item()
                     b_stop_f1 = 2*tp / (2*tp + fp + fn) if (2*tp + fp + fn) > 0 else 0.0
                     b_stop_rate = sp.float().mean().item()
+                    train_stop_tp += tp
+                    train_stop_fp += fp
+                    train_stop_fn += fn
             recent_buf.append((b_loss_x_bs, b_bs, b_ns, b_hit, b_miss, b_score, b_stop_loss, b_stop_f1, b_stop_rate))
 
             # update bars
@@ -4100,7 +4121,9 @@ def train(args):
                     r_sF1 = sum(r[7] for r in recent_buf) / len(recent_buf) if recent_buf else 0
                     r_sR = sum(r[8] for r in recent_buf) / len(recent_buf) if recent_buf else 0
                     if r_sL > 0:
-                        stats += f" sL={r_sL:.3f} sF1={r_sF1:.2f} sR={r_sR:.3f}"
+                        t_sf1_denom = 2*train_stop_tp + train_stop_fp + train_stop_fn
+                        t_sf1 = 2*train_stop_tp / t_sf1_denom if t_sf1_denom > 0 else 0.0
+                        stats += f" sF1={t_sf1:.2f}|{r_sF1:.2f} sR={r_sR:.3f}"
                 else:
                     stats = f"L={avg_loss:.3f}|{r_loss:.3f}"
                 epoch_bar.set_postfix_str(stats)
