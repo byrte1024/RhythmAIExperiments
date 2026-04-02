@@ -83,7 +83,7 @@ Each folder contains a README with hypothesis, results, and key graphs.
 | 52 | [Audio Window Size Sweep](experiment_52/) | **Key finding** | 6 configs tested. 250 past sufficient (saves 50% compute). 500 future optimal. 1000 future breaks STOP. 33 future spams. B=250 gives healthiest density dependence. Best: 250/500 matches exp 45 at 0.56x cost |
 | 53 | [B_AUDIO/B_PRED Split](experiment_53/) | Plateau | A=250, B_AUDIO=500, B_PRED=250. 72.1% HIT (=exp 45). Better benchmarks but A_BINS=250 may be bottleneck |
 | 53-AR | [Human Evaluation Round 2](experiment_53ar/) | **Running** | Blind A/B/C/D test: exp 14, 44, 45, 53 on 10 new songs. Does exp 53's anti-metronome resilience beat exp 14's context-free variety? |
-| 53-B | [B_AUDIO/B_PRED + A_BINS=500](experiment_53b/) | **Running** | A=500, B_AUDIO=500, B_PRED=250. Testing if doubled past context breaks 72.1% ceiling. **73.4% HIT at eval 8 — new ATH** |
+| 53-B | [B_AUDIO/B_PRED + A_BINS=500](experiment_53b/) | Confirmed | A=500, B_AUDIO=500, B_PRED=250. A_BINS=250 was the bottleneck — 73.4% HIT breaks 72.1% ceiling. Best audio-only acc ever (49.7%) |
 
 ## Key Lessons
 

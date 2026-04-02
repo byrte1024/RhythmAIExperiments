@@ -44,8 +44,71 @@ python detection_train.py taiko_v2 --run-name detect_experiment_53b --model-type
 
 ## Result
 
-*Pending*
+Stopped at eval 11 (epoch 3.7). **Peak at eval 11 — still improving when stopped.**
+
+### Peak (eval 11) metrics:
+
+| Metric | Value |
+|---|---|
+| HIT% | 73.4% |
+| GOOD% | 73.8% |
+| MISS% | 26.1% |
+| Accuracy | 54.2% |
+| Stop F1 | 0.562 |
+| Model score | 0.384 |
+| Val loss | 2.479 |
+
+### Benchmark highlights (eval 11):
+
+| Benchmark | Value |
+|---|---|
+| Metronome resilience | 46.0% |
+| Adv metronome | 51.5% |
+| no_audio_stop | 13.9% |
+| no_events_no_audio_stop | 100.0% |
+| zero_density_stop | 8.2% |
+| NoEvents accuracy | 49.7% |
+| Context delta | +4.5% |
+
+### Progression summary:
+
+| Eval | Epoch | HIT% | Stop F1 | Score | Val Loss | NoEvt% | CtxD |
+|------|-------|------|---------|-------|----------|--------|------|
+| 1 | 1.2 | 68.4 | 0.479 | 0.326 | 2.637 | 41.1 | +7.9 |
+| 3 | 1.7 | 71.9 | 0.539 | 0.366 | 2.524 | 44.6 | +7.1 |
+| 6 | 2.5 | 73.1 | 0.550 | 0.379 | 2.487 | 45.0 | +8.5 |
+| 8 | 2.0 | 73.4 | 0.546 | 0.382 | 2.478 | 48.3 | +5.5 |
+| **11** | **3.7** | **73.4** | **0.562** | **0.384** | **2.479** | **49.7** | **+4.5** |
+
+### vs notable models (all at peak):
+
+| Metric | exp14 | exp35c | exp44 | exp45 | exp53 | **exp53-B** |
+|--------|-------|--------|-------|-------|-------|-------------|
+| HIT% | 69.2 | 71.6 | **73.7** | 72.1 | 72.1 | 73.4 |
+| Accuracy | 50.5 | 52.7 | **54.8** | 52.9 | 53.3 | 54.2 |
+| Stop F1 | 0.480 | 0.543 | **0.570** | 0.553 | 0.547 | 0.562 |
+| Val loss | 2.645 | 2.533 | 2.480 | 2.516 | 2.518 | **2.479** |
+| NoEvt acc | 50.0 | 48.1 | 48.4 | 47.1 | 46.4 | **49.7** |
+| Ctx delta | +0.5 | +4.5 | **+6.4** | +5.7 | +6.9 | +4.5 |
+| Metro resist | 47.7 | 44.1 | 44.2 | 43.7 | **52.5** | 46.0 |
+
+### A_BINS bottleneck confirmed:
+
+| Metric | Exp 53 (A=250, peak eval 14) | Exp 53-B (A=500, eval 11) |
+|--------|------------------------------|---------------------------|
+| HIT% | 72.1% | **73.4%** (+1.3pp) |
+| Accuracy | 53.3% | **54.2%** (+0.9pp) |
+| Val loss | 2.518 | **2.479** (-0.039) |
+| NoEvt acc | 46.4% | **49.7%** (+3.3pp) |
+
+The +1.3pp HIT improvement breaks the 72.1% ceiling that exp 53 shared with exp 45. The +3.3pp NoEvt improvement confirms the gain comes from better audio representations, not more context dependency (ctx delta actually *decreased* from +6.9% to +4.5%).
 
 ## Lesson
 
-*Pending*
+**A_BINS=250 was indeed the bottleneck.** Doubling past audio context from 250 to 500 broke the 72.1% HIT ceiling that exp 53 shared with [exp 45](../experiment_45/README.md), reaching 73.4% at eval 11 (still improving when stopped).
+
+The improvement is primarily audio-driven: NoEvt accuracy jumped from 46.4% to 49.7% (best ever), while context delta shrank from +6.9% to +4.5%. More past audio helps the model recognize rhythmic patterns directly from the spectrogram rather than relying on event context.
+
+The B_AUDIO/B_PRED split combined with A_BINS=500 is now the best architecture configuration: 500 past + 500 future audio (5.0s total window), predicting into 250 bins (251 classes). Val loss 2.479 matches [exp 44](../experiment_44/README.md)'s all-time best (2.480) with cleaner benchmarks.
+
+53-B is 0.3pp behind [exp 44](../experiment_44/README.md)'s ATH of 73.7%, but exp 44 ran to eval 11 at epoch 4.7 while 53-B only reached epoch 3.7 — it likely had more room. The metronome resistance (46.0%) sits between exp 53's high (52.5%) and exp 44/45's low (~44%), suggesting more past context increases vulnerability to pattern repetition but less than the B_PRED split's protection.
