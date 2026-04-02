@@ -1562,11 +1562,14 @@ def run_benchmarks(model, val_loader, device, amp_enabled=False, multi_target=Fa
             cond = cond.to(device, non_blocking=True)
             with torch.autocast("cuda", enabled=amp_enabled):
                 output = model(mel, evt_off, evt_mask, cond)
-                if isinstance(output, tuple):
+                if isinstance(output, tuple) and len(output) == 2 and output[1].dim() == 1:
+                    # stop token mode: output[1] is scalar stop_logit per sample
                     onset_logits, stop_logit = output
-                    # pad to 501 with stop logit
                     logits = F.pad(onset_logits, (0, 1), value=-10.0)
                     logits[:, N_CLASSES - 1] = stop_logit * 5.0
+                elif isinstance(output, tuple):
+                    # ratio head or other auxiliary: take onset logits only
+                    logits = output[0]
                 else:
                     logits = output
             all_preds.append(logits.argmax(1).cpu().numpy())
@@ -1846,10 +1849,12 @@ def run_benchmarks(model, val_loader, device, amp_enabled=False, multi_target=Fa
             for step in range(AR_STEPS):
                 with torch.no_grad(), torch.autocast("cuda", enabled=amp_enabled):
                     output = model(mel_s, evt_off_s, evt_mask_s, cond_s)
-                    if isinstance(output, tuple):
+                    if isinstance(output, tuple) and len(output) == 2 and output[1].dim() == 1:
                         onset_logits, stop_logit = output
                         logits = F.pad(onset_logits, (0, 1), value=-10.0)
                         logits[:, N_CLASSES - 1] = stop_logit * 5.0
+                    elif isinstance(output, tuple):
+                        logits = output[0]
                     else:
                         logits = output
                     probs = torch.softmax(logits.float(), dim=1)
@@ -4295,7 +4300,7 @@ def train(args):
                     model, val_loader, criterion, args, amp_enabled,
                     eval_step, epoch + sub_frac, sub_train_loss,
                     run_dir, ckpt_dir, history, scheduler, optimizer,
-                    scaler, best_val_loss,
+                    scaler, best_val_loss, ratio_criterion=ratio_criterion,
                 )
                 if history and history[-1]["val_loss"] < best_val_loss:
                     best_val_loss = history[-1]["val_loss"]
@@ -4322,7 +4327,7 @@ def train(args):
             model, val_loader, criterion, args, amp_enabled,
             eval_step, float(epoch), train_loss,
             run_dir, ckpt_dir, history, scheduler, optimizer,
-            scaler, best_val_loss,
+            scaler, best_val_loss, ratio_criterion=ratio_criterion,
         )
         if history and history[-1]["val_loss"] < best_val_loss:
             best_val_loss = history[-1]["val_loss"]
@@ -4334,7 +4339,7 @@ def train(args):
 def _run_eval(model, val_loader, criterion, args, amp_enabled,
               eval_step, epoch_frac, train_loss,
               run_dir, ckpt_dir, history, scheduler, optimizer,
-              scaler, best_val_loss):
+              scaler, best_val_loss, ratio_criterion=None):
     """Run validation, benchmarks, save graphs/checkpoints/history."""
     use_mt = args.multi_target or args.model_type == "framewise"
     use_sigmoid = getattr(args, 'sigmoid_loss', False) or getattr(args, 'dice_loss', False) or args.model_type == "framewise"
