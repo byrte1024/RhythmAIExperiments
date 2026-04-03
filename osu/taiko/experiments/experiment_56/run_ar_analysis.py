@@ -383,7 +383,7 @@ def save_graphs(results, output_dir):
 def main():
     parser = argparse.ArgumentParser(description="Exp 56: AR density analysis on val songs")
     parser.add_argument("--checkpoint", required=True, help="Model checkpoint")
-    parser.add_argument("--n-songs", type=int, default=10, help="Number of val songs to test")
+    parser.add_argument("--n-songs", type=int, default=50, help="Number of val songs to test")
     parser.add_argument("--hop-ms", type=float, default=75, help="Hop on STOP (ms)")
     parser.add_argument("--output-dir", default=None, help="Output directory (default: experiment_56/results/)")
     args = parser.parse_args()
@@ -429,7 +429,7 @@ def main():
             m = metrics
             print(f"    GT: {m['n_gt']} events  |  Pred: {m['n_pred']} events  |  Ratio: {m['n_pred']/max(m['n_gt'],1):.2f}x")
             print(f"    Matched(<25ms): {m['event_matched_rate']:.1%}  Close(<50ms): {m['event_close_rate']:.1%}  Far(>100ms): {m['event_far_rate']:.1%}")
-            print(f"    Hallucination: {m['hallucination_rate']:.1%}  ({m['pred_hallucination']} of {m['n_pred']} preds)")
+            print(f"    Hallucination: {m['hallucination_rate']:.1%}  ({m['pred_far']} of {m['n_pred']} preds)")
             print(f"    Density: cond={song['density_mean']:.1f}  gt={m['gt_density']:.1f}  pred={m['pred_density']:.1f}  ratio={m['density_ratio']:.2f}")
             print(f"    GT error: mean={m['gt_error_mean']:.0f}ms  median={m['gt_error_median']:.0f}ms  p90={m['gt_error_p90']:.0f}ms")
 

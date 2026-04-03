@@ -10,7 +10,7 @@ This experiment runs full AR inference on val songs using each song's actual cha
 
 ### Approach
 
-1. Select 10 diverse val songs (varying density, genre, duration)
+1. Select 50 diverse val songs (varying density, genre, duration)
 2. For each song, pick one chart and run AR inference with that chart's density_mean/peak/std
 3. Compare predicted onsets to ground truth onsets
 4. Compute: event hit/good/miss rates, hallucination rate, density ratio (predicted vs actual)
