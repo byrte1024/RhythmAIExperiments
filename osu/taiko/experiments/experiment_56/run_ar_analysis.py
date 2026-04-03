@@ -15,8 +15,6 @@ import os
 import random
 import subprocess
 import sys
-import tempfile
-
 import numpy as np
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -408,30 +406,39 @@ def main():
     print("Running AR inference...")
     print(f"{'='*70}")
 
+    csv_dir = os.path.join(output_dir, "csvs")
+    os.makedirs(csv_dir, exist_ok=True)
+
     results = []
-    with tempfile.TemporaryDirectory() as tmp_dir:
-        for i, song in enumerate(songs):
-            print(f"\n[{i+1}/{len(songs)}]")
-            csv_path = run_inference(args.checkpoint, song, tmp_dir, hop_ms=args.hop_ms)
-            if csv_path is None:
-                print(f"    SKIPPED (inference failed)")
-                continue
+    for i, song in enumerate(songs):
+        print(f"\n[{i+1}/{len(songs)}]")
+        csv_path = run_inference(args.checkpoint, song, csv_dir, hop_ms=args.hop_ms)
+        if csv_path is None:
+            print(f"    SKIPPED (inference failed)")
+            continue
 
-            # Load predictions and ground truth
-            pred_ms = load_predicted_events(csv_path)
-            gt_ms = load_gt_events(song["event_file"])
+        # Load predictions and ground truth
+        pred_ms = load_predicted_events(csv_path)
+        gt_ms = load_gt_events(song["event_file"])
 
-            # Compute metrics
-            metrics = compute_ar_metrics(pred_ms, gt_ms)
-            results.append({"song": song, "metrics": metrics})
+        # Save GT events alongside predicted CSV
+        gt_csv_path = csv_path.replace("_predicted.csv", "_gt.csv")
+        with open(gt_csv_path, "w", encoding="utf-8") as f:
+            f.write("time_ms,type\n")
+            for t in gt_ms:
+                f.write(f"{int(t)},gt\n")
 
-            # Print summary
-            m = metrics
-            print(f"    GT: {m['n_gt']} events  |  Pred: {m['n_pred']} events  |  Ratio: {m['n_pred']/max(m['n_gt'],1):.2f}x")
-            print(f"    Matched(<25ms): {m['event_matched_rate']:.1%}  Close(<50ms): {m['event_close_rate']:.1%}  Far(>100ms): {m['event_far_rate']:.1%}")
-            print(f"    Hallucination: {m['hallucination_rate']:.1%}  ({m['pred_far']} of {m['n_pred']} preds)")
-            print(f"    Density: cond={song['density_mean']:.1f}  gt={m['gt_density']:.1f}  pred={m['pred_density']:.1f}  ratio={m['density_ratio']:.2f}")
-            print(f"    GT error: mean={m['gt_error_mean']:.0f}ms  median={m['gt_error_median']:.0f}ms  p90={m['gt_error_p90']:.0f}ms")
+        # Compute metrics
+        metrics = compute_ar_metrics(pred_ms, gt_ms)
+        results.append({"song": song, "metrics": metrics})
+
+        # Print summary
+        m = metrics
+        print(f"    GT: {m['n_gt']} events  |  Pred: {m['n_pred']} events  |  Ratio: {m['n_pred']/max(m['n_gt'],1):.2f}x")
+        print(f"    Matched(<25ms): {m['event_matched_rate']:.1%}  Close(<50ms): {m['event_close_rate']:.1%}  Far(>100ms): {m['event_far_rate']:.1%}")
+        print(f"    Hallucination: {m['hallucination_rate']:.1%}  ({m['pred_far']} of {m['n_pred']} preds)")
+        print(f"    Density: cond={song['density_mean']:.1f}  gt={m['gt_density']:.1f}  pred={m['pred_density']:.1f}  ratio={m['density_ratio']:.2f}")
+        print(f"    GT error: mean={m['gt_error_mean']:.0f}ms  median={m['gt_error_median']:.0f}ms  p90={m['gt_error_p90']:.0f}ms")
 
     # Summary table
     print(f"\n{'='*70}")
