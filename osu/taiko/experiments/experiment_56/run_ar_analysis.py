@@ -143,62 +143,69 @@ def load_gt_events(event_file):
     return events.astype(np.float64) * BIN_MS
 
 
-def compute_ar_metrics(pred_ms, gt_ms, tolerance_ms=50.0, good_tolerance_ms=100.0):
+def _find_closest(sorted_arr, value):
+    """Find the closest value in a sorted array. Returns (closest_value, distance)."""
+    idx = np.searchsorted(sorted_arr, value)
+    best_val = None
+    best_dist = float("inf")
+    for j in [idx - 1, idx, idx + 1]:
+        if 0 <= j < len(sorted_arr):
+            d = abs(sorted_arr[j] - value)
+            if d < best_dist:
+                best_dist = d
+                best_val = sorted_arr[j]
+    return best_val, best_dist
+
+
+def compute_ar_metrics(pred_ms, gt_ms):
     """Match predicted events to ground truth and compute metrics.
 
-    For each GT event, find the closest predicted event within tolerance.
-    For each predicted event, find the closest GT event.
+    Uses absolute ms distance for matching:
+      MATCHED:   closest GT/pred within 25ms
+      CLOSE:     closest GT/pred within 50ms
+      FAR:       closest GT/pred > 100ms (effectively unmatched)
+
+    Two perspectives:
+      - Event (GT→Pred): for each GT event, how close is nearest prediction?
+      - Pred (Pred→GT): for each prediction, how close is nearest GT event?
+        Preds with no nearby GT are hallucinations.
 
     Returns dict with detailed metrics.
     """
     if len(pred_ms) == 0:
         return {
             "n_pred": 0, "n_gt": len(gt_ms),
-            "event_hit": 0, "event_good": 0, "event_miss": len(gt_ms),
-            "event_hit_rate": 0.0, "event_good_rate": 0.0, "event_miss_rate": 1.0,
-            "pred_hit": 0, "pred_good": 0, "pred_miss": 0,
+            "event_matched": 0, "event_close": 0, "event_far": len(gt_ms),
+            "event_matched_rate": 0.0, "event_close_rate": 0.0, "event_far_rate": 1.0,
+            "pred_matched": 0, "pred_close": 0, "pred_far": 0,
             "hallucination_rate": 1.0,
-            "errors_ms": [], "gt_matched": [],
+            "gt_errors_ms": [], "pred_errors_ms": [],
         }
 
     pred_sorted = np.sort(pred_ms)
     gt_sorted = np.sort(gt_ms)
 
     # For each GT event, find closest prediction
-    gt_errors = []
-    gt_matched = []
+    gt_errors_ms = []
     for gt in gt_sorted:
-        idx = np.searchsorted(pred_sorted, gt)
-        best_dist = float("inf")
-        for j in [idx - 1, idx, idx + 1]:
-            if 0 <= j < len(pred_sorted):
-                d = abs(pred_sorted[j] - gt)
-                if d < best_dist:
-                    best_dist = d
-        gt_errors.append(best_dist)
-        gt_matched.append(best_dist <= good_tolerance_ms)
+        _, dist = _find_closest(pred_sorted, gt)
+        gt_errors_ms.append(dist)
+    gt_errors_ms = np.array(gt_errors_ms)
 
-    gt_errors = np.array(gt_errors)
-    event_hit = int((gt_errors <= tolerance_ms).sum())
-    event_good = int((gt_errors <= good_tolerance_ms).sum())
-    event_miss = int((gt_errors > good_tolerance_ms).sum())
+    event_matched = int((gt_errors_ms <= 25).sum())
+    event_close = int((gt_errors_ms <= 50).sum())
+    event_far = int((gt_errors_ms > 100).sum())
 
     # For each predicted event, find closest GT
-    pred_errors = []
+    pred_errors_ms = []
     for p in pred_sorted:
-        idx = np.searchsorted(gt_sorted, p)
-        best_dist = float("inf")
-        for j in [idx - 1, idx, idx + 1]:
-            if 0 <= j < len(gt_sorted):
-                d = abs(gt_sorted[j] - p)
-                if d < best_dist:
-                    best_dist = d
-        pred_errors.append(best_dist)
+        _, dist = _find_closest(gt_sorted, p)
+        pred_errors_ms.append(dist)
+    pred_errors_ms = np.array(pred_errors_ms)
 
-    pred_errors = np.array(pred_errors)
-    pred_hit = int((pred_errors <= tolerance_ms).sum())
-    pred_good = int((pred_errors <= good_tolerance_ms).sum())
-    pred_hallucination = int((pred_errors > good_tolerance_ms).sum())
+    pred_matched = int((pred_errors_ms <= 25).sum())
+    pred_close = int((pred_errors_ms <= 50).sum())
+    pred_far = int((pred_errors_ms > 100).sum())
 
     n_pred = len(pred_sorted)
     n_gt = len(gt_sorted)
@@ -219,26 +226,26 @@ def compute_ar_metrics(pred_ms, gt_ms, tolerance_ms=50.0, good_tolerance_ms=100.
     return {
         "n_pred": n_pred,
         "n_gt": n_gt,
-        "event_hit": event_hit,
-        "event_good": event_good,
-        "event_miss": event_miss,
-        "event_hit_rate": event_hit / max(n_gt, 1),
-        "event_good_rate": event_good / max(n_gt, 1),
-        "event_miss_rate": event_miss / max(n_gt, 1),
-        "pred_hit": pred_hit,
-        "pred_good": pred_good,
-        "pred_hallucination": pred_hallucination,
-        "hallucination_rate": pred_hallucination / max(n_pred, 1),
+        "event_matched": event_matched,
+        "event_close": event_close,
+        "event_far": event_far,
+        "event_matched_rate": event_matched / max(n_gt, 1),
+        "event_close_rate": event_close / max(n_gt, 1),
+        "event_far_rate": event_far / max(n_gt, 1),
+        "pred_matched": pred_matched,
+        "pred_close": pred_close,
+        "pred_far": pred_far,
+        "hallucination_rate": pred_far / max(n_pred, 1),
         "pred_density": pred_density,
         "gt_density": gt_density,
         "density_ratio": pred_density / max(gt_density, 0.01),
-        "gt_errors_ms": gt_errors.tolist(),
-        "pred_errors_ms": pred_errors.tolist(),
-        "gt_error_mean": float(gt_errors.mean()),
-        "gt_error_median": float(np.median(gt_errors)),
-        "gt_error_p90": float(np.percentile(gt_errors, 90)),
-        "pred_error_mean": float(pred_errors.mean()),
-        "pred_error_median": float(np.median(pred_errors)),
+        "gt_errors_ms": gt_errors_ms.tolist(),
+        "pred_errors_ms": pred_errors_ms.tolist(),
+        "gt_error_mean": float(gt_errors_ms.mean()),
+        "gt_error_median": float(np.median(gt_errors_ms)),
+        "gt_error_p90": float(np.percentile(gt_errors_ms, 90)),
+        "pred_error_mean": float(pred_errors_ms.mean()),
+        "pred_error_median": float(np.median(pred_errors_ms)),
     }
 
 
@@ -258,12 +265,12 @@ def save_graphs(results, output_dir):
     # Hit/Good/Miss rates (event perspective)
     ax = axes[0, 0]
     x = np.arange(n)
-    hit_rates = [r["metrics"]["event_hit_rate"] for r in results]
-    good_rates = [r["metrics"]["event_good_rate"] for r in results]
-    miss_rates = [r["metrics"]["event_miss_rate"] for r in results]
-    ax.bar(x, hit_rates, label="HIT (<50ms)", color="#6bc46d")
-    ax.bar(x, [g - h for g, h in zip(good_rates, hit_rates)], bottom=hit_rates, label="GOOD (50-100ms)", color="#b8e6b9")
-    ax.bar(x, miss_rates, bottom=good_rates, label="MISS (>100ms)", color="#eb4528")
+    matched_rates = [r["metrics"]["event_matched_rate"] for r in results]
+    close_rates = [r["metrics"]["event_close_rate"] for r in results]
+    far_rates = [r["metrics"]["event_far_rate"] for r in results]
+    ax.bar(x, matched_rates, label="Matched (<25ms)", color="#6bc46d")
+    ax.bar(x, [c - m for c, m in zip(close_rates, matched_rates)], bottom=matched_rates, label="Close (25-50ms)", color="#b8e6b9")
+    ax.bar(x, far_rates, bottom=close_rates, label="Far (>100ms)", color="#eb4528")
     ax.set_xticks(x)
     ax.set_xticklabels(short_names, rotation=45, ha="right", fontsize=7)
     ax.set_ylabel("Rate")
@@ -347,9 +354,9 @@ def save_graphs(results, output_dir):
     densities = [r["song"]["density_mean"] for r in results]
 
     ax = axes[0]
-    ax.scatter(densities, [r["metrics"]["event_good_rate"] for r in results], c="#6bc46d", s=80, edgecolors="black")
+    ax.scatter(densities, [r["metrics"]["event_close_rate"] for r in results], c="#6bc46d", s=80, edgecolors="black")
     ax.set_xlabel("Conditioned Density (events/sec)")
-    ax.set_ylabel("Event Good Rate")
+    ax.set_ylabel("Event Close Rate (<50ms)")
     ax.set_title("Density vs Catch Rate")
 
     ax = axes[1]
@@ -421,7 +428,7 @@ def main():
             # Print summary
             m = metrics
             print(f"    GT: {m['n_gt']} events  |  Pred: {m['n_pred']} events  |  Ratio: {m['n_pred']/max(m['n_gt'],1):.2f}x")
-            print(f"    Event HIT: {m['event_hit_rate']:.1%}  GOOD: {m['event_good_rate']:.1%}  MISS: {m['event_miss_rate']:.1%}")
+            print(f"    Matched(<25ms): {m['event_matched_rate']:.1%}  Close(<50ms): {m['event_close_rate']:.1%}  Far(>100ms): {m['event_far_rate']:.1%}")
             print(f"    Hallucination: {m['hallucination_rate']:.1%}  ({m['pred_hallucination']} of {m['n_pred']} preds)")
             print(f"    Density: cond={song['density_mean']:.1f}  gt={m['gt_density']:.1f}  pred={m['pred_density']:.1f}  ratio={m['density_ratio']:.2f}")
             print(f"    GT error: mean={m['gt_error_mean']:.0f}ms  median={m['gt_error_median']:.0f}ms  p90={m['gt_error_p90']:.0f}ms")
@@ -430,16 +437,16 @@ def main():
     print(f"\n{'='*70}")
     print("SUMMARY")
     print(f"{'='*70}")
-    print(f"{'Song':>35s} {'d_cond':>6} {'d_pred':>6} {'ratio':>6} {'eHIT%':>6} {'eGOOD%':>7} {'HALL%':>6} {'#pred':>6} {'#gt':>5}")
+    print(f"{'Song':>35s} {'d_cond':>6} {'d_pred':>6} {'ratio':>6} {'Match%':>7} {'Close%':>7} {'HALL%':>6} {'#pred':>6} {'#gt':>5}")
     for r in results:
         s = r["song"]; m = r["metrics"]
         name = f"{s['artist'][:15]} - {s['title'][:15]}"
-        print(f"{name:>35s} {s['density_mean']:>6.1f} {m['pred_density']:>6.1f} {m['density_ratio']:>6.2f} {m['event_hit_rate']:>5.1%} {m['event_good_rate']:>6.1%} {m['hallucination_rate']:>5.1%} {m['n_pred']:>6d} {m['n_gt']:>5d}")
+        print(f"{name:>35s} {s['density_mean']:>6.1f} {m['pred_density']:>6.1f} {m['density_ratio']:>6.2f} {m['event_matched_rate']:>5.1%} {m['event_close_rate']:>6.1%} {m['hallucination_rate']:>5.1%} {m['n_pred']:>6d} {m['n_gt']:>5d}")
 
     # Averages
     if results:
-        avg_hit = np.mean([r["metrics"]["event_hit_rate"] for r in results])
-        avg_good = np.mean([r["metrics"]["event_good_rate"] for r in results])
+        avg_hit = np.mean([r["metrics"]["event_matched_rate"] for r in results])
+        avg_good = np.mean([r["metrics"]["event_close_rate"] for r in results])
         avg_hall = np.mean([r["metrics"]["hallucination_rate"] for r in results])
         avg_ratio = np.mean([r["metrics"]["density_ratio"] for r in results])
         print(f"{'AVERAGE':>35s} {'':>6s} {'':>6s} {avg_ratio:>6.2f} {avg_hit:>5.1%} {avg_good:>6.1%} {avg_hall:>5.1%}")
