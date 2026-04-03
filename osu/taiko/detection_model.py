@@ -1483,20 +1483,21 @@ class EventEmbeddingDetector(nn.Module):
                 oow_idx = out_of_window[b].nonzero(as_tuple=True)[0]
                 if len(oow_idx) == 0:
                     continue
-                # map out-of-window offsets to virtual token positions [0, V-1]
-                # offsets are negative (e.g. -600 to -6000), map linearly:
-                # most recent OOW (offset ~ -501) → token V-1
-                # oldest OOW → token 0
-                offsets = raw_offsets[b, oow_idx].float()  # negative values
-                # normalize: -500 → 1.0, -max_offset → 0.0
-                max_oow = offsets.min().item()  # most negative = oldest
-                if max_oow < -500:
-                    t = (offsets - max_oow) / (-500 - max_oow)  # 0=oldest, 1=most recent
-                else:
-                    t = torch.ones_like(offsets)
-                virt_pos = (t * (V - 1)).long().clamp(0, V - 1)
                 embs = event_embs[b, oow_idx]
-                virt[b].scatter_add_(0, virt_pos.unsqueeze(-1).expand(-1, self.d_model), embs)
+
+                if V == self.max_events:
+                    # 1:1 mode (exp 57+): event slot i → vtoken i directly, no collisions
+                    virt[b, oow_idx] = virt[b, oow_idx] + embs
+                else:
+                    # linear mapping mode (exp 49): map offsets to [0, V-1]
+                    offsets = raw_offsets[b, oow_idx].float()
+                    max_oow = offsets.min().item()
+                    if max_oow < -500:
+                        t = (offsets - max_oow) / (-500 - max_oow)
+                    else:
+                        t = torch.ones_like(offsets)
+                    virt_pos = (t * (V - 1)).long().clamp(0, V - 1)
+                    virt[b].scatter_add_(0, virt_pos.unsqueeze(-1).expand(-1, self.d_model), embs)
 
             x = torch.cat([virt, x], dim=1)  # (B, V+250, d_model)
 

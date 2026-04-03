@@ -1,0 +1,2702 @@
+[
+  {
+    "song": {
+      "chart_idx": 6215,
+      "beatmapset_id": "2252771",
+      "artist": "HOYO-MiX",
+      "title": "A Glorious Awakening",
+      "difficulty": "Muzukashii",
+      "density_mean": 1.591,
+      "density_peak": 4,
+      "density_std": 0.993,
+      "duration_s": 94.92,
+      "total_events": 151,
+      "event_file": "2252771 HOYO-MiX - A Glorious Awakening [Muzukashii].npy",
+      "audio_path": "C:\\Users\\User\\repos\\BeatDetector\\osu\\taiko\\audio\\2252771 HOYO-MiX - A Glorious Awakening.mp3"
+    },
+    "scales": {
+      "0.8x": {
+        "n_pred": 118,
+        "n_gt": 151,
+        "event_matched_rate": 0.33112582781456956,
+        "event_close_rate": 0.39072847682119205,
+        "event_far_rate": 0.5562913907284768,
+        "hallucination_rate": 0.4322033898305085,
+        "pred_density": 1.2436893306211068,
+        "gt_density": 1.5907297981350403,
+        "density_ratio": 0.7818356908126062,
+        "gt_error_median": 203.45010000000184
+      },
+      "1.0x": {
+        "n_pred": 151,
+        "n_gt": 151,
+        "event_matched_rate": 0.33774834437086093,
+        "event_close_rate": 0.4370860927152318,
+        "event_far_rate": 0.48344370860927155,
+        "hallucination_rate": 0.48344370860927155,
+        "pred_density": 1.506129247833069,
+        "gt_density": 1.5907297981350403,
+        "density_ratio": 0.9468165175498967,
+        "gt_error_median": 86.00529999999708
+      },
+      "1.2x": {
+        "n_pred": 208,
+        "n_gt": 151,
+        "event_matched_rate": 0.4900662251655629,
+        "event_close_rate": 0.6026490066225165,
+        "event_far_rate": 0.2781456953642384,
+        "hallucination_rate": 0.47596153846153844,
+        "pred_density": 2.191457529974503,
+        "gt_density": 1.5907297981350403,
+        "density_ratio": 1.3776428482975245,
+        "gt_error_median": 25.780299999998533
+      }
+    }
+  },
+  {
+    "song": {
+      "chart_idx": 6060,
+      "beatmapset_id": "2245103",
+      "artist": "heyopc",
+      "title": "the shake art DELUXE chill out session",
+      "difficulty": "jayceko's DELUXE muzukashii",
+      "density_mean": 2.499,
+      "density_peak": 4,
+      "density_std": 0.9,
+      "duration_s": 54.43,
+      "total_events": 136,
+      "event_file": "2245103 heyopc - the shake art DELUXE chill out session [jayceko's DELUXE muzukashii].npy",
+      "audio_path": "C:\\Users\\User\\repos\\BeatDetector\\osu\\taiko\\audio\\2245103 heyopc - the shake art DELUXE chill out session.mp3"
+    },
+    "scales": {
+      "0.8x": {
+        "n_pred": 104,
+        "n_gt": 136,
+        "event_matched_rate": 0.5294117647058824,
+        "event_close_rate": 0.5294117647058824,
+        "event_far_rate": 0.47058823529411764,
+        "hallucination_rate": 0.3076923076923077,
+        "pred_density": 1.9262112905615647,
+        "gt_density": 2.4987727993955615,
+        "density_ratio": 0.770862917599993,
+        "gt_error_median": 7.870049999999992
+      },
+      "1.0x": {
+        "n_pred": 128,
+        "n_gt": 136,
+        "event_matched_rate": 0.6617647058823529,
+        "event_close_rate": 0.6691176470588235,
+        "event_far_rate": 0.33088235294117646,
+        "hallucination_rate": 0.2890625,
+        "pred_density": 2.2919352528291075,
+        "gt_density": 2.4987727993955615,
+        "density_ratio": 0.9172243484415683,
+        "gt_error_median": 5.5162999999975
+      },
+      "1.2x": {
+        "n_pred": 162,
+        "n_gt": 136,
+        "event_matched_rate": 0.7426470588235294,
+        "event_close_rate": 0.75,
+        "event_far_rate": 0.25,
+        "hallucination_rate": 0.37037037037037035,
+        "pred_density": 2.9770655689503087,
+        "gt_density": 2.4987727993955615,
+        "density_ratio": 1.1914110677331062,
+        "gt_error_median": 4.868400000001202
+      }
+    }
+  },
+  {
+    "song": {
+      "chart_idx": 8678,
+      "beatmapset_id": "2380167",
+      "artist": "Pedro Silva",
+      "title": "A Home For Flowers (Tulip)",
+      "difficulty": "Futsuu",
+      "density_mean": 2.756,
+      "density_peak": 4,
+      "density_std": 0.7,
+      "duration_s": 82.73,
+      "total_events": 228,
+      "event_file": "2380167 Pedro Silva - A Home For Flowers (Tulip) [Futsuu].npy",
+      "audio_path": "C:\\Users\\User\\repos\\BeatDetector\\osu\\taiko\\audio\\2380167 Pedro Silva - A Home For Flowers (Tulip).ogg"
+    },
+    "scales": {
+      "0.8x": {
+        "n_pred": 175,
+        "n_gt": 228,
+        "event_matched_rate": 0.6491228070175439,
+        "event_close_rate": 0.6578947368421053,
+        "event_far_rate": 0.34210526315789475,
+        "hallucination_rate": 0.14285714285714285,
+        "pred_density": 1.881255173451727,
+        "gt_density": 2.755866463707255,
+        "density_ratio": 0.6826365494215635,
+        "gt_error_median": 14.071400000000722
+      },
+      "1.0x": {
+        "n_pred": 230,
+        "n_gt": 228,
+        "event_matched_rate": 0.8728070175438597,
+        "event_close_rate": 0.8771929824561403,
+        "event_far_rate": 0.12280701754385964,
+        "hallucination_rate": 0.13043478260869565,
+        "pred_density": 2.4719753232376425,
+        "gt_density": 2.755866463707255,
+        "density_ratio": 0.896986612302065,
+        "gt_error_median": 13.756350000003295
+      },
+      "1.2x": {
+        "n_pred": 257,
+        "n_gt": 228,
+        "event_matched_rate": 0.9605263157894737,
+        "event_close_rate": 0.9649122807017544,
+        "event_far_rate": 0.03508771929824561,
+        "hallucination_rate": 0.14396887159533073,
+        "pred_density": 2.7998387641489906,
+        "gt_density": 2.755866463707255,
+        "density_ratio": 1.0159558893802798,
+        "gt_error_median": 9.104200000001583
+      }
+    }
+  },
+  {
+    "song": {
+      "chart_idx": 6747,
+      "beatmapset_id": "2282760",
+      "artist": "Soushi Sakiyama",
+      "title": "Akari (TV Size)",
+      "difficulty": "Muzukashii",
+      "density_mean": 3.004,
+      "density_peak": 6,
+      "density_std": 1.161,
+      "duration_s": 86.22,
+      "total_events": 259,
+      "event_file": "2282760 Soushi Sakiyama - Akari (TV Size) [Muzukashii].npy",
+      "audio_path": "C:\\Users\\User\\repos\\BeatDetector\\osu\\taiko\\audio\\2282760 Soushi Sakiyama - Akari (TV Size).ogg"
+    },
+    "scales": {
+      "0.8x": {
+        "n_pred": 179,
+        "n_gt": 259,
+        "event_matched_rate": 0.5366795366795367,
+        "event_close_rate": 0.6023166023166023,
+        "event_far_rate": 0.3861003861003861,
+        "hallucination_rate": 0.11731843575418995,
+        "pred_density": 2.052705213183184,
+        "gt_density": 3.003953779608339,
+        "density_ratio": 0.6833344864083826,
+        "gt_error_median": 20.93529999999737
+      },
+      "1.0x": {
+        "n_pred": 194,
+        "n_gt": 259,
+        "event_matched_rate": 0.5868725868725869,
+        "event_close_rate": 0.6563706563706564,
+        "event_far_rate": 0.3359073359073359,
+        "hallucination_rate": 0.1134020618556701,
+        "pred_density": 2.224719616522557,
+        "gt_density": 3.003953779608339,
+        "density_ratio": 0.7405971528671856,
+        "gt_error_median": 16.443399999989197
+      },
+      "1.2x": {
+        "n_pred": 214,
+        "n_gt": 259,
+        "event_matched_rate": 0.667953667953668,
+        "event_close_rate": 0.7104247104247104,
+        "event_far_rate": 0.28185328185328185,
+        "hallucination_rate": 0.13551401869158877,
+        "pred_density": 2.438718647080945,
+        "gt_density": 3.003953779608339,
+        "density_ratio": 0.8118362751236837,
+        "gt_error_median": 15.769499999994878
+      }
+    }
+  },
+  {
+    "song": {
+      "chart_idx": 3879,
+      "beatmapset_id": "2163484",
+      "artist": "DVRST, my!lane",
+      "title": "Close Feeling",
+      "difficulty": "Muzukashii",
+      "density_mean": 3.079,
+      "density_peak": 6,
+      "density_std": 1.175,
+      "duration_s": 129.92,
+      "total_events": 400,
+      "event_file": "2163484 DVRST, my!lane - Close Feeling [Muzukashii].npy",
+      "audio_path": "C:\\Users\\User\\repos\\BeatDetector\\osu\\taiko\\audio\\2163484 DVRST, my!lane - Close Feeling.mp3"
+    },
+    "scales": {
+      "0.8x": {
+        "n_pred": 417,
+        "n_gt": 400,
+        "event_matched_rate": 0.785,
+        "event_close_rate": 0.785,
+        "event_far_rate": 0.215,
+        "hallucination_rate": 0.24700239808153476,
+        "pred_density": 3.129174108147859,
+        "gt_density": 3.078800811486611,
+        "density_ratio": 1.0163613366845012,
+        "gt_error_median": 8.098650000007183
+      },
+      "1.0x": {
+        "n_pred": 435,
+        "n_gt": 400,
+        "event_matched_rate": 0.8475,
+        "event_close_rate": 0.8475,
+        "event_far_rate": 0.1525,
+        "hallucination_rate": 0.2206896551724138,
+        "pred_density": 3.2714638108417065,
+        "gt_density": 3.078800811486611,
+        "density_ratio": 1.0625772861421545,
+        "gt_error_median": 9.179400000004534
+      },
+      "1.2x": {
+        "n_pred": 467,
+        "n_gt": 400,
+        "event_matched_rate": 0.8575,
+        "event_close_rate": 0.86,
+        "event_far_rate": 0.14,
+        "hallucination_rate": 0.2633832976445396,
+        "pred_density": 3.4850486190401564,
+        "gt_density": 3.078800811486611,
+        "density_ratio": 1.13195001314729,
+        "gt_error_median": 9.561850000001868
+      }
+    }
+  },
+  {
+    "song": {
+      "chart_idx": 6066,
+      "beatmapset_id": "2245251",
+      "artist": "Kangi, mzlff, STED.D",
+      "title": "Burya, metel' i mgla",
+      "difficulty": "Muzukashii",
+      "density_mean": 3.268,
+      "density_peak": 7,
+      "density_std": 1.341,
+      "duration_s": 116.89,
+      "total_events": 382,
+      "event_file": "2245251 Kangi, mzlff, STED.D - Burya, metel' i mgla [Muzukashii].npy",
+      "audio_path": "C:\\Users\\User\\repos\\BeatDetector\\osu\\taiko\\audio\\2245251 Kangi, mzlff, STED.D - Burya, metel' i mgla.ogg"
+    },
+    "scales": {
+      "0.8x": {
+        "n_pred": 211,
+        "n_gt": 382,
+        "event_matched_rate": 0.4424083769633508,
+        "event_close_rate": 0.4476439790575916,
+        "event_far_rate": 0.5235602094240838,
+        "hallucination_rate": 0.18009478672985782,
+        "pred_density": 1.6382241960278887,
+        "gt_density": 3.2680233496025037,
+        "density_ratio": 0.5012890119732925,
+        "gt_error_median": 173.35220000000845
+      },
+      "1.0x": {
+        "n_pred": 401,
+        "n_gt": 382,
+        "event_matched_rate": 0.7931937172774869,
+        "event_close_rate": 0.7931937172774869,
+        "event_far_rate": 0.15968586387434555,
+        "hallucination_rate": 0.23940149625935161,
+        "pred_density": 3.117638369498457,
+        "gt_density": 3.2680233496025037,
+        "density_ratio": 0.9539828930162515,
+        "gt_error_median": 4.406550000001516
+      },
+      "1.2x": {
+        "n_pred": 437,
+        "n_gt": 382,
+        "event_matched_rate": 0.8115183246073299,
+        "event_close_rate": 0.8219895287958116,
+        "event_far_rate": 0.13089005235602094,
+        "hallucination_rate": 0.2768878718535469,
+        "pred_density": 3.3980544777338006,
+        "gt_density": 3.2680233496025037,
+        "density_ratio": 1.0397889226058048,
+        "gt_error_median": 8.649100000006001
+      }
+    }
+  },
+  {
+    "song": {
+      "chart_idx": 7469,
+      "beatmapset_id": "2319029",
+      "artist": "Lorys",
+      "title": "Evening With You",
+      "difficulty": "Muzukashii",
+      "density_mean": 3.32,
+      "density_peak": 7,
+      "density_std": 1.34,
+      "duration_s": 146.08,
+      "total_events": 485,
+      "event_file": "2319029 Lorys - Evening With You [Muzukashii].npy",
+      "audio_path": "C:\\Users\\User\\repos\\BeatDetector\\osu\\taiko\\audio\\2319029 Lorys - Evening With You.ogg"
+    },
+    "scales": {
+      "0.8x": {
+        "n_pred": 396,
+        "n_gt": 485,
+        "event_matched_rate": 0.6288659793814433,
+        "event_close_rate": 0.6288659793814433,
+        "event_far_rate": 0.36907216494845363,
+        "hallucination_rate": 0.22727272727272727,
+        "pred_density": 2.2642545113555794,
+        "gt_density": 3.320118726843259,
+        "density_ratio": 0.6819799825376768,
+        "gt_error_median": 11.317899999994552
+      },
+      "1.0x": {
+        "n_pred": 546,
+        "n_gt": 485,
+        "event_matched_rate": 0.7690721649484537,
+        "event_close_rate": 0.7855670103092783,
+        "event_far_rate": 0.18969072164948453,
+        "hallucination_rate": 0.2857142857142857,
+        "pred_density": 3.1219266747478445,
+        "gt_density": 3.320118726843259,
+        "density_ratio": 0.9403057334989181,
+        "gt_error_median": 13.774700000001758
+      },
+      "1.2x": {
+        "n_pred": 638,
+        "n_gt": 485,
+        "event_matched_rate": 0.7835051546391752,
+        "event_close_rate": 0.8309278350515464,
+        "event_far_rate": 0.15463917525773196,
+        "hallucination_rate": 0.3385579937304075,
+        "pred_density": 3.5996998369414963,
+        "gt_density": 3.320118726843259,
+        "density_ratio": 1.0842081663639966,
+        "gt_error_median": 15.907499999997526
+      }
+    }
+  },
+  {
+    "song": {
+      "chart_idx": 7014,
+      "beatmapset_id": "2298265",
+      "artist": "Olivia Rodrigo",
+      "title": "ballad of a homeschooled girl",
+      "difficulty": "muya-'s muzukashii",
+      "density_mean": 3.372,
+      "density_peak": 6,
+      "density_std": 1.159,
+      "duration_s": 193.04,
+      "total_events": 651,
+      "event_file": "2298265 Olivia Rodrigo - ballad of a homeschooled girl [muya-'s muzukashii].npy",
+      "audio_path": "C:\\Users\\User\\repos\\BeatDetector\\osu\\taiko\\audio\\2298265 Olivia Rodrigo - ballad of a homeschooled girl.mp3"
+    },
+    "scales": {
+      "0.8x": {
+        "n_pred": 488,
+        "n_gt": 651,
+        "event_matched_rate": 0.5591397849462365,
+        "event_close_rate": 0.6036866359447005,
+        "event_far_rate": 0.3794162826420891,
+        "hallucination_rate": 0.1864754098360656,
+        "pred_density": 2.4367104409047786,
+        "gt_density": 3.372223131401551,
+        "density_ratio": 0.7225828024885299,
+        "gt_error_median": 14.083200000008219
+      },
+      "1.0x": {
+        "n_pred": 606,
+        "n_gt": 651,
+        "event_matched_rate": 0.674347158218126,
+        "event_close_rate": 0.7096774193548387,
+        "event_far_rate": 0.27956989247311825,
+        "hallucination_rate": 0.23102310231023102,
+        "pred_density": 3.026443928384148,
+        "gt_density": 3.372223131401551,
+        "density_ratio": 0.8974625374585782,
+        "gt_error_median": 11.313399999999092
+      },
+      "1.2x": {
+        "n_pred": 693,
+        "n_gt": 651,
+        "event_matched_rate": 0.7480798771121352,
+        "event_close_rate": 0.7726574500768049,
+        "event_far_rate": 0.21044546850998463,
+        "hallucination_rate": 0.25685425685425683,
+        "pred_density": 3.460501348247279,
+        "gt_density": 3.372223131401551,
+        "density_ratio": 1.0261780473610114,
+        "gt_error_median": 9.459900000001653
+      }
+    }
+  },
+  {
+    "song": {
+      "chart_idx": 8396,
+      "beatmapset_id": "2361453",
+      "artist": "NMIXX",
+      "title": "O.O",
+      "difficulty": "M.M",
+      "density_mean": 3.444,
+      "density_peak": 6,
+      "density_std": 1.102,
+      "duration_s": 145.76,
+      "total_events": 502,
+      "event_file": "2361453 NMIXX - O.O [M.M].npy",
+      "audio_path": "C:\\Users\\User\\repos\\BeatDetector\\osu\\taiko\\audio\\2361453 NMIXX - O.O.ogg"
+    },
+    "scales": {
+      "0.8x": {
+        "n_pred": 332,
+        "n_gt": 502,
+        "event_matched_rate": 0.5059760956175299,
+        "event_close_rate": 0.5079681274900398,
+        "event_far_rate": 0.49203187250996017,
+        "hallucination_rate": 0.2319277108433735,
+        "pred_density": 1.9721171152441088,
+        "gt_density": 3.4439035546938643,
+        "density_ratio": 0.5726400533360506,
+        "gt_error_median": 14.174750000000131
+      },
+      "1.0x": {
+        "n_pred": 391,
+        "n_gt": 502,
+        "event_matched_rate": 0.5776892430278885,
+        "event_close_rate": 0.5796812749003984,
+        "event_far_rate": 0.4203187250996016,
+        "hallucination_rate": 0.2557544757033248,
+        "pred_density": 2.3227216832900672,
+        "gt_density": 3.4439035546938643,
+        "density_ratio": 0.6744444629189214,
+        "gt_error_median": 9.390800000004674
+      },
+      "1.2x": {
+        "n_pred": 464,
+        "n_gt": 502,
+        "event_matched_rate": 0.6454183266932271,
+        "event_close_rate": 0.649402390438247,
+        "event_far_rate": 0.3466135458167331,
+        "hallucination_rate": 0.2952586206896552,
+        "pred_density": 2.7563756036997216,
+        "gt_density": 3.4439035546938643,
+        "density_ratio": 0.8003637616224538,
+        "gt_error_median": 10.835049999997864
+      }
+    }
+  },
+  {
+    "song": {
+      "chart_idx": 5078,
+      "beatmapset_id": "2205358",
+      "artist": "Hinatabi Bitter Sweets",
+      "title": "Kokuu to Koumyou no Discours",
+      "difficulty": "Muzukashii",
+      "density_mean": 3.487,
+      "density_peak": 7,
+      "density_std": 1.242,
+      "duration_s": 310.29,
+      "total_events": 1082,
+      "event_file": "2205358 Hinatabi Bitter Sweets - Kokuu to Koumyou no Discours [Muzukashii].npy",
+      "audio_path": "C:\\Users\\User\\repos\\BeatDetector\\osu\\taiko\\audio\\2205358 Hinatabi Bitter Sweets - Kokuu to Koumyou no Discours.ogg"
+    },
+    "scales": {
+      "0.8x": {
+        "n_pred": 980,
+        "n_gt": 1082,
+        "event_matched_rate": 0.7134935304990758,
+        "event_close_rate": 0.7144177449168208,
+        "event_far_rate": 0.2809611829944547,
+        "hallucination_rate": 0.21122448979591837,
+        "pred_density": 2.985174647947388,
+        "gt_density": 3.487092378987129,
+        "density_ratio": 0.8560641140268473,
+        "gt_error_median": 7.542350000003353
+      },
+      "1.0x": {
+        "n_pred": 1217,
+        "n_gt": 1082,
+        "event_matched_rate": 0.8687615526802218,
+        "event_close_rate": 0.8687615526802218,
+        "event_far_rate": 0.13031423290203328,
+        "hallucination_rate": 0.2276088742810189,
+        "pred_density": 3.7064221301115583,
+        "gt_density": 3.487092378987129,
+        "density_ratio": 1.0628976027265835,
+        "gt_error_median": 5.520999999998821
+      },
+      "1.2x": {
+        "n_pred": 1320,
+        "n_gt": 1082,
+        "event_matched_rate": 0.9390018484288355,
+        "event_close_rate": 0.9399260628465804,
+        "event_far_rate": 0.05545286506469501,
+        "hallucination_rate": 0.22803030303030303,
+        "pred_density": 4.018949957983705,
+        "gt_density": 3.487092378987129,
+        "density_ratio": 1.1525217921387736,
+        "gt_error_median": 3.878050000006624
+      }
+    }
+  },
+  {
+    "song": {
+      "chart_idx": 785,
+      "beatmapset_id": "1916367",
+      "artist": "Dan Sawyer & Fred Newman",
+      "title": "Doug, Main Title (TV Size)",
+      "difficulty": "Cry's Muzukashii",
+      "density_mean": 3.603,
+      "density_peak": 6,
+      "density_std": 1.327,
+      "duration_s": 43.58,
+      "total_events": 157,
+      "event_file": "1916367 Dan Sawyer & Fred Newman - Doug, Main Title (TV Size) [Cry's Muzukashii].npy",
+      "audio_path": "C:\\Users\\User\\repos\\BeatDetector\\osu\\taiko\\audio\\1916367 Dan Sawyer & Fred Newman - Doug, Main Title (TV Size).ogg"
+    },
+    "scales": {
+      "0.8x": {
+        "n_pred": 104,
+        "n_gt": 157,
+        "event_matched_rate": 0.5477707006369427,
+        "event_close_rate": 0.5477707006369427,
+        "event_far_rate": 0.40764331210191085,
+        "hallucination_rate": 0.17307692307692307,
+        "pred_density": 2.384992890886575,
+        "gt_density": 3.6028763299275024,
+        "density_ratio": 0.6619691248005081,
+        "gt_error_median": 23.947100000001228
+      },
+      "1.0x": {
+        "n_pred": 116,
+        "n_gt": 157,
+        "event_matched_rate": 0.5987261146496815,
+        "event_close_rate": 0.5987261146496815,
+        "event_far_rate": 0.34394904458598724,
+        "hallucination_rate": 0.1896551724137931,
+        "pred_density": 2.6601843782965644,
+        "gt_density": 3.6028763299275024,
+        "density_ratio": 0.7383501776621051,
+        "gt_error_median": 19.427300000003015
+      },
+      "1.2x": {
+        "n_pred": 164,
+        "n_gt": 157,
+        "event_matched_rate": 0.7515923566878981,
+        "event_close_rate": 0.7515923566878981,
+        "event_far_rate": 0.2484076433121019,
+        "hallucination_rate": 0.2804878048780488,
+        "pred_density": 3.7622445000114704,
+        "gt_density": 3.6028763299275024,
+        "density_ratio": 1.0442335943535355,
+        "gt_error_median": 13.788700000000972
+      }
+    }
+  },
+  {
+    "song": {
+      "chart_idx": 411,
+      "beatmapset_id": "1756310",
+      "artist": "METAROOM",
+      "title": "JITTER FANTA",
+      "difficulty": "MUZUKASHII",
+      "density_mean": 3.678,
+      "density_peak": 7,
+      "density_std": 1.676,
+      "duration_s": 148.45,
+      "total_events": 546,
+      "event_file": "1756310 METAROOM - JITTER FANTA [MUZUKASHII].npy",
+      "audio_path": "C:\\Users\\User\\repos\\BeatDetector\\osu\\taiko\\audio\\1756310 METAROOM - JITTER FANTA.mp3"
+    },
+    "scales": {
+      "0.8x": {
+        "n_pred": 224,
+        "n_gt": 546,
+        "event_matched_rate": 0.3131868131868132,
+        "event_close_rate": 0.31684981684981683,
+        "event_far_rate": 0.6245421245421245,
+        "hallucination_rate": 0.17410714285714285,
+        "pred_density": 1.4905212166379431,
+        "gt_density": 3.6780371345663223,
+        "density_ratio": 0.405249094042573,
+        "gt_error_median": 188.48525000000518
+      },
+      "1.0x": {
+        "n_pred": 363,
+        "n_gt": 546,
+        "event_matched_rate": 0.4926739926739927,
+        "event_close_rate": 0.4945054945054945,
+        "event_far_rate": 0.3901098901098901,
+        "hallucination_rate": 0.18457300275482094,
+        "pred_density": 2.4468830888697153,
+        "gt_density": 3.6780371345663223,
+        "density_ratio": 0.6652687287667169,
+        "gt_error_median": 75.62960000001476
+      },
+      "1.2x": {
+        "n_pred": 562,
+        "n_gt": 546,
+        "event_matched_rate": 0.7014652014652014,
+        "event_close_rate": 0.7032967032967034,
+        "event_far_rate": 0.16483516483516483,
+        "hallucination_rate": 0.24199288256227758,
+        "pred_density": 3.7882873166522866,
+        "gt_density": 3.6780371345663223,
+        "density_ratio": 1.0299752770437876,
+        "gt_error_median": 8.408850000007078
+      }
+    }
+  },
+  {
+    "song": {
+      "chart_idx": 8340,
+      "beatmapset_id": "2356297",
+      "artist": "Ikimonogakari",
+      "title": "Hotaru no Hikari (TV Size)",
+      "difficulty": "Muzukashii",
+      "density_mean": 3.767,
+      "density_peak": 6,
+      "density_std": 1.295,
+      "duration_s": 85.74,
+      "total_events": 323,
+      "event_file": "2356297 Ikimonogakari - Hotaru no Hikari (TV Size) [Muzukashii].npy",
+      "audio_path": "C:\\Users\\User\\repos\\BeatDetector\\osu\\taiko\\audio\\2356297 Ikimonogakari - Hotaru no Hikari (TV Size).mp3"
+    },
+    "scales": {
+      "0.8x": {
+        "n_pred": 212,
+        "n_gt": 323,
+        "event_matched_rate": 0.5882352941176471,
+        "event_close_rate": 0.6037151702786377,
+        "event_far_rate": 0.3591331269349845,
+        "hallucination_rate": 0.07075471698113207,
+        "pred_density": 2.4378464156758124,
+        "gt_density": 3.767168598262539,
+        "density_ratio": 0.6471296285491908,
+        "gt_error_median": 15.492200000000594
+      },
+      "1.0x": {
+        "n_pred": 266,
+        "n_gt": 323,
+        "event_matched_rate": 0.7244582043343654,
+        "event_close_rate": 0.7275541795665634,
+        "event_far_rate": 0.24458204334365324,
+        "hallucination_rate": 0.10902255639097744,
+        "pred_density": 3.058807295140406,
+        "gt_density": 3.767168598262539,
+        "density_ratio": 0.811964533934362,
+        "gt_error_median": 10.307099999998172
+      },
+      "1.2x": {
+        "n_pred": 316,
+        "n_gt": 323,
+        "event_matched_rate": 0.7956656346749226,
+        "event_close_rate": 0.8111455108359134,
+        "event_far_rate": 0.14860681114551083,
+        "hallucination_rate": 0.13924050632911392,
+        "pred_density": 3.6337710724224372,
+        "gt_density": 3.767168598262539,
+        "density_ratio": 0.964589446328039,
+        "gt_error_median": 9.581500000000233
+      }
+    }
+  },
+  {
+    "song": {
+      "chart_idx": 8194,
+      "beatmapset_id": "2347494",
+      "artist": "Aoyama Misao",
+      "title": "Kimi no WIND SONG (Cut Ver.)",
+      "difficulty": "knzk's Muzukashii",
+      "density_mean": 3.844,
+      "density_peak": 6,
+      "density_std": 1.223,
+      "duration_s": 123.58,
+      "total_events": 475,
+      "event_file": "2347494 Aoyama Misao - Kimi no WIND SONG (Cut Ver.) [knzk's Muzukashii].npy",
+      "audio_path": "C:\\Users\\User\\repos\\BeatDetector\\osu\\taiko\\audio\\2347494 Aoyama Misao - Kimi no WIND SONG (Cut Ver.).mp3"
+    },
+    "scales": {
+      "0.8x": {
+        "n_pred": 297,
+        "n_gt": 475,
+        "event_matched_rate": 0.4568421052631579,
+        "event_close_rate": 0.47157894736842104,
+        "event_far_rate": 0.35368421052631577,
+        "hallucination_rate": 0.10437710437710437,
+        "pred_density": 2.377978478093774,
+        "gt_density": 3.8435064917888693,
+        "density_ratio": 0.6187002632034062,
+        "gt_error_median": 93.37679999999818
+      },
+      "1.0x": {
+        "n_pred": 449,
+        "n_gt": 475,
+        "event_matched_rate": 0.6821052631578948,
+        "event_close_rate": 0.7115789473684211,
+        "event_far_rate": 0.13052631578947368,
+        "hallucination_rate": 0.155902004454343,
+        "pred_density": 3.5888131339370637,
+        "gt_density": 3.8435064917888693,
+        "density_ratio": 0.9337341153459937,
+        "gt_error_median": 16.264799999997194
+      },
+      "1.2x": {
+        "n_pred": 497,
+        "n_gt": 475,
+        "event_matched_rate": 0.7557894736842106,
+        "event_close_rate": 0.7621052631578947,
+        "event_far_rate": 0.13052631578947368,
+        "hallucination_rate": 0.19718309859154928,
+        "pred_density": 3.972472444469311,
+        "gt_density": 3.8435064917888693,
+        "density_ratio": 1.0335542434898861,
+        "gt_error_median": 15.758399999991525
+      }
+    }
+  },
+  {
+    "song": {
+      "chart_idx": 8517,
+      "beatmapset_id": "2368690",
+      "artist": "P.Lin*",
+      "title": "cosine theta",
+      "difficulty": "Muzukashii",
+      "density_mean": 3.912,
+      "density_peak": 7,
+      "density_std": 1.284,
+      "duration_s": 109.15,
+      "total_events": 427,
+      "event_file": "2368690 P.Lin_ - cosine theta [Muzukashii].npy",
+      "audio_path": "C:\\Users\\User\\repos\\BeatDetector\\osu\\taiko\\audio\\2368690 P.Lin_ - cosine theta.ogg"
+    },
+    "scales": {
+      "0.8x": {
+        "n_pred": 283,
+        "n_gt": 427,
+        "event_matched_rate": 0.5550351288056206,
+        "event_close_rate": 0.5550351288056206,
+        "event_far_rate": 0.4098360655737705,
+        "hallucination_rate": 0.1625441696113074,
+        "pred_density": 2.6021074311774766,
+        "gt_density": 3.912127664749767,
+        "density_ratio": 0.6651386800650116,
+        "gt_error_median": 11.05279999999766
+      },
+      "1.0x": {
+        "n_pred": 373,
+        "n_gt": 427,
+        "event_matched_rate": 0.6346604215456675,
+        "event_close_rate": 0.6346604215456675,
+        "event_far_rate": 0.34894613583138173,
+        "hallucination_rate": 0.2680965147453083,
+        "pred_density": 3.40170176286582,
+        "gt_density": 3.912127664749767,
+        "density_ratio": 0.8695272890802771,
+        "gt_error_median": 4.629899999999907
+      },
+      "1.2x": {
+        "n_pred": 517,
+        "n_gt": 427,
+        "event_matched_rate": 0.7353629976580797,
+        "event_close_rate": 0.7377049180327869,
+        "event_far_rate": 0.24355971896955503,
+        "hallucination_rate": 0.37524177949709864,
+        "pred_density": 4.714744291238054,
+        "gt_density": 3.912127664749767,
+        "density_ratio": 1.205161154049308,
+        "gt_error_median": 4.205400000002555
+      }
+    }
+  },
+  {
+    "song": {
+      "chart_idx": 935,
+      "beatmapset_id": "1941780",
+      "artist": "Hachioji P",
+      "title": "Kimagure Mercy feat. Hatsune Miku",
+      "difficulty": "Muzukashii",
+      "density_mean": 3.97,
+      "density_peak": 7,
+      "density_std": 1.448,
+      "duration_s": 198.0,
+      "total_events": 786,
+      "event_file": "1941780 Hachioji P - Kimagure Mercy feat. Hatsune Miku [Muzukashii].npy",
+      "audio_path": "C:\\Users\\User\\repos\\BeatDetector\\osu\\taiko\\audio\\1941780 Hachioji P - Kimagure Mercy feat. Hatsune Miku.mp3"
+    },
+    "scales": {
+      "0.8x": {
+        "n_pred": 547,
+        "n_gt": 786,
+        "event_matched_rate": 0.6259541984732825,
+        "event_close_rate": 0.6259541984732825,
+        "event_far_rate": 0.2697201017811705,
+        "hallucination_rate": 0.06398537477148081,
+        "pred_density": 2.765265834559251,
+        "gt_density": 3.969666836316895,
+        "density_ratio": 0.6965989712942505,
+        "gt_error_median": 7.001849999986007
+      },
+      "1.0x": {
+        "n_pred": 685,
+        "n_gt": 786,
+        "event_matched_rate": 0.7379134860050891,
+        "event_close_rate": 0.7379134860050891,
+        "event_far_rate": 0.138676844783715,
+        "hallucination_rate": 0.10656934306569343,
+        "pred_density": 3.462901456440744,
+        "gt_density": 3.969666836316895,
+        "density_ratio": 0.8723405764836593,
+        "gt_error_median": 4.219650000000911
+      },
+      "1.2x": {
+        "n_pred": 799,
+        "n_gt": 786,
+        "event_matched_rate": 0.8078880407124682,
+        "event_close_rate": 0.8078880407124682,
+        "event_far_rate": 0.07633587786259542,
+        "hallucination_rate": 0.16270337922403003,
+        "pred_density": 4.039209144081977,
+        "gt_density": 3.969666836316895,
+        "density_ratio": 1.0175184242488229,
+        "gt_error_median": 3.390350000016042
+      }
+    }
+  },
+  {
+    "song": {
+      "chart_idx": 3066,
+      "beatmapset_id": "2131698",
+      "artist": "fromis_9",
+      "title": "LOVE BOMB",
+      "difficulty": "SudoKu's Muzukashii",
+      "density_mean": 4.035,
+      "density_peak": 8,
+      "density_std": 1.233,
+      "duration_s": 194.81,
+      "total_events": 786,
+      "event_file": "2131698 fromis_9 - LOVE BOMB [SudoKu's Muzukashii].npy",
+      "audio_path": "C:\\Users\\User\\repos\\BeatDetector\\osu\\taiko\\audio\\2131698 fromis_9 - LOVE BOMB.mp3"
+    },
+    "scales": {
+      "0.8x": {
+        "n_pred": 621,
+        "n_gt": 786,
+        "event_matched_rate": 0.72264631043257,
+        "event_close_rate": 0.7290076335877863,
+        "event_far_rate": 0.2035623409669211,
+        "hallucination_rate": 0.07085346215780998,
+        "pred_density": 3.1672523448377867,
+        "gt_density": 4.034726676912101,
+        "density_ratio": 0.7849979932870649,
+        "gt_error_median": 11.232649999998102
+      },
+      "1.0x": {
+        "n_pred": 764,
+        "n_gt": 786,
+        "event_matched_rate": 0.8256997455470738,
+        "event_close_rate": 0.8307888040712468,
+        "event_far_rate": 0.08524173027989822,
+        "hallucination_rate": 0.1400523560209424,
+        "pred_density": 3.896289345382591,
+        "gt_density": 4.034726676912101,
+        "density_ratio": 0.9656885477963875,
+        "gt_error_median": 11.771849999990081
+      },
+      "1.2x": {
+        "n_pred": 836,
+        "n_gt": 786,
+        "event_matched_rate": 0.8575063613231552,
+        "event_close_rate": 0.8689567430025446,
+        "event_far_rate": 0.043256997455470736,
+        "hallucination_rate": 0.17703349282296652,
+        "pred_density": 4.263587635595856,
+        "gt_density": 4.034726676912101,
+        "density_ratio": 1.056722791160394,
+        "gt_error_median": 16.097600000000966
+      }
+    }
+  },
+  {
+    "song": {
+      "chart_idx": 9528,
+      "beatmapset_id": "2444974",
+      "artist": "ANMC",
+      "title": "A Story Just for Two feat. Muto, m",
+      "difficulty": "Oni",
+      "density_mean": 4.111,
+      "density_peak": 7,
+      "density_std": 1.316,
+      "duration_s": 208.2,
+      "total_events": 856,
+      "event_file": "2444974 ANMC - A Story Just for Two feat. Muto, m [Oni].npy",
+      "audio_path": "C:\\Users\\User\\repos\\BeatDetector\\osu\\taiko\\audio\\2444974 ANMC - A Story Just for Two feat. Muto, m.ogg"
+    },
+    "scales": {
+      "0.8x": {
+        "n_pred": 653,
+        "n_gt": 856,
+        "event_matched_rate": 0.6401869158878505,
+        "event_close_rate": 0.6425233644859814,
+        "event_far_rate": 0.2558411214953271,
+        "hallucination_rate": 0.11944869831546708,
+        "pred_density": 3.1335176014434336,
+        "gt_density": 4.111364284216798,
+        "density_ratio": 0.7621600483014264,
+        "gt_error_median": 10.968399999999747
+      },
+      "1.0x": {
+        "n_pred": 781,
+        "n_gt": 856,
+        "event_matched_rate": 0.758177570093458,
+        "event_close_rate": 0.758177570093458,
+        "event_far_rate": 0.1308411214953271,
+        "hallucination_rate": 0.12419974391805377,
+        "pred_density": 3.7516152120551265,
+        "gt_density": 4.111364284216798,
+        "density_ratio": 0.912498857485648,
+        "gt_error_median": 11.504349999988335
+      },
+      "1.2x": {
+        "n_pred": 937,
+        "n_gt": 856,
+        "event_matched_rate": 0.8913551401869159,
+        "event_close_rate": 0.8913551401869159,
+        "event_far_rate": 0.036214953271028034,
+        "hallucination_rate": 0.12913553895410887,
+        "pred_density": 4.496225953348657,
+        "gt_density": 4.111364284216798,
+        "density_ratio": 1.0936092358950806,
+        "gt_error_median": 11.149199999992561
+      }
+    }
+  },
+  {
+    "song": {
+      "chart_idx": 8036,
+      "beatmapset_id": "2340824",
+      "artist": "AiSS vs. Huamuli w/ Nightwheel feat. Yuzuki Yukari",
+      "title": "Kotoshi mo \"Yukifuri, Merry Christmas\" Mezashite Ganbarimasu!!",
+      "difficulty": "Hard",
+      "density_mean": 4.159,
+      "density_peak": 10,
+      "density_std": 2.454,
+      "duration_s": 223.59,
+      "total_events": 930,
+      "event_file": "2340824 AiSS vs. Huamuli w_ Nightwheel feat. Yuzuki Yukari - Kotoshi mo Yukifuri, Merry Christmas Mezashite Gan_9a2ec952.npy",
+      "audio_path": "C:\\Users\\User\\repos\\BeatDetector\\osu\\taiko\\audio\\2340824 AiSS vs. Huamuli w_ Nightwheel feat. Yuzuki Yukari - Kotoshi mo Yukifuri, Merry Christmas Mezashite Ganbarimasu!!.mp3"
+    },
+    "scales": {
+      "0.8x": {
+        "n_pred": 754,
+        "n_gt": 930,
+        "event_matched_rate": 0.6010752688172043,
+        "event_close_rate": 0.621505376344086,
+        "event_far_rate": 0.2849462365591398,
+        "hallucination_rate": 0.1989389920424403,
+        "pred_density": 3.359397625253403,
+        "gt_density": 4.159425961433634,
+        "density_ratio": 0.8076589549620246,
+        "gt_error_median": 9.180899999999383
+      },
+      "1.0x": {
+        "n_pred": 983,
+        "n_gt": 930,
+        "event_matched_rate": 0.7451612903225806,
+        "event_close_rate": 0.789247311827957,
+        "event_far_rate": 0.13763440860215054,
+        "hallucination_rate": 0.20040691759918616,
+        "pred_density": 4.379692129474927,
+        "gt_density": 4.159425961433634,
+        "density_ratio": 1.0529559054743636,
+        "gt_error_median": 12.416150000004563
+      },
+      "1.2x": {
+        "n_pred": 1094,
+        "n_gt": 930,
+        "event_matched_rate": 0.8043010752688172,
+        "event_close_rate": 0.832258064516129,
+        "event_far_rate": 0.10752688172043011,
+        "hallucination_rate": 0.20018281535648993,
+        "pred_density": 4.8729426961537605,
+        "gt_density": 4.159425961433634,
+        "density_ratio": 1.1715421169497624,
+        "gt_error_median": 13.020100000008824
+      }
+    }
+  },
+  {
+    "song": {
+      "chart_idx": 9709,
+      "beatmapset_id": "2460301",
+      "artist": "Satou Hiromi",
+      "title": "Natsu no Fantasia",
+      "difficulty": "Sinsemilla",
+      "density_mean": 4.197,
+      "density_peak": 8,
+      "density_std": 1.491,
+      "duration_s": 241.38,
+      "total_events": 1013,
+      "event_file": "2460301 Satou Hiromi - Natsu no Fantasia [Sinsemilla].npy",
+      "audio_path": "C:\\Users\\User\\repos\\BeatDetector\\osu\\taiko\\audio\\2460301 Satou Hiromi - Natsu no Fantasia.mp3"
+    },
+    "scales": {
+      "0.8x": {
+        "n_pred": 719,
+        "n_gt": 1013,
+        "event_matched_rate": 0.6080947680157947,
+        "event_close_rate": 0.6604146100691016,
+        "event_far_rate": 0.2388943731490622,
+        "hallucination_rate": 0.061196105702364396,
+        "pred_density": 2.9757347250445947,
+        "gt_density": 4.1966459956124655,
+        "density_ratio": 0.7090745152571085,
+        "gt_error_median": 21.450299999996787
+      },
+      "1.0x": {
+        "n_pred": 966,
+        "n_gt": 1013,
+        "event_matched_rate": 0.6564659427443238,
+        "event_close_rate": 0.8005923000987167,
+        "event_far_rate": 0.10760118460019744,
+        "hallucination_rate": 0.11904761904761904,
+        "pred_density": 3.998327821490805,
+        "gt_density": 4.1966459956124655,
+        "density_ratio": 0.9527436494931907,
+        "gt_error_median": 21.364299999986542
+      },
+      "1.2x": {
+        "n_pred": 1098,
+        "n_gt": 1013,
+        "event_matched_rate": 0.6446199407699901,
+        "event_close_rate": 0.8588351431391905,
+        "event_far_rate": 0.0947680157946693,
+        "hallucination_rate": 0.1621129326047359,
+        "pred_density": 4.544683175980232,
+        "gt_density": 4.1966459956124655,
+        "density_ratio": 1.0829322227158629,
+        "gt_error_median": 21.454799999977695
+      }
+    }
+  },
+  {
+    "song": {
+      "chart_idx": 6572,
+      "beatmapset_id": "2273672",
+      "artist": "Kanaria feat. GUMI",
+      "title": "QUEEN",
+      "difficulty": "MUZUKASHII",
+      "density_mean": 4.279,
+      "density_peak": 7,
+      "density_std": 1.232,
+      "duration_s": 138.35,
+      "total_events": 592,
+      "event_file": "2273672 Kanaria feat. GUMI - QUEEN [MUZUKASHII].npy",
+      "audio_path": "C:\\Users\\User\\repos\\BeatDetector\\osu\\taiko\\audio\\2273672 Kanaria feat. GUMI - QUEEN.ogg"
+    },
+    "scales": {
+      "0.8x": {
+        "n_pred": 341,
+        "n_gt": 592,
+        "event_matched_rate": 0.4831081081081081,
+        "event_close_rate": 0.4831081081081081,
+        "event_far_rate": 0.4391891891891892,
+        "hallucination_rate": 0.1466275659824047,
+        "pred_density": 2.463427849015712,
+        "gt_density": 4.27895251540215,
+        "density_ratio": 0.5757081529062473,
+        "gt_error_median": 80.44679999999607
+      },
+      "1.0x": {
+        "n_pred": 455,
+        "n_gt": 592,
+        "event_matched_rate": 0.6402027027027027,
+        "event_close_rate": 0.6402027027027027,
+        "event_far_rate": 0.2668918918918919,
+        "hallucination_rate": 0.15164835164835164,
+        "pred_density": 3.2894736842105265,
+        "gt_density": 4.27895251540215,
+        "density_ratio": 0.7687567628689544,
+        "gt_error_median": 6.348549999987881
+      },
+      "1.2x": {
+        "n_pred": 614,
+        "n_gt": 592,
+        "event_matched_rate": 0.8074324324324325,
+        "event_close_rate": 0.8074324324324325,
+        "event_far_rate": 0.12162162162162163,
+        "hallucination_rate": 0.19218241042345277,
+        "pred_density": 4.43930301496638,
+        "gt_density": 4.27895251540215,
+        "density_ratio": 1.037474241414703,
+        "gt_error_median": 5.821200000000317
+      }
+    }
+  },
+  {
+    "song": {
+      "chart_idx": 7522,
+      "beatmapset_id": "2321386",
+      "artist": "SiLiS",
+      "title": "Ryuu no Koukyoukyoku",
+      "difficulty": "Muzukashii",
+      "density_mean": 4.313,
+      "density_peak": 8,
+      "density_std": 1.637,
+      "duration_s": 134.25,
+      "total_events": 579,
+      "event_file": "2321386 SiLiS - Ryuu no Koukyoukyoku [Muzukashii].npy",
+      "audio_path": "C:\\Users\\User\\repos\\BeatDetector\\osu\\taiko\\audio\\2321386 SiLiS - Ryuu no Koukyoukyoku.mp3"
+    },
+    "scales": {
+      "0.8x": {
+        "n_pred": 428,
+        "n_gt": 579,
+        "event_matched_rate": 0.48877374784110533,
+        "event_close_rate": 0.4905008635578584,
+        "event_far_rate": 0.25215889464594127,
+        "hallucination_rate": 0.18457943925233644,
+        "pred_density": 3.066056320875689,
+        "gt_density": 4.312820066136806,
+        "density_ratio": 0.7109168186610898,
+        "gt_error_median": 65.27379999999903
+      },
+      "1.0x": {
+        "n_pred": 546,
+        "n_gt": 579,
+        "event_matched_rate": 0.6010362694300518,
+        "event_close_rate": 0.6062176165803109,
+        "event_far_rate": 0.11917098445595854,
+        "hallucination_rate": 0.17582417582417584,
+        "pred_density": 3.9113709140143134,
+        "gt_density": 4.312820066136806,
+        "density_ratio": 0.906917249974194,
+        "gt_error_median": 9.431500000006054
+      },
+      "1.2x": {
+        "n_pred": 607,
+        "n_gt": 579,
+        "event_matched_rate": 0.690846286701209,
+        "event_close_rate": 0.6925734024179621,
+        "event_far_rate": 0.07599309153713299,
+        "hallucination_rate": 0.1400329489291598,
+        "pred_density": 4.348355576569026,
+        "gt_density": 4.312820066136806,
+        "density_ratio": 1.0082395068394427,
+        "gt_error_median": 9.52060000000347
+      }
+    }
+  },
+  {
+    "song": {
+      "chart_idx": 6830,
+      "beatmapset_id": "2288190",
+      "artist": "katagiri",
+      "title": "Youki Sanmyaku",
+      "difficulty": "Muzukashii",
+      "density_mean": 4.363,
+      "density_peak": 7,
+      "density_std": 1.365,
+      "duration_s": 124.23,
+      "total_events": 542,
+      "event_file": "2288190 katagiri - Youki Sanmyaku [Muzukashii].npy",
+      "audio_path": "C:\\Users\\User\\repos\\BeatDetector\\osu\\taiko\\audio\\2288190 katagiri - Youki Sanmyaku.ogg"
+    },
+    "scales": {
+      "0.8x": {
+        "n_pred": 411,
+        "n_gt": 542,
+        "event_matched_rate": 0.6346863468634686,
+        "event_close_rate": 0.6346863468634686,
+        "event_far_rate": 0.20848708487084872,
+        "hallucination_rate": 0.10218978102189781,
+        "pred_density": 3.3082997271256427,
+        "gt_density": 4.362924219659248,
+        "density_ratio": 0.7582757711487428,
+        "gt_error_median": 4.439450000001671
+      },
+      "1.0x": {
+        "n_pred": 509,
+        "n_gt": 542,
+        "event_matched_rate": 0.7638376383763837,
+        "event_close_rate": 0.7638376383763837,
+        "event_far_rate": 0.07380073800738007,
+        "hallucination_rate": 0.12180746561886051,
+        "pred_density": 4.097140051355115,
+        "gt_density": 4.362924219659248,
+        "density_ratio": 0.9390811861671778,
+        "gt_error_median": 4.047400000004927
+      },
+      "1.2x": {
+        "n_pred": 569,
+        "n_gt": 542,
+        "event_matched_rate": 0.8136531365313653,
+        "event_close_rate": 0.8136531365313653,
+        "event_far_rate": 0.03136531365313653,
+        "hallucination_rate": 0.1546572934973638,
+        "pred_density": 4.580472215290245,
+        "gt_density": 4.362924219659248,
+        "density_ratio": 1.0498628866049815,
+        "gt_error_median": 3.8211500000033993
+      }
+    }
+  },
+  {
+    "song": {
+      "chart_idx": 6105,
+      "beatmapset_id": "2246506",
+      "artist": "EmoCosine",
+      "title": "Love Kills U",
+      "difficulty": "[-E S I A-]'s Oni",
+      "density_mean": 4.398,
+      "density_peak": 7,
+      "density_std": 1.54,
+      "duration_s": 132.56,
+      "total_events": 583,
+      "event_file": "2246506 EmoCosine - Love Kills U [[-E S I A-]'s Oni].npy",
+      "audio_path": "C:\\Users\\User\\repos\\BeatDetector\\osu\\taiko\\audio\\2246506 EmoCosine - Love Kills U.mp3"
+    },
+    "scales": {
+      "0.8x": {
+        "n_pred": 419,
+        "n_gt": 583,
+        "event_matched_rate": 0.6174957118353345,
+        "event_close_rate": 0.6209262435677531,
+        "event_far_rate": 0.18181818181818182,
+        "hallucination_rate": 0.0477326968973747,
+        "pred_density": 3.1773475593572504,
+        "gt_density": 4.398017194608725,
+        "density_ratio": 0.7224500084383884,
+        "gt_error_median": 6.252499999995052
+      },
+      "1.0x": {
+        "n_pred": 489,
+        "n_gt": 583,
+        "event_matched_rate": 0.6878216123499142,
+        "event_close_rate": 0.6895368782161235,
+        "event_far_rate": 0.12006861063464837,
+        "hallucination_rate": 0.053169734151329244,
+        "pred_density": 3.6679493237921643,
+        "gt_density": 4.398017194608725,
+        "density_ratio": 0.834000678371265,
+        "gt_error_median": 5.504399999997986
+      },
+      "1.2x": {
+        "n_pred": 512,
+        "n_gt": 583,
+        "event_matched_rate": 0.7204116638078902,
+        "event_close_rate": 0.7221269296740995,
+        "event_far_rate": 0.12006861063464837,
+        "hallucination_rate": 0.044921875,
+        "pred_density": 3.840038400384004,
+        "gt_density": 4.398017194608725,
+        "density_ratio": 0.8731294650442215,
+        "gt_error_median": 4.2242000000114786
+      }
+    }
+  },
+  {
+    "song": {
+      "chart_idx": 2009,
+      "beatmapset_id": "2085265",
+      "artist": "Gakugaku",
+      "title": "Douse Saki ni Shinundarou?",
+      "difficulty": "Muzukashii",
+      "density_mean": 4.46,
+      "density_peak": 8,
+      "density_std": 1.839,
+      "duration_s": 194.18,
+      "total_events": 866,
+      "event_file": "2085265 Gakugaku - Douse Saki ni Shinundarou [Muzukashii].npy",
+      "audio_path": "C:\\Users\\User\\repos\\BeatDetector\\osu\\taiko\\audio\\2085265 Gakugaku - Douse Saki ni Shinundarou.ogg"
+    },
+    "scales": {
+      "0.8x": {
+        "n_pred": 584,
+        "n_gt": 866,
+        "event_matched_rate": 0.4653579676674365,
+        "event_close_rate": 0.47344110854503463,
+        "event_far_rate": 0.46420323325635104,
+        "hallucination_rate": 0.2893835616438356,
+        "pred_density": 2.6286768842977066,
+        "gt_density": 4.459661365192722,
+        "density_ratio": 0.5894341899621138,
+        "gt_error_median": 63.59845000000496
+      },
+      "1.0x": {
+        "n_pred": 755,
+        "n_gt": 866,
+        "event_matched_rate": 0.5739030023094688,
+        "event_close_rate": 0.5773672055427251,
+        "event_far_rate": 0.35912240184757505,
+        "hallucination_rate": 0.33112582781456956,
+        "pred_density": 3.3963876830338067,
+        "gt_density": 4.459661365192722,
+        "density_ratio": 0.7615797265555461,
+        "gt_error_median": 11.939899999997579
+      },
+      "1.2x": {
+        "n_pred": 750,
+        "n_gt": 866,
+        "event_matched_rate": 0.5715935334872979,
+        "event_close_rate": 0.5739030023094688,
+        "event_far_rate": 0.3787528868360277,
+        "hallucination_rate": 0.324,
+        "pred_density": 3.373895049371331,
+        "gt_density": 4.459661365192722,
+        "density_ratio": 0.7565361522074961,
+        "gt_error_median": 11.865449999982957
+      }
+    }
+  },
+  {
+    "song": {
+      "chart_idx": 5373,
+      "beatmapset_id": "2217318",
+      "artist": "Vega",
+      "title": "the Arc-light of the Sky",
+      "difficulty": "Muzukashii",
+      "density_mean": 4.552,
+      "density_peak": 7,
+      "density_std": 1.493,
+      "duration_s": 121.26,
+      "total_events": 552,
+      "event_file": "2217318 Vega - the Arc-light of the Sky [Muzukashii].npy",
+      "audio_path": "C:\\Users\\User\\repos\\BeatDetector\\osu\\taiko\\audio\\2217318 Vega - the Arc-light of the Sky.ogg"
+    },
+    "scales": {
+      "0.8x": {
+        "n_pred": 400,
+        "n_gt": 552,
+        "event_matched_rate": 0.532608695652174,
+        "event_close_rate": 0.5362318840579711,
+        "event_far_rate": 0.3532608695652174,
+        "hallucination_rate": 0.235,
+        "pred_density": 2.3224892439716887,
+        "gt_density": 4.552002186781851,
+        "density_ratio": 0.5102126819525166,
+        "gt_error_median": 11.548699999992095
+      },
+      "1.0x": {
+        "n_pred": 446,
+        "n_gt": 552,
+        "event_matched_rate": 0.5579710144927537,
+        "event_close_rate": 0.5597826086956522,
+        "event_far_rate": 0.26992753623188404,
+        "hallucination_rate": 0.2219730941704036,
+        "pred_density": 2.5931137132690676,
+        "gt_density": 4.552002186781851,
+        "density_ratio": 0.5696644260846307,
+        "gt_error_median": 11.280249999996158
+      },
+      "1.2x": {
+        "n_pred": 523,
+        "n_gt": 552,
+        "event_matched_rate": 0.6721014492753623,
+        "event_close_rate": 0.6757246376811594,
+        "event_far_rate": 0.21195652173913043,
+        "hallucination_rate": 0.19694072657743786,
+        "pred_density": 3.0408921500793653,
+        "gt_density": 4.552002186781851,
+        "density_ratio": 0.6680339826965677,
+        "gt_error_median": 6.28824999999415
+      }
+    }
+  },
+  {
+    "song": {
+      "chart_idx": 7220,
+      "beatmapset_id": "2307763",
+      "artist": "Kotoha",
+      "title": "Uchira, Koibito Sengen!",
+      "difficulty": "Oni!",
+      "density_mean": 4.598,
+      "density_peak": 9,
+      "density_std": 1.744,
+      "duration_s": 224.64,
+      "total_events": 1033,
+      "event_file": "2307763 Kotoha - Uchira, Koibito Sengen! [Oni!].npy",
+      "audio_path": "C:\\Users\\User\\repos\\BeatDetector\\osu\\taiko\\audio\\2307763 Kotoha - Uchira, Koibito Sengen!.ogg"
+    },
+    "scales": {
+      "0.8x": {
+        "n_pred": 638,
+        "n_gt": 1033,
+        "event_matched_rate": 0.5653436592449177,
+        "event_close_rate": 0.5653436592449177,
+        "event_far_rate": 0.33688286544046464,
+        "hallucination_rate": 0.07836990595611286,
+        "pred_density": 2.8347492268865744,
+        "gt_density": 4.598444894967401,
+        "density_ratio": 0.6164582356937585,
+        "gt_error_median": 8.766300000002957
+      },
+      "1.0x": {
+        "n_pred": 918,
+        "n_gt": 1033,
+        "event_matched_rate": 0.7792836398838335,
+        "event_close_rate": 0.7802516940948693,
+        "event_far_rate": 0.12003872216844143,
+        "hallucination_rate": 0.0915032679738562,
+        "pred_density": 4.071350641747753,
+        "gt_density": 4.598444894967401,
+        "density_ratio": 0.8853755421106586,
+        "gt_error_median": 3.713400000000547
+      },
+      "1.2x": {
+        "n_pred": 1052,
+        "n_gt": 1033,
+        "event_matched_rate": 0.8402710551790901,
+        "event_close_rate": 0.8431752178121975,
+        "event_far_rate": 0.06873184898354308,
+        "hallucination_rate": 0.1112167300380228,
+        "pred_density": 4.669578495081851,
+        "gt_density": 4.598444894967401,
+        "density_ratio": 1.0154690556784314,
+        "gt_error_median": 3.346700000023702
+      }
+    }
+  },
+  {
+    "song": {
+      "chart_idx": 5349,
+      "beatmapset_id": "2216591",
+      "artist": "Set It Off",
+      "title": "Horrible Kids (Cut Ver.)",
+      "difficulty": "Muzukashii",
+      "density_mean": 4.696,
+      "density_peak": 7,
+      "density_std": 1.352,
+      "duration_s": 56.65,
+      "total_events": 266,
+      "event_file": "2216591 Set It Off - Horrible Kids (Cut Ver.) [Muzukashii].npy",
+      "audio_path": "C:\\Users\\User\\repos\\BeatDetector\\osu\\taiko\\audio\\2216591 Set It Off - Horrible Kids (Cut Ver.).mp3"
+    },
+    "scales": {
+      "0.8x": {
+        "n_pred": 191,
+        "n_gt": 266,
+        "event_matched_rate": 0.6616541353383458,
+        "event_close_rate": 0.6616541353383458,
+        "event_far_rate": 0.2593984962406015,
+        "hallucination_rate": 0.07853403141361257,
+        "pred_density": 3.1670756781853155,
+        "gt_density": 4.695773169511931,
+        "density_ratio": 0.6744524413462022,
+        "gt_error_median": 9.558050000003277
+      },
+      "1.0x": {
+        "n_pred": 212,
+        "n_gt": 266,
+        "event_matched_rate": 0.7142857142857143,
+        "event_close_rate": 0.7142857142857143,
+        "event_far_rate": 0.21428571428571427,
+        "hallucination_rate": 0.10377358490566038,
+        "pred_density": 3.5155796560701793,
+        "gt_density": 4.695773169511931,
+        "density_ratio": 0.7486689687005434,
+        "gt_error_median": 8.980400000002192
+      },
+      "1.2x": {
+        "n_pred": 269,
+        "n_gt": 266,
+        "event_matched_rate": 0.8082706766917294,
+        "event_close_rate": 0.8082706766917294,
+        "event_far_rate": 0.12781954887218044,
+        "hallucination_rate": 0.1524163568773234,
+        "pred_density": 4.461546116464598,
+        "gt_density": 4.695773169511931,
+        "density_ratio": 0.950119598074266,
+        "gt_error_median": 5.792999999999893
+      }
+    }
+  },
+  {
+    "song": {
+      "chart_idx": 6347,
+      "beatmapset_id": "2260135",
+      "artist": "Suzuki Konomi",
+      "title": "Reweave (TV Size)",
+      "difficulty": "Muzukashii",
+      "density_mean": 4.765,
+      "density_peak": 8,
+      "density_std": 1.281,
+      "duration_s": 76.39,
+      "total_events": 364,
+      "event_file": "2260135 Suzuki Konomi - Reweave (TV Size) [Muzukashii].npy",
+      "audio_path": "C:\\Users\\User\\repos\\BeatDetector\\osu\\taiko\\audio\\2260135 Suzuki Konomi - Reweave (TV Size).mp3"
+    },
+    "scales": {
+      "0.8x": {
+        "n_pred": 298,
+        "n_gt": 364,
+        "event_matched_rate": 0.6043956043956044,
+        "event_close_rate": 0.6126373626373627,
+        "event_far_rate": 0.3241758241758242,
+        "hallucination_rate": 0.2516778523489933,
+        "pred_density": 3.4000410743217033,
+        "gt_density": 4.764899149449924,
+        "density_ratio": 0.7135599238683185,
+        "gt_error_median": 18.695050000005722
+      },
+      "1.0x": {
+        "n_pred": 366,
+        "n_gt": 364,
+        "event_matched_rate": 0.7115384615384616,
+        "event_close_rate": 0.7252747252747253,
+        "event_far_rate": 0.21428571428571427,
+        "hallucination_rate": 0.27595628415300544,
+        "pred_density": 4.175889373160213,
+        "gt_density": 4.764899149449924,
+        "density_ratio": 0.876385678308069,
+        "gt_error_median": 18.909600000002683
+      },
+      "1.2x": {
+        "n_pred": 417,
+        "n_gt": 364,
+        "event_matched_rate": 0.804945054945055,
+        "event_close_rate": 0.8076923076923077,
+        "event_far_rate": 0.14285714285714285,
+        "hallucination_rate": 0.24700239808153476,
+        "pred_density": 4.818135601053751,
+        "gt_density": 4.764899149449924,
+        "density_ratio": 1.0111726292486112,
+        "gt_error_median": 14.298750000005384
+      }
+    }
+  },
+  {
+    "song": {
+      "chart_idx": 7135,
+      "beatmapset_id": "2304733",
+      "artist": "Satou Hiromi",
+      "title": "KOWAREKAKE NO ORGEL",
+      "difficulty": "Inner Oni",
+      "density_mean": 4.846,
+      "density_peak": 9,
+      "density_std": 2.041,
+      "duration_s": 296.31,
+      "total_events": 1436,
+      "event_file": "2304733 Satou Hiromi - KOWAREKAKE NO ORGEL [Inner Oni].npy",
+      "audio_path": "C:\\Users\\User\\repos\\BeatDetector\\osu\\taiko\\audio\\2304733 Satou Hiromi - KOWAREKAKE NO ORGEL.mp3"
+    },
+    "scales": {
+      "0.8x": {
+        "n_pred": 1181,
+        "n_gt": 1436,
+        "event_matched_rate": 0.5313370473537604,
+        "event_close_rate": 0.7123955431754875,
+        "event_far_rate": 0.1469359331476323,
+        "hallucination_rate": 0.09314140558848434,
+        "pred_density": 3.98869251267364,
+        "gt_density": 4.846295074170474,
+        "density_ratio": 0.8230395491047092,
+        "gt_error_median": 22.33509999998205
+      },
+      "1.0x": {
+        "n_pred": 1414,
+        "n_gt": 1436,
+        "event_matched_rate": 0.5647632311977716,
+        "event_close_rate": 0.7889972144846796,
+        "event_far_rate": 0.116991643454039,
+        "hallucination_rate": 0.13578500707213578,
+        "pred_density": 4.776026643068006,
+        "gt_density": 4.846295074170474,
+        "density_ratio": 0.9855005875566717,
+        "gt_error_median": 21.913999999989755
+      },
+      "1.2x": {
+        "n_pred": 1578,
+        "n_gt": 1436,
+        "event_matched_rate": 0.6274373259052924,
+        "event_close_rate": 0.8454038997214485,
+        "event_far_rate": 0.06894150417827298,
+        "hallucination_rate": 0.1590621039290241,
+        "pred_density": 5.330144704308702,
+        "gt_density": 4.846295074170474,
+        "density_ratio": 1.099839077632112,
+        "gt_error_median": 21.25794999999198
+      }
+    }
+  },
+  {
+    "song": {
+      "chart_idx": 3526,
+      "beatmapset_id": "2150623",
+      "artist": "polysha feat. Sennzai",
+      "title": "Hurt Urge",
+      "difficulty": "Muzukashii",
+      "density_mean": 4.977,
+      "density_peak": 8,
+      "density_std": 1.589,
+      "duration_s": 120.35,
+      "total_events": 599,
+      "event_file": "2150623 polysha feat. Sennzai - Hurt Urge [Muzukashii].npy",
+      "audio_path": "C:\\Users\\User\\repos\\BeatDetector\\osu\\taiko\\audio\\2150623 polysha feat. Sennzai - Hurt Urge.mp3"
+    },
+    "scales": {
+      "0.8x": {
+        "n_pred": 417,
+        "n_gt": 599,
+        "event_matched_rate": 0.6293823038397329,
+        "event_close_rate": 0.6343906510851419,
+        "event_far_rate": 0.24874791318864775,
+        "hallucination_rate": 0.06235011990407674,
+        "pred_density": 3.4654411581388005,
+        "gt_density": 4.977257555815158,
+        "density_ratio": 0.6962551403613757,
+        "gt_error_median": 14.752400000001217
+      },
+      "1.0x": {
+        "n_pred": 497,
+        "n_gt": 599,
+        "event_matched_rate": 0.7295492487479132,
+        "event_close_rate": 0.7395659432387313,
+        "event_far_rate": 0.15859766277128548,
+        "hallucination_rate": 0.056338028169014086,
+        "pred_density": 4.132128337088554,
+        "gt_density": 4.977257555815158,
+        "density_ratio": 0.8302018311792604,
+        "gt_error_median": 9.464600000006612
+      },
+      "1.2x": {
+        "n_pred": 529,
+        "n_gt": 599,
+        "event_matched_rate": 0.7529215358931552,
+        "event_close_rate": 0.7629382303839732,
+        "event_far_rate": 0.15358931552587646,
+        "hallucination_rate": 0.06427221172022685,
+        "pred_density": 4.398180865834698,
+        "gt_density": 4.977257555815158,
+        "density_ratio": 0.8836554702089109,
+        "gt_error_median": 8.908300000010058
+      }
+    }
+  },
+  {
+    "song": {
+      "chart_idx": 9689,
+      "beatmapset_id": "2457907",
+      "artist": "Sqwore",
+      "title": "Davay sbezhim",
+      "difficulty": "oni",
+      "density_mean": 5.094,
+      "density_peak": 10,
+      "density_std": 2.51,
+      "duration_s": 78.13,
+      "total_events": 398,
+      "event_file": "2457907 Sqwore - Davay sbezhim [oni].npy",
+      "audio_path": "C:\\Users\\User\\repos\\BeatDetector\\osu\\taiko\\audio\\2457907 Sqwore - Davay sbezhim.mp3"
+    },
+    "scales": {
+      "0.8x": {
+        "n_pred": 213,
+        "n_gt": 398,
+        "event_matched_rate": 0.45979899497487436,
+        "event_close_rate": 0.46984924623115576,
+        "event_far_rate": 0.3944723618090452,
+        "hallucination_rate": 0.11267605633802817,
+        "pred_density": 2.3894192477255647,
+        "gt_density": 5.09420238081081,
+        "density_ratio": 0.4690467847775724,
+        "gt_error_median": 69.06285000000935
+      },
+      "1.0x": {
+        "n_pred": 254,
+        "n_gt": 398,
+        "event_matched_rate": 0.48743718592964824,
+        "event_close_rate": 0.49748743718592964,
+        "event_far_rate": 0.36180904522613067,
+        "hallucination_rate": 0.18503937007874016,
+        "pred_density": 2.8436443429390295,
+        "gt_density": 5.09420238081081,
+        "density_ratio": 0.5582118907663864,
+        "gt_error_median": 58.79555000000255
+      },
+      "1.2x": {
+        "n_pred": 424,
+        "n_gt": 398,
+        "event_matched_rate": 0.6432160804020101,
+        "event_close_rate": 0.6633165829145728,
+        "event_far_rate": 0.2562814070351759,
+        "hallucination_rate": 0.12028301886792453,
+        "pred_density": 4.748465708014156,
+        "gt_density": 5.09420238081081,
+        "density_ratio": 0.9321313432503195,
+        "gt_error_median": 15.673349999993661
+      }
+    }
+  },
+  {
+    "song": {
+      "chart_idx": 6855,
+      "beatmapset_id": "2289660",
+      "artist": "hxvvxn, damnenby",
+      "title": "v polnoy temnote",
+      "difficulty": "muzukashii",
+      "density_mean": 5.223,
+      "density_peak": 8,
+      "density_std": 1.382,
+      "duration_s": 95.92,
+      "total_events": 501,
+      "event_file": "2289660 hxvvxn, damnenby - v polnoy temnote [muzukashii].npy",
+      "audio_path": "C:\\Users\\User\\repos\\BeatDetector\\osu\\taiko\\audio\\2289660 hxvvxn, damnenby - v polnoy temnote.ogg"
+    },
+    "scales": {
+      "0.8x": {
+        "n_pred": 382,
+        "n_gt": 501,
+        "event_matched_rate": 0.6047904191616766,
+        "event_close_rate": 0.6586826347305389,
+        "event_far_rate": 0.2834331337325349,
+        "hallucination_rate": 0.13089005235602094,
+        "pred_density": 3.936115404430706,
+        "gt_density": 5.222682663724902,
+        "density_ratio": 0.7536577766383769,
+        "gt_error_median": 20.82759999999689
+      },
+      "1.0x": {
+        "n_pred": 449,
+        "n_gt": 501,
+        "event_matched_rate": 0.5708582834331337,
+        "event_close_rate": 0.7145708582834331,
+        "event_far_rate": 0.22554890219560877,
+        "hallucination_rate": 0.19821826280623608,
+        "pred_density": 4.686945447712896,
+        "gt_density": 5.222682663724902,
+        "density_ratio": 0.8974210668143658,
+        "gt_error_median": 20.873299999992014
+      },
+      "1.2x": {
+        "n_pred": 427,
+        "n_gt": 501,
+        "event_matched_rate": 0.5968063872255489,
+        "event_close_rate": 0.6786427145708582,
+        "event_far_rate": 0.27345309381237526,
+        "hallucination_rate": 0.1990632318501171,
+        "pred_density": 4.44990985545609,
+        "gt_density": 5.222682663724902,
+        "density_ratio": 0.8520352742018489,
+        "gt_error_median": 20.731299999999464
+      }
+    }
+  },
+  {
+    "song": {
+      "chart_idx": 2611,
+      "beatmapset_id": "2114635",
+      "artist": "Yorushika",
+      "title": "Haru (TV Size)",
+      "difficulty": "iRedi's Oni",
+      "density_mean": 5.247,
+      "density_peak": 9,
+      "density_std": 1.837,
+      "duration_s": 88.23,
+      "total_events": 463,
+      "event_file": "2114635 Yorushika - Haru (TV Size) [iRedi's Oni].npy",
+      "audio_path": "C:\\Users\\User\\repos\\BeatDetector\\osu\\taiko\\audio\\2114635 Yorushika - Haru (TV Size).mp3"
+    },
+    "scales": {
+      "0.8x": {
+        "n_pred": 275,
+        "n_gt": 463,
+        "event_matched_rate": 0.5766738660907127,
+        "event_close_rate": 0.5831533477321814,
+        "event_far_rate": 0.3347732181425486,
+        "hallucination_rate": 0.01818181818181818,
+        "pred_density": 3.1274877743659726,
+        "gt_density": 5.247342683048526,
+        "density_ratio": 0.5960136326657838,
+        "gt_error_median": 9.613800000002811
+      },
+      "1.0x": {
+        "n_pred": 314,
+        "n_gt": 463,
+        "event_matched_rate": 0.6673866090712743,
+        "event_close_rate": 0.6673866090712743,
+        "event_far_rate": 0.2526997840172786,
+        "hallucination_rate": 0.012738853503184714,
+        "pred_density": 3.5587188612099645,
+        "gt_density": 5.247342683048526,
+        "density_ratio": 0.6781944836014543,
+        "gt_error_median": 6.13729999998759
+      },
+      "1.2x": {
+        "n_pred": 357,
+        "n_gt": 463,
+        "event_matched_rate": 0.7278617710583153,
+        "event_close_rate": 0.7278617710583153,
+        "event_far_rate": 0.20302375809935205,
+        "hallucination_rate": 0.022408963585434174,
+        "pred_density": 4.059816910217775,
+        "gt_density": 5.247342683048526,
+        "density_ratio": 0.7736900666565882,
+        "gt_error_median": 6.454499999992549
+      }
+    }
+  },
+  {
+    "song": {
+      "chart_idx": 9649,
+      "beatmapset_id": "2454293",
+      "artist": "t+pazolite feat. Atsumi Tanezaki & Asuka Ito",
+      "title": "FLY AWAY! TO THE COSMIC!!",
+      "difficulty": "KOMASY'S ONI!!",
+      "density_mean": 5.4,
+      "density_peak": 11,
+      "density_std": 1.726,
+      "duration_s": 176.11,
+      "total_events": 951,
+      "event_file": "2454293 t+pazolite feat. Atsumi Tanezaki & Asuka Ito - FLY AWAY! TO THE COSMIC!! [KOMASY'S ONI!!].npy",
+      "audio_path": "C:\\Users\\User\\repos\\BeatDetector\\osu\\taiko\\audio\\2454293 t+pazolite feat. Atsumi Tanezaki & Asuka Ito - FLY AWAY! TO THE COSMIC!!.ogg"
+    },
+    "scales": {
+      "0.8x": {
+        "n_pred": 605,
+        "n_gt": 951,
+        "event_matched_rate": 0.5909568874868559,
+        "event_close_rate": 0.5909568874868559,
+        "event_far_rate": 0.28601472134595163,
+        "hallucination_rate": 0.06942148760330578,
+        "pred_density": 3.4185039948468168,
+        "gt_density": 5.400153697232521,
+        "density_ratio": 0.6330382775213855,
+        "gt_error_median": 9.360700000004726
+      },
+      "1.0x": {
+        "n_pred": 732,
+        "n_gt": 951,
+        "event_matched_rate": 0.7034700315457413,
+        "event_close_rate": 0.7034700315457413,
+        "event_far_rate": 0.1871713985278654,
+        "hallucination_rate": 0.07377049180327869,
+        "pred_density": 4.136224169788611,
+        "gt_density": 5.400153697232521,
+        "density_ratio": 0.7659456381599563,
+        "gt_error_median": 8.742500000007567
+      },
+      "1.2x": {
+        "n_pred": 837,
+        "n_gt": 951,
+        "event_matched_rate": 0.7718191377497371,
+        "event_close_rate": 0.7718191377497371,
+        "event_far_rate": 0.13564668769716087,
+        "hallucination_rate": 0.08602150537634409,
+        "pred_density": 4.7299359169972535,
+        "gt_density": 5.400153697232521,
+        "density_ratio": 0.8758891287522536,
+        "gt_error_median": 8.003900000010617
+      }
+    }
+  },
+  {
+    "song": {
+      "chart_idx": 7855,
+      "beatmapset_id": "2332335",
+      "artist": "void (Mournfinale) x Kenji Mizuno",
+      "title": "Aether Crest: Celestial",
+      "difficulty": "Oni",
+      "density_mean": 5.598,
+      "density_peak": 11,
+      "density_std": 2.488,
+      "duration_s": 154.17,
+      "total_events": 863,
+      "event_file": "2332335 void (Mournfinale) x Kenji Mizuno - Aether Crest_ Celestial [Oni].npy",
+      "audio_path": "C:\\Users\\User\\repos\\BeatDetector\\osu\\taiko\\audio\\2332335 void (Mournfinale) x Kenji Mizuno - Aether Crest_ Celestial.ogg"
+    },
+    "scales": {
+      "0.8x": {
+        "n_pred": 630,
+        "n_gt": 863,
+        "event_matched_rate": 0.6095017381228274,
+        "event_close_rate": 0.6152954808806489,
+        "event_far_rate": 0.1645422943221321,
+        "hallucination_rate": 0.09682539682539683,
+        "pred_density": 3.969879328271212,
+        "gt_density": 5.597688311177358,
+        "density_ratio": 0.7091997816927805,
+        "gt_error_median": 11.240699999994831
+      },
+      "1.0x": {
+        "n_pred": 778,
+        "n_gt": 863,
+        "event_matched_rate": 0.6697566628041715,
+        "event_close_rate": 0.6906141367323291,
+        "event_far_rate": 0.14484356894553882,
+        "hallucination_rate": 0.12982005141388175,
+        "pred_density": 4.903443755357233,
+        "gt_density": 5.597688311177358,
+        "density_ratio": 0.8759765608181737,
+        "gt_error_median": 10.646699999997509
+      },
+      "1.2x": {
+        "n_pred": 936,
+        "n_gt": 863,
+        "event_matched_rate": 0.7311703360370799,
+        "event_close_rate": 0.761297798377752,
+        "event_far_rate": 0.07647740440324449,
+        "hallucination_rate": 0.15491452991452992,
+        "pred_density": 5.899816576215419,
+        "gt_density": 5.597688311177358,
+        "density_ratio": 1.0539737563513096,
+        "gt_error_median": 10.474999999998545
+      }
+    }
+  },
+  {
+    "song": {
+      "chart_idx": 5811,
+      "beatmapset_id": "2233814",
+      "artist": "monoqlom",
+      "title": "tatari",
+      "difficulty": "ura oni",
+      "density_mean": 5.666,
+      "density_peak": 11,
+      "density_std": 2.694,
+      "duration_s": 183.72,
+      "total_events": 1041,
+      "event_file": "2233814 monoqlom - tatari [ura oni].npy",
+      "audio_path": "C:\\Users\\User\\repos\\BeatDetector\\osu\\taiko\\audio\\2233814 monoqlom - tatari.ogg"
+    },
+    "scales": {
+      "0.8x": {
+        "n_pred": 268,
+        "n_gt": 1041,
+        "event_matched_rate": 0.1777137367915466,
+        "event_close_rate": 0.21229586935638808,
+        "event_far_rate": 0.681075888568684,
+        "hallucination_rate": 0.1455223880597015,
+        "pred_density": 1.4117969330292,
+        "gt_density": 5.666112680869257,
+        "density_ratio": 0.24916499415832505,
+        "gt_error_median": 195.7416000000012
+      },
+      "1.0x": {
+        "n_pred": 440,
+        "n_gt": 1041,
+        "event_matched_rate": 0.3025936599423631,
+        "event_close_rate": 0.31412103746397696,
+        "event_far_rate": 0.5091258405379443,
+        "hallucination_rate": 0.21818181818181817,
+        "pred_density": 2.3041957309537278,
+        "gt_density": 5.666112680869257,
+        "density_ratio": 0.40666253227428467,
+        "gt_error_median": 100.90699999999924
+      },
+      "1.2x": {
+        "n_pred": 981,
+        "n_gt": 1041,
+        "event_matched_rate": 0.5667627281460135,
+        "event_close_rate": 0.6705091258405379,
+        "event_far_rate": 0.19116234390009607,
+        "hallucination_rate": 0.2089704383282365,
+        "pred_density": 5.158460980265337,
+        "gt_density": 5.666112680869257,
+        "density_ratio": 0.9104056468347468,
+        "gt_error_median": 23.941500000000815
+      }
+    }
+  },
+  {
+    "song": {
+      "chart_idx": 17,
+      "beatmapset_id": "1056168",
+      "artist": "Acrnym",
+      "title": "Knife",
+      "difficulty": "Yuemiao's Oni",
+      "density_mean": 5.922,
+      "density_peak": 10,
+      "density_std": 2.412,
+      "duration_s": 245.7,
+      "total_events": 1455,
+      "event_file": "1056168 Acrnym - Knife [Yuemiao's Oni].npy",
+      "audio_path": "C:\\Users\\User\\repos\\BeatDetector\\osu\\taiko\\audio\\1056168 Acrnym - Knife.mp3"
+    },
+    "scales": {
+      "0.8x": {
+        "n_pred": 1048,
+        "n_gt": 1455,
+        "event_matched_rate": 0.5869415807560138,
+        "event_close_rate": 0.613745704467354,
+        "event_far_rate": 0.15189003436426116,
+        "hallucination_rate": 0.05534351145038168,
+        "pred_density": 3.7357592003764277,
+        "gt_density": 5.921772713357284,
+        "density_ratio": 0.6308515002526127,
+        "gt_error_median": 17.516499999997905
+      },
+      "1.0x": {
+        "n_pred": 1355,
+        "n_gt": 1455,
+        "event_matched_rate": 0.7505154639175258,
+        "event_close_rate": 0.7608247422680412,
+        "event_far_rate": 0.13195876288659794,
+        "hallucination_rate": 0.061254612546125464,
+        "pred_density": 4.828989618563278,
+        "gt_density": 5.921772713357284,
+        "density_ratio": 0.8154635195084236,
+        "gt_error_median": 12.110399999975925
+      },
+      "1.2x": {
+        "n_pred": 1553,
+        "n_gt": 1455,
+        "event_matched_rate": 0.822680412371134,
+        "event_close_rate": 0.8268041237113402,
+        "event_far_rate": 0.1134020618556701,
+        "hallucination_rate": 0.049581455247907275,
+        "pred_density": 5.554264051072048,
+        "gt_density": 5.921772713357284,
+        "density_ratio": 0.9379394177935476,
+        "gt_error_median": 11.621999999973923
+      }
+    }
+  },
+  {
+    "song": {
+      "chart_idx": 1486,
+      "beatmapset_id": "2028307",
+      "artist": "Masayoshi ga Megane o Wasureta",
+      "title": "Megane-Go-Round (TV Size)",
+      "difficulty": "Inner Oni-Go-Round",
+      "density_mean": 6.021,
+      "density_peak": 9,
+      "density_std": 1.46,
+      "duration_s": 88.03,
+      "total_events": 530,
+      "event_file": "2028307 Masayoshi ga Megane o Wasureta - Megane-Go-Round (TV Size) [Inner Oni-Go-Round].npy",
+      "audio_path": "C:\\Users\\User\\repos\\BeatDetector\\osu\\taiko\\audio\\2028307 Masayoshi ga Megane o Wasureta - Megane-Go-Round (TV Size).mp3"
+    },
+    "scales": {
+      "0.8x": {
+        "n_pred": 363,
+        "n_gt": 530,
+        "event_matched_rate": 0.6528301886792452,
+        "event_close_rate": 0.6566037735849056,
+        "event_far_rate": 0.21509433962264152,
+        "hallucination_rate": 0.02203856749311295,
+        "pred_density": 4.114713216957606,
+        "gt_density": 6.020633720500295,
+        "density_ratio": 0.6834352342257562,
+        "gt_error_median": 10.770549999993818
+      },
+      "1.0x": {
+        "n_pred": 404,
+        "n_gt": 530,
+        "event_matched_rate": 0.7150943396226415,
+        "event_close_rate": 0.7245283018867924,
+        "event_far_rate": 0.13773584905660377,
+        "hallucination_rate": 0.0297029702970297,
+        "pred_density": 4.5901266829517695,
+        "gt_density": 6.020633720500295,
+        "density_ratio": 0.7623992582910931,
+        "gt_error_median": 10.732399999998051
+      },
+      "1.2x": {
+        "n_pred": 436,
+        "n_gt": 530,
+        "event_matched_rate": 0.7679245283018868,
+        "event_close_rate": 0.7754716981132076,
+        "event_far_rate": 0.08490566037735849,
+        "hallucination_rate": 0.022935779816513763,
+        "pred_density": 4.9531383129792665,
+        "gt_density": 6.020633720500295,
+        "density_ratio": 0.8226938463493967,
+        "gt_error_median": 10.554949999999735
+      }
+    }
+  },
+  {
+    "song": {
+      "chart_idx": 3105,
+      "beatmapset_id": "2133005",
+      "artist": "Whispered",
+      "title": "Exile of the Floating World",
+      "difficulty": "Oni",
+      "density_mean": 6.254,
+      "density_peak": 11,
+      "density_std": 2.268,
+      "duration_s": 247.99,
+      "total_events": 1551,
+      "event_file": "2133005 Whispered - Exile of the Floating World [Oni].npy",
+      "audio_path": "C:\\Users\\User\\repos\\BeatDetector\\osu\\taiko\\audio\\2133005 Whispered - Exile of the Floating World.mp3"
+    },
+    "scales": {
+      "0.8x": {
+        "n_pred": 934,
+        "n_gt": 1551,
+        "event_matched_rate": 0.5286911669890393,
+        "event_close_rate": 0.5486782720825274,
+        "event_far_rate": 0.32688588007736946,
+        "hallucination_rate": 0.07601713062098502,
+        "pred_density": 3.7754458583278088,
+        "gt_density": 6.254202087391602,
+        "density_ratio": 0.6036654725211172,
+        "gt_error_median": 16.97249999997439
+      },
+      "1.0x": {
+        "n_pred": 1294,
+        "n_gt": 1551,
+        "event_matched_rate": 0.6679561573178594,
+        "event_close_rate": 0.7040618955512572,
+        "event_far_rate": 0.19342359767891681,
+        "hallucination_rate": 0.08887171561051005,
+        "pred_density": 5.229064547023191,
+        "gt_density": 6.254202087391602,
+        "density_ratio": 0.8360881970163587,
+        "gt_error_median": 9.521200000001045
+      },
+      "1.2x": {
+        "n_pred": 2097,
+        "n_gt": 1551,
+        "event_matched_rate": 0.8343004513217279,
+        "event_close_rate": 0.9090909090909091,
+        "event_far_rate": 0.04642166344294004,
+        "hallucination_rate": 0.09203624225083452,
+        "pred_density": 8.482735186563541,
+        "gt_density": 6.254202087391602,
+        "density_ratio": 1.356325725973044,
+        "gt_error_median": 7.197199999995064
+      }
+    }
+  },
+  {
+    "song": {
+      "chart_idx": 1421,
+      "beatmapset_id": "2020423",
+      "artist": "Mrs. GREEN APPLE",
+      "title": "Ao to Natsu",
+      "difficulty": "Love in the Summer",
+      "density_mean": 6.38,
+      "density_peak": 11,
+      "density_std": 2.604,
+      "duration_s": 262.86,
+      "total_events": 1677,
+      "event_file": "2020423 Mrs. GREEN APPLE - Ao to Natsu [Love in the Summer].npy",
+      "audio_path": "C:\\Users\\User\\repos\\BeatDetector\\osu\\taiko\\audio\\2020423 Mrs. GREEN APPLE - Ao to Natsu.ogg"
+    },
+    "scales": {
+      "0.8x": {
+        "n_pred": 823,
+        "n_gt": 1677,
+        "event_matched_rate": 0.48300536672629696,
+        "event_close_rate": 0.4836016696481813,
+        "event_far_rate": 0.30292188431723316,
+        "hallucination_rate": 0.009720534629404616,
+        "pred_density": 3.0907895972209185,
+        "gt_density": 6.3797107904310115,
+        "density_ratio": 0.4844717415492914,
+        "gt_error_median": 66.83899999997811
+      },
+      "1.0x": {
+        "n_pred": 909,
+        "n_gt": 1677,
+        "event_matched_rate": 0.528324388789505,
+        "event_close_rate": 0.5289206917113893,
+        "event_far_rate": 0.25402504472271914,
+        "hallucination_rate": 0.0121012101210121,
+        "pred_density": 3.4137639658248053,
+        "gt_density": 6.3797107904310115,
+        "density_ratio": 0.5350969782117933,
+        "gt_error_median": 14.64310000000114
+      },
+      "1.2x": {
+        "n_pred": 939,
+        "n_gt": 1677,
+        "event_matched_rate": 0.5408467501490757,
+        "event_close_rate": 0.5468097793679189,
+        "event_far_rate": 0.23673225998807393,
+        "hallucination_rate": 0.01703940362087327,
+        "pred_density": 3.5256482461871186,
+        "gt_density": 6.3797107904310115,
+        "density_ratio": 0.5526344942587792,
+        "gt_error_median": 14.732100000001083
+      }
+    }
+  },
+  {
+    "song": {
+      "chart_idx": 4319,
+      "beatmapset_id": "2178567",
+      "artist": "cexiria",
+      "title": "Guitar to Hakai to Hayai Amen (Cut Ver.)",
+      "difficulty": "Oni",
+      "density_mean": 6.709,
+      "density_peak": 14,
+      "density_std": 2.335,
+      "duration_s": 106.27,
+      "total_events": 713,
+      "event_file": "2178567 cexiria - Guitar to Hakai to Hayai Amen (Cut Ver.) [Oni].npy",
+      "audio_path": "C:\\Users\\User\\repos\\BeatDetector\\osu\\taiko\\audio\\2178567 cexiria - Guitar to Hakai to Hayai Amen (Cut Ver.).ogg"
+    },
+    "scales": {
+      "0.8x": {
+        "n_pred": 686,
+        "n_gt": 713,
+        "event_matched_rate": 0.7152875175315568,
+        "event_close_rate": 0.8120617110799438,
+        "event_far_rate": 0.11921458625525946,
+        "hallucination_rate": 0.15014577259475217,
+        "pred_density": 6.206235185553766,
+        "gt_density": 6.709370293566117,
+        "density_ratio": 0.925010085000849,
+        "gt_error_median": 15.684899999992922
+      },
+      "1.0x": {
+        "n_pred": 806,
+        "n_gt": 713,
+        "event_matched_rate": 0.8387096774193549,
+        "event_close_rate": 0.8807854137447405,
+        "event_far_rate": 0.06451612903225806,
+        "hallucination_rate": 0.17493796526054592,
+        "pred_density": 7.378790098139739,
+        "gt_density": 6.709370293566117,
+        "density_ratio": 1.0997738648015234,
+        "gt_error_median": 10.684899999992922
+      },
+      "1.2x": {
+        "n_pred": 892,
+        "n_gt": 713,
+        "event_matched_rate": 0.8695652173913043,
+        "event_close_rate": 0.8920056100981767,
+        "event_far_rate": 0.056100981767180924,
+        "hallucination_rate": 0.20964125560538116,
+        "pred_density": 8.069915139233176,
+        "gt_density": 6.709370293566117,
+        "density_ratio": 1.2027827927416288,
+        "gt_error_median": 6.051799999993818
+      }
+    }
+  },
+  {
+    "song": {
+      "chart_idx": 4491,
+      "beatmapset_id": "2184675",
+      "artist": "irucaice x Ichinose LUPO x Twinfield x Capchii",
+      "title": "kiraful chain (Club Edit)",
+      "difficulty": "palette",
+      "density_mean": 6.934,
+      "density_peak": 13,
+      "density_std": 2.611,
+      "duration_s": 295.95,
+      "total_events": 2052,
+      "event_file": "2184675 irucaice x Ichinose LUPO x Twinfield x Capchii - kiraful chain (Club Edit) [palette].npy",
+      "audio_path": "C:\\Users\\User\\repos\\BeatDetector\\osu\\taiko\\audio\\2184675 irucaice x Ichinose LUPO x Twinfield x Capchii - kiraful chain (Club Edit).mp3"
+    },
+    "scales": {
+      "0.8x": {
+        "n_pred": 1319,
+        "n_gt": 2052,
+        "event_matched_rate": 0.5229044834307992,
+        "event_close_rate": 0.5682261208576999,
+        "event_far_rate": 0.24561403508771928,
+        "hallucination_rate": 0.07354056103108415,
+        "pred_density": 4.468550753115112,
+        "gt_density": 6.9334952365291205,
+        "density_ratio": 0.6444874627695065,
+        "gt_error_median": 15.694149999998672
+      },
+      "1.0x": {
+        "n_pred": 1541,
+        "n_gt": 2052,
+        "event_matched_rate": 0.5745614035087719,
+        "event_close_rate": 0.618421052631579,
+        "event_far_rate": 0.20760233918128654,
+        "hallucination_rate": 0.06683971447112265,
+        "pred_density": 5.220649515201203,
+        "gt_density": 6.9334952365291205,
+        "density_ratio": 0.7529607127580056,
+        "gt_error_median": 8.054550000000745
+      },
+      "1.2x": {
+        "n_pred": 1638,
+        "n_gt": 2052,
+        "event_matched_rate": 0.5955165692007798,
+        "event_close_rate": 0.6354775828460039,
+        "event_far_rate": 0.1949317738791423,
+        "hallucination_rate": 0.07264957264957266,
+        "pred_density": 5.526390369640616,
+        "gt_density": 6.9334952365291205,
+        "density_ratio": 0.7970569216698712,
+        "gt_error_median": 7.471099999995204
+      }
+    }
+  },
+  {
+    "song": {
+      "chart_idx": 9999,
+      "beatmapset_id": "614286",
+      "artist": "Yousei Teikoku",
+      "title": "ending note",
+      "difficulty": "Taikosaki",
+      "density_mean": 7.113,
+      "density_peak": 16,
+      "density_std": 4.416,
+      "duration_s": 423.84,
+      "total_events": 3015,
+      "event_file": "614286 Yousei Teikoku - ending note [Taikosaki].npy",
+      "audio_path": "C:\\Users\\User\\repos\\BeatDetector\\osu\\taiko\\audio\\614286 Yousei Teikoku - ending note.mp3"
+    },
+    "scales": {
+      "0.8x": {
+        "n_pred": 2436,
+        "n_gt": 3015,
+        "event_matched_rate": 0.6739635157545605,
+        "event_close_rate": 0.7873963515754561,
+        "event_far_rate": 0.1044776119402985,
+        "hallucination_rate": 0.03366174055829228,
+        "pred_density": 5.72325389068491,
+        "gt_density": 7.113450487389527,
+        "density_ratio": 0.8045678958236783,
+        "gt_error_median": 7.260900000022957
+      },
+      "1.0x": {
+        "n_pred": 2539,
+        "n_gt": 3015,
+        "event_matched_rate": 0.6961857379767827,
+        "event_close_rate": 0.8066334991708126,
+        "event_far_rate": 0.09651741293532339,
+        "hallucination_rate": 0.03269003544702639,
+        "pred_density": 5.964672412861516,
+        "gt_density": 7.113450487389527,
+        "density_ratio": 0.8385062106547977,
+        "gt_error_median": 7.599199999996927
+      },
+      "1.2x": {
+        "n_pred": 3328,
+        "n_gt": 3015,
+        "event_matched_rate": 0.733665008291874,
+        "event_close_rate": 0.8232172470978442,
+        "event_far_rate": 0.09618573797678276,
+        "hallucination_rate": 0.028545673076923076,
+        "pred_density": 7.822508044631545,
+        "gt_density": 7.113450487389527,
+        "density_ratio": 1.0996784272975555,
+        "gt_error_median": 7.509399999980815
+      }
+    }
+  },
+  {
+    "song": {
+      "chart_idx": 3082,
+      "beatmapset_id": "2132552",
+      "artist": "GRANRODEO",
+      "title": "Tetsu no Ori",
+      "difficulty": "Inner Oni",
+      "density_mean": 7.322,
+      "density_peak": 16,
+      "density_std": 3.329,
+      "duration_s": 259.34,
+      "total_events": 1899,
+      "event_file": "2132552 GRANRODEO - Tetsu no Ori [Inner Oni].npy",
+      "audio_path": "C:\\Users\\User\\repos\\BeatDetector\\osu\\taiko\\audio\\2132552 GRANRODEO - Tetsu no Ori.mp3"
+    },
+    "scales": {
+      "0.8x": {
+        "n_pred": 1326,
+        "n_gt": 1899,
+        "event_matched_rate": 0.6192733017377567,
+        "event_close_rate": 0.6224328593996841,
+        "event_far_rate": 0.15534491837809372,
+        "hallucination_rate": 0.08521870286576169,
+        "pred_density": 5.109728136259417,
+        "gt_density": 7.322361640836163,
+        "density_ratio": 0.6978251535355636,
+        "gt_error_median": 7.603499999997439
+      },
+      "1.0x": {
+        "n_pred": 1411,
+        "n_gt": 1899,
+        "event_matched_rate": 0.6482359136387572,
+        "event_close_rate": 0.6545550289626119,
+        "event_far_rate": 0.13428120063191154,
+        "hallucination_rate": 0.0666194188518781,
+        "pred_density": 5.4403985255787415,
+        "gt_density": 7.322361640836163,
+        "density_ratio": 0.7429841344134276,
+        "gt_error_median": 7.333300000027521
+      },
+      "1.2x": {
+        "n_pred": 1605,
+        "n_gt": 1899,
+        "event_matched_rate": 0.6898367561874671,
+        "event_close_rate": 0.6966824644549763,
+        "event_far_rate": 0.11795681937862032,
+        "hallucination_rate": 0.07663551401869159,
+        "pred_density": 6.188405126544209,
+        "gt_density": 7.322361640836163,
+        "density_ratio": 0.8451378708246288,
+        "gt_error_median": 7.467099999979837
+      }
+    }
+  },
+  {
+    "song": {
+      "chart_idx": 6053,
+      "beatmapset_id": "2244924",
+      "artist": "David Wise",
+      "title": "Boss Challenge",
+      "difficulty": "2199's Oni",
+      "density_mean": 7.564,
+      "density_peak": 10,
+      "density_std": 1.498,
+      "duration_s": 72.71,
+      "total_events": 550,
+      "event_file": "2244924 David Wise - Boss Challenge [2199's Oni].npy",
+      "audio_path": "C:\\Users\\User\\repos\\BeatDetector\\osu\\taiko\\audio\\2244924 David Wise - Boss Challenge.mp3"
+    },
+    "scales": {
+      "0.8x": {
+        "n_pred": 454,
+        "n_gt": 550,
+        "event_matched_rate": 0.7290909090909091,
+        "event_close_rate": 0.730909090909091,
+        "event_far_rate": 0.22181818181818183,
+        "hallucination_rate": 0.11674008810572688,
+        "pred_density": 5.861165261622277,
+        "gt_density": 7.564265050334511,
+        "density_ratio": 0.774849271227359,
+        "gt_error_median": 4.023600000004421
+      },
+      "1.0x": {
+        "n_pred": 508,
+        "n_gt": 550,
+        "event_matched_rate": 0.7781818181818182,
+        "event_close_rate": 0.7781818181818182,
+        "event_far_rate": 0.17272727272727273,
+        "hallucination_rate": 0.15748031496062992,
+        "pred_density": 6.4906026805678,
+        "gt_density": 7.564265050334511,
+        "density_ratio": 0.8580612442025375,
+        "gt_error_median": 4.054950000001554
+      },
+      "1.2x": {
+        "n_pred": 526,
+        "n_gt": 550,
+        "event_matched_rate": 0.8072727272727273,
+        "event_close_rate": 0.8090909090909091,
+        "event_far_rate": 0.14363636363636365,
+        "hallucination_rate": 0.155893536121673,
+        "pred_density": 6.7205846653123285,
+        "gt_density": 7.564265050334511,
+        "density_ratio": 0.8884649890758558,
+        "gt_error_median": 4.284800000002008
+      }
+    }
+  },
+  {
+    "song": {
+      "chart_idx": 8376,
+      "beatmapset_id": "2359833",
+      "artist": "DJ SHARPNEL",
+      "title": "Mmmmmmm",
+      "difficulty": "yassu-'s Inner Oni",
+      "density_mean": 7.873,
+      "density_peak": 12,
+      "density_std": 2.32,
+      "duration_s": 261.9,
+      "total_events": 2062,
+      "event_file": "2359833 DJ SHARPNEL - Mmmmmmm [yassu-'s Inner Oni].npy",
+      "audio_path": "C:\\Users\\User\\repos\\BeatDetector\\osu\\taiko\\audio\\2359833 DJ SHARPNEL - Mmmmmmm.ogg"
+    },
+    "scales": {
+      "0.8x": {
+        "n_pred": 1589,
+        "n_gt": 2062,
+        "event_matched_rate": 0.5800193986420951,
+        "event_close_rate": 0.6862269641125122,
+        "event_far_rate": 0.12027158098933075,
+        "hallucination_rate": 0.03838892385147892,
+        "pred_density": 6.11285507647801,
+        "gt_density": 7.873181110981708,
+        "density_ratio": 0.7764148938415311,
+        "gt_error_median": 21.032099999998536
+      },
+      "1.0x": {
+        "n_pred": 2054,
+        "n_gt": 2062,
+        "event_matched_rate": 0.7817652764306499,
+        "event_close_rate": 0.7919495635305529,
+        "event_far_rate": 0.03200775945683802,
+        "hallucination_rate": 0.03261927945472249,
+        "pred_density": 7.901549919407268,
+        "gt_density": 7.873181110981708,
+        "density_ratio": 1.003603220607486,
+        "gt_error_median": 10.971599999999398
+      },
+      "1.2x": {
+        "n_pred": 2313,
+        "n_gt": 2062,
+        "event_matched_rate": 0.8491755577109602,
+        "event_close_rate": 0.8661493695441319,
+        "event_far_rate": 0.025703200775945685,
+        "hallucination_rate": 0.029399048854301772,
+        "pred_density": 8.900638398577744,
+        "gt_density": 7.873181110981708,
+        "density_ratio": 1.130500908478139,
+        "gt_error_median": 7.403949999992619
+      }
+    }
+  },
+  {
+    "song": {
+      "chart_idx": 5848,
+      "beatmapset_id": "2235544",
+      "artist": "Kou!",
+      "title": "sub/zerO",
+      "difficulty": "glacial/Oni",
+      "density_mean": 8.205,
+      "density_peak": 15,
+      "density_std": 3.839,
+      "duration_s": 294.81,
+      "total_events": 2419,
+      "event_file": "2235544 Kou! - sub_zerO [glacial_Oni].npy",
+      "audio_path": "C:\\Users\\User\\repos\\BeatDetector\\osu\\taiko\\audio\\2235544 Kou! - sub_zerO.mp3"
+    },
+    "scales": {
+      "0.8x": {
+        "n_pred": 1868,
+        "n_gt": 2419,
+        "event_matched_rate": 0.6634973129392311,
+        "event_close_rate": 0.7428689541132699,
+        "event_far_rate": 0.05002066969822241,
+        "hallucination_rate": 0.05032119914346895,
+        "pred_density": 6.198052325099126,
+        "gt_density": 8.205084262384188,
+        "density_ratio": 0.7553916726381222,
+        "gt_error_median": 6.475999999995111
+      },
+      "1.0x": {
+        "n_pred": 2073,
+        "n_gt": 2419,
+        "event_matched_rate": 0.7089706490285241,
+        "event_close_rate": 0.7875155022736668,
+        "event_far_rate": 0.047540305911533694,
+        "hallucination_rate": 0.052580800771828265,
+        "pred_density": 6.890774738479642,
+        "gt_density": 8.205084262384188,
+        "density_ratio": 0.839817668914147,
+        "gt_error_median": 6.8021999999764375
+      },
+      "1.2x": {
+        "n_pred": 3581,
+        "n_gt": 2419,
+        "event_matched_rate": 0.8830095080611823,
+        "event_close_rate": 0.9107069036792063,
+        "event_far_rate": 0.027697395618023975,
+        "hallucination_rate": 0.0826584752862329,
+        "pred_density": 11.899342396017826,
+        "gt_density": 8.205084262384188,
+        "density_ratio": 1.4502401213074416,
+        "gt_error_median": 7.205099999991944
+      }
+    }
+  },
+  {
+    "song": {
+      "chart_idx": 3647,
+      "beatmapset_id": "2155531",
+      "artist": "Cansol",
+      "title": "Train of Thought",
+      "difficulty": "Last Stop",
+      "density_mean": 8.594,
+      "density_peak": 15,
+      "density_std": 2.861,
+      "duration_s": 322.66,
+      "total_events": 2773,
+      "event_file": "2155531 Cansol - Train of Thought [Last Stop].npy",
+      "audio_path": "C:\\Users\\User\\repos\\BeatDetector\\osu\\taiko\\audio\\2155531 Cansol - Train of Thought.mp3"
+    },
+    "scales": {
+      "0.8x": {
+        "n_pred": 1831,
+        "n_gt": 2773,
+        "event_matched_rate": 0.6047601875225388,
+        "event_close_rate": 0.6292823656689506,
+        "event_far_rate": 0.16300036062026685,
+        "hallucination_rate": 0.0212998361551065,
+        "pred_density": 5.702273435066957,
+        "gt_density": 8.593943028622547,
+        "density_ratio": 0.6635223687282144,
+        "gt_error_median": 10.812399999998888
+      },
+      "1.0x": {
+        "n_pred": 2324,
+        "n_gt": 2773,
+        "event_matched_rate": 0.7439596105301118,
+        "event_close_rate": 0.7767760548142806,
+        "event_far_rate": 0.07573025604038947,
+        "hallucination_rate": 0.015920826161790018,
+        "pred_density": 7.237620678916225,
+        "gt_density": 8.593943028622547,
+        "density_ratio": 0.842176944251431,
+        "gt_error_median": 7.585400000039954
+      },
+      "1.2x": {
+        "n_pred": 2529,
+        "n_gt": 2773,
+        "event_matched_rate": 0.7684817886765236,
+        "event_close_rate": 0.7973314100252434,
+        "event_far_rate": 0.060944825099170576,
+        "hallucination_rate": 0.03558718861209965,
+        "pred_density": 7.875805798635981,
+        "gt_density": 8.593943028622547,
+        "density_ratio": 0.9164368174661183,
+        "gt_error_median": 7.090499999991152
+      }
+    }
+  },
+  {
+    "song": {
+      "chart_idx": 9378,
+      "beatmapset_id": "2430393",
+      "artist": "Camellia",
+      "title": "FM Synthesis Experiment",
+      "difficulty": "Oni",
+      "density_mean": 9.07,
+      "density_peak": 24,
+      "density_std": 5.861,
+      "duration_s": 306.6,
+      "total_events": 2781,
+      "event_file": "2430393 Camellia - FM Synthesis Experiment [Oni].npy",
+      "audio_path": "C:\\Users\\User\\repos\\BeatDetector\\osu\\taiko\\audio\\2430393 Camellia - FM Synthesis Experiment.mp3"
+    },
+    "scales": {
+      "0.8x": {
+        "n_pred": 2451,
+        "n_gt": 2781,
+        "event_matched_rate": 0.539014742898238,
+        "event_close_rate": 0.6896799712333693,
+        "event_far_rate": 0.07047824523552679,
+        "hallucination_rate": 0.2839657282741738,
+        "pred_density": 7.240746703850211,
+        "gt_density": 9.07028732967747,
+        "density_ratio": 0.7982929802189281,
+        "gt_error_median": 17.772499999962747
+      },
+      "1.0x": {
+        "n_pred": 2588,
+        "n_gt": 2781,
+        "event_matched_rate": 0.5915138439410285,
+        "event_close_rate": 0.7274361740381158,
+        "event_far_rate": 0.044947860481841066,
+        "hallucination_rate": 0.2268160741885626,
+        "pred_density": 7.662200010658393,
+        "gt_density": 9.07028732967747,
+        "density_ratio": 0.8447582454844739,
+        "gt_error_median": 15.938999999998487
+      },
+      "1.2x": {
+        "n_pred": 4580,
+        "n_gt": 2781,
+        "event_matched_rate": 0.6267529665587918,
+        "event_close_rate": 0.7263574253865516,
+        "event_far_rate": 0.04710535778496944,
+        "hallucination_rate": 0.4539301310043668,
+        "pred_density": 13.332207761207933,
+        "gt_density": 9.07028732967747,
+        "density_ratio": 1.4698771137696707,
+        "gt_error_median": 12.217299999989336
+      }
+    }
+  }
+]

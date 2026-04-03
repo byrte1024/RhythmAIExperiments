@@ -99,7 +99,7 @@ def select_songs(manifest, n=10):
 
 def run_inference(checkpoint, song, output_dir, hop_ms=75):
     """Run AR inference on a single song, return path to output CSV."""
-    safe_name = f"{song['beatmapset_id']}_{song['artist'][:20]}_{song['title'][:20]}".replace(" ", "_").replace("/", "_")
+    safe_name = f"{song['beatmapset_id']}_{song['artist'][:20]}_{song['title'][:20]}".replace(" ", "_").replace("/", "_").replace("*", "").replace("?", "").replace(":", "").replace("<", "").replace(">", "").replace("|", "").replace('"', "")
     output_csv = os.path.join(output_dir, f"{safe_name}_predicted.csv")
 
     cmd = [

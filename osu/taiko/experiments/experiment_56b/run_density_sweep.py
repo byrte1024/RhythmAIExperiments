@@ -87,7 +87,7 @@ def select_songs(manifest, n=50):
 
 
 def run_inference(checkpoint, song, output_dir, scale, hop_ms=75):
-    safe_name = f"{song['beatmapset_id']}_{song['artist'][:20]}_{song['title'][:20]}".replace(" ", "_").replace("/", "_")
+    safe_name = f"{song['beatmapset_id']}_{song['artist'][:20]}_{song['title'][:20]}".replace(" ", "_").replace("/", "_").replace("*", "").replace("?", "").replace(":", "").replace("<", "").replace(">", "").replace("|", "").replace('"', "")
     scale_tag = f"{scale:.1f}x"
     output_csv = os.path.join(output_dir, f"{safe_name}_{scale_tag}_predicted.csv")
 
@@ -310,32 +310,35 @@ def main():
     results = []
     for i, song in enumerate(songs):
         print(f"[{i+1}/{len(songs)}] {song['artist']} - {song['title']} (d={song['density_mean']:.1f})")
-        gt_ms = load_gt_events(song["event_file"])
+        try:
+            gt_ms = load_gt_events(song["event_file"])
 
-        # Save GT CSV once
-        safe_name = f"{song['beatmapset_id']}_{song['artist'][:20]}_{song['title'][:20]}".replace(" ", "_").replace("/", "_")
-        gt_csv = os.path.join(csv_dir, f"{safe_name}_gt.csv")
-        with open(gt_csv, "w", encoding="utf-8") as f:
-            f.write("time_ms,type\n")
-            for t in gt_ms:
-                f.write(f"{int(t)},gt\n")
+            # Save GT CSV once
+            safe_name = f"{song['beatmapset_id']}_{song['artist'][:20]}_{song['title'][:20]}".replace(" ", "_").replace("/", "_").replace("*", "").replace("?", "").replace(":", "").replace("<", "").replace(">", "").replace("|", "").replace('"', "")
+            gt_csv = os.path.join(csv_dir, f"{safe_name}_gt.csv")
+            with open(gt_csv, "w", encoding="utf-8") as f:
+                f.write("time_ms,type\n")
+                for t in gt_ms:
+                    f.write(f"{int(t)},gt\n")
 
-        song_result = {"song": song, "scales": {}}
-        for scale, name in zip(SCALES, SCALE_NAMES):
-            csv_path = run_inference(args.checkpoint, song, csv_dir, scale, hop_ms=args.hop_ms)
-            if csv_path is None:
-                continue
-            pred_ms = load_predicted_events(csv_path)
-            metrics = compute_ar_metrics(pred_ms, gt_ms)
-            song_result["scales"][name] = metrics
-            print(f"    {name}: {metrics['n_pred']:>5d} pred  match={metrics['event_matched_rate']:.1%}  close={metrics['event_close_rate']:.1%}  hall={metrics['hallucination_rate']:.1%}  d_ratio={metrics['density_ratio']:.2f}")
+            song_result = {"song": song, "scales": {}}
+            for scale, name in zip(SCALES, SCALE_NAMES):
+                csv_path = run_inference(args.checkpoint, song, csv_dir, scale, hop_ms=args.hop_ms)
+                if csv_path is None:
+                    continue
+                pred_ms = load_predicted_events(csv_path)
+                metrics = compute_ar_metrics(pred_ms, gt_ms)
+                song_result["scales"][name] = metrics
+                print(f"    {name}: {metrics['n_pred']:>5d} pred  match={metrics['event_matched_rate']:.1%}  close={metrics['event_close_rate']:.1%}  hall={metrics['hallucination_rate']:.1%}  d_ratio={metrics['density_ratio']:.2f}")
 
-        if len(song_result["scales"]) == 3:
-            n_low = song_result["scales"]["0.8x"]["n_pred"]
-            n_high = song_result["scales"]["1.2x"]["n_pred"]
-            sens = n_high / max(n_low, 1)
-            print(f"    Sensitivity: {n_low} -> {n_high} ({sens:.2f}x)")
-            results.append(song_result)
+            if len(song_result["scales"]) == 3:
+                n_low = song_result["scales"]["0.8x"]["n_pred"]
+                n_high = song_result["scales"]["1.2x"]["n_pred"]
+                sens = n_high / max(n_low, 1)
+                print(f"    Sensitivity: {n_low} -> {n_high} ({sens:.2f}x)")
+                results.append(song_result)
+        except Exception as e:
+            print(f"    SKIPPED ({e})")
 
     # Summary
     print(f"\n{'='*80}")

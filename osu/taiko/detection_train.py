@@ -133,11 +133,14 @@ class OnsetDataset(Dataset):
     """Yields (mel_window, event_offsets, event_mask, conditioning, target) samples."""
 
     def __init__(self, manifest, ds_dir, chart_indices, augment=False, subsample=1,
-                 multi_target=False, ratio_head=False):
+                 multi_target=False, ratio_head=False,
+                 density_jitter_rate=0.10, density_jitter_pct=0.02):
         self.mel_dir = os.path.join(ds_dir, "mels")
         self.charts = [manifest["charts"][i] for i in chart_indices]
         self.augment = augment
         self.multi_target = multi_target
+        self._density_jitter_rate = density_jitter_rate
+        self._density_jitter_pct = density_jitter_pct
         self._ratio_head = ratio_head
         # capture current window config (for Windows spawn workers)
         self._a_bins = A_BINS
@@ -403,9 +406,11 @@ class OnsetDataset(Dataset):
             t = rng.integers(0, mel_window.shape[1] - n)
             mel_window[:, t:t + n] = 0
 
-        # conditioning jitter ±2% (10%) — tighter jitter improves AR density adherence (exp 45)
-        if rng.random() < 0.10:
-            cond_jitter = rng.uniform(0.98, 1.02, size=3).astype(np.float32)
+        # conditioning jitter — rate and magnitude configurable (exp 44: 30%/±10%, exp 45: 10%/±2%)
+        if rng.random() < self._density_jitter_rate:
+            lo = 1.0 - self._density_jitter_pct
+            hi = 1.0 + self._density_jitter_pct
+            cond_jitter = rng.uniform(lo, hi, size=3).astype(np.float32)
 
         return mel_window, past_bins, cond_jitter
 
@@ -1217,6 +1222,10 @@ def compute_metrics(targets, preds):
         m["within_10pct"] = (pct_err <= 0.10).mean().item()
         m["above_20pct"] = (pct_err > 0.20).mean().item()
 
+        # ── last_repeat: % of predictions within 5% of target (i.e. would repeat the previous gap) ──
+        # This requires prev_gap data — computed externally and passed via extra dict
+        # (set below after compute_metrics returns, if prev_gap data is available)
+
         # ── model score: continuous quality metric [-1, +1] ──
         # Continuous function of log-ratio error:
         #   0% error → +1.0 (max reward)
@@ -1539,19 +1548,45 @@ def run_benchmarks(model, val_loader, device, amp_enabled=False, multi_target=Fa
 
     stop = N_CLASSES - 1
 
+    def _compute_prev_gaps(evt_off, evt_mask):
+        """Compute prev_gap (last gap between context events) per sample."""
+        B = evt_off.shape[0]
+        prev_gaps = np.full(B, np.nan, dtype=np.float64)
+        eo = evt_off.numpy() if isinstance(evt_off, torch.Tensor) else evt_off
+        em = evt_mask.numpy() if isinstance(evt_mask, torch.Tensor) else evt_mask
+        for b in range(B):
+            valid = ~em[b]
+            if valid.sum() >= 2:
+                offsets = eo[b][valid]
+                prev_gaps[b] = abs(int(offsets[-1]) - int(offsets[-2]))
+        return prev_gaps
+
+    def _compute_last_repeat(preds, prev_gaps):
+        """Compute % of non-stop predictions within 5% of prev_gap."""
+        ns = (preds < stop) & ~np.isnan(prev_gaps) & (prev_gaps > 0)
+        if ns.sum() == 0:
+            return 0.0
+        pg = prev_gaps[ns]
+        pr = preds[ns].astype(np.float64)
+        ratio_to_gap = (pr + 1) / (pg + 1)
+        return float((np.abs(ratio_to_gap - 1.0) <= 0.05).mean())
+
     def run_corrupted(batches, corrupt_fn, name):
         """Run model on corrupted batches, return full arrays + summary stats."""
         all_preds = []
         all_targets = []
+        all_prev_gaps = []
         for batch in batches:
             if multi_target:
                 mel, evt_off, evt_mask, cond, targets_padded, n_tgt, _ratio_target = batch
-                # nearest target for benchmark metrics
                 target = targets_padded[:, 0].clone()
                 target[n_tgt == 0] = stop
                 target = target.clamp(0, stop)
             else:
                 mel, evt_off, evt_mask, cond, target, _ratio_target = batch
+
+            # compute prev_gaps from ORIGINAL events before corruption
+            all_prev_gaps.append(_compute_prev_gaps(evt_off, evt_mask))
 
             mel, evt_off, evt_mask, cond = corrupt_fn(
                 mel.clone(), evt_off.clone(), evt_mask.clone(), cond.clone(), target
@@ -1563,12 +1598,10 @@ def run_benchmarks(model, val_loader, device, amp_enabled=False, multi_target=Fa
             with torch.autocast("cuda", enabled=amp_enabled):
                 output = model(mel, evt_off, evt_mask, cond)
                 if isinstance(output, tuple) and len(output) == 2 and output[1].dim() == 1:
-                    # stop token mode: output[1] is scalar stop_logit per sample
                     onset_logits, stop_logit = output
                     logits = F.pad(onset_logits, (0, 1), value=-10.0)
                     logits[:, N_CLASSES - 1] = stop_logit * 5.0
                 elif isinstance(output, tuple):
-                    # ratio head or other auxiliary: take onset logits only
                     logits = output[0]
                 else:
                     logits = output
@@ -1577,6 +1610,7 @@ def run_benchmarks(model, val_loader, device, amp_enabled=False, multi_target=Fa
 
         preds = np.concatenate(all_preds)
         targets = np.concatenate(all_targets)
+        prev_gaps = np.concatenate(all_prev_gaps)
         non_stop_preds = preds[preds != stop]
         return {
             "preds": preds,
@@ -1587,10 +1621,11 @@ def run_benchmarks(model, val_loader, device, amp_enabled=False, multi_target=Fa
             "pred_std": float(non_stop_preds.std()) if len(non_stop_preds) > 0 else 0.0,
             "unique_preds": int(len(np.unique(preds))),
             "accuracy": float((preds == targets).mean()),
+            "last_repeat": _compute_last_repeat(preds, prev_gaps),
         }
 
     results = {}
-    bench_bar = tqdm(total=12, desc="Benchmarks", leave=False)
+    bench_bar = tqdm(total=20, desc="Benchmarks", leave=False)
 
     # 1) No events - all past context deleted
     def no_events(mel, evt_off, evt_mask, cond, target):
@@ -1737,7 +1772,115 @@ def run_benchmarks(model, val_loader, device, amp_enabled=False, multi_target=Fa
     results["random_density"] = run_corrupted(all_batches, random_density, "random_density")
     bench_bar.set_postfix_str("random_density"); bench_bar.update(1)
 
-    # ── 11) Autoregressive benchmarks ──
+    # 11) NoAudio_A - kill only past audio (first A_BINS frames)
+    def no_audio_a(mel, evt_off, evt_mask, cond, target):
+        mel[:, :, :A_BINS] = 0
+        return mel, evt_off, evt_mask, cond
+    results["no_audio_a"] = run_corrupted(all_batches, no_audio_a, "no_audio_a")
+    bench_bar.set_postfix_str("no_audio_a"); bench_bar.update(1)
+
+    # 12) NoAudio_B - kill only future audio (last B_BINS frames)
+    def no_audio_b(mel, evt_off, evt_mask, cond, target):
+        mel[:, :, A_BINS:] = 0
+        return mel, evt_off, evt_mask, cond
+    results["no_audio_b"] = run_corrupted(all_batches, no_audio_b, "no_audio_b")
+    bench_bar.set_postfix_str("no_audio_b"); bench_bar.update(1)
+
+    # 13) NoAudio_E - kill audio within ±10 frames of each event onset
+    def no_audio_e(mel, evt_off, evt_mask, cond, target):
+        B, C = evt_off.shape
+        for b in range(B):
+            valid = ~evt_mask[b].bool()
+            if not valid.any():
+                continue
+            offsets = evt_off[b][valid]
+            for off in offsets:
+                # offset is relative to cursor, mel starts at -A_BINS
+                frame_idx = int(off.item()) + A_BINS  # position in mel window
+                lo = max(0, frame_idx - 10)
+                hi = min(mel.size(2), frame_idx + 11)
+                mel[b, :, lo:hi] = 0
+        return mel, evt_off, evt_mask, cond
+    results["no_audio_e"] = run_corrupted(all_batches, no_audio_e, "no_audio_e")
+    bench_bar.set_postfix_str("no_audio_e"); bench_bar.update(1)
+
+    # 14) SwapOut - replace past audio (A) with random audio from another sample in the batch
+    def swap_out(mel, evt_off, evt_mask, cond, target):
+        B = mel.size(0)
+        if B > 1:
+            perm = torch.randperm(B)
+            # ensure no self-swap
+            for i in range(B):
+                if perm[i] == i:
+                    perm[i] = (i + 1) % B
+            mel[:, :, :A_BINS] = mel[perm, :, :A_BINS].clone()
+        return mel, evt_off, evt_mask, cond
+    results["swap_out"] = run_corrupted(all_batches, swap_out, "swap_out")
+    bench_bar.set_postfix_str("swap_out"); bench_bar.update(1)
+
+    # 15) NoEvents_Past - kill only out-of-window events (keep in-window events intact)
+    def no_events_past(mel, evt_off, evt_mask, cond, target):
+        B, C = evt_off.shape
+        for b in range(B):
+            valid = ~evt_mask[b].bool()
+            if not valid.any():
+                continue
+            # mask out events with offset < -A_BINS (out of audio window)
+            oow = valid & (evt_off[b] < -A_BINS)
+            evt_off[b][oow] = 0
+            evt_mask[b][oow] = True
+        return mel, evt_off, evt_mask, cond
+    results["no_events_past"] = run_corrupted(all_batches, no_events_past, "no_events_past")
+    bench_bar.set_postfix_str("no_events_past"); bench_bar.update(1)
+
+    # 16) EventEmbed_RatioBlank - set gap ratios to 1.0 (neutral)
+    # Gap ratios use sinusoidal encoding of ratio*50, so ratio=1.0 → value=50
+    # We modify the event_offsets to make all consecutive gaps equal → ratio=1.0
+    # Simpler: just make events evenly spaced so ratios are all 1.0
+    def event_ratio_blank(mel, evt_off, evt_mask, cond, target):
+        B, C = evt_off.shape
+        for b in range(B):
+            valid = ~evt_mask[b].bool()
+            n_valid = valid.sum().item()
+            if n_valid < 2:
+                continue
+            # get the valid offsets, compute their mean gap, make evenly spaced
+            offsets = evt_off[b][valid].clone()
+            mean_gap = max(1, int((offsets[-1] - offsets[0]).item() / max(n_valid - 1, 1)))
+            new_offsets = torch.arange(n_valid, dtype=torch.long, device=evt_off.device) * mean_gap + offsets[0]
+            evt_off[b][valid] = new_offsets
+        return mel, evt_off, evt_mask, cond
+    results["event_ratio_blank"] = run_corrupted(all_batches, event_ratio_blank, "event_ratio_blank")
+    bench_bar.set_postfix_str("event_ratio_blank"); bench_bar.update(1)
+
+    # 17) EventEmbed_GapBlank - set all gaps to 0 (all events at same position)
+    def event_gap_blank(mel, evt_off, evt_mask, cond, target):
+        B, C = evt_off.shape
+        for b in range(B):
+            valid = ~evt_mask[b].bool()
+            if not valid.any():
+                continue
+            # set all valid events to the same offset (the most recent one)
+            last_offset = evt_off[b][valid][-1].item()
+            evt_off[b][valid] = last_offset
+        return mel, evt_off, evt_mask, cond
+    results["event_gap_blank"] = run_corrupted(all_batches, event_gap_blank, "event_gap_blank")
+    bench_bar.set_postfix_str("event_gap_blank"); bench_bar.update(1)
+
+    # 18) EventEmbed_RatioGapBlank - both ratio and gap blanked
+    def event_ratio_gap_blank(mel, evt_off, evt_mask, cond, target):
+        B, C = evt_off.shape
+        for b in range(B):
+            valid = ~evt_mask[b].bool()
+            if not valid.any():
+                continue
+            last_offset = evt_off[b][valid][-1].item()
+            evt_off[b][valid] = last_offset
+        return mel, evt_off, evt_mask, cond
+    results["event_ratio_gap_blank"] = run_corrupted(all_batches, event_ratio_gap_blank, "event_ratio_gap_blank")
+    bench_bar.set_postfix_str("event_ratio_gap_blank"); bench_bar.update(1)
+
+    # ── 19) Autoregressive benchmarks ──
     # Run like real inference: predict, move cursor, feed prediction back.
     # Compare predicted onset positions against ground truth onset positions.
     AR_STEPS = 32
@@ -3731,10 +3874,14 @@ def train(args):
     use_multi_target = args.multi_target or args.model_type == "framewise"
     use_ratio_head = getattr(args, 'ratio_head', False)
     sub = args.subsample
+    djr = getattr(args, 'density_jitter_rate', 0.10)
+    djp = getattr(args, 'density_jitter_pct', 0.02)
     train_ds = OnsetDataset(manifest, ds_dir, train_idx, augment=True, subsample=sub,
-                            multi_target=use_multi_target, ratio_head=use_ratio_head)
+                            multi_target=use_multi_target, ratio_head=use_ratio_head,
+                            density_jitter_rate=djr, density_jitter_pct=djp)
     val_ds = OnsetDataset(manifest, ds_dir, val_idx, augment=False, subsample=sub,
-                          multi_target=use_multi_target, ratio_head=use_ratio_head)
+                          multi_target=use_multi_target, ratio_head=use_ratio_head,
+                          density_jitter_rate=djr, density_jitter_pct=djp)
     if sub > 1:
         print(f"Subsample: 1/{sub}")
     print(f"Train samples: {len(train_ds)}, Val samples: {len(val_ds)}")
@@ -4354,6 +4501,18 @@ def _run_eval(model, val_loader, criterion, args, amp_enabled,
     val_preds = val_extra["preds"]
     val_metrics = compute_metrics(val_targets, val_preds)
 
+    # last_repeat: % of non-stop predictions within 5% of prev_gap
+    prev_gaps = val_extra["prev_gaps"]
+    stop = N_CLASSES - 1
+    ns = (val_targets < stop) & ~np.isnan(prev_gaps) & (prev_gaps > 0)
+    if ns.sum() > 0:
+        pg = prev_gaps[ns]
+        pr = val_preds[ns].astype(np.float64)
+        ratio_to_gap = (pr + 1) / (pg + 1)
+        val_metrics["last_repeat"] = float((np.abs(ratio_to_gap - 1.0) <= 0.05).mean())
+    else:
+        val_metrics["last_repeat"] = 0.0
+
     # ratio head metrics (exp 55+)
     if "ratio_preds" in val_extra:
         r_preds = val_extra["ratio_preds"]
@@ -4512,6 +4671,8 @@ if __name__ == "__main__":
     parser.add_argument("--b-pred", type=int, default=0, help="Prediction range in bins, 0=same as b-bins (exp 53+). N_CLASSES = b_pred + 1")
     parser.add_argument("--ratio-head", action="store_true", default=False, help="Add auxiliary ratio head for training (exp 55+)")
     parser.add_argument("--ratio-weight", type=float, default=0.3, help="Loss weight for ratio head")
+    parser.add_argument("--density-jitter-rate", type=float, default=0.10, help="Density jitter probability (default 0.10 = 10%%)")
+    parser.add_argument("--density-jitter-pct", type=float, default=0.02, help="Density jitter magnitude (default 0.02 = +/-2%%)")
     parser.add_argument("--streak-loss", action="store_true", default=False, help="Streak-ratio loss weighting (exp 51+)")
     parser.add_argument("--streak-power", type=float, default=0.3, help="Streak loss weight power (default 0.3)")
     parser.add_argument("--streak-cap", type=float, default=50.0, help="Streak loss max weight cap (default 50)")
