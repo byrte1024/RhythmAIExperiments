@@ -1091,6 +1091,7 @@ def main():
             if w.shape[1] > ckpt_args.get("d_model", 384) * 3:
                 has_gap_ratios = True
         has_stop_token = "stop_query" in state_keys
+        has_ratio_head = "ratio_head_proj.weight" in state_keys
         # detect virtual tokens from virtual_watermark presence + config
         n_virtual = 0
         if "virtual_watermark" in state_keys:
@@ -1115,6 +1116,7 @@ def main():
             stop_token=has_stop_token,
             n_virtual_tokens=n_virtual,
             a_bins=A_BINS, b_bins=B_BINS,
+            ratio_head=has_ratio_head,
         )
     elif ModelClass == FramewiseOnsetDetector:
         # exp 38+: framewise onset detection
