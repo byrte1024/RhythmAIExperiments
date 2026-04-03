@@ -3,95 +3,162 @@
     {
       "song": "Arashi - Five",
       "genre": "j-pop",
-      "rank_1": null,
-      "rank_2": null,
-      "rank_3": null,
-      "rank_4": null,
-      "notes": ""
+      "rank_1": "Beta",
+      "rank_2": "Gamma",
+      "rank_3": "Delta",
+      "rank_4": "Alpha",
+      "notes": "Alpha looks good overall but has strange hallucinations and misses, slightly off. Beta very similar to alpha but patterns are more interesting and match the song more, less hallucinations. Gamma instantly bad start but recovers quickly, more spammy but really good patterns and fun unique timings. Delta EXTREMELY loyal to audio drums, great when drums present but makes many mistakes when no drums, misses too large."
     },
     {
       "song": "Sakurazaka46 - The growing up train",
       "genre": "j-pop",
-      "rank_1": null,
-      "rank_2": null,
-      "rank_3": null,
-      "rank_4": null,
-      "notes": ""
+      "rank_1": "Beta",
+      "rank_2": "Gamma",
+      "rank_3": "Alpha",
+      "rank_4": "Delta",
+      "notes": "Alpha notably metronomic right off start, recovers into interesting patterns but devolves back, misses a LOT of notes, follows drums well but doesnt understand taiko is also fun measured. Beta starts off great, no metronome at all, generates unique fun patterns that adhere less to audio and more like a rhythm game. Gamma noticeably fluid with unique patterns but almost no consistency, switches charting style rapidly, slightly worse than beta due to inconsistencies. Delta starts strong and MAINTAINS, consistent patterns but tends to get carried away with faster patterns, near the end completely breaks down outputting same gap for almost half the song."
     },
     {
       "song": "Camellia - Denkoh Sekka",
       "genre": "j-dance",
-      "rank_1": null,
-      "rank_2": null,
-      "rank_3": null,
-      "rank_4": null,
-      "notes": ""
+      "rank_1": "Delta",
+      "rank_2": "Beta",
+      "rank_3": "Alpha",
+      "rank_4": "Gamma",
+      "notes": "Alpha extremely consistent following beats closely, almost 1:1 transcription, can be unvaried, collapses and hallucinates in some sections but recovers quickly, slightly metronome-y at end. Beta nice unique patterns but sometimes feel delayed, very fluid, sometimes devolves into metronome and takes a bit to recover, more satisfying than alpha, noticeably slower at points. Gamma starts weird, devolves into metronome quick and does not recover, whenever dense section appears turns repetitive. Delta does VERY nicely, avoids common traps, cool unique patterns, uses 1/16 note divisions which others avoid, very close to beta. Delta and beta are the only ones that picked up on the subtle 1,2 1,2 1,2,3 1,2,3 pattern."
     },
     {
       "song": "REDALiCE x t+pazolite - Xterfusion",
       "genre": "j-dance",
-      "rank_1": null,
-      "rank_2": null,
-      "rank_3": null,
-      "rank_4": null,
-      "notes": ""
+      "rank_1": "Alpha",
+      "rank_2": "Delta",
+      "rank_3": "Beta",
+      "rank_4": "Gamma",
+      "notes": "Alpha immediately nice, metronomes but song is genuinely predictable, follows almost all drums PERFECTLY with few misses, does extraordinarily well on drumless sections, NOT afraid to spam in heavy sections, almost perfect. Beta much better on technically metronomic section but devolves later, worse on drumless section, barely uses 1/16ths because afraid to spam. Gamma metronomes quickly with weird misses and bad matching, misses obvious subtle notes, but VERY good on some areas and best at drumless areas. Delta GREAT start, amazing pattern matching to silent area, VERY CLEAN almost never metronomes, when it predicts a note it almost always feels clean."
     },
     {
       "song": "Courtney Barnett - Stay in Your Lane",
       "genre": "indie rock",
-      "rank_1": null,
-      "rank_2": null,
-      "rank_3": null,
-      "rank_4": null,
-      "notes": ""
+      "rank_1": "Gamma",
+      "rank_2": "Delta",
+      "rank_3": "Alpha",
+      "rank_4": "Beta",
+      "notes": "Alpha matches drums perfectly, handles empty sections well, but audible misses later, very consistent tempo. Needs to pick one path and commit. Second half much better. Beta starts good but regresses, handles silence well but keeps losing track, much slower patterns, less huge misses but way more metronome. Gamma instantly nice, very consistent, no huge switches, nice variations, the only one with no audible misses. Delta fun unique patterns but sometimes dont work, comparable to gamma but more audible misses."
     },
     {
       "song": "Mon Rovia - Heavy Foot",
       "genre": "indie rock",
-      "rank_1": null,
-      "rank_2": null,
-      "rank_3": null,
-      "rank_4": null,
-      "notes": ""
+      "rank_1": "Beta",
+      "rank_2": "Alpha",
+      "rank_3": "Delta",
+      "rank_4": "Gamma",
+      "notes": "Alpha does pretty nicely, metronomes but slow song, matches pattern well, incredibly consistent and tunes nicely. Beta great, comparable to alpha but some moments feel off, much better patterns that match the song. Gamma instantly very weird, inconsistent, spammy, feels like metronome with notes removed. Delta comparable but weaker."
     },
     {
       "song": "RoccoW - When the Leaves Leaf",
       "genre": "chiptune",
-      "rank_1": null,
-      "rank_2": null,
-      "rank_3": null,
-      "rank_4": null,
-      "notes": ""
+      "rank_1": "Gamma",
+      "rank_2": "Alpha",
+      "rank_3": "Delta",
+      "rank_4": "Beta",
+      "notes": "Alpha instantly nice, picks up simplistic pattern, bit repetitive but so is song, EXTREMELY consistent even across 20+ seconds. Beta similar start but doesnt pick up obvious pattern, constantly switches charting method, inconsistent. Gamma very interesting VERY unique patterns, very consistent with them, arguably one of the best, can be awkward but healthier patterns. Delta nice start but gets very strange at some points, feels wrong, lot of audible misses."
     },
     {
       "song": "supernovayuli - One More Time",
       "genre": "chiptune",
-      "rank_1": null,
-      "rank_2": null,
-      "rank_3": null,
-      "rank_4": null,
-      "notes": ""
+      "rank_1": "Beta",
+      "rank_2": "Alpha",
+      "rank_3": "Delta",
+      "rank_4": "Gamma",
+      "notes": "Alpha interesting patterns but strange notes, very inconsistent placing, extremely awkward timing, liberal interpretation of drums. Beta understands patterns better, syncs better to synths, handles silence well, handles intentionally metronomic part with grace, when it guesses a note its usually right. Gamma very weird at start, almost all notes out of place, locks in when main song plays but handles metronome section inconsistently, comes up with incredibly cool pattern then loses it. Delta is the ONLY one able to tune to the raw synth at the start, handles non-drum synths SO much better than all others, hallucinates drums that sound like native part of the song, would be first if not missing so many notes."
     },
     {
       "song": "Conan Gray - The Best",
       "genre": "pop",
-      "rank_1": null,
-      "rank_2": null,
-      "rank_3": null,
-      "rank_4": null,
-      "notes": ""
+      "rank_1": "Gamma",
+      "rank_2": "Delta",
+      "rank_3": "Alpha",
+      "rank_4": "Beta",
+      "notes": "Alpha starts okay but slightly off sync, matches beat nicely but misses notes, very fast for calm song, matching breaks sometimes but recovers quickly, unique pattern halfway through. Beta much weirder, trigger-happy and loose, missing and hallucinating, once song ramps up locks in, inconsistent and repetitive. Gamma hallucinates at start but recovers quicker than beta, misses in drumless but fun unique patterns in drum sections, gets significantly better deeper, matches chill vibe. Delta hallucinates but recovers, handles drumless weirdly, once main song starts does very well, satisfying patterns, much better in second half."
     },
     {
       "song": "Miley Cyrus - Younger You",
       "genre": "pop",
-      "rank_1": null,
-      "rank_2": null,
-      "rank_3": null,
-      "rank_4": null,
-      "notes": ""
+      "rank_1": "Alpha",
+      "rank_2": "Gamma",
+      "rank_3": "Beta",
+      "rank_4": "Delta",
+      "notes": "Alpha starts nice, syncs well, nice beat, hallucinations early but gets better, does nicely for generic song except missing notes. Beta tightly synced and consistent but weird syncs, stabilizes later. Gamma performs very well early, less hallucinations, more consistent, more active, slight metronome getting worse over time. Delta very well early, active and consistent but slight metronome, weird hallucinations and VERY inconsistent."
     }
   ],
-  "evaluators": [],
-  "mappings_revealed": false,
-  "final_results": null
+  "evaluators": [
+    {
+      "name": "Mawdi",
+      "song": "Conan Gray - The Best",
+      "rank_1": "Beta",
+      "rank_2": "Delta",
+      "rank_3": "Alpha",
+      "rank_4": "Gamma",
+      "notes": "Beta is actually good in a slow song like this and slowly changing the pattern and speed of notes. Pretty good overall, has some sync problems but actually pretty good and interesting. Delta spamming a lot sometimes but still ok. Alpha just extremely boring and spamming sometimes. Gamma weird and too complicated 70% of the time, no good pattern to follow and a lot of weird decisions, would not play a level like this."
+    },
+    {
+      "name": "ouupysakura",
+      "song": "Camellia - Denkoh Sekka",
+      "rank_1": "Delta",
+      "rank_2": "Alpha",
+      "rank_3": "Gamma",
+      "rank_4": "Beta",
+      "notes": "Gamma and Beta had too many notes, like it was overwhelming."
+    },
+    {
+      "name": "Kiiyoo",
+      "song": "RoccoW - When the Leaves Leaf",
+      "rank_1": "Gamma",
+      "rank_2": "Delta",
+      "rank_3": "Beta",
+      "rank_4": "Alpha",
+      "notes": "Alpha sucks ass. Beta is braindead, sometimes better than Alpha but mostly sucks too. Gamma is a lot better than Beta and Alpha, actually the only model that knows how to properly map so its synced well with music. Delta better than Alpha and Beta but not as good as Gamma, lacks brains."
+    },
+    {
+      "name": "Egroish",
+      "song": "Mon Rovia - Heavy Foot",
+      "rank_1": "Alpha",
+      "rank_2": "Delta",
+      "rank_3": "Beta",
+      "rank_4": "Gamma",
+      "notes": "Beta and Gamma DRAMATICALLY worse than Alpha and Delta. Alpha is 100% perfect."
+    },
+    {
+      "name": "faeingatfaes",
+      "song": "Arashi - Five",
+      "rank_1": "Delta",
+      "rank_2": "Beta",
+      "rank_3": "Gamma",
+      "rank_4": "Alpha",
+      "notes": "Delta had some white noise clicks, notes that dont fit the song and feel randomly placed. Beta super repetitive but feels more natural. Gamma has too many super long note thingies. Alpha worst overall."
+    }
+  ],
+  "mappings_revealed": true,
+  "final_results": {
+    "n_votes": 15,
+    "points": {
+      "exp14": 27,
+      "exp44": 43,
+      "exp45": 44,
+      "exp53": 36
+    },
+    "firsts": {
+      "exp14": 3,
+      "exp44": 4,
+      "exp45": 5,
+      "exp53": 3
+    },
+    "lasts": {
+      "exp14": 10,
+      "exp44": 1,
+      "exp45": 1,
+      "exp53": 3
+    },
+    "winner": "exp45"
+  }
 }

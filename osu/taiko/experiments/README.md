@@ -86,7 +86,8 @@ Each folder contains a README with hypothesis, results, and key graphs.
 | 53-B | [B_AUDIO/B_PRED + A_BINS=500](experiment_53b/) | Confirmed | A=500, B_AUDIO=500, B_PRED=250. A_BINS=250 was the bottleneck — 73.4% HIT breaks 72.1% ceiling. Best audio-only acc ever (49.7%) |
 | 54 | [B_AUDIO/B_PRED + STOP Query Token](experiment_54/) | Failed | Separate STOP head (F1=0.39) underperforms softmax STOP (F1=0.48). 20x boost steals onset samples for no gain. STOP head experiments exhausted |
 | 55 | [Auxiliary Ratio Head](experiment_55/) | Modest gain | Training-only log10-ratio head (201 bins). 73.6% HIT (ties ATH), best val loss ever (2.461), faster convergence. Doesn't break ceiling |
-| 56 | [Density Conditioning AR Analysis](experiment_56/) | **Pending** | Full AR on 10 val songs with actual chart density. Investigating whether density conditioning causes hallucinations |
+| 56 | [Density Conditioning AR Analysis](experiment_56/) | Complete | AR on 48 val songs. Model under-predicts density (0.83x avg). Low density = high hallucination, high density = conservative |
+| 56-B | [Density Sensitivity Sweep](experiment_56b/) | **Pending** | Same songs at 0.8x/1.0x/1.2x density. Tests whether model actually responds to density conditioning |
 
 ## Key Lessons
 

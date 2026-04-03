@@ -27,8 +27,41 @@ python experiments/experiment_56/run_ar_analysis.py --checkpoint runs/detect_exp
 
 ## Result
 
-*Pending*
+Ran on 48 val songs (2 skipped — no audio found).
+
+### Summary:
+
+| Metric | Value |
+|---|---|
+| Avg density ratio (pred/gt) | 0.83 (under-predicts by 17%) |
+| Avg matched (<25ms) | 67.1% |
+| Avg close (<50ms) | 70.0% |
+| Avg far (>100ms) | 19.8% |
+| Avg hallucination (>100ms from any GT) | 14.9% |
+| Avg GT error median | 16ms |
+
+### Key findings:
+
+1. **Model consistently under-predicts density** (ratio 0.83 avg). Not a single song is significantly over-predicted. Worst: monoqlom (d=5.7, ratio 0.41), Mrs GREEN APPLE (d=6.4, ratio 0.54).
+
+2. **Hallucination inversely correlates with density**: Low density songs (d=1-3) have 25-50% hallucination — the model fills silence with notes. High density songs (d=7+) have 1-7% hallucination — the model is conservative.
+
+3. **Catch rate has no clear density correlation**: Songs across all densities achieve 60-85% close rate. The worst performers are sparse songs with long silences, not dense songs.
+
+4. **Density conditioning is asymmetric**: The model can't be pushed to produce enough notes at high density, but also can't be restrained at low density. It defaults to a conservative ~3-5 events/sec regardless of conditioning.
+
+### Density adherence by range:
+
+| Density range | Avg ratio | Avg hallucination |
+|---|---|---|
+| d < 3.5 | 0.88 | 28.3% |
+| 3.5 < d < 5.5 | 0.84 | 14.0% |
+| d > 5.5 | 0.77 | 8.7% |
+
+Higher conditioned density → worse adherence but lower hallucination.
 
 ## Lesson
 
-*Pending*
+The model under-predicts density across the board. Density conditioning has limited control — the model's output density is driven more by audio content than by the conditioning signal. At low density the model hallucinates to fill silence; at high density it can't produce enough notes even when told to.
+
+[Exp 56-B](../experiment_56b/README.md) tests whether varying density (0.8x, 1.0x, 1.2x) actually changes model output, or if the conditioning is largely ignored.
