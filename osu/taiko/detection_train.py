@@ -270,6 +270,23 @@ class OnsetDataset(Dataset):
                     ratio_target = round((log10_ratio - LOG10_MIN) / RATIO_BIN_WIDTH)
                     ratio_target = max(0, min(N_RATIO_BINS - 1, ratio_target))
 
+        # proposal targets: ALL onsets in the full audio window mapped to tokens (exp 58+)
+        # This covers both past events and ALL future onsets, not just the next one
+        n_audio_tokens = (self._a_bins + self._b_bins) // 4
+        proposal_tokens = np.zeros(n_audio_tokens, dtype=np.float32)
+        # past events (already in past_bins as offsets from cursor)
+        if n_past > 0:
+            past_tok = ((self._a_bins + past_bins) // 4).astype(np.int64)
+            past_tok = np.clip(past_tok, 0, n_audio_tokens - 1)
+            proposal_tokens[past_tok] = 1.0
+        # ALL future onsets in the audio window (not just the target)
+        future_in_window = evt[(evt > cursor) & (evt <= cursor + self._b_bins)]
+        if len(future_in_window) > 0:
+            future_offsets = (future_in_window.astype(np.int64) - cursor)
+            future_tok = ((self._a_bins + future_offsets) // 4).astype(np.int64)
+            future_tok = np.clip(future_tok, 0, n_audio_tokens - 1)
+            proposal_tokens[future_tok] = 1.0
+
         # multi-target: all onsets in forward window
         if self.multi_target:
             future_mask = (evt > cursor) & (evt <= cursor + self._b_pred)
@@ -292,6 +309,7 @@ class OnsetDataset(Dataset):
                 torch.from_numpy(targets_padded),
                 torch.tensor(n_targets, dtype=torch.long),
                 torch.tensor(ratio_target, dtype=torch.long),
+                torch.from_numpy(proposal_tokens),
             )
 
         return (
@@ -301,6 +319,7 @@ class OnsetDataset(Dataset):
             torch.from_numpy(cond),
             torch.tensor(target, dtype=torch.long),
             torch.tensor(ratio_target, dtype=torch.long),
+            torch.from_numpy(proposal_tokens),
         )
 
     def _augment(self, mel_window, past_bins):
@@ -1014,11 +1033,11 @@ def validate_and_collect(model, loader, criterion, device, amp_enabled=False, si
 
     for batch in tqdm(loader, desc="Validating", leave=False):
         if multi_target:
-            mel, evt_off, evt_mask, cond, targets_padded, n_tgt, _ratio_target = batch
+            mel, evt_off, evt_mask, cond, targets_padded, n_tgt, _ratio_target, _proposal_tokens = batch
             targets_padded = targets_padded.to(device, non_blocking=True)
             n_tgt = n_tgt.to(device, non_blocking=True)
         else:
-            mel, evt_off, evt_mask, cond, target, _ratio_target = batch
+            mel, evt_off, evt_mask, cond, target, _ratio_target, _proposal_tokens = batch
             target = target.to(device, non_blocking=True)
 
         mel = mel.to(device, non_blocking=True)
@@ -1056,21 +1075,8 @@ def validate_and_collect(model, loader, criterion, device, amp_enabled=False, si
                     # collect proposal data for Stage 1 metrics
                     prop_conf = torch.sigmoid(proposal_logits_val).cpu().numpy()
                     all_proposal_confs.append(prop_conf)
-                    # build onset mask: which tokens have GT onsets
-                    n_tok = proposal_logits_val.size(1)
-                    has_onset = np.zeros((mel.size(0), n_tok), dtype=np.float32)
-                    for b in range(mel.size(0)):
-                        valid = ~evt_mask[b].cpu().bool()
-                        if valid.any():
-                            offsets = evt_off[b][valid].cpu()
-                            tok_pos = ((A_BINS + offsets) // 4).clamp(0, n_tok - 1).numpy()
-                            has_onset[b, tok_pos] = 1.0
-                        t = target[b].item() if not multi_target else (targets_padded[b, 0].item() if n_tgt[b] > 0 else -1)
-                        if 0 <= t < N_CLASSES - 1:
-                            tok = (A_BINS + t) // 4
-                            if 0 <= tok < n_tok:
-                                has_onset[b, tok] = 1.0
-                    all_proposal_has_onset.append(has_onset)
+                    # precomputed proposal targets from dataset
+                    all_proposal_has_onset.append(_proposal_tokens.numpy())
                 elif isinstance(output, tuple) and ratio_criterion is not None:
                     # ratio head mode: onset logits + ratio logits
                     onset_logits, ratio_logits_val = output
@@ -1609,12 +1615,12 @@ def run_benchmarks(model, val_loader, device, amp_enabled=False, multi_target=Fa
         all_prev_gaps = []
         for batch in batches:
             if multi_target:
-                mel, evt_off, evt_mask, cond, targets_padded, n_tgt, _ratio_target = batch
+                mel, evt_off, evt_mask, cond, targets_padded, n_tgt, _ratio_target, _proposal_tokens = batch
                 target = targets_padded[:, 0].clone()
                 target[n_tgt == 0] = stop
                 target = target.clamp(0, stop)
             else:
-                mel, evt_off, evt_mask, cond, target, _ratio_target = batch
+                mel, evt_off, evt_mask, cond, target, _ratio_target, _proposal_tokens = batch
 
             # compute prev_gaps from ORIGINAL events before corruption
             all_prev_gaps.append(_compute_prev_gaps(evt_off, evt_mask))
@@ -1946,9 +1952,9 @@ def run_benchmarks(model, val_loader, device, amp_enabled=False, multi_target=Fa
         sample_idx = 0
         for batch in batches:
             if multi_target:
-                mel, evt_off, evt_mask, cond, targets_padded, n_tgt, _ratio_target = batch
+                mel, evt_off, evt_mask, cond, targets_padded, n_tgt, _ratio_target, _proposal_tokens = batch
             else:
-                mel, evt_off, evt_mask, cond, target, _ratio_target = batch
+                mel, evt_off, evt_mask, cond, target, _ratio_target, _proposal_tokens = batch
 
             B = mel.size(0)
             for b in range(B):
@@ -4333,7 +4339,7 @@ def train(args):
 
         for batch_idx, batch in enumerate(train_loader):
             if use_multi_target:
-                mel, evt_off, evt_mask, cond, targets_padded, n_tgt, ratio_target = batch
+                mel, evt_off, evt_mask, cond, targets_padded, n_tgt, ratio_target, proposal_tokens_batch = batch
                 targets_padded = targets_padded.to(args.device, non_blocking=True)
                 n_tgt = n_tgt.to(args.device, non_blocking=True)
                 ratio_target = ratio_target.to(args.device, non_blocking=True)
@@ -4342,7 +4348,7 @@ def train(args):
                 target[n_tgt == 0] = N_CLASSES - 1
                 target = target.clamp(0, N_CLASSES - 1)
             else:
-                mel, evt_off, evt_mask, cond, target, ratio_target = batch
+                mel, evt_off, evt_mask, cond, target, ratio_target, proposal_tokens_batch = batch
                 target = target.to(args.device, non_blocking=True)
                 ratio_target = ratio_target.to(args.device, non_blocking=True)
 
@@ -4374,24 +4380,9 @@ def train(args):
                 elif args.model_type == "event_embed_propose":
                     onset_logits, proposal_logits = model(mel, evt_off, evt_mask, cond)
                     logits = onset_logits
-                    n_audio_tok = proposal_logits.size(1)  # 250
 
-                    # Build proposal targets: mark tokens containing past events + target onset
-                    proposal_target = torch.zeros(mel.size(0), n_audio_tok, device=mel.device)
-                    for b in range(mel.size(0)):
-                        # past events → token positions
-                        valid = ~evt_mask[b].bool()
-                        if valid.any():
-                            offsets = evt_off[b][valid]
-                            tok_pos = ((A_BINS + offsets) // 4).clamp(0, n_audio_tok - 1)
-                            proposal_target[b].scatter_(0, tok_pos, 1.0)
-                        # target onset → token position
-                        t = target[b].item()
-                        if t < N_CLASSES - 1:  # not STOP
-                            # target is offset from cursor, cursor is at token a_bins//4
-                            tok = (A_BINS + t) // 4
-                            if 0 <= tok < n_audio_tok:
-                                proposal_target[b, tok] = 1.0
+                    # Proposal targets: precomputed in dataset, covers ALL onsets in audio window
+                    proposal_target = proposal_tokens_batch.to(mel.device, non_blocking=True)
 
                     # Stage 1 loss: focal BCE
                     s1_gamma = 2.0

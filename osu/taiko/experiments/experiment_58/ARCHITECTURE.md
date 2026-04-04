@@ -86,10 +86,12 @@ focal_weight = (1 - p_t)^gamma, gamma=2.0
 s1_loss = mean(focal_bce * focal_weight)
 ```
 
-Proposal targets: binary vector marking tokens containing:
-- Past events (from event_offsets, mapped to token positions)
-- The target onset (the GT next onset)
-- STOP samples → all zeros (no onset in window)
+Proposal targets: binary vector (250 tokens) marking ALL onset positions in the full audio window:
+- Past events (context events mapped to token positions)
+- ALL future onsets within B_BINS (not just the next one — every onset the audio contains)
+- STOP samples still have past events marked (audio still contains their transients)
+
+This is precomputed in the dataset from the raw event array. Typically ~5-15 tokens are marked per sample (past events + future onsets).
 
 ### Stage 2 Loss: OnsetLoss (standard)
 ```

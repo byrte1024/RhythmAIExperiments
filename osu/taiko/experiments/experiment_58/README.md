@@ -16,7 +16,8 @@ Stage 1 proposals are embedded INTO the audio tokens so Stage 2 sees "this posit
 
 ### Key design decisions
 
-- **Stage 1 is recall-focused**: Focal loss or high pos_weight BCE. Missing a real onset is worse than false positives. Stage 1 says "here are all the options."
+- **Stage 1 targets ALL onsets in the window**: Not just the next onset — every onset in the full A+B audio window (past events + all future onsets). Stage 1 learns pure audio onset detection across the entire visible range.
+- **Stage 1 is recall-focused**: Focal loss with high pos_weight BCE. Missing a real onset is worse than false positives. Stage 1 says "here are all the options."
 - **Stage 2 is precision-focused**: Standard OnsetLoss. Picks the right onset from Stage 1's proposals.
 - **Stage 2 frozen initially**: Stage 2 weights frozen for first N evals while Stage 1 learns to produce useful proposals. Then unfreeze for joint training.
 - **Proposal embedding**: Each audio token gets an additive embedding based on its Stage 1 confidence score.
