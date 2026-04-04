@@ -1662,7 +1662,13 @@ def run_benchmarks(model, val_loader, device, amp_enabled=False, multi_target=Fa
         }
 
     results = {}
-    bench_bar = tqdm(total=20, desc="Benchmarks", leave=False)
+    bench_bar = tqdm(total=23, desc="Benchmarks", leave=False)
+
+    # 0) Normal - uncorrupted baseline on the same subset, for apples-to-apples comparison
+    def normal(mel, evt_off, evt_mask, cond, target):
+        return mel, evt_off, evt_mask, cond
+    results["normal"] = run_corrupted(all_batches, normal, "normal")
+    bench_bar.set_postfix_str("normal"); bench_bar.update(1)
 
     # 1) No events - all past context deleted
     def no_events(mel, evt_off, evt_mask, cond, target):
@@ -1917,7 +1923,23 @@ def run_benchmarks(model, val_loader, device, amp_enabled=False, multi_target=Fa
     results["event_ratio_gap_blank"] = run_corrupted(all_batches, event_ratio_gap_blank, "event_ratio_gap_blank")
     bench_bar.set_postfix_str("event_ratio_gap_blank"); bench_bar.update(1)
 
-    # ── 19) Autoregressive benchmarks ──
+    # 19-20) Proposal override benchmarks (exp 58+ only)
+    if hasattr(model, '_proposal_override'):
+        # 19) Zero proposals - Stage 2 gets no Stage 1 signal
+        def identity(mel, evt_off, evt_mask, cond, target):
+            return mel, evt_off, evt_mask, cond
+        model._proposal_override = "zero"
+        results["proposal_zero"] = run_corrupted(all_batches, identity, "proposal_zero")
+        bench_bar.set_postfix_str("proposal_zero"); bench_bar.update(1)
+
+        # 20) Random proposals - Stage 2 gets noise instead of real proposals
+        model._proposal_override = "random"
+        results["proposal_random"] = run_corrupted(all_batches, identity, "proposal_random")
+        bench_bar.set_postfix_str("proposal_random"); bench_bar.update(1)
+
+        model._proposal_override = None  # restore normal behavior
+
+    # ── 21) Autoregressive benchmarks ──
     # Run like real inference: predict, move cursor, feed prediction back.
     # Compare predicted onset positions against ground truth onset positions.
     AR_STEPS = 32
@@ -4258,11 +4280,15 @@ def train(args):
             if "scaler" in ckpt:
                 scaler.load_state_dict(ckpt["scaler"])
 
-            # epoch may be fractional (mid-epoch eval); resume from next full epoch
+            # epoch may be fractional (mid-epoch eval); restart from the current epoch.
+            # Can't skip mid-epoch (DataLoader iterates sequentially), so we redo the
+            # epoch's training batches with restored model weights. eval_step is already
+            # advanced past completed evals so no duplicate eval saves.
             ckpt_epoch = ckpt["epoch"]
-            start_epoch = int(ckpt_epoch) + (0 if ckpt_epoch == int(ckpt_epoch) else 1)
-            if start_epoch <= int(ckpt_epoch):
-                start_epoch = int(ckpt_epoch) + 1
+            if ckpt_epoch == int(ckpt_epoch):
+                start_epoch = int(ckpt_epoch) + 1  # end of epoch: next epoch
+            else:
+                start_epoch = int(ckpt_epoch)  # mid-epoch: redo this epoch
             best_val_loss = ckpt.get("best_val_loss", ckpt.get("val_loss", float("inf")))
 
             # reload history
@@ -4378,6 +4404,11 @@ def train(args):
                     # put onset_probs into first 125 positions scaled up
                     logits[:, :500:4] = onset_probs * 10  # rough proxy for compat
                 elif args.model_type == "event_embed_propose":
+                    # set freeze flag so model skips Stage 2 forward during freeze
+                    s2_freeze_evals = getattr(args, 'proposer_freeze_evals', 2)
+                    model_raw = model._orig_mod if hasattr(model, '_orig_mod') else model
+                    model_raw._s2_frozen = (eval_step < s2_freeze_evals)
+
                     onset_logits, proposal_logits = model(mel, evt_off, evt_mask, cond)
                     logits = onset_logits
 
@@ -4397,18 +4428,16 @@ def train(args):
                         focal_weight = (1 - p_t) ** s1_gamma
                     s1_loss = (s1_bce * focal_weight).mean()
 
-                    # Stage 2 loss: standard onset loss
-                    if use_multi_target:
-                        s2_loss = criterion(logits, targets_padded, n_tgt)
+                    # Stage 2 loss: standard onset loss (skip during freeze — logits are dummy)
+                    if model_raw._s2_frozen:
+                        s2_loss = torch.tensor(0.0, device=mel.device)
+                        loss = s1_loss
                     else:
-                        s2_loss = criterion(logits, target)
-
-                    # Stage 2 freeze: only train Stage 1 for first N evals
-                    s2_freeze_evals = getattr(args, 'proposer_freeze_evals', 2)
-                    if eval_step < s2_freeze_evals:
-                        loss = s1_loss  # only proposer trains
-                    else:
-                        loss = s2_loss + 0.5 * s1_loss  # joint training
+                        if use_multi_target:
+                            s2_loss = criterion(logits, targets_padded, n_tgt)
+                        else:
+                            s2_loss = criterion(logits, target)
+                        loss = s2_loss + 0.5 * s1_loss
                     output = None  # not a stop_token tuple
 
                 else:

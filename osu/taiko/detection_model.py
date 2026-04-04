@@ -1731,10 +1731,23 @@ class ProposeSelectDetector(nn.Module):
         proposal_conf = torch.sigmoid(proposal_logits)  # (B, 250)
 
         # ── Embed proposals into audio tokens ──
-        proposal_emb = self.proposal_embed(proposal_conf.unsqueeze(-1))  # (B, 250, d_model)
+        # _proposal_override: None=normal, "zero"=all 0.0, "random"=uniform random
+        override = getattr(self, '_proposal_override', None)
+        if override == "zero":
+            proposal_conf_use = torch.zeros_like(proposal_conf)
+        elif override == "random":
+            proposal_conf_use = torch.rand_like(proposal_conf)
+        else:
+            proposal_conf_use = proposal_conf
+        proposal_emb = self.proposal_embed(proposal_conf_use.unsqueeze(-1))  # (B, 250, d_model)
         x = x + proposal_emb  # enrich audio tokens with proposal info
 
-        # ── Stage 2: Selector ──
+        # ── Stage 2: Selector (skip when frozen — only Stage 1 loss needed) ──
+        if getattr(self, '_s2_frozen', False) and self.training:
+            # return dummy logits during Stage 2 freeze to save compute
+            dummy_logits = torch.zeros(B, self.n_classes, device=x.device)
+            return dummy_logits, proposal_logits
+
         cond = self.cond_mlp(conditioning)
         x = self.film_conv(x, cond)
 
