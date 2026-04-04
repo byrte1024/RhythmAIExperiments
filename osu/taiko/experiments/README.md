@@ -88,7 +88,8 @@ Each folder contains a README with hypothesis, results, and key graphs.
 | 55 | [Auxiliary Ratio Head](experiment_55/) | Modest gain | Training-only log10-ratio head (201 bins). 73.6% HIT (ties ATH), best val loss ever (2.461), faster convergence. Doesn't break ceiling |
 | 56 | [Density Conditioning AR Analysis](experiment_56/) | Complete | AR on 48 val songs. Model under-predicts density (0.83x avg). Low density = high hallucination, high density = conservative |
 | 56-B | [Density Sensitivity Sweep](experiment_56b/) | Complete | Model IS density-sensitive (1.53x ratio). Needs ~1.2x density to match reality. Under-prediction is calibration, not deafness |
-| 57 | [1:1 Virtual Context Tokens](experiment_57/) | **Pending** | 128 vtokens (1:1 per event slot) for collision-free OOW context. Gap ratios ON, B_PRED=250, loose density jitter. 8 new benchmarks added |
+| 57 | [1:1 Virtual Context Tokens](experiment_57/) | Failed | 128 vtokens contribute 0%. Future audio is everything (NA_B=1.3%). Gap encoding is foundation of event embeddings. 8 new benchmarks added |
+| 58 | [Two-Stage Propose-Select](experiment_58/) | **Pending** | Stage 1: pure audio per-token onset proposals (focal BCE). Stage 2: context-informed selection from proposals. 23.5M params |
 
 ## Key Lessons
 

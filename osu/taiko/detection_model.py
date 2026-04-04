@@ -1531,6 +1531,265 @@ class EventEmbeddingDetector(nn.Module):
         return logits
 
 
+class ProposeSelectDetector(nn.Module):
+    """Two-stage propose-select architecture (exp 58+).
+
+    Stage 1 (Proposer): Pure audio. Small transformer over audio tokens only
+    (no events, no density). Each token outputs sigmoid: "onset here?"
+    Recall-focused (focal BCE with high pos_weight).
+
+    Stage 2 (Selector): Full context. Standard EventEmbeddingDetector but audio
+    tokens are enriched with Stage 1's proposal confidences as additive embeddings.
+    Cursor → 251-class softmax.
+
+    Stage 1 proposals are embedded into audio tokens so Stage 2 sees
+    "this position has onset confidence X%" alongside raw audio features.
+    """
+
+    def __init__(
+        self,
+        n_mels=80,
+        d_model=384,
+        n_proposer_layers=4,
+        n_selector_layers=8,
+        n_heads=8,
+        n_classes=501,
+        max_events=128,
+        dropout=0.1,
+        cond_dim=64,
+        gap_ratios=False,
+        n_virtual_tokens=0,
+        a_bins=500,
+        b_bins=500,
+    ):
+        super().__init__()
+        self.d_model = d_model
+        self.n_classes = n_classes
+        self.max_events = max_events
+        self.a_bins = a_bins
+        self.b_bins = b_bins
+        self.n_audio_tokens = (a_bins + b_bins) // 4
+        self.cursor_token = a_bins // 4
+        self.gap_ratios = gap_ratios
+        self.n_virtual_tokens = n_virtual_tokens
+
+        # ── shared conv stem ──
+        self.conv = nn.Sequential(
+            nn.Conv1d(n_mels, d_model // 2, kernel_size=7, stride=2, padding=3),
+            nn.GELU(),
+            nn.GroupNorm(1, d_model // 2),
+            nn.Conv1d(d_model // 2, d_model, kernel_size=7, stride=2, padding=3),
+            nn.GELU(),
+        )
+        self.conv_norm = nn.LayerNorm(d_model)
+        self.pos_emb = SinusoidalPosEmb(d_model)
+
+        # ── Stage 1: Proposer (audio only, no events, no density) ──
+        self.proposer_layers = nn.ModuleList([
+            nn.TransformerEncoderLayer(
+                d_model=d_model, nhead=n_heads, dim_feedforward=d_model * 4,
+                dropout=dropout, activation="gelu", batch_first=True, norm_first=True,
+            )
+            for _ in range(n_proposer_layers)
+        ])
+        self.proposer_head = nn.Sequential(
+            nn.LayerNorm(d_model),
+            nn.Linear(d_model, 1),
+        )
+
+        # ── Proposal embedding: map confidence scalar → d_model vector ──
+        self.proposal_embed = nn.Sequential(
+            nn.Linear(1, d_model),
+            nn.GELU(),
+            nn.Linear(d_model, d_model),
+        )
+
+        # ── Stage 2: Selector (events + density + proposals) ──
+        # conditioning MLP
+        self.cond_mlp = nn.Sequential(
+            nn.Linear(3, cond_dim),
+            nn.GELU(),
+            nn.Linear(cond_dim, cond_dim),
+        )
+        self.film_conv = FiLM(cond_dim, d_model)
+
+        # event embeddings
+        self.event_presence_emb = nn.Parameter(torch.randn(1, d_model) * 0.02)
+        self.gap_before_emb = SinusoidalPosEmb(d_model)
+        self.gap_after_emb = SinusoidalPosEmb(d_model)
+        n_emb_inputs = 3
+        if gap_ratios:
+            self.gap_ratio_before_emb = SinusoidalPosEmb(d_model)
+            self.gap_ratio_after_emb = SinusoidalPosEmb(d_model)
+            n_emb_inputs = 5
+        self.event_proj = nn.Sequential(
+            nn.Linear(d_model * n_emb_inputs, d_model),
+            nn.GELU(),
+            nn.Linear(d_model, d_model),
+        )
+
+        # virtual tokens
+        if n_virtual_tokens > 0:
+            self.virtual_watermark = nn.Parameter(torch.randn(1, 1, d_model) * 0.02)
+
+        # selector transformer
+        self.selector_layers = nn.ModuleList([
+            nn.TransformerEncoderLayer(
+                d_model=d_model, nhead=n_heads, dim_feedforward=d_model * 4,
+                dropout=dropout, activation="gelu", batch_first=True, norm_first=True,
+            )
+            for _ in range(n_selector_layers)
+        ])
+        self.film_layers = nn.ModuleList(
+            [FiLM(cond_dim, d_model) for _ in range(n_selector_layers)]
+        )
+
+        # output head (same as EventEmbeddingDetector)
+        self.head_norm = nn.LayerNorm(d_model)
+        self.head_proj = nn.Linear(d_model, n_classes)
+        self.head_smooth = nn.Sequential(
+            nn.Conv1d(1, 8, kernel_size=5, padding=2),
+            nn.GELU(),
+            nn.Conv1d(8, 1, kernel_size=5, padding=2),
+        )
+
+    def _build_event_embeddings(self, event_offsets, event_mask):
+        """Same as EventEmbeddingDetector._build_event_embeddings."""
+        B, C = event_offsets.shape
+        device = event_offsets.device
+
+        presence = self.event_presence_emb.expand(B, C, -1)
+        gaps_before = torch.zeros(B, C, dtype=torch.long, device=device)
+        gaps_after = torch.zeros(B, C, dtype=torch.long, device=device)
+
+        for b in range(B):
+            valid = ~event_mask[b]
+            n = valid.sum().item()
+            if n < 1:
+                continue
+            offsets = event_offsets[b][valid]
+            gb = torch.zeros(n, dtype=torch.long, device=device)
+            ga = torch.zeros(n, dtype=torch.long, device=device)
+            if n >= 2:
+                gb[1:] = (offsets[1:] - offsets[:-1]).abs()
+                ga[:-1] = (offsets[1:] - offsets[:-1]).abs()
+            ga[-1] = gb[-1] if n >= 2 else torch.tensor(0)
+            gaps_before[b][valid] = gb
+            gaps_after[b][valid] = ga
+
+        emb_parts = [
+            presence,
+            self.gap_before_emb(gaps_before),
+            self.gap_after_emb(gaps_after),
+        ]
+
+        if self.gap_ratios:
+            ratio_before = torch.ones(B, C, device=device)
+            ratio_after = torch.ones(B, C, device=device)
+            for b in range(B):
+                valid = ~event_mask[b]
+                n = valid.sum().item()
+                if n < 2:
+                    continue
+                gb = gaps_before[b][valid].float()
+                ga = gaps_after[b][valid].float()
+                rb = torch.ones(n, device=device)
+                ra = torch.ones(n, device=device)
+                if n >= 3:
+                    rb[2:] = (gb[1:-1] / gb[2:].clamp(min=0.1)).clamp(0.1, 10.0)
+                if n >= 3:
+                    ra[:-2] = (ga[1:-1] / ga[:-2].clamp(min=0.1)).clamp(0.1, 10.0)
+                ratio_before[b][valid] = rb
+                ratio_after[b][valid] = ra
+            emb_parts.append(self.gap_ratio_before_emb((ratio_before * 50).long()))
+            emb_parts.append(self.gap_ratio_after_emb((ratio_after * 50).long()))
+
+        combined = torch.cat(emb_parts, dim=-1)
+        event_embs = self.event_proj(combined)
+
+        token_pos = ((self.a_bins + event_offsets) // 4).clamp(0, self.n_audio_tokens - 1)
+        in_window = (~event_mask) & (event_offsets >= -self.a_bins)
+        out_of_window = (~event_mask) & (event_offsets < -self.a_bins)
+
+        return event_embs, token_pos, in_window, out_of_window, event_offsets
+
+    def forward(self, mel, event_offsets, event_mask, conditioning):
+        B = mel.size(0)
+        V = self.n_virtual_tokens
+
+        # ── shared conv stem ──
+        x = self.conv(mel).transpose(1, 2)  # (B, 250, d_model)
+        x = self.conv_norm(x)
+        audio_positions = torch.arange(x.size(1), device=x.device).unsqueeze(0).expand(B, -1)
+        x = x + self.pos_emb(audio_positions)
+
+        # ── Stage 1: Proposer (pure audio) ──
+        x_proposer = x.clone()  # don't let proposer gradients affect conv stem used by selector
+        for layer in self.proposer_layers:
+            x_proposer = layer(x_proposer)
+        proposal_logits = self.proposer_head(x_proposer).squeeze(-1)  # (B, 250)
+        proposal_conf = torch.sigmoid(proposal_logits)  # (B, 250)
+
+        # ── Embed proposals into audio tokens ──
+        proposal_emb = self.proposal_embed(proposal_conf.unsqueeze(-1))  # (B, 250, d_model)
+        x = x + proposal_emb  # enrich audio tokens with proposal info
+
+        # ── Stage 2: Selector ──
+        cond = self.cond_mlp(conditioning)
+        x = self.film_conv(x, cond)
+
+        # build event embeddings and scatter-add
+        event_embs, token_pos, in_window, out_of_window, raw_offsets = self._build_event_embeddings(
+            event_offsets, event_mask
+        )
+        for b in range(B):
+            valid_idx = in_window[b].nonzero(as_tuple=True)[0]
+            if len(valid_idx) == 0:
+                continue
+            tpos = token_pos[b, valid_idx]
+            embs = event_embs[b, valid_idx]
+            x[b].scatter_add_(0, tpos.unsqueeze(-1).expand(-1, self.d_model), embs)
+
+        # virtual tokens (if enabled)
+        if V > 0:
+            virt = self.virtual_watermark.expand(B, V, -1).clone()
+            virt_positions = torch.arange(-V, 0, device=x.device).unsqueeze(0).expand(B, -1)
+            virt = virt + self.pos_emb(virt_positions)
+            virt = self.film_conv(virt, cond)
+
+            for b in range(B):
+                oow_idx = out_of_window[b].nonzero(as_tuple=True)[0]
+                if len(oow_idx) == 0:
+                    continue
+                embs = event_embs[b, oow_idx]
+                if V == self.max_events:
+                    virt[b, oow_idx] = virt[b, oow_idx] + embs
+                else:
+                    offsets = raw_offsets[b, oow_idx].float()
+                    max_oow = offsets.min().item()
+                    if max_oow < -500:
+                        t = (offsets - max_oow) / (-500 - max_oow)
+                    else:
+                        t = torch.ones_like(offsets)
+                    virt_pos = (t * (V - 1)).long().clamp(0, V - 1)
+                    virt[b].scatter_add_(0, virt_pos.unsqueeze(-1).expand(-1, self.d_model), embs)
+
+            x = torch.cat([virt, x], dim=1)
+
+        # selector transformer
+        for layer, film in zip(self.selector_layers, self.film_layers):
+            x = layer(x)
+            x = film(x, cond)
+
+        # extract cursor for onset prediction
+        cursor = x[:, V + self.cursor_token, :]
+        logits = self.head_proj(self.head_norm(cursor))
+        logits = logits + self.head_smooth(logits.unsqueeze(1)).squeeze(1)
+
+        # return both proposal logits (for Stage 1 loss) and onset logits (for Stage 2 loss)
+        return logits, proposal_logits
+
+
 class ContextFiLMDetector(nn.Module):
     """Audio-only self-attention with context FiLM conditioning (exp 34+).
 

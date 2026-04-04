@@ -991,7 +991,7 @@ def _top3_gap_peaks(gaps, tolerance=0.05):
 
 @torch.no_grad()
 def validate_and_collect(model, loader, criterion, device, amp_enabled=False, sigmoid_mode=False, framewise=False,
-                         multi_target=False, ratio_criterion=None):
+                         multi_target=False, ratio_criterion=None, propose_select=False):
     """Single pass: compute val loss AND collect predictions + extra data for graphs."""
     model.eval()
     all_targets = []       # single-target: (N,), multi-target: not used
@@ -1007,6 +1007,8 @@ def validate_and_collect(model, loader, criterion, device, amp_enabled=False, si
     all_n_targets = []     # (N,) (multi-target only)
     all_ratio_preds = []   # ratio head predictions (exp 55+)
     all_ratio_targets = [] # ratio head targets (exp 55+)
+    all_proposal_confs = []  # Stage 1 confidences (exp 58+)
+    all_proposal_has_onset = []  # which tokens actually have onsets (exp 58+)
     total_loss = 0.0
     total_n = 0
 
@@ -1043,7 +1045,33 @@ def validate_and_collect(model, loader, criterion, device, amp_enabled=False, si
                 logits[:, :500:4] = onset_probs * 10
             else:
                 output = model(mel, evt_off, evt_mask, cond)
-                if isinstance(output, tuple) and ratio_criterion is not None:
+                if isinstance(output, tuple) and propose_select:
+                    # propose-select mode: onset logits + proposal logits
+                    onset_logits, proposal_logits_val = output
+                    logits = onset_logits
+                    if multi_target:
+                        loss = criterion(logits, targets_padded, n_tgt)
+                    else:
+                        loss = criterion(logits, target)
+                    # collect proposal data for Stage 1 metrics
+                    prop_conf = torch.sigmoid(proposal_logits_val).cpu().numpy()
+                    all_proposal_confs.append(prop_conf)
+                    # build onset mask: which tokens have GT onsets
+                    n_tok = proposal_logits_val.size(1)
+                    has_onset = np.zeros((mel.size(0), n_tok), dtype=np.float32)
+                    for b in range(mel.size(0)):
+                        valid = ~evt_mask[b].cpu().bool()
+                        if valid.any():
+                            offsets = evt_off[b][valid].cpu()
+                            tok_pos = ((A_BINS + offsets) // 4).clamp(0, n_tok - 1).numpy()
+                            has_onset[b, tok_pos] = 1.0
+                        t = target[b].item() if not multi_target else (targets_padded[b, 0].item() if n_tgt[b] > 0 else -1)
+                        if 0 <= t < N_CLASSES - 1:
+                            tok = (A_BINS + t) // 4
+                            if 0 <= tok < n_tok:
+                                has_onset[b, tok] = 1.0
+                    all_proposal_has_onset.append(has_onset)
+                elif isinstance(output, tuple) and ratio_criterion is not None:
                     # ratio head mode: onset logits + ratio logits
                     onset_logits, ratio_logits_val = output
                     logits = onset_logits
@@ -1149,6 +1177,9 @@ def validate_and_collect(model, loader, criterion, device, amp_enabled=False, si
     if all_ratio_preds:
         extra["ratio_preds"] = np.concatenate(all_ratio_preds)
         extra["ratio_targets"] = np.concatenate(all_ratio_targets)
+    if all_proposal_confs:
+        extra["proposal_confs"] = np.concatenate(all_proposal_confs)
+        extra["proposal_has_onset"] = np.concatenate(all_proposal_has_onset)
     return val_loss, extra
 
 
@@ -2605,6 +2636,114 @@ def _save_benchmark_history_graphs(bench_root, run_dir):
     plt.close(fig)
 
 
+def _save_proposer_graphs(val_extra, val_targets, val_preds, val_metrics, eval_step, run_dir):
+    """Save Stage 1 proposer analysis graphs (exp 58+)."""
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+
+    eval_dir = os.path.join(run_dir, "evals")
+    prefix = os.path.join(eval_dir, f"eval_{eval_step:03d}")
+
+    confs = val_extra["proposal_confs"]  # (N, 250)
+    has_onset = val_extra["proposal_has_onset"]  # (N, 250)
+    stop = N_CLASSES - 1
+
+    fig, axes = plt.subplots(2, 3, figsize=(18, 10))
+
+    # 1. Confidence histogram: onset vs non-onset positions
+    ax = axes[0, 0]
+    onset_confs = confs[has_onset > 0]
+    non_onset_confs = confs[has_onset == 0]
+    ax.hist(non_onset_confs, bins=50, range=(0, 1), alpha=0.6, label=f"Non-onset ({len(non_onset_confs):,})", color="#4a90d9", density=True)
+    ax.hist(onset_confs, bins=50, range=(0, 1), alpha=0.6, label=f"Onset ({len(onset_confs):,})", color="#eb4528", density=True)
+    ax.axvline(0.5, color="black", linestyle="--", alpha=0.5)
+    ax.set_xlabel("Stage 1 Confidence")
+    ax.set_ylabel("Density")
+    ax.set_title("Confidence Distribution")
+    ax.legend(fontsize=8)
+
+    # 2. Precision-Recall curve across thresholds
+    ax = axes[0, 1]
+    thresholds = np.linspace(0.1, 0.9, 17)
+    precisions, recalls, f1s = [], [], []
+    for thr in thresholds:
+        pred_binary = (confs >= thr).astype(np.float32)
+        tp = (pred_binary * has_onset).sum()
+        fp = (pred_binary * (1 - has_onset)).sum()
+        fn = ((1 - pred_binary) * has_onset).sum()
+        p = tp / (tp + fp) if (tp + fp) > 0 else 0
+        r = tp / (tp + fn) if (tp + fn) > 0 else 0
+        f = 2*tp / (2*tp + fp + fn) if (2*tp + fp + fn) > 0 else 0
+        precisions.append(p); recalls.append(r); f1s.append(f)
+    ax.plot(thresholds, precisions, label="Precision", color="#6bc46d")
+    ax.plot(thresholds, recalls, label="Recall", color="#4a90d9")
+    ax.plot(thresholds, f1s, label="F1", color="#eb4528", linewidth=2)
+    ax.axvline(0.5, color="black", linestyle="--", alpha=0.3)
+    ax.set_xlabel("Threshold")
+    ax.set_ylabel("Rate")
+    ax.set_title("Stage 1 P/R/F1 vs Threshold")
+    ax.legend(fontsize=8)
+
+    # 3. Stage 2 picks: proposed vs not proposed accuracy
+    ax = axes[0, 2]
+    s2_agree = val_metrics.get("s2_agree_accuracy", 0)
+    s2_override = val_metrics.get("s2_override_accuracy", 0)
+    s2_picks_s1 = val_metrics.get("s2_picks_s1", 0)
+    bars = ax.bar(["S2 agrees\nwith S1", "S2 overrides\nS1"], [s2_agree, s2_override],
+                  color=["#6bc46d", "#eb4528"])
+    ax.set_ylabel("Accuracy")
+    ax.set_title(f"Stage 2 Accuracy (picks S1: {s2_picks_s1:.1%})")
+    ax.set_ylim(0, 1)
+    for bar, val in zip(bars, [s2_agree, s2_override]):
+        ax.text(bar.get_x() + bar.get_width()/2, bar.get_height() + 0.02, f"{val:.1%}",
+                ha="center", fontsize=10)
+
+    # 4. Average proposal count histogram
+    ax = axes[1, 0]
+    proposals_per_sample = (confs >= 0.5).sum(axis=1)
+    ax.hist(proposals_per_sample, bins=50, color="#4a90d9", alpha=0.7)
+    ax.axvline(proposals_per_sample.mean(), color="red", linestyle="--", label=f"Mean: {proposals_per_sample.mean():.1f}")
+    ax.set_xlabel("Proposals per sample (>0.5)")
+    ax.set_ylabel("Count")
+    ax.set_title("Proposal Count Distribution")
+    ax.legend(fontsize=8)
+
+    # 5. Stage 2 pick rank histogram
+    ax = axes[1, 1]
+    rank_mean = val_metrics.get("s2_pick_rank_mean", 0)
+    rank_med = val_metrics.get("s2_pick_rank_median", 0)
+    ax.text(0.5, 0.6, f"Mean rank: {rank_mean:.1f}\nMedian rank: {rank_med:.1f}",
+            transform=ax.transAxes, fontsize=14, ha="center", va="center")
+    ax.text(0.5, 0.3, f"(0 = S2 picks S1's top choice\nhigher = S2 ignores S1 ranking)",
+            transform=ax.transAxes, fontsize=10, ha="center", va="center", alpha=0.6)
+    ax.set_title("Stage 2 Pick Rank (among S1 proposals)")
+    ax.axis("off")
+
+    # 6. Key metrics summary
+    ax = axes[1, 2]
+    s1_f1 = val_metrics.get("s1_f1", 0)
+    s1_naive = val_metrics.get("s1_naive_accuracy", 0)
+    s2_acc = val_metrics.get("accuracy", 0)
+    text = (f"Stage 1 F1: {s1_f1:.3f}\n"
+            f"Stage 1 Recall: {val_metrics.get('s1_recall', 0):.3f}\n"
+            f"Stage 1 Precision: {val_metrics.get('s1_precision', 0):.3f}\n"
+            f"S1 onset conf: {val_metrics.get('s1_onset_conf', 0):.3f}\n"
+            f"S1 non-onset conf: {val_metrics.get('s1_non_onset_conf', 0):.3f}\n"
+            f"\n"
+            f"S1 naive accuracy: {s1_naive:.1%}\n"
+            f"S2 accuracy:       {s2_acc:.1%}\n"
+            f"S2 > S1 naive:     {'+' if s2_acc > s1_naive else ''}{(s2_acc - s1_naive)*100:.1f}pp")
+    ax.text(0.1, 0.5, text, transform=ax.transAxes, fontsize=11, va="center", fontfamily="monospace")
+    ax.set_title("Summary")
+    ax.axis("off")
+
+    fig.suptitle(f"Stage 1 Proposer Analysis (eval {eval_step})", fontsize=14, fontweight="bold")
+    fig.tight_layout()
+    fig.savefig(f"{prefix}_proposer.png", dpi=120)
+    plt.close(fig)
+
+
 def save_eval_graphs(targets, preds, metrics, eval_step, run_dir, extra=None, mt_metrics=None):
     """Generate and save all graphs for this eval."""
     import matplotlib
@@ -3559,6 +3698,7 @@ def _save_step_graph(step_history, run_dir):
     scores = [s[4] for s in step_history]
     accs = [s[5] for s in step_history]
     sf1s = [s[6] for s in step_history]
+    s1f1s = [s[7] if len(s) > 7 else 0 for s in step_history]
 
     # rolling average helper
     def rolling_avg(vals, window=20):
@@ -3580,6 +3720,9 @@ def _save_step_graph(step_history, run_dir):
     ax1.plot(steps, rolling_avg(accs), label="Accuracy (<=3%)", linewidth=1, color="#4a90d9", linestyle="--")
     ax1.plot(steps, sf1s, linewidth=1, color="#c76dba", alpha=0.2)
     ax1.plot(steps, rolling_avg(sf1s), label="Stop F1", linewidth=1, color="#c76dba", linestyle="--")
+    if any(v > 0 for v in s1f1s):
+        ax1.plot(steps, s1f1s, linewidth=1, color="#e6a817", alpha=0.2)
+        ax1.plot(steps, rolling_avg(s1f1s), label="S1 F1", linewidth=1.5, color="#e6a817", linestyle="-.")
     ax1.set_xlabel("Step", fontsize=12)
     ax1.set_ylabel("Rate", fontsize=12)
     ax1.set_ylim(0, 1)
@@ -3939,6 +4082,18 @@ def train(args):
             a_bins=A_BINS, b_bins=B_BINS,
             ratio_head=getattr(args, 'ratio_head', False),
         ).to(args.device)
+    elif args.model_type == "event_embed_propose":
+        from detection_model import ProposeSelectDetector
+        model = ProposeSelectDetector(
+            n_mels=80, d_model=args.d_model,
+            n_proposer_layers=getattr(args, 'proposer_layers', 4),
+            n_selector_layers=args.enc_layers + args.fusion_layers,
+            n_heads=args.n_heads,
+            n_classes=N_CLASSES, max_events=C_EVENTS, dropout=args.dropout,
+            gap_ratios=args.gap_ratios,
+            n_virtual_tokens=getattr(args, 'n_virtual_tokens', 0),
+            a_bins=A_BINS, b_bins=B_BINS,
+        ).to(args.device)
     elif args.model_type == "framewise":
         model = FramewiseOnsetDetector(
             n_mels=80, d_model=args.d_model,
@@ -4216,6 +4371,55 @@ def train(args):
                     logits = torch.zeros(mel.size(0), N_CLASSES, device=mel.device)
                     # put onset_probs into first 125 positions scaled up
                     logits[:, :500:4] = onset_probs * 10  # rough proxy for compat
+                elif args.model_type == "event_embed_propose":
+                    onset_logits, proposal_logits = model(mel, evt_off, evt_mask, cond)
+                    logits = onset_logits
+                    n_audio_tok = proposal_logits.size(1)  # 250
+
+                    # Build proposal targets: mark tokens containing past events + target onset
+                    proposal_target = torch.zeros(mel.size(0), n_audio_tok, device=mel.device)
+                    for b in range(mel.size(0)):
+                        # past events → token positions
+                        valid = ~evt_mask[b].bool()
+                        if valid.any():
+                            offsets = evt_off[b][valid]
+                            tok_pos = ((A_BINS + offsets) // 4).clamp(0, n_audio_tok - 1)
+                            proposal_target[b].scatter_(0, tok_pos, 1.0)
+                        # target onset → token position
+                        t = target[b].item()
+                        if t < N_CLASSES - 1:  # not STOP
+                            # target is offset from cursor, cursor is at token a_bins//4
+                            tok = (A_BINS + t) // 4
+                            if 0 <= tok < n_audio_tok:
+                                proposal_target[b, tok] = 1.0
+
+                    # Stage 1 loss: focal BCE
+                    s1_gamma = 2.0
+                    s1_pos_weight = torch.tensor(5.0, device=mel.device)
+                    s1_bce = F.binary_cross_entropy_with_logits(
+                        proposal_logits, proposal_target, reduction='none',
+                        pos_weight=s1_pos_weight)
+                    # focal modulation
+                    with torch.no_grad():
+                        p_t = torch.sigmoid(proposal_logits) * proposal_target + \
+                              (1 - torch.sigmoid(proposal_logits)) * (1 - proposal_target)
+                        focal_weight = (1 - p_t) ** s1_gamma
+                    s1_loss = (s1_bce * focal_weight).mean()
+
+                    # Stage 2 loss: standard onset loss
+                    if use_multi_target:
+                        s2_loss = criterion(logits, targets_padded, n_tgt)
+                    else:
+                        s2_loss = criterion(logits, target)
+
+                    # Stage 2 freeze: only train Stage 1 for first N evals
+                    s2_freeze_evals = getattr(args, 'proposer_freeze_evals', 2)
+                    if eval_step < s2_freeze_evals:
+                        loss = s1_loss  # only proposer trains
+                    else:
+                        loss = s2_loss + 0.5 * s1_loss  # joint training
+                    output = None  # not a stop_token tuple
+
                 else:
                     output = model(mel, evt_off, evt_mask, cond)
                     ratio_mode = getattr(args, 'ratio_head', False)
@@ -4267,7 +4471,7 @@ def train(args):
                             loss = criterion(logits, target)
 
             # streak-ratio loss weighting: amplify loss for rare streak-ratio cells
-            if getattr(args, 'streak_loss', False) and not isinstance(output, tuple):
+            if getattr(args, 'streak_loss', False) and output is not None and not isinstance(output, tuple):
                 streak_weights = compute_streak_ratio_weights(
                     evt_off.cpu(), evt_mask.cpu(), target,
                     power=args.streak_power, cap=args.streak_cap)
@@ -4354,7 +4558,7 @@ def train(args):
             b_stop_f1 = 0.0
             b_stop_rate = 0.0
             b_ratio_loss = 0.0
-            if isinstance(output, tuple) and not getattr(args, 'ratio_head', False):
+            if output is not None and isinstance(output, tuple) and not getattr(args, 'ratio_head', False):
                 b_stop_loss = stop_loss.item()
                 with torch.no_grad():
                     sp = (torch.sigmoid(stop_logit) > 0.5)
@@ -4369,7 +4573,20 @@ def train(args):
                     train_stop_fn += fn
             if getattr(args, 'ratio_head', False) and isinstance(output, tuple):
                 b_ratio_loss = ratio_loss.item()
-            recent_buf.append((b_loss_x_bs, b_bs, b_ns, b_hit, b_miss, b_score, b_stop_loss, b_stop_f1, b_stop_rate, b_ratio_loss))
+            # Stage 1 proposer metrics for tqdm (exp 58+)
+            b_s1_f1 = 0.0
+            b_s1_loss = 0.0
+            b_s2_loss = 0.0
+            if args.model_type == "event_embed_propose":
+                b_s1_loss = s1_loss.item()
+                b_s2_loss = s2_loss.item() if eval_step >= getattr(args, 'proposer_freeze_evals', 2) else 0.0
+                with torch.no_grad():
+                    s1_pred = (torch.sigmoid(proposal_logits) >= 0.5).float()
+                    s1_tp = (s1_pred * proposal_target).sum().item()
+                    s1_fp = (s1_pred * (1 - proposal_target)).sum().item()
+                    s1_fn = ((1 - s1_pred) * proposal_target).sum().item()
+                    b_s1_f1 = 2*s1_tp / (2*s1_tp + s1_fp + s1_fn) if (2*s1_tp + s1_fp + s1_fn) > 0 else 0.0
+            recent_buf.append((b_loss_x_bs, b_bs, b_ns, b_hit, b_miss, b_score, b_stop_loss, b_stop_f1, b_stop_rate, b_ratio_loss, b_s1_f1, b_s1_loss, b_s2_loss))
 
             # update bars
             epoch_bar.update(1)
@@ -4406,6 +4623,14 @@ def train(args):
                     r_rL = sum(r[9] for r in recent_buf) / len(recent_buf) if recent_buf else 0
                     if r_rL > 0:
                         stats += f" rL={r_rL:.3f}"
+                    # Stage 1 proposer stats (exp 58+)
+                    r_s1f1 = sum(r[10] for r in recent_buf) / len(recent_buf) if recent_buf else 0
+                    r_s1L = sum(r[11] for r in recent_buf) / len(recent_buf) if recent_buf else 0
+                    r_s2L = sum(r[12] for r in recent_buf) / len(recent_buf) if recent_buf else 0
+                    if r_s1f1 > 0:
+                        stats += f" s1F1={r_s1f1:.2f} s1L={r_s1L:.3f}"
+                        if r_s2L > 0:
+                            stats += f" s2L={r_s2L:.3f}"
                 else:
                     stats = f"L={avg_loss:.3f}|{r_loss:.3f}"
                 epoch_bar.set_postfix_str(stats)
@@ -4421,6 +4646,7 @@ def train(args):
                     b_score / b_ns,
                     train_w3_sum / train_ns_total if train_ns_total > 0 else 0,
                     b_stop_f1,
+                    b_s1_f1,
                 ))
 
             # ── step-level live graph (every 500 steps) ──
@@ -4432,7 +4658,7 @@ def train(args):
                 base_step = global_step - 500
                 for pi, idx in enumerate(indices):
                     s = step_buf[idx]
-                    step_history.append((base_step + int((pi + 1) * 500 / n_points), s[0], s[1], s[2], s[3], s[4], s[5]))
+                    step_history.append((base_step + int((pi + 1) * 500 / n_points), s[0], s[1], s[2], s[3], s[4], s[5], s[6]))
                 step_buf.clear()
                 _save_step_graph(step_history, run_dir)
 
@@ -4495,6 +4721,7 @@ def _run_eval(model, val_loader, criterion, args, amp_enabled,
         model, val_loader, criterion, args.device, amp_enabled=amp_enabled,
         sigmoid_mode=use_sigmoid, multi_target=use_mt, framewise=is_framewise,
         ratio_criterion=ratio_criterion,
+        propose_select=(args.model_type == "event_embed_propose"),
     )
     # backward-compat: nearest-target metrics (always computed)
     val_targets = val_extra["targets"]
@@ -4537,6 +4764,75 @@ def _run_eval(model, val_loader, criterion, args, amp_enabled,
             val_metrics["ratio_good_rate"] = (log_err <= log_fail).mean().item()
             val_metrics["ratio_miss_rate"] = (log_err > log_fail).mean().item()
             val_metrics["ratio_valid_pct"] = valid.mean().item()
+
+    # Stage 1 proposer metrics (exp 58+)
+    if "proposal_confs" in val_extra:
+        confs = val_extra["proposal_confs"]  # (N, 250)
+        has_onset = val_extra["proposal_has_onset"]  # (N, 250)
+        threshold = 0.5
+        preds_binary = (confs >= threshold).astype(np.float32)
+        # per-token precision/recall/f1
+        tp = (preds_binary * has_onset).sum()
+        fp = (preds_binary * (1 - has_onset)).sum()
+        fn = ((1 - preds_binary) * has_onset).sum()
+        s1_precision = tp / (tp + fp) if (tp + fp) > 0 else 0.0
+        s1_recall = tp / (tp + fn) if (tp + fn) > 0 else 0.0
+        s1_f1 = 2 * tp / (2 * tp + fp + fn) if (2 * tp + fp + fn) > 0 else 0.0
+        val_metrics["s1_precision"] = float(s1_precision)
+        val_metrics["s1_recall"] = float(s1_recall)
+        val_metrics["s1_f1"] = float(s1_f1)
+        val_metrics["s1_avg_proposals"] = float(preds_binary.sum(axis=1).mean())
+        val_metrics["s1_onset_conf"] = float(confs[has_onset > 0].mean()) if (has_onset > 0).any() else 0.0
+        val_metrics["s1_non_onset_conf"] = float(confs[has_onset == 0].mean()) if (has_onset == 0).any() else 0.0
+
+        # Stage 2 → Stage 1 agreement: does Stage 2 pick a position Stage 1 proposed?
+        stop = N_CLASSES - 1
+        non_stop = val_preds < stop
+        if non_stop.sum() > 0:
+            # map Stage 2 predictions (bin offsets) to audio token indices
+            s2_tok = (A_BINS + val_preds[non_stop]) // 4
+            s2_tok = np.clip(s2_tok, 0, confs.shape[1] - 1)
+            # check if Stage 1 proposed those tokens
+            s1_proposed = preds_binary[non_stop, s2_tok]  # 1 = Stage 1 agreed
+            val_metrics["s2_picks_s1"] = float(s1_proposed.mean())
+            # confidence Stage 1 had at the positions Stage 2 picked
+            s1_conf_at_s2 = confs[non_stop, s2_tok]
+            val_metrics["s2_picks_s1_conf"] = float(s1_conf_at_s2.mean())
+            # when Stage 2 picks a non-proposed position, is it correct?
+            s2_correct = (val_preds == val_targets)[non_stop]
+            if (s1_proposed == 0).sum() > 0:
+                val_metrics["s2_override_accuracy"] = float(s2_correct[s1_proposed == 0].mean())
+            else:
+                val_metrics["s2_override_accuracy"] = 0.0
+            if (s1_proposed == 1).sum() > 0:
+                val_metrics["s2_agree_accuracy"] = float(s2_correct[s1_proposed == 1].mean())
+            else:
+                val_metrics["s2_agree_accuracy"] = 0.0
+            # rank of Stage 2's pick among Stage 1's sorted proposals
+            # (lower = Stage 2 picks top proposals, higher = Stage 2 ignores ranking)
+            n_tok = confs.shape[1]
+            ranks = np.zeros(non_stop.sum(), dtype=np.float64)
+            ns_idx = np.where(non_stop)[0]
+            for i, idx in enumerate(ns_idx):
+                tok = int(s2_tok[i])
+                # rank = how many tokens have higher confidence than this one
+                ranks[i] = (confs[idx] > confs[idx, tok]).sum()
+            val_metrics["s2_pick_rank_mean"] = float(ranks.mean())
+            val_metrics["s2_pick_rank_median"] = float(np.median(ranks))
+
+        # naive baseline: what if we just took Stage 1's earliest proposal above threshold?
+        n_samples = confs.shape[0]
+        naive_preds = np.full(n_samples, stop, dtype=np.int64)
+        for i in range(n_samples):
+            # scan from cursor token onwards (prediction range)
+            cursor_tok = A_BINS // 4
+            for t in range(cursor_tok, confs.shape[1]):
+                if confs[i, t] >= threshold:
+                    naive_preds[i] = (t - cursor_tok) * 4  # convert token back to bin offset
+                    break
+        naive_preds = np.clip(naive_preds, 0, stop)
+        naive_correct = (naive_preds == val_targets).mean()
+        val_metrics["s1_naive_accuracy"] = float(naive_correct)
 
     # multi-target metrics
     mt_metrics = None
@@ -4592,6 +4888,10 @@ def _run_eval(model, val_loader, criterion, args, amp_enabled,
     # save eval graphs
     save_eval_graphs(val_targets, val_preds, val_metrics, eval_step, run_dir,
                      extra=val_extra, mt_metrics=mt_metrics)
+
+    # Stage 1 proposer graphs (exp 58+)
+    if "proposal_confs" in val_extra:
+        _save_proposer_graphs(val_extra, val_targets, val_preds, val_metrics, eval_step, run_dir)
 
     # ── save eval data ──
     # strip non-serializable arrays from mt_metrics before saving
@@ -4651,7 +4951,7 @@ if __name__ == "__main__":
     parser.add_argument("--lr", type=float, default=3e-4)
     parser.add_argument("--wd", type=float, default=0.01)
     parser.add_argument("--d-model", type=int, default=384)
-    parser.add_argument("--model-type", default="unified", choices=["unified", "dual_stream", "interleaved", "context_film", "framewise", "event_embed"],
+    parser.add_argument("--model-type", default="unified", choices=["unified", "dual_stream", "interleaved", "context_film", "framewise", "event_embed", "event_embed_propose"],
                         help="Model architecture: unified, dual_stream, interleaved, context_film, framewise, or event_embed (exp 42+)")
     parser.add_argument("--enc-layers", type=int, default=4, help="AudioEncoder transformer layers")
     parser.add_argument("--gap-enc-layers", type=int, default=2, help="GapEncoder self-attention layers")
@@ -4673,6 +4973,8 @@ if __name__ == "__main__":
     parser.add_argument("--ratio-weight", type=float, default=0.3, help="Loss weight for ratio head")
     parser.add_argument("--density-jitter-rate", type=float, default=0.10, help="Density jitter probability (default 0.10 = 10%%)")
     parser.add_argument("--density-jitter-pct", type=float, default=0.02, help="Density jitter magnitude (default 0.02 = +/-2%%)")
+    parser.add_argument("--proposer-layers", type=int, default=4, help="Number of transformer layers in Stage 1 proposer (exp 58+)")
+    parser.add_argument("--proposer-freeze-evals", type=int, default=2, help="Freeze Stage 2 for this many evals while Stage 1 warms up (exp 58+)")
     parser.add_argument("--streak-loss", action="store_true", default=False, help="Streak-ratio loss weighting (exp 51+)")
     parser.add_argument("--streak-power", type=float, default=0.3, help="Streak loss weight power (default 0.3)")
     parser.add_argument("--streak-cap", type=float, default=50.0, help="Streak loss max weight cap (default 50)")

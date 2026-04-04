@@ -74,8 +74,60 @@ Also added `last_repeat` metric to all benchmarks and main val: % of predictions
 
 ## Result
 
-*Pending*
+Stopped at eval 4 (epoch 1.0). Virtual tokens not contributing.
+
+### Eval 4 metrics:
+
+| Metric | Value |
+|---|---|
+| HIT% | 72.5% |
+| Accuracy | 53.3% |
+| Stop F1 | 0.565 |
+| Score | 0.373 |
+| Val loss | 2.486 |
+| last_repeat | 52.0% |
+
+### Virtual token analysis:
+
+| Benchmark | Accuracy | Delta from baseline |
+|---|---|---|
+| Baseline | 53.3% | — |
+| NEP (kill OOW events) | 54.2% | **-0.9%** (removing vtokens helps) |
+| NE (kill ALL events) | 50.0% | -3.3% |
+
+| Eval | Base-NEP (vtoken contribution) | NEP-NE (in-window contribution) |
+|------|-------------------------------|-------------------------------|
+| 1 | -0.1% | +7.6% |
+| 2 | +0.1% | +5.7% |
+| 3 | -1.2% | +4.7% |
+| 4 | -0.9% | +4.2% |
+
+Vtokens flat at ~0% contribution across all evals. No trend of activation. In-window event contribution shrinking as audio learning improves (same pattern as all prior experiments).
+
+### New benchmark highlights (eval 4):
+
+| Benchmark | Accuracy | Insight |
+|---|---|---|
+| NA_A (kill past audio) | 46.3% | Model functions without past audio |
+| NA_B (kill future audio) | 1.3% | **Model almost entirely depends on future audio** |
+| NA_E (kill audio near events) | 18.7% | Heavy reliance on audio at event positions (-34pp) |
+| SwapOut (random past audio) | 53.3% | Past audio irrelevant — same as baseline |
+| ERB (ratios blanked) | 45.3% | Gap ratios contribute ~8pp |
+| EGB (gaps blanked) | 50.0% | = NE. Without gap info, event presence is worthless |
+| ERGB (both blanked) | 50.0% | = NE. Confirms gap is foundation |
 
 ## Lesson
 
-*Pending*
+**128 virtual tokens for out-of-window context do not help.** The model does not learn to use distant event history through virtual tokens. At eval 4, removing all vtokens (NEP) performs identically or slightly better than baseline. The 128 extra tokens dilute attention without contributing information.
+
+**Key findings from new benchmarks:**
+
+1. **Future audio is everything.** NA_B (kill future) drops accuracy to 1.3%. NA_A (kill past) only drops to 46.3%. SwapOut (wrong past audio) has zero impact. The model predicts almost entirely from future audio context.
+
+2. **Gap encoding is the foundation of event embeddings.** EGB (gaps zeroed) = NE (no events) = 50.0%. Event presence without gap information is worthless. Gap ratios add ~8pp on top of gap encoding.
+
+3. **Audio at event positions is critical.** NA_E drops 34pp, more than NE drops from baseline (3.3pp). The model uses audio-at-event-onset more than it uses the event embeddings themselves.
+
+4. **last_repeat at 52%** — higher than the 43.9% dataset baseline, confirming the model is somewhat metronomic.
+
+**Virtual tokens failed for the same reason as exp 49**: the model can't learn to use sparse context tokens when dense audio tokens already dominate attention. The architecture needs a mechanism that forces context usage, not just provides an optional pathway.
