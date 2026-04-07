@@ -1791,6 +1791,28 @@ def run_benchmarks(model, val_loader, device, amp_enabled=False, multi_target=Fa
                 if vals:
                     result[f"onset_avg_{k}"] = float(np.mean(vals))
 
+            # structural: all_stop, strict_increasing, stop_violations
+            n_mo = len(all_mo_preds)
+            preds_stk = np.stack([np.concatenate(all_mo_preds[oi]) for oi in range(n_mo)], axis=1)
+            targets_stk = np.stack([np.concatenate(all_mo_targets[oi]) for oi in range(n_mo)], axis=1)
+            result["all_stop_rate"] = float((preds_stk == stop).all(axis=1).mean())
+            result["all_stop_target_rate"] = float((targets_stk == stop).all(axis=1).mean())
+            all_ns = (preds_stk < stop).all(axis=1)
+            if all_ns.sum() > 0:
+                result["strict_increasing"] = float(np.all(np.diff(preds_stk[all_ns], axis=1) > 0, axis=1).mean())
+            else:
+                result["strict_increasing"] = 0.0
+            violated = 0
+            for i in range(preds_stk.shape[0]):
+                saw = False
+                for oi in range(n_mo):
+                    if saw and preds_stk[i, oi] != stop:
+                        violated += 1
+                        break
+                    if preds_stk[i, oi] == stop:
+                        saw = True
+            result["strict_stop_violation_rate"] = float(violated / max(preds_stk.shape[0], 1))
+
         return result
 
     results = {}
@@ -1851,7 +1873,7 @@ def run_benchmarks(model, val_loader, device, amp_enabled=False, multi_target=Fa
     def metronome(mel, evt_off, evt_mask, cond, target):
         B, C = evt_off.shape
         for b in range(B):
-            t = target[b].item()
+            t = target[b, 0].item() if target.dim() == 2 else target[b].item()
             # pick a gap that's far from the actual target (2x or 0.5x, whichever is farther)
             if t > 0 and t < stop:
                 gap = t * 2 if t < 100 else max(5, t // 3)
@@ -1909,7 +1931,7 @@ def run_benchmarks(model, val_loader, device, amp_enabled=False, multi_target=Fa
                 dominant_gap = 3
 
             # skip if target is already 1/1 with the dominant gap
-            t = target[b].item()
+            t = target[b, 0].item() if target.dim() == 2 else target[b].item()
             if t < stop and abs(t - dominant_gap) <= 2:
                 continue
 
