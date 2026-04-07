@@ -95,7 +95,7 @@ Each folder contains a README with hypothesis, results, and key graphs.
 | 59-B | [Within-Song Normalized Metrics](experiment_59b/) | **Key finding** | gap_std (+0.30), gap_cv (+0.29), dominant_gap_pct (-0.27), max_metro_streak (-0.27) all significant. Pattern variety predicts human preference |
 | 59-C | [Synthetic Human Evaluator](experiment_59c/) | Works | gap_std + gap_cv predicts #1 at 52% (2x random). Volunteers 60%. Spearman r=0.35, p=0.001 |
 | 59-D | [Self vs Volunteer Metric Split](experiment_59d/) | Divergent | Expert=gap_cv (+0.38), Volunteers=dominant_gap_pct (-0.42). Expert values proportional variety, volunteers punish boredom |
-| 59-E | [Split Synthetic Evaluators](experiment_59e/) | **Pending** | Separate evaluators tuned for expert vs volunteer vs combined preferences |
+| 59-E | [Split Synthetic Evaluators](experiment_59e/) | Validated | Tuned evaluators outperform on target: volunteer=60% #1 (r=0.47), expert=47% (tau=0.42). Cross-eval drops to random |
 
 ## Key Lessons
 
