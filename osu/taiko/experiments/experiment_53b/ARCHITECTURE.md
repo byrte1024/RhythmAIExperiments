@@ -4,7 +4,7 @@
 
 Predict the next onset timing in an osu!taiko rhythm game chart, given audio + past event context. Autoregressive: each prediction advances the cursor to the predicted onset position.
 
-Identical to experiment 53 except A_BINS is doubled from 250 to 500, giving 2.5s of past audio context instead of 1.25s.
+This experiment uses A_BINS=500 (2.5s of past audio context) and B_AUDIO=500 (2.5s of future audio), for a total 5.0s mel window (1000 frames). The prediction range remains B_PRED=250 (1.25s). The doubled past audio gives the transformer more rhythmic history to reference when generating patterns.
 
 ## Input
 
@@ -37,7 +37,7 @@ Note: the model sees 500 bins (2.5s) of future audio but can only predict within
 
 ## Model: EventEmbeddingDetector (with gap ratios)
 
-**Total parameters: ~16.5M** (same as exp 53 — no new learned parameters, only longer sequence)
+**Total parameters: ~16.5M** (longer sequence does not add learned parameters — only changes token count through transformer)
 
 ### 1. Conditioning MLP
 ```

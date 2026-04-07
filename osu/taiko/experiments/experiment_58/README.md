@@ -75,8 +75,81 @@ python detection_train.py taiko_v2 --run-name detect_experiment_58 --model-type 
 
 ## Result
 
-*Pending*
+Stopped at eval 12 (epoch 3.0). **Peak at eval 9 (epoch 3.2). New all-time high: 74.6% HIT.**
+
+### Peak (eval 9) metrics:
+
+| Metric | Value |
+|---|---|
+| HIT% | **74.6%** (ATH, +0.9pp over previous) |
+| Accuracy | 55.7% |
+| Val loss | 2.427 |
+
+### Stage 1 at peak:
+
+| Metric | Value |
+|---|---|
+| S1 F1 | 0.502 |
+| S1 Precision | 0.377 |
+| S1 Recall | 0.740 |
+| Avg proposals | 67 / 250 tokens |
+| Confidence separation | 0.173 |
+
+### Stage 2 interaction at peak:
+
+| Metric | Value |
+|---|---|
+| S2 picks S1 | 82% |
+| S2 agree accuracy | 57.4% |
+| S2 override accuracy | 48.4% |
+| S2 pick rank | 31.3 |
+| S1 naive accuracy | 2.0% |
+
+### Proposal benchmarks (eval 9):
+
+| Benchmark | Accuracy | Delta from normal |
+|---|---|---|
+| normal | 57.1% | — |
+| proposal_zero | 7.2% | **-49.9pp** |
+| proposal_random | 19.0% | **-38.1pp** |
+
+Stage 1 proposals are massively load-bearing. Zeroing them kills accuracy by 50pp.
+
+### Progression:
+
+| Eval | Epoch | HIT% | Delta | S1 F1 | S2 agree | S2 override |
+|------|-------|------|-------|-------|----------|-------------|
+| 3 | 1.7 | 69.6 | — | 0.484 | 53.4% | 42.3% |
+| 5 | 2.2 | 72.6 | +0.8 | 0.508 | 55.7% | 47.4% |
+| 7 | 2.7 | 73.6 | +0.7 | 0.478 | 56.5% | 48.9% |
+| **9** | **3.2** | **74.6** | **+0.4** | **0.502** | **57.4%** | **48.4%** |
+| 10 | 3.5 | 74.1 | -0.5 | 0.487 | 56.6% | 49.6% |
+| 12 | 3.0 | 74.1 | +0.1 | 0.501 | 56.5% | 50.5% |
+
+**7 consecutive improvements** (evals 3-9) before plateauing. Zero oscillations during climb — uniquely smooth compared to all prior experiments (which oscillate 67-80% of steps).
+
+### vs all-time bests:
+
+| Metric | Exp 58 | Exp 44 | Exp 55 | Exp 53-B |
+|--------|--------|--------|--------|----------|
+| HIT% | **74.6%** | 73.7% | 73.6% | 73.4% |
+| Acc% | **55.7%** | 54.8% | 54.2% | 54.2% |
+| Val loss | **2.427** | 2.480 | 2.463 | 2.479 |
 
 ## Lesson
 
-*Pending*
+The propose-select architecture **breaks the 73.7% HIT ceiling** that held across experiments 44-57. Key findings:
+
+1. **Two-stage decoupling works.** Separating audio onset detection (Stage 1) from chart-level selection (Stage 2) produces smoother optimization and higher accuracy.
+
+2. **Stage 1 proposals are essential.** Zeroing proposals drops accuracy by 50pp (57→7%). Stage 2 is not learning independently — it's genuinely selecting from S1's candidates.
+
+3. **Remarkably linear convergence.** 7 consecutive improvements with zero oscillations — unique among all experiments. The two-stage architecture has a smoother loss landscape.
+
+4. **S1 quality is the bottleneck.** F1=0.50 means S2 sifts through ~35 false positives per 30 real onsets per sample. Higher S1 precision would give S2 a cleaner selection problem.
+
+5. **S2 learns genuine override ability.** Override accuracy reached 50.5% — when S2 disagrees with S1, it's right half the time. This is real selection, not rubber-stamping.
+
+6. **S1 degrades under joint training.** F1 dropped from 0.56 (frozen) to 0.48 after unfreeze, then recovered to ~0.50. Joint gradients through the proposal embedding muddy S1's discrimination.
+
+[Exp 58-B](../experiment_58b/README.md) tests lower recall weighting for S1 to improve precision.

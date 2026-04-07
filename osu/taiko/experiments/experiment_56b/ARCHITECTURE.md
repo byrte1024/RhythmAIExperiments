@@ -15,7 +15,7 @@ Compare predicted event counts and metrics across the 3 runs per song.
 
 ## Model Under Test
 
-[Exp 45](../experiment_45/README.md) — same as exp 56.
+Exp 45 — EventEmbeddingDetector with gap ratios and tight density jitter (±2%/10%). Config: A_BINS=500, B_BINS=500, N_CLASSES=501, gap ratios ON. 72.1% HIT at peak. Selected for strongest density adherence.
 
 ## Inference Settings
 
@@ -27,7 +27,7 @@ Compare predicted event counts and metrics across the 3 runs per song.
 
 ## Metrics
 
-Same as exp 56 (matched/close/far at 25ms/50ms/100ms thresholds), plus:
+Event matching from GT perspective: **Matched** (closest prediction within 25ms), **Close** (within 50ms), **Far** (beyond 100ms). Prediction perspective: **Hallucination** (predicted events with no GT event within 100ms). Additionally:
 - **Sensitivity**: ratio of predicted events at 1.2x vs 0.8x density
 - **Per-song delta**: how much does event count change with density scaling
 

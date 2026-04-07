@@ -58,7 +58,7 @@ x = x + proposal_embedding  # enrich audio tokens with "Stage 1 thinks onset her
 cond = CondMLP(conditioning) → (B, 64)
 x = FiLM(cond)(x)  # density conditioning
 
-Event embeddings scatter-added to audio tokens (same as EventEmbeddingDetector)
+Event embeddings (5 features per event → Linear(1920, 384) → GELU → Linear(384, 384)) mapped to audio token positions via `token = (500 + offset) // 4` and scatter-added to the corresponding audio tokens
 
 for 8 transformer layers:
     x = TransformerEncoderLayer(x)
@@ -72,7 +72,7 @@ logits = Linear(384, 251)(LayerNorm(384)(cursor)) + smooth_conv
 Stage 2 sees: audio features + Stage 1 proposal confidences + event context + density. It picks from the audio-supported candidates.
 
 ### Event Embeddings (with gap ratios)
-Same as EventEmbeddingDetector: 5 features (presence, gap_before, gap_after, ratio_before, ratio_after) → Linear(1920, 384) → GELU → Linear(384, 384). Scatter-added to audio tokens at event positions.
+For each of 128 context events, compute 5 features: **Presence embedding** (learned parameter (1, 384)), **Gap before** (sinusoidal encoding of distance from previous event), **Gap after** (sinusoidal encoding of distance to next event; last event uses gap_before as proxy to avoid target leakage), **Gap ratio before** (sinusoidal encoding of `gap_before[i-1] / gap_before[i]` scaled by 50, clamped [0.1, 10.0]), **Gap ratio after** (sinusoidal encoding of `gap_after[i+1] / gap_after[i]`, same scaling). Concatenated and projected: `[presence (384) | gap_before (384) | gap_after (384) | ratio_before (384) | ratio_after (384)] → Linear(1920, 384) → GELU → Linear(384, 384) → event_emb (B, 128, 384)`. Events mapped to audio token positions via `token = (500 + offset) // 4` and scatter-added.
 
 ### FiLM Conditioning
 Applied to Stage 2 only (after conv stem and after every selector transformer layer). Stage 1 has NO conditioning.

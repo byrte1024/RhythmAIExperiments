@@ -71,7 +71,7 @@ Events are classified into two groups:
 Each virtual token is initialized as:
 - **Learned watermark**: shared parameter (1, 1, 384), signals "this is context, not audio"
 - **Sinusoidal position embedding**: positions -128 to -1 (negative time)
-- **FiLM conditioning**: same as audio tokens
+- **FiLM conditioning**: `cond (B, 64) → Linear(64, 2*384) → split → scale (B, 384), shift (B, 384); x = x * (1 + scale) + shift`
 
 **1:1 mapping (exp 57)**: When `n_virtual_tokens == max_events` (128 == 128), out-of-window event embeddings are placed directly at their event slot index. Event slot 5 → vtoken 5. No linear interpolation, no scatter collisions. Unused slots (masked events) remain as watermark + position only.
 

@@ -89,7 +89,8 @@ Each folder contains a README with hypothesis, results, and key graphs.
 | 56 | [Density Conditioning AR Analysis](experiment_56/) | Complete | AR on 48 val songs. Model under-predicts density (0.83x avg). Low density = high hallucination, high density = conservative |
 | 56-B | [Density Sensitivity Sweep](experiment_56b/) | Complete | Model IS density-sensitive (1.53x ratio). Needs ~1.2x density to match reality. Under-prediction is calibration, not deafness |
 | 57 | [1:1 Virtual Context Tokens](experiment_57/) | Failed | 128 vtokens contribute 0%. Future audio is everything (NA_B=1.3%). Gap encoding is foundation of event embeddings. 8 new benchmarks added |
-| 58 | [Two-Stage Propose-Select](experiment_58/) | **Pending** | Stage 1: pure audio per-token onset proposals (focal BCE). Stage 2: context-informed selection from proposals. 23.5M params |
+| 58 | [Two-Stage Propose-Select](experiment_58/) | **New ATH 74.6%** | Stage 1 proposes, Stage 2 selects. Breaks 73.7% ceiling. 7 consecutive improvements, zero oscillations. S1 proposals load-bearing (50pp delta) |
+| 58-B | [Propose-Select, Precision S1](experiment_58b/) | **Pending** | Same as 58 but S1 pos_weight 2.0 (was 5.0). Fewer, higher-quality proposals for S2 |
 
 ## Key Lessons
 

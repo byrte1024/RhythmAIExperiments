@@ -1924,20 +1924,26 @@ def run_benchmarks(model, val_loader, device, amp_enabled=False, multi_target=Fa
     bench_bar.set_postfix_str("event_ratio_gap_blank"); bench_bar.update(1)
 
     # 19-20) Proposal override benchmarks (exp 58+ only)
-    if hasattr(model, '_proposal_override'):
+    model_raw_bench = model._orig_mod if hasattr(model, '_orig_mod') else model
+    try:
+        from detection_model import ProposeSelectDetector as _PSD
+        is_propose_select = isinstance(model_raw_bench, _PSD)
+    except ImportError:
+        is_propose_select = False
+    if is_propose_select:
         # 19) Zero proposals - Stage 2 gets no Stage 1 signal
         def identity(mel, evt_off, evt_mask, cond, target):
             return mel, evt_off, evt_mask, cond
-        model._proposal_override = "zero"
+        model_raw_bench._proposal_override = "zero"
         results["proposal_zero"] = run_corrupted(all_batches, identity, "proposal_zero")
         bench_bar.set_postfix_str("proposal_zero"); bench_bar.update(1)
 
         # 20) Random proposals - Stage 2 gets noise instead of real proposals
-        model._proposal_override = "random"
+        model_raw_bench._proposal_override = "random"
         results["proposal_random"] = run_corrupted(all_batches, identity, "proposal_random")
         bench_bar.set_postfix_str("proposal_random"); bench_bar.update(1)
 
-        model._proposal_override = None  # restore normal behavior
+        model_raw_bench._proposal_override = None  # restore normal behavior
 
     # ── 21) Autoregressive benchmarks ──
     # Run like real inference: predict, move cursor, feed prediction back.
@@ -4416,8 +4422,8 @@ def train(args):
                     proposal_target = proposal_tokens_batch.to(mel.device, non_blocking=True)
 
                     # Stage 1 loss: focal BCE
-                    s1_gamma = 2.0
-                    s1_pos_weight = torch.tensor(5.0, device=mel.device)
+                    s1_gamma = getattr(args, 'proposer_focal_gamma', 2.0)
+                    s1_pos_weight = torch.tensor(getattr(args, 'proposer_pos_weight', 5.0), device=mel.device)
                     s1_bce = F.binary_cross_entropy_with_logits(
                         proposal_logits, proposal_target, reduction='none',
                         pos_weight=s1_pos_weight)
@@ -4995,6 +5001,8 @@ if __name__ == "__main__":
     parser.add_argument("--density-jitter-pct", type=float, default=0.02, help="Density jitter magnitude (default 0.02 = +/-2%%)")
     parser.add_argument("--proposer-layers", type=int, default=4, help="Number of transformer layers in Stage 1 proposer (exp 58+)")
     parser.add_argument("--proposer-freeze-evals", type=int, default=2, help="Freeze Stage 2 for this many evals while Stage 1 warms up (exp 58+)")
+    parser.add_argument("--proposer-pos-weight", type=float, default=5.0, help="Stage 1 BCE pos_weight (higher = more recall, exp 58+)")
+    parser.add_argument("--proposer-focal-gamma", type=float, default=2.0, help="Stage 1 focal gamma (exp 58+)")
     parser.add_argument("--streak-loss", action="store_true", default=False, help="Streak-ratio loss weighting (exp 51+)")
     parser.add_argument("--streak-power", type=float, default=0.3, help="Streak loss weight power (default 0.3)")
     parser.add_argument("--streak-cap", type=float, default=50.0, help="Streak loss max weight cap (default 50)")
