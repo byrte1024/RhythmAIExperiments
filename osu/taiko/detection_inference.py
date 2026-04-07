@@ -18,7 +18,7 @@ import librosa
 from tqdm import tqdm
 from collections import Counter
 
-from detection_model import OnsetDetector, DualStreamOnsetDetector, InterleavedOnsetDetector, ContextFiLMDetector, FramewiseOnsetDetector, EventEmbeddingDetector, AdditiveOnsetDetector, RerankerOnsetDetector, LegacyOnsetDetector, Exp17OnsetDetector, Exp18OnsetDetector
+from detection_model import OnsetDetector, DualStreamOnsetDetector, InterleavedOnsetDetector, ContextFiLMDetector, FramewiseOnsetDetector, EventEmbeddingDetector, AdditiveOnsetDetector, RerankerOnsetDetector, LegacyOnsetDetector, Exp17OnsetDetector, Exp18OnsetDetector, ProposeSelectDetector
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 
@@ -1057,8 +1057,11 @@ def main():
     has_framewise = "onset_feedback_emb" in state_keys
 
     has_event_embed = "event_presence_emb" in state_keys
+    has_propose_select = "proposer_head.0.weight" in state_keys
 
-    if has_event_embed:
+    if has_propose_select:
+        ModelClass = ProposeSelectDetector  # exp 58+ (two-stage propose-select)
+    elif has_event_embed:
         ModelClass = EventEmbeddingDetector  # exp 42+ (event embeddings)
     elif has_framewise:
         ModelClass = FramewiseOnsetDetector  # exp 38+ (framewise)
@@ -1082,7 +1085,42 @@ def main():
         ModelClass = Exp17OnsetDetector  # exp 17
 
     # Build model kwargs based on checkpoint era
-    if ModelClass == EventEmbeddingDetector:
+    if ModelClass == ProposeSelectDetector:
+        # exp 58+: two-stage propose-select
+        event_proj_key = next((k for k in state_keys if "event_proj.0.weight" in k), None)
+        has_gap_ratios = False
+        if event_proj_key:
+            w = ckpt["model"][event_proj_key]
+            if w.shape[1] > ckpt_args.get("d_model", 384) * 3:
+                has_gap_ratios = True
+        n_virtual = 0
+        if "virtual_watermark" in state_keys:
+            n_virtual = ckpt_args.get("n_virtual_tokens", 32)
+        # count proposer layers
+        n_proposer = sum(1 for k in state_keys if k.startswith("proposer_layers.") and ".self_attn.in_proj_weight" in k)
+        n_selector = sum(1 for k in state_keys if k.startswith("selector_layers.") and ".self_attn.in_proj_weight" in k)
+
+        global A_BINS, B_BINS, N_CLASSES
+        A_BINS = ckpt_args.get("a_bins", 500)
+        B_BINS = ckpt_args.get("b_bins", 500)
+        b_pred = ckpt_args.get("b_pred", 0)
+        if b_pred <= 0:
+            b_pred = B_BINS
+        N_CLASSES = b_pred + 1
+
+        model_kwargs = dict(
+            n_mels=N_MELS,
+            d_model=ckpt_args.get("d_model", 384),
+            n_proposer_layers=n_proposer,
+            n_selector_layers=n_selector,
+            n_heads=ckpt_args.get("n_heads", 8),
+            n_classes=N_CLASSES,
+            max_events=C_EVENTS,
+            gap_ratios=has_gap_ratios,
+            n_virtual_tokens=n_virtual,
+            a_bins=A_BINS, b_bins=B_BINS,
+        )
+    elif ModelClass == EventEmbeddingDetector:
         # detect gap_ratios: event_proj input is 5*d_model (1920) vs 3*d_model (1152)
         event_proj_key = next((k for k in state_keys if "event_proj.0.weight" in k), None)
         has_gap_ratios = False
@@ -1097,7 +1135,6 @@ def main():
         if "virtual_watermark" in state_keys:
             n_virtual = ckpt_args.get("n_virtual_tokens", 32)
         # override globals if checkpoint used different window sizes
-        global A_BINS, B_BINS, N_CLASSES
         A_BINS = ckpt_args.get("a_bins", 500)
         B_BINS = ckpt_args.get("b_bins", 500)
         b_pred = ckpt_args.get("b_pred", 0)
@@ -1224,7 +1261,9 @@ def main():
             model.load_state_dict(state)
     else:
         model.load_state_dict(state)
-    if ModelClass == EventEmbeddingDetector:
+    if ModelClass == ProposeSelectDetector:
+        print(f"  (exp 58+ checkpoint - propose-select detector, {n_proposer} proposer + {n_selector} selector layers)")
+    elif ModelClass == EventEmbeddingDetector:
         print("  (exp 42+ checkpoint - event embedding detector)")
     elif ModelClass == FramewiseOnsetDetector:
         print("  (exp 38+ checkpoint - framewise onset detection)")

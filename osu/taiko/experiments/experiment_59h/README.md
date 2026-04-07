@@ -17,6 +17,14 @@
 
 exp44 and exp53 included as reference frame from 53-AR human evaluation.
 
+### Density Regimes
+
+Both regimes tested (from [59-G](../experiment_59g/README.md) findings):
+- **song_density**: per-song actual density from manifest (more reliable for synthetic ranking)
+- **fixed_53ar**: d_mean=5.75, d_peak=11.1, d_std=1.5 (how AR is typically done in practice — fixed density across songs)
+
+360 total inference runs (6 models × 30 songs × 2 regimes).
+
 ### Launch
 
 ```bash
