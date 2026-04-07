@@ -93,6 +93,7 @@ Each folder contains a README with hypothesis, results, and key graphs.
 | 58-B | [Propose-Select, Precision S1](experiment_58b/) | **Running** | S1 pos_weight 2.0 (was 5.0). Fewer proposals (24 vs 67), S2 more independent (53% picks S1 vs 82%) |
 | 59 | [AR Quality Metric Discovery](experiment_59/) | No signal | Raw chart metrics don't correlate with human preference. Per-song confound dominates |
 | 59-B | [Within-Song Normalized Metrics](experiment_59b/) | **Key finding** | gap_std (+0.30), gap_cv (+0.29), dominant_gap_pct (-0.27), max_metro_streak (-0.27) all significant. Pattern variety predicts human preference |
+| 59-C | [Synthetic Human Evaluator](experiment_59c/) | **Pending** | Build automatic evaluator from 59-B's 4 significant metrics, validate against actual human rankings |
 
 ## Key Lessons
 
