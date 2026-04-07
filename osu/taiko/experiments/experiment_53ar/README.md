@@ -153,8 +153,60 @@ In [42-AR](../experiment_42ar/README.md), exp14 scored as the 2nd most metronomi
 
 ## Result
 
-*Pending — awaiting human evaluation*
+15 votes total: 10 self-rankings + 5 volunteer evaluations (target was 10 volunteers). Different songs from 42-AR so cross-round comparisons are approximate. However, the internal consistency (exp14 last in 10/15 votes, exp44/45 trading top spots) gives confidence the rankings are real.
+
+### Final standings:
+
+| Model | Points | 1st place | 4th place | Avg score |
+|---|---|---|---|---|
+| **exp45** | **44** | **5** | 1 | **2.93** |
+| exp44 | 43 | 4 | 1 | 2.87 |
+| exp53 | 36 | 3 | 3 | 2.40 |
+| exp14 | 27 | 3 | 10 | 1.80 |
+
+**Winner: exp45 (44 points, 5 first-place votes)**
+
+### Self vs volunteer split:
+
+| Model | Self avg (10 songs) | Volunteer avg (5 votes) |
+|---|---|---|
+| exp45 | **3.20** | 2.40 |
+| exp44 | 2.50 | **3.60** |
+| exp53 | 2.40 | 2.40 |
+| exp14 | 1.90 | 1.60 |
+
+Expert (self) and volunteers disagree on the top spot: expert prefers exp45's riskier patterns, volunteers prefer exp44's conservative/clean style. Both agree exp14 is last.
+
+### Key findings:
+
+1. **Context models definitively beat audio-only.** exp14 placed last with 10 last-place finishes out of 15 votes. This reverses the 42-AR result where exp14 won. Context models have improved enough that context is now net positive for AR quality.
+
+2. **exp45 wins on expert ranking.** Gap ratios + tight density jitter produce the most musically interesting patterns on complex material (J-dance, indie rock).
+
+3. **exp44 wins on volunteer ranking.** Conservative charting with fewer risks is preferred by non-expert players. exp44 has the lowest metronome score (58.4%) and the most consistent feel.
+
+4. **exp53's corruption resilience didn't translate.** Despite having the best metronome benchmark (52.5%) and corruption resilience metrics, exp53 placed 3rd. Its higher AR metronomicity (64.1%) hurt in practice.
+
+5. **Metronome benchmark ≠ AR metronome behavior.** The benchmark measures resistance to external corruption. AR metronomicity is the model's own pattern tendency — a different phenomenon.
+
+### Per-genre performance:
+
+| Genre | Winner | Runner-up |
+|---|---|---|
+| J-pop (2 songs) | exp53 | exp45 |
+| J-dance hardcore (2) | exp45 | exp44 |
+| Indie rock (2) | exp45 | exp44 |
+| Chiptune (2) | exp14/exp45 (split) | — |
+| Pop (2) | exp44/exp14 (split) | — |
+
+exp45 dominates complex/rhythmic material. exp53 wins on melodic J-pop. exp14 only wins on simple/calm material.
 
 ## Lesson
 
-*Pending*
+1. **Context models have overtaken audio-only.** Since 42-AR, enough improvements accumulated (gentle augmentation, gap ratios, B_PRED split) that context is now a clear advantage. exp14's 42-AR victory was a product of worse context models, not a fundamental advantage of no-context.
+
+2. **Expert vs volunteer preference diverges.** Experts value pattern variety and musical intelligence (exp45). Volunteers value consistency and safety (exp44). Both are valid quality signals — the "best" model depends on the audience.
+
+3. **Benchmark metrics are poor proxies for AR quality.** Metronome benchmark resilience, per-sample HIT%, and corruption benchmarks all failed to predict human rankings. The gap between per-sample metrics and AR quality remains the fundamental challenge.
+
+4. **Density jitter matters more than expected.** The main difference between exp44 (loose: ±10%/30%) and exp45 (tight: ±2%/10%) is density adherence. Both had similar per-sample metrics, but the density behavior produces perceptibly different AR output.
