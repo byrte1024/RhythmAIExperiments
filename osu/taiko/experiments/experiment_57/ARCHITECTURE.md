@@ -170,3 +170,18 @@ Soft targets: trapezoid in log-ratio space (good_pct=3%, fail_pct=20%, frame_tol
 7. Repeat until end of audio
 
 Out-of-window events (earlier than 500 bins before cursor) live in their dedicated virtual tokens, giving the model full context history without scatter collisions.
+
+## Environment
+
+| Component | Version |
+|---|---|
+| Python | 3.13.12 |
+| PyTorch | 2.12.0.dev20260307+cu128 (nightly) |
+| CUDA | 12.8 |
+| cuDNN | 9.10.02 |
+| GPU | NVIDIA GeForce RTX 5070 (12 GB, compute 12.0) |
+| OS | Windows 11 |
+| numpy | 2.4.2 |
+| scipy | 1.17.1 |
+| librosa | 0.11.0 |
+| matplotlib | 3.10.8 |

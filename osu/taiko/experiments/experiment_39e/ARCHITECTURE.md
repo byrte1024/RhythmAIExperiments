@@ -81,3 +81,18 @@ Analysis script run in the experiment directory, using:
 - The model picks the most "onset-like" audio event, not the nearest one
 - The further onset is often the start of a new rhythmic group with a harder attack
 - ~20% of overpredictions have weaker transients at the predicted position, indicating other failure causes
+
+## Environment
+
+| Component | Version |
+|---|---|
+| Python | 3.13.12 |
+| PyTorch | 2.12.0.dev20260307+cu128 (nightly) |
+| CUDA | 12.8 |
+| cuDNN | 9.10.02 |
+| GPU | NVIDIA GeForce RTX 5070 (12 GB, compute 12.0) |
+| OS | Windows 11 |
+| numpy | 2.4.2 |
+| scipy | 1.17.1 |
+| librosa | 0.11.0 |
+| matplotlib | 3.10.8 |

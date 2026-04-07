@@ -282,3 +282,18 @@ No audio augmentation beyond basic processing. No density augmentation.
 ## Context Status
 
 Most promising context results across all experiments. Gap-based representation showed positive signal during training (context outperformed audio: 54.2% vs 52.5% HIT at one point). Own encoders with direct gradient worked. Override accuracy (36-40%) was the best achieved. Context delta reached -0.18pp at E2 — closest to break-even ever. However, training advantage did not fully transfer to validation. Key issue: audio instability during training meant context learned patterns about bad proposals that became irrelevant as audio improved. Next direction: warm-start audio from a pretrained checkpoint to provide stable proposals from the start.
+
+## Environment
+
+| Component | Version |
+|---|---|
+| Python | 3.13.12 |
+| PyTorch | 2.12.0.dev20260307+cu128 (nightly) |
+| CUDA | 12.8 |
+| cuDNN | 9.10.02 |
+| GPU | NVIDIA GeForce RTX 5070 (12 GB, compute 12.0) |
+| OS | Windows 11 |
+| numpy | 2.4.2 |
+| scipy | 1.17.1 |
+| librosa | 0.11.0 |
+| matplotlib | 3.10.8 |

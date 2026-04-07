@@ -44,3 +44,18 @@ Validation set predictions from three exp 35-C checkpoints. For each checkpoint,
 - **Convergence is slowing**: eval 1-to-4 gained +3.6pp HIT, eval 4-to-8 gained only +1.7pp
 - **Distant predictions (100-500)**: volatile, no improvement trend
 - Estimated HIT ceiling with current architecture: ~75-78%
+
+## Environment
+
+| Component | Version |
+|---|---|
+| Python | 3.13.12 |
+| PyTorch | 2.12.0.dev20260307+cu128 (nightly) |
+| CUDA | 12.8 |
+| cuDNN | 9.10.02 |
+| GPU | NVIDIA GeForce RTX 5070 (12 GB, compute 12.0) |
+| OS | Windows 11 |
+| numpy | 2.4.2 |
+| scipy | 1.17.1 |
+| librosa | 0.11.0 |
+| matplotlib | 3.10.8 |

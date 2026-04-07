@@ -199,3 +199,18 @@ No audio augmentation beyond basic processing. No density augmentation.
 ## Context Status
 
 The context path was **dormant**: `no_events` accuracy (50.2%) matched full accuracy (50.4%), meaning event context contributed almost nothing. The model was an audio-only detector in practice, establishing the **68.9% HIT audio-only ceiling** that subsequent experiments worked to surpass by activating context.
+
+## Environment
+
+| Component | Version |
+|---|---|
+| Python | 3.13.12 |
+| PyTorch | 2.12.0.dev20260307+cu128 (nightly) |
+| CUDA | 12.8 |
+| cuDNN | 9.10.02 |
+| GPU | NVIDIA GeForce RTX 5070 (12 GB, compute 12.0) |
+| OS | Windows 11 |
+| numpy | 2.4.2 |
+| scipy | 1.17.1 |
+| librosa | 0.11.0 |
+| matplotlib | 3.10.8 |

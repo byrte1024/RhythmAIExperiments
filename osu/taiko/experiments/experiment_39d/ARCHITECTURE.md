@@ -80,3 +80,18 @@ Rank distribution of correct answer (when in top-10):
 | Model very sure of wrong (<0.1 ratio) | 9.9% |
 
 The model is 2.3x more confident in the wrong answer, explaining why reranking only gets +1pp.
+
+## Environment
+
+| Component | Version |
+|---|---|
+| Python | 3.13.12 |
+| PyTorch | 2.12.0.dev20260307+cu128 (nightly) |
+| CUDA | 12.8 |
+| cuDNN | 9.10.02 |
+| GPU | NVIDIA GeForce RTX 5070 (12 GB, compute 12.0) |
+| OS | Windows 11 |
+| numpy | 2.4.2 |
+| scipy | 1.17.1 |
+| librosa | 0.11.0 |
+| matplotlib | 3.10.8 |

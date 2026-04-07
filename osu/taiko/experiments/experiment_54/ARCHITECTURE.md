@@ -228,3 +228,18 @@ With B_PRED=250, STOP is ~0.8% of samples (events beyond 250 bins from cursor). 
 7. Repeat until end of audio
 
 At inference, the stop logit is scaled and placed into the STOP position of a padded logits tensor for compatibility with existing sampling pipeline: `logits[:, 250] = stop_logit * 5.0`.
+
+## Environment
+
+| Component | Version |
+|---|---|
+| Python | 3.13.12 |
+| PyTorch | 2.12.0.dev20260307+cu128 (nightly) |
+| CUDA | 12.8 |
+| cuDNN | 9.10.02 |
+| GPU | NVIDIA GeForce RTX 5070 (12 GB, compute 12.0) |
+| OS | Windows 11 |
+| numpy | 2.4.2 |
+| scipy | 1.17.1 |
+| librosa | 0.11.0 |
+| matplotlib | 3.10.8 |

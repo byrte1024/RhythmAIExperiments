@@ -260,3 +260,18 @@ Heavy audio augmentation (gain jitter ±3dB @ 50%, noise injection sigma=0.1-0.4
 ## Context Status
 
 Auxiliary weight 0.2 was too low. The aux head's gradient was ~20% of the gap encoder's total gradient, dominated by fusion (which tells the gap encoder to be quiet). Context delta collapsed identically to all prior experiments: 6.0% to 1.5% over 4 evals. Ctx loss barely dropped (4.195 to 4.096), meaning the gap encoder was not producing useful standalone representations. Main pathway unaffected — HIT tracked the unified architecture baseline closely.
+
+## Environment
+
+| Component | Version |
+|---|---|
+| Python | 3.13.12 |
+| PyTorch | 2.12.0.dev20260307+cu128 (nightly) |
+| CUDA | 12.8 |
+| cuDNN | 9.10.02 |
+| GPU | NVIDIA GeForce RTX 5070 (12 GB, compute 12.0) |
+| OS | Windows 11 |
+| numpy | 2.4.2 |
+| scipy | 1.17.1 |
+| librosa | 0.11.0 |
+| matplotlib | 3.10.8 |

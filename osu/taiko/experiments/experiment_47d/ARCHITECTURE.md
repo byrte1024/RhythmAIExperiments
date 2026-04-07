@@ -203,3 +203,18 @@ The binary head approach is fundamentally flawed for this problem. After 4 itera
 | 47-D | Forward-pool gate input | mean-pooling too lossy, still low weight, F1=0.09 |
 
 The root cause is not loss weighting or read-out position. STOP is not a separate decision from onset prediction. In the softmax, STOP naturally wins when no onset bin has high confidence — it is the "default when uncertain." A binary gate has to actively learn to fire against a 99.7% onset base rate, and no amount of loss engineering overcame this. The existing softmax STOP (F1=0.52) works better than every binary head variant because it leverages elimination: "no strong onset candidate = STOP."
+
+## Environment
+
+| Component | Version |
+|---|---|
+| Python | 3.13.12 |
+| PyTorch | 2.12.0.dev20260307+cu128 (nightly) |
+| CUDA | 12.8 |
+| cuDNN | 9.10.02 |
+| GPU | NVIDIA GeForce RTX 5070 (12 GB, compute 12.0) |
+| OS | Windows 11 |
+| numpy | 2.4.2 |
+| scipy | 1.17.1 |
+| librosa | 0.11.0 |
+| matplotlib | 3.10.8 |

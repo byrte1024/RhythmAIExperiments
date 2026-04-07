@@ -191,3 +191,18 @@ Stopped at eval 1. **Stop rate was 0% — model never predicted STOP.**
 Root cause: `pos_weight=0.01` in BCE was backwards. The gate target had 1=onset, 0=stop, so `pos_weight` upweighted the already-dominant onset class 100x, making STOP invisible to the loss. The model learned to always output "onset."
 
 BCE pos_weight scales the POSITIVE class, not the rare class. With target 1=onset (99.7%), pos_weight=0.01 made onsets even less important — the opposite of intended.
+
+## Environment
+
+| Component | Version |
+|---|---|
+| Python | 3.13.12 |
+| PyTorch | 2.12.0.dev20260307+cu128 (nightly) |
+| CUDA | 12.8 |
+| cuDNN | 9.10.02 |
+| GPU | NVIDIA GeForce RTX 5070 (12 GB, compute 12.0) |
+| OS | Windows 11 |
+| numpy | 2.4.2 |
+| scipy | 1.17.1 |
+| librosa | 0.11.0 |
+| matplotlib | 3.10.8 |

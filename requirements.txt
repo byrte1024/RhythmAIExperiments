@@ -1,0 +1,44 @@
+# BeatDetector requirements
+# Python 3.13.12
+# CUDA 12.8 (PyTorch nightly)
+#
+# Install PyTorch first (nightly with CUDA 12.8):
+#   pip install --pre torch torchaudio torchvision --index-url https://download.pytorch.org/whl/nightly/cu128
+#
+# Then install the rest:
+#   pip install -r requirements.txt
+
+# ── Core ML ──
+torch==2.12.0.dev20260307+cu128
+torchaudio==2.11.0.dev20260227+cu128
+torchvision==0.26.0.dev20260221+cu128
+numpy==2.4.2
+scipy==1.17.1
+scikit-learn==1.8.0
+
+# ── Audio ──
+librosa==0.11.0
+soundfile==0.13.1
+soxr==1.0.0
+aubio==0.4.9
+audioread==3.1.0
+numba==0.64.0
+llvmlite==0.46.0
+
+# ── Visualization ──
+matplotlib==3.10.8
+pillow==12.1.1
+pygame==2.6.1
+
+# ── Utilities ──
+tqdm==4.67.3
+requests==2.32.5
+yt-dlp==2026.3.17
+rarfile==4.2
+pooch==1.9.0
+
+# ── Build / Runtime ──
+Cython==3.2.4
+cffi==2.0.0
+pycparser==3.0
+setuptools==78.1.0

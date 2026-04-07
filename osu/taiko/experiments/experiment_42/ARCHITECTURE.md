@@ -200,3 +200,18 @@ This was the first EventEmbeddingDetector experiment. Compared to exp 44:
 - **event_proj**: `Linear(1152, 384)` instead of `Linear(1920, 384)`
 - **gap_ratios=False** (no rhythm acceleration/deceleration signals)
 - Was killed early (eval 9, ~3.25 epochs) while still improving
+
+## Environment
+
+| Component | Version |
+|---|---|
+| Python | 3.13.12 |
+| PyTorch | 2.12.0.dev20260307+cu128 (nightly) |
+| CUDA | 12.8 |
+| cuDNN | 9.10.02 |
+| GPU | NVIDIA GeForce RTX 5070 (12 GB, compute 12.0) |
+| OS | Windows 11 |
+| numpy | 2.4.2 |
+| scipy | 1.17.1 |
+| librosa | 0.11.0 |
+| matplotlib | 3.10.8 |

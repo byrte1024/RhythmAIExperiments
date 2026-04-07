@@ -195,3 +195,18 @@ Added gate loss (gL) and stop F1 (sF1) to tqdm training bar for monitoring.
 **Gate loss stuck at ~0.05, sF1 stuck at 0.15.** The balanced averaging fixed the per-class gradient ratio, but gate_weight=2.0 makes the total gate contribution (~0.1) negligible vs onset loss (~3.8). The optimizer still cannot see the gate.
 
 Deeper issue: both gate and onset head read from the same cursor token (125). The gate is a tiny afterthought on a representation optimized for onset location. The STOP decision ("is there any onset ahead?") is a global question about the forward window, not a point-read at the cursor position.
+
+## Environment
+
+| Component | Version |
+|---|---|
+| Python | 3.13.12 |
+| PyTorch | 2.12.0.dev20260307+cu128 (nightly) |
+| CUDA | 12.8 |
+| cuDNN | 9.10.02 |
+| GPU | NVIDIA GeForce RTX 5070 (12 GB, compute 12.0) |
+| OS | Windows 11 |
+| numpy | 2.4.2 |
+| scipy | 1.17.1 |
+| librosa | 0.11.0 |
+| matplotlib | 3.10.8 |

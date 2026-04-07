@@ -233,3 +233,18 @@ Deliberately reduced augmentation to encourage context reliance.
 ## Context Status
 
 Context contribution shrank over training: 6.8% (E1) to 2.3% (E5). The model converged to an audio-dominant solution. Gap tokens were drowned out by the 250 audio tokens (7:1 ratio) in self-attention. Overfitting from E2 onward (val loss 2.623 at E2 → 2.665 at E5). Matched exp 14's ceiling (~68.9% HIT) but did not exceed it. Lighter augmentation backfired — accelerated overfitting without improving context contribution.
+
+## Environment
+
+| Component | Version |
+|---|---|
+| Python | 3.13.12 |
+| PyTorch | 2.12.0.dev20260307+cu128 (nightly) |
+| CUDA | 12.8 |
+| cuDNN | 9.10.02 |
+| GPU | NVIDIA GeForce RTX 5070 (12 GB, compute 12.0) |
+| OS | Windows 11 |
+| numpy | 2.4.2 |
+| scipy | 1.17.1 |
+| librosa | 0.11.0 |
+| matplotlib | 3.10.8 |

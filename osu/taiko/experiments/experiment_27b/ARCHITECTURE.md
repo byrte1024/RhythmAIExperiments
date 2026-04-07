@@ -97,3 +97,18 @@ Pattern risk if always applied blindly: net **-3.9%** (breaks 7,874 existing HIT
 ## Key Finding
 
 The target gap value appears in recent context for ~95% of non-STOP misses with sufficient history. The model's ~70% HIT ceiling is not due to missing information — context contains the answer. The strict pattern matcher catches only the cleanest 22.5% of solvable cases. A more flexible approach (or a neural network with attention over context) should catch far more, but context alone applied blindly is net-negative (-3.9%). Both context AND audio are needed: context to know which gaps are rhythmically plausible, audio to know when to follow vs break the pattern.
+
+## Environment
+
+| Component | Version |
+|---|---|
+| Python | 3.13.12 |
+| PyTorch | 2.12.0.dev20260307+cu128 (nightly) |
+| CUDA | 12.8 |
+| cuDNN | 9.10.02 |
+| GPU | NVIDIA GeForce RTX 5070 (12 GB, compute 12.0) |
+| OS | Windows 11 |
+| numpy | 2.4.2 |
+| scipy | 1.17.1 |
+| librosa | 0.11.0 |
+| matplotlib | 3.10.8 |

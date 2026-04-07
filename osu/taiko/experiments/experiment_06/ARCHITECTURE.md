@@ -197,3 +197,18 @@ Context and audio augmentation applied during training:
 ## Key Finding
 
 The trapezoid loss was a clear improvement over Gaussian (exp 05 E5 surpassed at just E1), and STOP F1 jumped 4x. But the ablation benchmarks revealed the real problem: the model relies massively on events (no_audio=36.5%) and barely uses audio (no_events=5.3%). This is the exact opposite of what a beat detector should do. The architecture's single-path decoder lets events dominate through cross-attention because rhythmic patterns in events are simpler gradients than spectral patterns in audio.
+
+## Environment
+
+| Component | Version |
+|---|---|
+| Python | 3.13.12 |
+| PyTorch | 2.12.0.dev20260307+cu128 (nightly) |
+| CUDA | 12.8 |
+| cuDNN | 9.10.02 |
+| GPU | NVIDIA GeForce RTX 5070 (12 GB, compute 12.0) |
+| OS | Windows 11 |
+| numpy | 2.4.2 |
+| scipy | 1.17.1 |
+| librosa | 0.11.0 |
+| matplotlib | 3.10.8 |

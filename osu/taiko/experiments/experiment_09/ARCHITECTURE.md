@@ -182,3 +182,18 @@ Where hard_CE = standard cross-entropy, soft_CE = KL divergence with soft target
 ## Key Finding
 
 Training was unstable — epoch 2 regressed on every metric. The audio/event imbalance persisted exactly as in exp 06: no_audio (26.5%) dominated no_events (7.3%). Three consecutive experiments of augmentation tuning (07, 08, 09) confirmed the same pattern at every augmentation level. The model trusts events over audio even when events are completely wrong (metronome=5.5% vs no_audio=26.5%). Dead zones in the prediction distribution (certain bins never predicted) were also observed. This experiment concluded the augmentation-based approach: the audio/event imbalance is architectural, not a training data problem. The single-path decoder architecture needs structural redesign to enforce audio as the primary signal.
+
+## Environment
+
+| Component | Version |
+|---|---|
+| Python | 3.13.12 |
+| PyTorch | 2.12.0.dev20260307+cu128 (nightly) |
+| CUDA | 12.8 |
+| cuDNN | 9.10.02 |
+| GPU | NVIDIA GeForce RTX 5070 (12 GB, compute 12.0) |
+| OS | Windows 11 |
+| numpy | 2.4.2 |
+| scipy | 1.17.1 |
+| librosa | 0.11.0 |
+| matplotlib | 3.10.8 |

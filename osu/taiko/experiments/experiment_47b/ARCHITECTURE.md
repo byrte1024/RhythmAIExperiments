@@ -195,3 +195,18 @@ Stopped at eval 1. **Stop pred rate 0.000% — gate almost never fires.**
 Stop F1=0.066, precision=0.93, recall=0.03. The gate is extremely conservative — when it does predict STOP it is right, but it almost never does.
 
 Root cause: focal BCE with `.mean()` reduction. With 99.7% onset samples, the mean is dominated by onset loss. Focal loss correctly downweights easy onsets per-sample (STOP gets 2.75x more gradient than onset), but the 300:1 class ratio means STOP's contribution is still invisible after averaging. Gate loss (~0.007) is tiny compared to onset CE loss (~2.5). With gate_weight=2.0, the gate contributes 0.014 to a total of ~2.5 — the optimizer cannot see it.
+
+## Environment
+
+| Component | Version |
+|---|---|
+| Python | 3.13.12 |
+| PyTorch | 2.12.0.dev20260307+cu128 (nightly) |
+| CUDA | 12.8 |
+| cuDNN | 9.10.02 |
+| GPU | NVIDIA GeForce RTX 5070 (12 GB, compute 12.0) |
+| OS | Windows 11 |
+| numpy | 2.4.2 |
+| scipy | 1.17.1 |
+| librosa | 0.11.0 |
+| matplotlib | 3.10.8 |

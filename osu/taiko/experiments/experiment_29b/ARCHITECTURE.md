@@ -258,3 +258,18 @@ Heavy audio augmentation (gain jitter ±3dB @ 50%, noise injection sigma=0.1-0.4
 ## Context Status
 
 Higher aux weight (1.0 vs 0.2) did not help. Context delta still collapsed: 4.7% to 0.3% by eval 6. Ctx loss moved slightly faster than exp 29 (4.215 to 4.014) but remained near random. The aux head approach failed not because of gradient weight, but because 501-class prediction from gap tokens alone is too hard for a lightweight head. The gap encoder cannot be forced to learn useful representations via a task it cannot solve. HIT was ~0.5pp behind exp 27, confirming the heavier aux loss was a drag on the main pathway without benefit.
+
+## Environment
+
+| Component | Version |
+|---|---|
+| Python | 3.13.12 |
+| PyTorch | 2.12.0.dev20260307+cu128 (nightly) |
+| CUDA | 12.8 |
+| cuDNN | 9.10.02 |
+| GPU | NVIDIA GeForce RTX 5070 (12 GB, compute 12.0) |
+| OS | Windows 11 |
+| numpy | 2.4.2 |
+| scipy | 1.17.1 |
+| librosa | 0.11.0 |
+| matplotlib | 3.10.8 |

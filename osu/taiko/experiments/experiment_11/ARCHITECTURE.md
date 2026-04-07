@@ -201,3 +201,18 @@ No audio augmentation beyond basic processing. No density augmentation.
 ## Context Status
 
 First experiment where no_events (36.8%) >> no_audio (15.5%), meaning the model relied more on audio than events. The NaN fix (dummy-unmasking) was the key enabler. The context path contributed some signal but remained the selection bottleneck: top-K accuracy showed all bars improving at the same rate, meaning audio improved but context did not close the gap between top-1 (65%) and top-3 (86%).
+
+## Environment
+
+| Component | Version |
+|---|---|
+| Python | 3.13.12 |
+| PyTorch | 2.12.0.dev20260307+cu128 (nightly) |
+| CUDA | 12.8 |
+| cuDNN | 9.10.02 |
+| GPU | NVIDIA GeForce RTX 5070 (12 GB, compute 12.0) |
+| OS | Windows 11 |
+| numpy | 2.4.2 |
+| scipy | 1.17.1 |
+| librosa | 0.11.0 |
+| matplotlib | 3.10.8 |

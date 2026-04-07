@@ -233,3 +233,18 @@ Standard audio augmentation: gain jitter, noise injection, SpecAugment, fade in/
 ## Context Status
 
 Best delta ever for any experiment (-0.64pp at E4). Context learned real signal: 53.8% standalone HIT from gaps + snippets alone. But context logit magnitudes grew at E5, causing hurt to spike. The additive paradigm is safer than reranking but context operating blindly (only gaps + snippets, no audio access) causes helped ~ hurt, guaranteeing net-negative delta.
+
+## Environment
+
+| Component | Version |
+|---|---|
+| Python | 3.13.12 |
+| PyTorch | 2.12.0.dev20260307+cu128 (nightly) |
+| CUDA | 12.8 |
+| cuDNN | 9.10.02 |
+| GPU | NVIDIA GeForce RTX 5070 (12 GB, compute 12.0) |
+| OS | Windows 11 |
+| numpy | 2.4.2 |
+| scipy | 1.17.1 |
+| librosa | 0.11.0 |
+| matplotlib | 3.10.8 |

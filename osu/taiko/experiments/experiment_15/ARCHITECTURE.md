@@ -217,3 +217,18 @@ Zeroing the density vector halves accuracy, and the gap increased over training.
 ## Context Status
 
 The context path remained **dormant**: no_events accuracy (48.5%) matched full accuracy (48.6%), meaning context contributes nothing measurable. The 0.1 context aux CE loss pushes the context path to independently predict the correct answer, but the path's optimal strategy remains "copy audio's top choice." Standard CE has no mechanism to reward overriding audio when audio's #2 or #3 is correct. Consistently ~1% behind exp 14 — the context aux added gradient noise without benefit.
+
+## Environment
+
+| Component | Version |
+|---|---|
+| Python | 3.13.12 |
+| PyTorch | 2.12.0.dev20260307+cu128 (nightly) |
+| CUDA | 12.8 |
+| cuDNN | 9.10.02 |
+| GPU | NVIDIA GeForce RTX 5070 (12 GB, compute 12.0) |
+| OS | Windows 11 |
+| numpy | 2.4.2 |
+| scipy | 1.17.1 |
+| librosa | 0.11.0 |
+| matplotlib | 3.10.8 |

@@ -242,3 +242,18 @@ No audio augmentation beyond basic processing. No density augmentation.
 ## Context Activation Status
 
 First experiment where context was architecturally forced to engage. Override rate rose from 26% (E1) to 50% (E6). However, override accuracy plateaued at ~51-52% (barely above coin flip), and accuracy was 7.5pp below exp 14's audio-only 50.5%. The reranking bottleneck hurt audio by restricting output to K=20 candidates, and shared encoder gradients from the selection loss degraded audio proposal quality.
+
+## Environment
+
+| Component | Version |
+|---|---|
+| Python | 3.13.12 |
+| PyTorch | 2.12.0.dev20260307+cu128 (nightly) |
+| CUDA | 12.8 |
+| cuDNN | 9.10.02 |
+| GPU | NVIDIA GeForce RTX 5070 (12 GB, compute 12.0) |
+| OS | Windows 11 |
+| numpy | 2.4.2 |
+| scipy | 1.17.1 |
+| librosa | 0.11.0 |
+| matplotlib | 3.10.8 |

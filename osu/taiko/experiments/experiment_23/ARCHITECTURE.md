@@ -235,3 +235,18 @@ Standard audio augmentation: gain jitter, noise injection, SpecAugment, fade in/
 ## Context Status
 
 Best override quality of all reranking experiments: 63.7% accuracy, 67.0% F1, 4:1 good:bad ratio at E3 — all records. Confidence + shuffle proved to be the optimal reranking configuration. But the reranking paradigm was identified as fundamentally limited: a discrete override decision on top of an already-good 70% model can only help at the margins, and any mistakes are catastrophic.
+
+## Environment
+
+| Component | Version |
+|---|---|
+| Python | 3.13.12 |
+| PyTorch | 2.12.0.dev20260307+cu128 (nightly) |
+| CUDA | 12.8 |
+| cuDNN | 9.10.02 |
+| GPU | NVIDIA GeForce RTX 5070 (12 GB, compute 12.0) |
+| OS | Windows 11 |
+| numpy | 2.4.2 |
+| scipy | 1.17.1 |
+| librosa | 0.11.0 |
+| matplotlib | 3.10.8 |

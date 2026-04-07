@@ -56,3 +56,18 @@ For each training sample:
 - At 32+, it is 97%
 - The ~17% break points at streak 8 are where chart quality lives — rhythm changes, section transitions, pattern variations
 - The positive feedback loop: the longer a streak exists in context, the more likely the correct answer is "continue," which in AR generation reinforces itself further
+
+## Environment
+
+| Component | Version |
+|---|---|
+| Python | 3.13.12 |
+| PyTorch | 2.12.0.dev20260307+cu128 (nightly) |
+| CUDA | 12.8 |
+| cuDNN | 9.10.02 |
+| GPU | NVIDIA GeForce RTX 5070 (12 GB, compute 12.0) |
+| OS | Windows 11 |
+| numpy | 2.4.2 |
+| scipy | 1.17.1 |
+| librosa | 0.11.0 |
+| matplotlib | 3.10.8 |

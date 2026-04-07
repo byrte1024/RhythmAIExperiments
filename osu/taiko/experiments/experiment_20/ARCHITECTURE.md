@@ -240,3 +240,18 @@ Standard audio augmentation: gain jitter, noise injection, SpecAugment, fade in/
 ## Context Status
 
 Context was bolder than all prior experiments (11.1% override rate, 4.6% true_topK, 22.1% override F1 — all records at the time). But extra overrides were more wrong than right (false_topK 5.8% > true_topK 4.6%), producing net-negative delta. Warm-start and freeze validated as infrastructure, but the loss function (hard CE on selection) was identified as the bottleneck.
+
+## Environment
+
+| Component | Version |
+|---|---|
+| Python | 3.13.12 |
+| PyTorch | 2.12.0.dev20260307+cu128 (nightly) |
+| CUDA | 12.8 |
+| cuDNN | 9.10.02 |
+| GPU | NVIDIA GeForce RTX 5070 (12 GB, compute 12.0) |
+| OS | Windows 11 |
+| numpy | 2.4.2 |
+| scipy | 1.17.1 |
+| librosa | 0.11.0 |
+| matplotlib | 3.10.8 |
