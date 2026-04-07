@@ -99,6 +99,7 @@ Each folder contains a README with hypothesis, results, and key graphs.
 | 59-F | [Evaluator Weight Sweep](experiment_59f/) | Optimized | Expert=top-2 (47%, any temp). Volunteer=top-7 temp=0.5 (70% #1 match). Temperature barely matters |
 | 59-G | [Fresh Data Validation](experiment_59g/) | Partial | Expert+song_density nails top-2. Others swap exp44/exp45 (1pt human margin). Coarse ranking generalizes, tight races need humans |
 | 59-H | [Extended Model Comparison](experiment_59h/) | Surprising | exp51 (67.5% HIT, worst per-sample) dominates synthetic eval by 100+ pts. Per-sample accuracy inversely correlated with pattern variety. Needs human validation |
+| 59-HB | [GT Comparison for 59-H](experiment_59hb/) | **Pending** | Check actual AR quality vs ground truth for 59-H models. Is exp51's variety creativity or chaos? |
 
 ## Key Lessons
 
