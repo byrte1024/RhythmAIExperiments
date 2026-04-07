@@ -1,0 +1,134 @@
+[
+  {
+    "evaluator": "expert",
+    "total_songs": 15,
+    "total_models": 53,
+    "rank1_match_pct": 0.4,
+    "exact_rank_match_pct": 0.41509433962264153,
+    "kendall_tau_mean": 0.42222222222222217,
+    "spearman_r": 0.4128298105395778,
+    "spearman_p": 0.0021257744689393973,
+    "human_type": "self"
+  },
+  {
+    "evaluator": "expert",
+    "total_songs": 10,
+    "total_models": 35,
+    "rank1_match_pct": 0.4,
+    "exact_rank_match_pct": 0.3142857142857143,
+    "kendall_tau_mean": 0.033333333333333375,
+    "spearman_r": 0.21809675900809875,
+    "spearman_p": 0.2081620523713213,
+    "human_type": "volunteer"
+  },
+  {
+    "evaluator": "expert",
+    "total_songs": 25,
+    "total_models": 88,
+    "rank1_match_pct": 0.4,
+    "exact_rank_match_pct": 0.375,
+    "kendall_tau_mean": 0.26666666666666666,
+    "spearman_r": 0.34017307243009737,
+    "spearman_p": 0.0011837678355310153,
+    "human_type": "all"
+  },
+  {
+    "evaluator": "volunteer",
+    "total_songs": 15,
+    "total_models": 53,
+    "rank1_match_pct": 0.3333333333333333,
+    "exact_rank_match_pct": 0.39622641509433965,
+    "kendall_tau_mean": 0.13333333333333333,
+    "spearman_r": 0.18334512712483225,
+    "spearman_p": 0.188807121055798,
+    "human_type": "self"
+  },
+  {
+    "evaluator": "volunteer",
+    "total_songs": 10,
+    "total_models": 35,
+    "rank1_match_pct": 0.6,
+    "exact_rank_match_pct": 0.37142857142857144,
+    "kendall_tau_mean": 0.26666666666666666,
+    "spearman_r": 0.46890803186741226,
+    "spearman_p": 0.004492234568507318,
+    "human_type": "volunteer"
+  },
+  {
+    "evaluator": "volunteer",
+    "total_songs": 25,
+    "total_models": 88,
+    "rank1_match_pct": 0.44,
+    "exact_rank_match_pct": 0.38636363636363635,
+    "kendall_tau_mean": 0.18666666666666668,
+    "spearman_r": 0.29574274968940834,
+    "spearman_p": 0.005149756401395711,
+    "human_type": "all"
+  },
+  {
+    "evaluator": "combined_59b",
+    "total_songs": 15,
+    "total_models": 53,
+    "rank1_match_pct": 0.4,
+    "exact_rank_match_pct": 0.4339622641509434,
+    "kendall_tau_mean": 0.28888888888888886,
+    "spearman_r": 0.3256959068660606,
+    "spearman_p": 0.01731957374557523,
+    "human_type": "self"
+  },
+  {
+    "evaluator": "combined_59b",
+    "total_songs": 10,
+    "total_models": 35,
+    "rank1_match_pct": 0.6,
+    "exact_rank_match_pct": 0.34285714285714286,
+    "kendall_tau_mean": 0.2666666666666667,
+    "spearman_r": 0.38603126344433475,
+    "spearman_p": 0.02199569275054891,
+    "human_type": "volunteer"
+  },
+  {
+    "evaluator": "combined_59b",
+    "total_songs": 25,
+    "total_models": 88,
+    "rank1_match_pct": 0.48,
+    "exact_rank_match_pct": 0.3977272727272727,
+    "kendall_tau_mean": 0.28,
+    "spearman_r": 0.34650183632553627,
+    "spearman_p": 0.0009427317047550171,
+    "human_type": "all"
+  },
+  {
+    "evaluator": "combined_top2",
+    "total_songs": 15,
+    "total_models": 53,
+    "rank1_match_pct": 0.4666666666666667,
+    "exact_rank_match_pct": 0.4716981132075472,
+    "kendall_tau_mean": 0.4222222222222223,
+    "spearman_r": 0.4040453075288055,
+    "spearman_p": 0.0026960562689159707,
+    "human_type": "self"
+  },
+  {
+    "evaluator": "combined_top2",
+    "total_songs": 10,
+    "total_models": 35,
+    "rank1_match_pct": 0.6,
+    "exact_rank_match_pct": 0.37142857142857144,
+    "kendall_tau_mean": 0.10000000000000005,
+    "spearman_r": 0.2340905213353593,
+    "spearman_p": 0.17589718460219436,
+    "human_type": "volunteer"
+  },
+  {
+    "evaluator": "combined_top2",
+    "total_songs": 25,
+    "total_models": 88,
+    "rank1_match_pct": 0.52,
+    "exact_rank_match_pct": 0.4318181818181818,
+    "kendall_tau_mean": 0.29333333333333333,
+    "spearman_r": 0.3422572758137016,
+    "spearman_p": 0.0010988290377072934,
+    "human_type": "all"
+  }
+]
