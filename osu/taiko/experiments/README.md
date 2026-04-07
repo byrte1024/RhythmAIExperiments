@@ -90,7 +90,7 @@ Each folder contains a README with hypothesis, results, and key graphs.
 | 56-B | [Density Sensitivity Sweep](experiment_56b/) | Complete | Model IS density-sensitive (1.53x ratio). Needs ~1.2x density to match reality. Under-prediction is calibration, not deafness |
 | 57 | [1:1 Virtual Context Tokens](experiment_57/) | Failed | 128 vtokens contribute 0%. Future audio is everything (NA_B=1.3%). Gap encoding is foundation of event embeddings. 8 new benchmarks added |
 | 58 | [Two-Stage Propose-Select](experiment_58/) | **New ATH 74.6%** | Stage 1 proposes, Stage 2 selects. Breaks 73.7% ceiling. 7 consecutive improvements, zero oscillations. S1 proposals load-bearing (50pp delta) |
-| 58-B | [Propose-Select, Precision S1](experiment_58b/) | **Running** | S1 pos_weight 2.0 (was 5.0). Fewer proposals (24 vs 67), S2 more independent (53% picks S1 vs 82%) |
+| 58-B | [Propose-Select, Precision S1](experiment_58b/) | 1pp below | S1 pos_weight 2.0. Fewer proposals (19 vs 67), S2 more independent (override 53% vs 49%), but peak 73.6% vs 58's 74.6% |
 | 59 | [AR Quality Metric Discovery](experiment_59/) | No signal | Raw chart metrics don't correlate with human preference. Per-song confound dominates |
 | 59-B | [Within-Song Normalized Metrics](experiment_59b/) | **Key finding** | gap_std (+0.30), gap_cv (+0.29), dominant_gap_pct (-0.27), max_metro_streak (-0.27) all significant. Pattern variety predicts human preference |
 | 59-C | [Synthetic Human Evaluator](experiment_59c/) | Works | gap_std + gap_cv predicts #1 at 52% (2x random). Volunteers 60%. Spearman r=0.35, p=0.001 |
