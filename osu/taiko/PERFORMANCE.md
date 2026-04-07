@@ -124,6 +124,19 @@ LSTM + CNN architecture, directly targeting osu!taiko. Open-source weights avail
 
 TaikoNation focuses on note type patterning (which notes to place). BeatDetector focuses on onset timing precision (when to place them). Future work: combine both.
 
+### TaikoNation Patterning Metrics ([Exp 61](experiments/experiment_61/README.md))
+
+Evaluated our AR output using TaikoNation's exact 5 metrics (binary arrays at 23ms resolution):
+
+| Model | Over. P-Space | HI P-Space | DCHuman | Notes |
+|---|---|---|---|---|
+| exp58 (ours) | 10.1% | 81.1% | **90.8%** | Best placement accuracy |
+| Human GT | **11.7%** | — | — | Reference diversity |
+| TaikoNation* | **21.3%** | **94.1%** | 75.0% | Most diverse (overshoots human) |
+| DDC* | 15.9% | 83.2% | 77.9% | — |
+
+(*) Published on different songs. We massively win placement (90.8% vs 75.0% DCHuman). TaikoNation wins pattern diversity (21.3% vs 10.1% P-Space) but overshoots human diversity (11.7%) by 47%. Our models are 14% below human diversity — closer to the target.
+
 ## Classical Onset Detection Baselines
 
 General-purpose audio onset detectors evaluated on the same per-sample prediction task (single-step, non-autoregressive). All fail catastrophically because they detect ALL audio transients, not the selective subset a taiko mapper would choose.
