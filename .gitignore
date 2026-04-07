@@ -32,3 +32,6 @@ Thumbs.db
 # Claude Code, my besty
 .claude/
 venv_baseline
+
+# Personal scripts (credentials)
+personal_scripts/
