@@ -100,6 +100,7 @@ Each folder contains a README with hypothesis, results, and key graphs.
 | 59-G | [Fresh Data Validation](experiment_59g/) | Partial | Expert+song_density nails top-2. Others swap exp44/exp45 (1pt human margin). Coarse ranking generalizes, tight races need humans |
 | 59-H | [Extended Model Comparison](experiment_59h/) | Surprising | exp51 (67.5% HIT, worst per-sample) dominates synthetic eval by 100+ pts. Per-sample accuracy inversely correlated with pattern variety. Needs human validation |
 | 59-HB | [GT Comparison for 59-H](experiment_59hb/) | Resolved | exp51's variety is from under-prediction (0.64 density ratio), not creativity. exp58 is actual best (75.9% close, 0.92 d_ratio). Synthetic evaluator needs density filter |
+| 60 | [DDC Onset Comparison](experiment_60/) | Complete | DDC Oracle (density-matched): 77.1% close vs exp58 75.9%. But exp58 has 3.4x better timing (8ms vs 27ms) and 4.3pp less hallucination. All difficulties tested |
 
 ## Key Lessons
 
