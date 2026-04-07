@@ -1677,6 +1677,10 @@ def run_benchmarks(model, val_loader, device, amp_enabled=False, multi_target=Fa
         all_preds = []
         all_targets = []
         all_prev_gaps = []
+        # multi-onset: collect per-onset preds/targets
+        all_mo_preds = None  # [onset_idx] -> list of arrays
+        all_mo_targets = None
+
         for batch in batches:
             if multi_target:
                 mel, evt_off, evt_mask, cond, targets_padded, n_tgt, _ratio_target, _proposal_tokens = batch
@@ -1700,17 +1704,30 @@ def run_benchmarks(model, val_loader, device, amp_enabled=False, multi_target=Fa
                 output = model(mel, evt_off, evt_mask, cond)
                 if isinstance(output, tuple) and len(output) == 2 and output[1].dim() == 1:
                     onset_logits, stop_logit = output
-                    logits = F.pad(onset_logits, (0, 1), value=-10.0)
-                    logits[:, N_CLASSES - 1] = stop_logit * 5.0
+                    logits_full = F.pad(onset_logits, (0, 1), value=-10.0)
+                    logits_full[:, N_CLASSES - 1] = stop_logit * 5.0
                 elif isinstance(output, tuple):
-                    logits = output[0]
+                    logits_full = output[0]
                 else:
-                    logits = output
-                # multi-onset: use onset_1 ([:, 0]) for backward-compat benchmark metrics
-                if logits.dim() == 3:
-                    logits = logits[:, 0]  # (B, n_classes)
+                    logits_full = output
+
+                # multi-onset: collect per-onset data
+                if logits_full.dim() == 3:
+                    n_mo = logits_full.size(1)
+                    if all_mo_preds is None:
+                        all_mo_preds = [[] for _ in range(n_mo)]
+                        all_mo_targets = [[] for _ in range(n_mo)]
+                    for oi in range(n_mo):
+                        all_mo_preds[oi].append(logits_full[:, oi].argmax(1).cpu().numpy())
+                        if target.dim() == 2:
+                            all_mo_targets[oi].append(target[:, oi].numpy())
+                        else:
+                            all_mo_targets[oi].append(target.numpy())
+                    logits = logits_full[:, 0]  # o1 for backward compat
+                else:
+                    logits = logits_full
+
             all_preds.append(logits.argmax(1).cpu().numpy())
-            # multi-onset target: use onset_1 for compat
             if target.dim() == 2:
                 all_targets.append(target[:, 0].numpy())
             else:
@@ -1720,7 +1737,7 @@ def run_benchmarks(model, val_loader, device, amp_enabled=False, multi_target=Fa
         targets = np.concatenate(all_targets)
         prev_gaps = np.concatenate(all_prev_gaps)
         non_stop_preds = preds[preds != stop]
-        return {
+        result = {
             "preds": preds,
             "targets": targets,
             "n_samples": len(preds),
@@ -1731,6 +1748,26 @@ def run_benchmarks(model, val_loader, device, amp_enabled=False, multi_target=Fa
             "accuracy": float((preds == targets).mean()),
             "last_repeat": _compute_last_repeat(preds, prev_gaps),
         }
+
+        # per-onset metrics for multi-onset mode
+        if all_mo_preds is not None:
+            onset_metrics_keys = ["accuracy", "hit_rate", "good_rate", "miss_rate",
+                                  "stop_f1", "model_score", "frame_error_mean"]
+            for oi in range(len(all_mo_preds)):
+                mo_p = np.concatenate(all_mo_preds[oi])
+                mo_t = np.concatenate(all_mo_targets[oi])
+                mo_m = compute_metrics(mo_t, mo_p)
+                for k in onset_metrics_keys:
+                    if k in mo_m:
+                        result[f"onset_{oi+1}_{k}"] = mo_m[k]
+            # oA averages
+            for k in onset_metrics_keys:
+                vals = [result.get(f"onset_{oi+1}_{k}") for oi in range(len(all_mo_preds))
+                        if f"onset_{oi+1}_{k}" in result]
+                if vals:
+                    result[f"onset_avg_{k}"] = float(np.mean(vals))
+
+        return result
 
     results = {}
     bench_bar = tqdm(total=23, desc="Benchmarks", leave=False)
@@ -2852,8 +2889,11 @@ def _save_proposer_graphs(val_extra, val_targets, val_preds, val_metrics, eval_s
     plt.close(fig)
 
 
-def save_eval_graphs(targets, preds, metrics, eval_step, run_dir, extra=None, mt_metrics=None):
-    """Generate and save all graphs for this eval."""
+def save_eval_graphs(targets, preds, metrics, eval_step, run_dir, extra=None, mt_metrics=None, prefix_tag=""):
+    """Generate and save all graphs for this eval.
+
+    prefix_tag: optional suffix for filenames (e.g. "_o1", "_o2") for multi-onset mode.
+    """
     import matplotlib
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
@@ -2863,7 +2903,7 @@ def save_eval_graphs(targets, preds, metrics, eval_step, run_dir, extra=None, mt
     eval_dir = os.path.join(run_dir, "evals")
     os.makedirs(eval_dir, exist_ok=True)
     max_bin = N_CLASSES - 1  # for graph ranges (was hardcoded 500)
-    prefix = os.path.join(eval_dir, f"eval_{eval_step:03d}")
+    prefix = os.path.join(eval_dir, f"eval_{eval_step:03d}{prefix_tag}")
 
     stop = N_CLASSES - 1
     ns = targets < stop
@@ -3808,6 +3848,8 @@ def _save_step_graph(step_history, run_dir):
     sf1s = [s[6] for s in step_history]
     s1f1s = [s[7] if len(s) > 7 else 0 for s in step_history]
     onset_hits_list = [s[8] if len(s) > 8 else [] for s in step_history]
+    onset_misses_list = [s[9] if len(s) > 9 else [] for s in step_history]
+    has_multi_onset = any(len(oh) > 0 for oh in onset_hits_list)
 
     # rolling average helper
     def rolling_avg(vals, window=20):
@@ -3821,29 +3863,42 @@ def _save_step_graph(step_history, run_dir):
     ax2 = ax1.twinx()
 
     # left axis: rates (0-1) — raw lines at low opacity, rolling avg opaque
-    ax1.plot(steps, hits, linewidth=1, color="#6bc46d", alpha=0.25)
-    ax1.plot(steps, rolling_avg(hits), label="HIT (<=3%)", linewidth=2, color="#6bc46d")
-    ax1.plot(steps, misses, linewidth=1, color="#eb4528", alpha=0.25)
-    ax1.plot(steps, rolling_avg(misses), label="MISS (>20%)", linewidth=1.5, color="#eb4528")
+    if not has_multi_onset:
+        # single-onset: show main HIT/MISS lines
+        ax1.plot(steps, hits, linewidth=1, color="#6bc46d", alpha=0.25)
+        ax1.plot(steps, rolling_avg(hits), label="HIT (<=3%)", linewidth=2, color="#6bc46d")
+        ax1.plot(steps, misses, linewidth=1, color="#eb4528", alpha=0.25)
+        ax1.plot(steps, rolling_avg(misses), label="MISS (>20%)", linewidth=1.5, color="#eb4528")
+    acc_label = "Accuracy o1 (exact)" if has_multi_onset else "Accuracy (exact)"
     ax1.plot(steps, accs, linewidth=1, color="#4a90d9", alpha=0.2)
-    ax1.plot(steps, rolling_avg(accs), label="Accuracy (exact)", linewidth=1, color="#4a90d9", linestyle="--")
+    ax1.plot(steps, rolling_avg(accs), label=acc_label, linewidth=1, color="#4a90d9", linestyle="--")
     ax1.plot(steps, sf1s, linewidth=1, color="#c76dba", alpha=0.2)
     ax1.plot(steps, rolling_avg(sf1s), label="Stop F1", linewidth=1, color="#c76dba", linestyle="--")
     if any(v > 0 for v in s1f1s):
         ax1.plot(steps, s1f1s, linewidth=1, color="#e6a817", alpha=0.2)
         ax1.plot(steps, rolling_avg(s1f1s), label="S1 F1", linewidth=1.5, color="#e6a817", linestyle="-.")
-    # per-onset HIT rates (o1, o2, o3, o4, oA) for multi-onset mode (<=3% or ±1 frame)
-    if any(len(oh) > 0 for oh in onset_hits_list):
+    # per-onset HIT and MISS rates (o1, o2, o3, o4, oA) for multi-onset mode
+    if has_multi_onset:
         n_mo = max(len(oh) for oh in onset_hits_list if oh)
-        onset_colors = ["#2ecc71", "#27ae60", "#1abc9c", "#16a085"]  # greens, darkening
+        hit_colors = ["#2ecc71", "#27ae60", "#1abc9c", "#16a085"]  # greens
+        miss_colors = ["#e74c3c", "#c0392b", "#d35400", "#a93226"]  # reds
         for oi in range(n_mo):
-            vals_oi = [oh[oi] if len(oh) > oi else 0 for oh in onset_hits_list]
-            ax1.plot(steps, rolling_avg(vals_oi), label=f"o{oi+1} HIT", linewidth=1,
-                    color=onset_colors[oi % len(onset_colors)], linestyle="-.", alpha=0.8)
-        # oA = average
-        vals_avg = [sum(oh) / len(oh) if oh else 0 for oh in onset_hits_list]
-        ax1.plot(steps, rolling_avg(vals_avg), label="oA HIT", linewidth=2,
-                color="#f39c12", linestyle="-.")
+            # HIT per onset
+            vals_hit = [oh[oi] if len(oh) > oi else 0 for oh in onset_hits_list]
+            ax1.plot(steps, rolling_avg(vals_hit), label=f"o{oi+1} HIT", linewidth=1.5,
+                    color=hit_colors[oi % len(hit_colors)], alpha=0.8)
+            # MISS per onset
+            vals_miss = [om[oi] if len(om) > oi else 1 for om in onset_misses_list]
+            ax1.plot(steps, rolling_avg(vals_miss), label=f"o{oi+1} MISS", linewidth=1,
+                    color=miss_colors[oi % len(miss_colors)], linestyle="--", alpha=0.6)
+        # oA HIT = average
+        vals_avg_hit = [sum(oh) / len(oh) if oh else 0 for oh in onset_hits_list]
+        ax1.plot(steps, rolling_avg(vals_avg_hit), label="oA HIT", linewidth=2.5,
+                color="#f39c12")
+        # oA MISS = average
+        vals_avg_miss = [sum(om) / len(om) if om else 1 for om in onset_misses_list]
+        ax1.plot(steps, rolling_avg(vals_avg_miss), label="oA MISS", linewidth=2,
+                color="#e74c3c", linestyle="--")
     ax1.set_xlabel("Step", fontsize=12)
     ax1.set_ylabel("Rate", fontsize=12)
     ax1.set_ylim(0, 1)
@@ -4735,9 +4790,11 @@ def train(args):
                     r_hit = sum(r[3] for r in recent_buf) / r_ns_sum
                     r_miss = sum(r[4] for r in recent_buf) / r_ns_sum
                     r_score = sum(r[5] for r in recent_buf) / r_ns_sum
+                    hit_label = "HIT(o1)" if n_onsets > 1 else "HIT"
+                    miss_label = "miss(o1)" if n_onsets > 1 else "miss"
                     stats = (f"L={avg_loss:.3f}|{r_loss:.3f} "
-                             f"HIT={hit:.1%}|{r_hit:.1%} "
-                             f"miss={miss:.1%}|{r_miss:.1%} "
+                             f"{hit_label}={hit:.1%}|{r_hit:.1%} "
+                             f"{miss_label}={miss:.1%}|{r_miss:.1%} "
                              f"score={score:+.3f}|{r_score:+.3f}")
                     # stop token stats
                     r_sL = sum(r[6] for r in recent_buf) / len(recent_buf) if recent_buf else 0
@@ -4767,7 +4824,8 @@ def train(args):
 
             # accumulate per-batch metrics for step graph
             # per-onset HIT rates for multi-onset live graph
-            b_onset_hits = []  # o1, o2, o3, o4 HIT rates (<=3% or ±1 frame)
+            b_onset_hits = []   # o1, o2, o3, o4 HIT rates (<=3% or ±1 frame)
+            b_onset_misses = []  # o1, o2, o3, o4 MISS rates (>20%)
             if n_onsets > 1 and logits.dim() == 3:
                 with torch.no_grad():
                     for oi in range(n_onsets):
@@ -4780,9 +4838,12 @@ def train(args):
                             fe = (p_ns - t_ns).abs()
                             pe = ((p_ns + 1) / (t_ns + 1) - 1.0).abs()
                             hit_oi = ((pe <= 0.03) | (fe <= 1)).float().mean().item()
+                            miss_oi = (pe > 0.20).float().mean().item()
                         else:
                             hit_oi = 0.0
+                            miss_oi = 1.0
                         b_onset_hits.append(hit_oi)
+                        b_onset_misses.append(miss_oi)
             if b_ns > 0:
                 b_acc = (pred == target_metric).float().mean().item() if bs > 0 else 0
                 step_buf.append((
@@ -4793,7 +4854,8 @@ def train(args):
                     b_acc,
                     b_stop_f1,
                     b_s1_f1,
-                    b_onset_hits,  # list of per-onset HIT rates, empty if n_onsets==1
+                    b_onset_hits,   # list of per-onset HIT rates, empty if n_onsets==1
+                    b_onset_misses, # list of per-onset MISS rates, empty if n_onsets==1
                 ))
 
             # ── step-level live graph (every 500 steps) ──
@@ -4805,7 +4867,7 @@ def train(args):
                 base_step = global_step - 500
                 for pi, idx in enumerate(indices):
                     s = step_buf[idx]
-                    step_history.append((base_step + int((pi + 1) * 500 / n_points), s[0], s[1], s[2], s[3], s[4], s[5], s[6], s[7]))
+                    step_history.append((base_step + int((pi + 1) * 500 / n_points), s[0], s[1], s[2], s[3], s[4], s[5], s[6], s[7], s[8] if len(s) > 8 else []))
                 step_buf.clear()
                 _save_step_graph(step_history, run_dir)
 
@@ -4893,21 +4955,29 @@ def _run_eval(model, val_loader, criterion, args, amp_enabled,
     if "multi_onset_preds" in val_extra:
         mo_preds = val_extra["multi_onset_preds"]
         mo_targets = val_extra["multi_onset_targets"]
+        # keys to save per onset from compute_metrics
+        save_keys = [
+            "accuracy", "unique_preds", "stop_precision", "stop_recall", "stop_f1",
+            "frame_error_mean", "frame_error_median", "frame_error_p90",
+            "rel_error_mean", "rel_error_median", "ratio_mean", "ratio_median",
+            "hit_rate", "good_rate", "miss_rate",
+            "exact_match", "within_1_frame", "within_2_frames",
+            "within_3pct", "within_10pct", "above_20pct",
+            "model_score",
+        ]
         per_step_metrics = []
         for oi in range(len(mo_preds)):
             m_oi = compute_metrics(mo_targets[oi], mo_preds[oi])
             per_step_metrics.append(m_oi)
-            val_metrics[f"onset_{oi+1}_hit_rate"] = m_oi.get("hit_rate", 0.0)
-            val_metrics[f"onset_{oi+1}_miss_rate"] = m_oi.get("miss_rate", 1.0)
-            val_metrics[f"onset_{oi+1}_accuracy"] = m_oi.get("accuracy", 0.0)
-            val_metrics[f"onset_{oi+1}_score"] = m_oi.get("model_score", -1.0)
-        # averaged across all onset steps
-        avg_hit = np.mean([m.get("hit_rate", 0.0) for m in per_step_metrics])
-        avg_miss = np.mean([m.get("miss_rate", 1.0) for m in per_step_metrics])
-        avg_score = np.mean([m.get("model_score", -1.0) for m in per_step_metrics])
-        val_metrics["multi_onset_avg_hit"] = float(avg_hit)
-        val_metrics["multi_onset_avg_miss"] = float(avg_miss)
-        val_metrics["multi_onset_avg_score"] = float(avg_score)
+            # save ALL metrics with onset prefix: onset_1_hit_rate, onset_1_accuracy, etc.
+            for k in save_keys:
+                if k in m_oi:
+                    val_metrics[f"onset_{oi+1}_{k}"] = m_oi[k]
+        # oA: averaged across all onset steps
+        for k in save_keys:
+            vals = [m.get(k) for m in per_step_metrics if k in m and m[k] is not None]
+            if vals:
+                val_metrics[f"onset_avg_{k}"] = float(np.mean(vals))
 
     # ratio head metrics (exp 55+)
     if "ratio_preds" in val_extra:
@@ -5059,14 +5129,14 @@ def _run_eval(model, val_loader, criterion, args, amp_enabled,
               f"rank={val_metrics.get('s2_pick_rank_mean',0):.1f} "
               f"naive={val_metrics.get('s1_naive_accuracy',0):.1%}")
     if "onset_1_hit_rate" in val_metrics:
-        n_mo = sum(1 for k in val_metrics if k.startswith("onset_") and k.endswith("_hit_rate"))
+        n_mo = sum(1 for k in val_metrics if k.startswith("onset_") and k.endswith("_hit_rate") and not k.startswith("onset_avg"))
         parts = []
         for oi in range(1, n_mo + 1):
             h = val_metrics.get(f"onset_{oi}_hit_rate", 0)
             m = val_metrics.get(f"onset_{oi}_miss_rate", 0)
             parts.append(f"o{oi}={h:.1%}/{m:.1%}")
-        avg_h = val_metrics.get("multi_onset_avg_hit", 0)
-        avg_m = val_metrics.get("multi_onset_avg_miss", 0)
+        avg_h = val_metrics.get("onset_avg_hit_rate", 0)
+        avg_m = val_metrics.get("onset_avg_miss_rate", 0)
         parts.append(f"oA={avg_h:.1%}/{avg_m:.1%}")
         print(f"    Onsets (HIT/MISS): {' | '.join(parts)}")
 
@@ -5079,7 +5149,22 @@ def _run_eval(model, val_loader, criterion, args, amp_enabled,
 
     # save eval graphs
     save_eval_graphs(val_targets, val_preds, val_metrics, eval_step, run_dir,
-                     extra=val_extra, mt_metrics=mt_metrics)
+                     extra=val_extra, mt_metrics=mt_metrics, prefix_tag="_o1" if "multi_onset_preds" in val_extra else "")
+
+    # multi-onset: save eval graphs for o2, o3, o4, oA
+    if "multi_onset_preds" in val_extra:
+        mo_preds = val_extra["multi_onset_preds"]
+        mo_targets = val_extra["multi_onset_targets"]
+        for oi in range(1, len(mo_preds)):
+            mo_m = compute_metrics(mo_targets[oi], mo_preds[oi])
+            save_eval_graphs(mo_targets[oi], mo_preds[oi], mo_m, eval_step, run_dir,
+                            extra=None, mt_metrics=None, prefix_tag=f"_o{oi+1}")
+        # oA: pool all onsets together
+        all_mo_p = np.concatenate(mo_preds)
+        all_mo_t = np.concatenate(mo_targets)
+        oa_m = compute_metrics(all_mo_t, all_mo_p)
+        save_eval_graphs(all_mo_t, all_mo_p, oa_m, eval_step, run_dir,
+                        extra=None, mt_metrics=None, prefix_tag="_oA")
 
     # Stage 1 proposer graphs (exp 58+)
     if "proposal_confs" in val_extra:
