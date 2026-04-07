@@ -92,7 +92,7 @@ Each folder contains a README with hypothesis, results, and key graphs.
 | 58 | [Two-Stage Propose-Select](experiment_58/) | **New ATH 74.6%** | Stage 1 proposes, Stage 2 selects. Breaks 73.7% ceiling. 7 consecutive improvements, zero oscillations. S1 proposals load-bearing (50pp delta) |
 | 58-B | [Propose-Select, Precision S1](experiment_58b/) | **Running** | S1 pos_weight 2.0 (was 5.0). Fewer proposals (24 vs 67), S2 more independent (53% picks S1 vs 82%) |
 | 59 | [AR Quality Metric Discovery](experiment_59/) | No signal | Raw chart metrics don't correlate with human preference. Per-song confound dominates |
-| 59-B | [Within-Song Normalized Metrics](experiment_59b/) | **Pending** | Z-score within song + pairwise deltas to remove song confound |
+| 59-B | [Within-Song Normalized Metrics](experiment_59b/) | **Key finding** | gap_std (+0.30), gap_cv (+0.29), dominant_gap_pct (-0.27), max_metro_streak (-0.27) all significant. Pattern variety predicts human preference |
 
 ## Key Lessons
 
@@ -127,3 +127,5 @@ Each folder contains a README with hypothesis, results, and key graphs.
 - **Virtual tokens solve metronome collapse** — 100% AR survival at step 30 (unprecedented). But 52% hallucination rate — the model over-predicts at sub-beat positions. Source: [exp 49](experiment_49/README.md)
 - **Anti-entropy is a robustness tool, not accuracy tool** — entropy penalty improves corruption resilience (+2.6pp metronome) but caps HIT at 73.2%. Eliminating the disambiguation zone doesn't improve accuracy. Source: [exp 50](experiment_50/README.md), [exp 50-B](experiment_50b/README.md)
 - **Smaller prediction windows converge faster** — 33-bin window: HIT 74.2% (ATH) at eval 2. But model needs future audio for AR quality — without it, degrades to transient-spamming. Source: [exp 52-L](experiment_52/README.md)
+- **Two-stage propose-select breaks the HIT ceiling** — Stage 1 (pure audio) proposes onset candidates, Stage 2 (full context) selects. 74.6% HIT, 7 consecutive improvements, zero oscillations. Proposals are load-bearing (50pp delta when zeroed). Source: [exp 58](experiment_58/README.md)
+- **Pattern variety predicts human preference** — gap_std (+0.30), gap_cv (+0.29), dominant_gap_pct (-0.27), max_metro_streak (-0.27) are the only metrics that significantly correlate with human rankings. Audio alignment metrics show zero signal. Within-song normalization essential. Source: [exp 59-B](experiment_59b/README.md)
