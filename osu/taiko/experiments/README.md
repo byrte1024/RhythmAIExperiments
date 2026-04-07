@@ -96,6 +96,8 @@ Each folder contains a README with hypothesis, results, and key graphs.
 | 59-C | [Synthetic Human Evaluator](experiment_59c/) | Works | gap_std + gap_cv predicts #1 at 52% (2x random). Volunteers 60%. Spearman r=0.35, p=0.001 |
 | 59-D | [Self vs Volunteer Metric Split](experiment_59d/) | Divergent | Expert=gap_cv (+0.38), Volunteers=dominant_gap_pct (-0.42). Expert values proportional variety, volunteers punish boredom |
 | 59-E | [Split Synthetic Evaluators](experiment_59e/) | Validated | Tuned evaluators outperform on target: volunteer=60% #1 (r=0.47), expert=47% (tau=0.42). Cross-eval drops to random |
+| 59-F | [Evaluator Weight Sweep](experiment_59f/) | Optimized | Expert=top-2 (47%, any temp). Volunteer=top-7 temp=0.5 (70% #1 match). Temperature barely matters |
+| 59-G | [Fresh Data Validation](experiment_59g/) | **Pending** | Run 4 models from 53-AR on 30 fresh val songs. Do synthetic evaluators reproduce the 53-AR leaderboard? |
 
 ## Key Lessons
 
