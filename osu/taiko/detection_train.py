@@ -3822,27 +3822,27 @@ def _save_step_graph(step_history, run_dir):
 
     # left axis: rates (0-1) — raw lines at low opacity, rolling avg opaque
     ax1.plot(steps, hits, linewidth=1, color="#6bc46d", alpha=0.25)
-    ax1.plot(steps, rolling_avg(hits), label="HIT", linewidth=2, color="#6bc46d")
+    ax1.plot(steps, rolling_avg(hits), label="HIT (<=3%)", linewidth=2, color="#6bc46d")
     ax1.plot(steps, misses, linewidth=1, color="#eb4528", alpha=0.25)
-    ax1.plot(steps, rolling_avg(misses), label="MISS", linewidth=1.5, color="#eb4528")
+    ax1.plot(steps, rolling_avg(misses), label="MISS (>20%)", linewidth=1.5, color="#eb4528")
     ax1.plot(steps, accs, linewidth=1, color="#4a90d9", alpha=0.2)
-    ax1.plot(steps, rolling_avg(accs), label="Accuracy (<=3%)", linewidth=1, color="#4a90d9", linestyle="--")
+    ax1.plot(steps, rolling_avg(accs), label="Accuracy (exact)", linewidth=1, color="#4a90d9", linestyle="--")
     ax1.plot(steps, sf1s, linewidth=1, color="#c76dba", alpha=0.2)
     ax1.plot(steps, rolling_avg(sf1s), label="Stop F1", linewidth=1, color="#c76dba", linestyle="--")
     if any(v > 0 for v in s1f1s):
         ax1.plot(steps, s1f1s, linewidth=1, color="#e6a817", alpha=0.2)
         ax1.plot(steps, rolling_avg(s1f1s), label="S1 F1", linewidth=1.5, color="#e6a817", linestyle="-.")
-    # per-onset HIT rates (o1, o2, o3, o4, oA) for multi-onset mode
+    # per-onset HIT rates (o1, o2, o3, o4, oA) for multi-onset mode (<=3% or ±1 frame)
     if any(len(oh) > 0 for oh in onset_hits_list):
         n_mo = max(len(oh) for oh in onset_hits_list if oh)
         onset_colors = ["#2ecc71", "#27ae60", "#1abc9c", "#16a085"]  # greens, darkening
         for oi in range(n_mo):
             vals_oi = [oh[oi] if len(oh) > oi else 0 for oh in onset_hits_list]
-            ax1.plot(steps, rolling_avg(vals_oi), label=f"o{oi+1}", linewidth=1,
+            ax1.plot(steps, rolling_avg(vals_oi), label=f"o{oi+1} HIT", linewidth=1,
                     color=onset_colors[oi % len(onset_colors)], linestyle="-.", alpha=0.8)
         # oA = average
         vals_avg = [sum(oh) / len(oh) if oh else 0 for oh in onset_hits_list]
-        ax1.plot(steps, rolling_avg(vals_avg), label="oA", linewidth=2,
+        ax1.plot(steps, rolling_avg(vals_avg), label="oA HIT", linewidth=2,
                 color="#f39c12", linestyle="-.")
     ax1.set_xlabel("Step", fontsize=12)
     ax1.set_ylabel("Rate", fontsize=12)
@@ -4661,12 +4661,10 @@ def train(args):
                     frame_err = (p_ns - t_ns).abs()
                     pct_err = ((p_ns + 1) / (t_ns + 1) - 1.0).abs()
                     b_ns = ns_count.item()
-                    b_hit = ((pct_err <= 0.10) | (frame_err <= 2)).sum().item()
+                    b_hit = ((pct_err <= 0.03) | (frame_err <= 1)).sum().item()
                     b_miss = (pct_err > 0.20).sum().item()
                     train_ns_total += b_ns
                     train_miss_sum += b_miss
-                    train_w10_sum += b_hit
-                    train_w3_sum += ((pct_err <= 0.03) | (frame_err <= 1)).sum().item()
                     train_hit_sum += b_hit
 
                     abs_lr = ((p_ns + 1).log() - (t_ns + 1).log()).abs()
@@ -4769,7 +4767,7 @@ def train(args):
 
             # accumulate per-batch metrics for step graph
             # per-onset HIT rates for multi-onset live graph
-            b_onset_hits = []  # o1, o2, o3, o4 hit rates
+            b_onset_hits = []  # o1, o2, o3, o4 HIT rates (<=3% or ±1 frame)
             if n_onsets > 1 and logits.dim() == 3:
                 with torch.no_grad():
                     for oi in range(n_onsets):
@@ -4781,17 +4779,18 @@ def train(args):
                             p_ns = p_oi[ns_oi].float()
                             fe = (p_ns - t_ns).abs()
                             pe = ((p_ns + 1) / (t_ns + 1) - 1.0).abs()
-                            hit_oi = ((pe <= 0.10) | (fe <= 2)).float().mean().item()
+                            hit_oi = ((pe <= 0.03) | (fe <= 1)).float().mean().item()
                         else:
                             hit_oi = 0.0
                         b_onset_hits.append(hit_oi)
             if b_ns > 0:
+                b_acc = (pred == target_metric).float().mean().item() if bs > 0 else 0
                 step_buf.append((
                     loss.item(),
                     b_hit / b_ns,
                     b_miss / b_ns,
                     b_score / b_ns,
-                    train_w3_sum / train_ns_total if train_ns_total > 0 else 0,
+                    b_acc,
                     b_stop_f1,
                     b_s1_f1,
                     b_onset_hits,  # list of per-onset HIT rates, empty if n_onsets==1
