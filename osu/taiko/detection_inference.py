@@ -198,6 +198,30 @@ def run_inference(model, mel, conditioning, device, hop_bins=20, max_events=1000
         else:
             logits = output
 
+        # multi-onset: logits shape (1, n_onsets, n_classes) — collect all non-STOP predictions
+        if logits.dim() == 3:
+            preds_mo = logits.argmax(dim=-1)  # (1, n_onsets)
+            events_this_step = []
+            for i in range(preds_mo.size(1)):
+                p = preds_mo[0, i].item()
+                if p >= N_CLASSES - 1:  # STOP
+                    break  # cascade
+                events_this_step.append(cursor + p)
+            # Place all events
+            for ev in events_this_step:
+                events.append(ev)
+                event_offsets.append(ev - cursor)
+            # Hop cursor to last placed event, or hop_bins if none
+            if events_this_step:
+                cursor_history.append((total_calls, cursor, events_this_step[-1] - cursor))
+                cursor = events_this_step[-1]
+            else:
+                stop_count += 1
+                stop_positions.append(cursor)
+                cursor_history.append((total_calls, cursor, N_CLASSES - 1))
+                cursor += hop_bins
+            continue
+
         if threshold is not None:
             # multi-target: threshold scan — take earliest bin above threshold
             prob = torch.softmax(logits, dim=-1).squeeze(0).cpu().numpy()

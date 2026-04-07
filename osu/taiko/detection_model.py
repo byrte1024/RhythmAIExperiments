@@ -1561,6 +1561,7 @@ class ProposeSelectDetector(nn.Module):
         n_virtual_tokens=0,
         a_bins=500,
         b_bins=500,
+        n_onsets=1,
     ):
         super().__init__()
         self.d_model = d_model
@@ -1572,6 +1573,7 @@ class ProposeSelectDetector(nn.Module):
         self.cursor_token = a_bins // 4
         self.gap_ratios = gap_ratios
         self.n_virtual_tokens = n_virtual_tokens
+        self.n_onsets = n_onsets
 
         # ── shared conv stem ──
         self.conv = nn.Sequential(
@@ -1646,12 +1648,13 @@ class ProposeSelectDetector(nn.Module):
 
         # output head (same as EventEmbeddingDetector)
         self.head_norm = nn.LayerNorm(d_model)
-        self.head_proj = nn.Linear(d_model, n_classes)
-        self.head_smooth = nn.Sequential(
-            nn.Conv1d(1, 8, kernel_size=5, padding=2),
-            nn.GELU(),
-            nn.Conv1d(8, 1, kernel_size=5, padding=2),
-        )
+        self.head_proj = nn.Linear(d_model, n_classes * n_onsets)
+        if n_onsets == 1:
+            self.head_smooth = nn.Sequential(
+                nn.Conv1d(1, 8, kernel_size=5, padding=2),
+                nn.GELU(),
+                nn.Conv1d(8, 1, kernel_size=5, padding=2),
+            )
 
     def _build_event_embeddings(self, event_offsets, event_mask):
         """Same as EventEmbeddingDetector._build_event_embeddings."""
@@ -1745,7 +1748,10 @@ class ProposeSelectDetector(nn.Module):
         # ── Stage 2: Selector (skip when frozen — only Stage 1 loss needed) ──
         if getattr(self, '_s2_frozen', False) and self.training:
             # return dummy logits during Stage 2 freeze to save compute
-            dummy_logits = torch.zeros(B, self.n_classes, device=x.device)
+            if self.n_onsets > 1:
+                dummy_logits = torch.zeros(B, self.n_onsets, self.n_classes, device=x.device)
+            else:
+                dummy_logits = torch.zeros(B, self.n_classes, device=x.device)
             return dummy_logits, proposal_logits
 
         cond = self.cond_mlp(conditioning)
@@ -1796,8 +1802,12 @@ class ProposeSelectDetector(nn.Module):
 
         # extract cursor for onset prediction
         cursor = x[:, V + self.cursor_token, :]
-        logits = self.head_proj(self.head_norm(cursor))
-        logits = logits + self.head_smooth(logits.unsqueeze(1)).squeeze(1)
+        raw = self.head_proj(self.head_norm(cursor))  # (B, n_classes * n_onsets)
+        if self.n_onsets > 1:
+            logits = raw.view(B, self.n_onsets, self.n_classes)  # (B, n_onsets, n_classes)
+        else:
+            logits = raw  # (B, n_classes) — backward compat
+            logits = logits + self.head_smooth(logits.unsqueeze(1)).squeeze(1)
 
         # return both proposal logits (for Stage 1 loss) and onset logits (for Stage 2 loss)
         return logits, proposal_logits

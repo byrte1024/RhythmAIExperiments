@@ -134,7 +134,8 @@ class OnsetDataset(Dataset):
 
     def __init__(self, manifest, ds_dir, chart_indices, augment=False, subsample=1,
                  multi_target=False, ratio_head=False,
-                 density_jitter_rate=0.10, density_jitter_pct=0.02):
+                 density_jitter_rate=0.10, density_jitter_pct=0.02,
+                 n_onsets=1):
         self.mel_dir = os.path.join(ds_dir, "mels")
         self.charts = [manifest["charts"][i] for i in chart_indices]
         self.augment = augment
@@ -142,6 +143,7 @@ class OnsetDataset(Dataset):
         self._density_jitter_rate = density_jitter_rate
         self._density_jitter_pct = density_jitter_pct
         self._ratio_head = ratio_head
+        self._n_onsets = n_onsets
         # capture current window config (for Windows spawn workers)
         self._a_bins = A_BINS
         self._b_bins = B_BINS  # audio window (mel frames)
@@ -287,6 +289,29 @@ class OnsetDataset(Dataset):
             future_tok = np.clip(future_tok, 0, n_audio_tokens - 1)
             proposal_tokens[future_tok] = 1.0
 
+        # Multi-onset targets (exp 62+): predict N future onsets simultaneously
+        n_onsets = self._n_onsets
+        if n_onsets > 1:
+            # Find all future events within b_pred
+            future_events = evt[(evt > cursor) & (evt <= cursor + self._b_pred)]
+            future_offsets_mo = (future_events.astype(np.int64) - cursor)
+            future_offsets_mo = np.sort(future_offsets_mo)
+
+            multi_targets = np.full(n_onsets, self._n_classes - 1, dtype=np.int64)  # fill with STOP
+            for i in range(min(n_onsets, len(future_offsets_mo))):
+                multi_targets[i] = future_offsets_mo[i]
+
+            # STOP cascade: once STOP appears, all following are STOP
+            stop_val = self._n_classes - 1
+            saw_stop = False
+            for i in range(n_onsets):
+                if saw_stop:
+                    multi_targets[i] = stop_val
+                elif multi_targets[i] == stop_val:
+                    saw_stop = True
+
+            target = multi_targets  # shape (n_onsets,) instead of scalar
+
         # multi-target: all onsets in forward window
         if self.multi_target:
             future_mask = (evt > cursor) & (evt <= cursor + self._b_pred)
@@ -308,6 +333,17 @@ class OnsetDataset(Dataset):
                 torch.from_numpy(cond),
                 torch.from_numpy(targets_padded),
                 torch.tensor(n_targets, dtype=torch.long),
+                torch.tensor(ratio_target, dtype=torch.long),
+                torch.from_numpy(proposal_tokens),
+            )
+
+        if n_onsets > 1:
+            return (
+                torch.from_numpy(mel_window),
+                torch.from_numpy(event_offsets),
+                torch.from_numpy(event_mask),
+                torch.from_numpy(cond),
+                torch.from_numpy(target),
                 torch.tensor(ratio_target, dtype=torch.long),
                 torch.from_numpy(proposal_tokens),
             )
@@ -1010,7 +1046,8 @@ def _top3_gap_peaks(gaps, tolerance=0.05):
 
 @torch.no_grad()
 def validate_and_collect(model, loader, criterion, device, amp_enabled=False, sigmoid_mode=False, framewise=False,
-                         multi_target=False, ratio_criterion=None, propose_select=False):
+                         multi_target=False, ratio_criterion=None, propose_select=False,
+                         n_onsets=1):
     """Single pass: compute val loss AND collect predictions + extra data for graphs."""
     model.eval()
     all_targets = []       # single-target: (N,), multi-target: not used
@@ -1028,6 +1065,9 @@ def validate_and_collect(model, loader, criterion, device, amp_enabled=False, si
     all_ratio_targets = [] # ratio head targets (exp 55+)
     all_proposal_confs = []  # Stage 1 confidences (exp 58+)
     all_proposal_has_onset = []  # which tokens actually have onsets (exp 58+)
+    # multi-onset per-step collectors (exp 62+)
+    all_multi_onset_preds = [[] for _ in range(n_onsets)] if n_onsets > 1 else None
+    all_multi_onset_targets = [[] for _ in range(n_onsets)] if n_onsets > 1 else None
     total_loss = 0.0
     total_n = 0
 
@@ -1068,7 +1108,17 @@ def validate_and_collect(model, loader, criterion, device, amp_enabled=False, si
                     # propose-select mode: onset logits + proposal logits
                     onset_logits, proposal_logits_val = output
                     logits = onset_logits
-                    if multi_target:
+                    if n_onsets > 1:
+                        # multi-onset: logits (B, n_onsets, n_classes), target (B, n_onsets)
+                        total_onset_loss = 0
+                        for oi in range(n_onsets):
+                            total_onset_loss += criterion(logits[:, oi], target[:, oi])
+                        loss = total_onset_loss / n_onsets
+                        # collect per-onset predictions
+                        for oi in range(n_onsets):
+                            all_multi_onset_preds[oi].append(logits[:, oi].argmax(1).cpu().numpy())
+                            all_multi_onset_targets[oi].append(target[:, oi].cpu().numpy())
+                    elif multi_target:
                         loss = criterion(logits, targets_padded, n_tgt)
                     else:
                         loss = criterion(logits, target)
@@ -1119,11 +1169,19 @@ def validate_and_collect(model, loader, criterion, device, amp_enabled=False, si
         total_loss += loss.item() * B
         total_n += B
 
-        if sigmoid_mode or framewise:
-            probs = torch.sigmoid(logits.float()) if not framewise else onset_probs
+        # multi-onset: use onset_1 ([:, 0]) for backward-compat metric collection
+        if n_onsets > 1 and logits.dim() == 3:
+            logits_compat = logits[:, 0]  # (B, n_classes)
+            target_compat = target[:, 0]   # (B,)
         else:
-            probs = torch.softmax(logits.float(), dim=-1)
-        all_preds.append(logits.argmax(1).cpu().numpy())
+            logits_compat = logits
+            target_compat = target if not multi_target else None
+
+        if sigmoid_mode or framewise:
+            probs = torch.sigmoid(logits_compat.float()) if not framewise else onset_probs
+        else:
+            probs = torch.softmax(logits_compat.float(), dim=-1)
+        all_preds.append(logits_compat.argmax(1).cpu().numpy())
         all_cond.append(cond.cpu().numpy())
 
         # entropy
@@ -1139,6 +1197,9 @@ def validate_and_collect(model, loader, criterion, device, amp_enabled=False, si
             nearest[n_tgt == 0] = N_CLASSES - 1
             nearest = nearest.clamp(0, N_CLASSES - 1)
             all_targets.append(nearest.cpu().numpy())
+        elif n_onsets > 1:
+            all_targets.append(target_compat.cpu().numpy())
+            all_topk.append(logits_compat.topk(10, dim=1).indices.cpu().numpy())
         else:
             all_targets.append(target.cpu().numpy())
             all_topk.append(logits.topk(10, dim=1).indices.cpu().numpy())
@@ -1186,6 +1247,9 @@ def validate_and_collect(model, loader, criterion, device, amp_enabled=False, si
     if all_proposal_confs:
         extra["proposal_confs"] = np.concatenate(all_proposal_confs)
         extra["proposal_has_onset"] = np.concatenate(all_proposal_has_onset)
+    if n_onsets > 1 and all_multi_onset_preds is not None and len(all_multi_onset_preds[0]) > 0:
+        extra["multi_onset_preds"] = [np.concatenate(all_multi_onset_preds[oi]) for oi in range(n_onsets)]
+        extra["multi_onset_targets"] = [np.concatenate(all_multi_onset_targets[oi]) for oi in range(n_onsets)]
     return val_loss, extra
 
 
@@ -1642,8 +1706,15 @@ def run_benchmarks(model, val_loader, device, amp_enabled=False, multi_target=Fa
                     logits = output[0]
                 else:
                     logits = output
+                # multi-onset: use onset_1 ([:, 0]) for backward-compat benchmark metrics
+                if logits.dim() == 3:
+                    logits = logits[:, 0]  # (B, n_classes)
             all_preds.append(logits.argmax(1).cpu().numpy())
-            all_targets.append(target.numpy())
+            # multi-onset target: use onset_1 for compat
+            if target.dim() == 2:
+                all_targets.append(target[:, 0].numpy())
+            else:
+                all_targets.append(target.numpy())
 
         preds = np.concatenate(all_preds)
         targets = np.concatenate(all_targets)
@@ -2065,6 +2136,9 @@ def run_benchmarks(model, val_loader, device, amp_enabled=False, multi_target=Fa
                         logits = output[0]
                     else:
                         logits = output
+                    # multi-onset: use onset_1 for AR benchmark
+                    if logits.dim() == 3:
+                        logits = logits[:, 0]
                     probs = torch.softmax(logits.float(), dim=1)
                     pred = logits.argmax(dim=1).item()
                     ent = -(probs * (probs + 1e-10).log()).sum(dim=1).item()
@@ -3733,6 +3807,7 @@ def _save_step_graph(step_history, run_dir):
     accs = [s[5] for s in step_history]
     sf1s = [s[6] for s in step_history]
     s1f1s = [s[7] if len(s) > 7 else 0 for s in step_history]
+    onset_hits_list = [s[8] if len(s) > 8 else [] for s in step_history]
 
     # rolling average helper
     def rolling_avg(vals, window=20):
@@ -3757,6 +3832,18 @@ def _save_step_graph(step_history, run_dir):
     if any(v > 0 for v in s1f1s):
         ax1.plot(steps, s1f1s, linewidth=1, color="#e6a817", alpha=0.2)
         ax1.plot(steps, rolling_avg(s1f1s), label="S1 F1", linewidth=1.5, color="#e6a817", linestyle="-.")
+    # per-onset HIT rates (o1, o2, o3, o4, oA) for multi-onset mode
+    if any(len(oh) > 0 for oh in onset_hits_list):
+        n_mo = max(len(oh) for oh in onset_hits_list if oh)
+        onset_colors = ["#2ecc71", "#27ae60", "#1abc9c", "#16a085"]  # greens, darkening
+        for oi in range(n_mo):
+            vals_oi = [oh[oi] if len(oh) > oi else 0 for oh in onset_hits_list]
+            ax1.plot(steps, rolling_avg(vals_oi), label=f"o{oi+1}", linewidth=1,
+                    color=onset_colors[oi % len(onset_colors)], linestyle="-.", alpha=0.8)
+        # oA = average
+        vals_avg = [sum(oh) / len(oh) if oh else 0 for oh in onset_hits_list]
+        ax1.plot(steps, rolling_avg(vals_avg), label="oA", linewidth=2,
+                color="#f39c12", linestyle="-.")
     ax1.set_xlabel("Step", fontsize=12)
     ax1.set_ylabel("Rate", fontsize=12)
     ax1.set_ylim(0, 1)
@@ -4053,12 +4140,15 @@ def train(args):
     sub = args.subsample
     djr = getattr(args, 'density_jitter_rate', 0.10)
     djp = getattr(args, 'density_jitter_pct', 0.02)
+    n_onsets = getattr(args, 'n_onsets', 1)
     train_ds = OnsetDataset(manifest, ds_dir, train_idx, augment=True, subsample=sub,
                             multi_target=use_multi_target, ratio_head=use_ratio_head,
-                            density_jitter_rate=djr, density_jitter_pct=djp)
+                            density_jitter_rate=djr, density_jitter_pct=djp,
+                            n_onsets=n_onsets)
     val_ds = OnsetDataset(manifest, ds_dir, val_idx, augment=False, subsample=sub,
                           multi_target=use_multi_target, ratio_head=use_ratio_head,
-                          density_jitter_rate=djr, density_jitter_pct=djp)
+                          density_jitter_rate=djr, density_jitter_pct=djp,
+                          n_onsets=n_onsets)
     if sub > 1:
         print(f"Subsample: 1/{sub}")
     print(f"Train samples: {len(train_ds)}, Val samples: {len(val_ds)}")
@@ -4127,6 +4217,7 @@ def train(args):
             gap_ratios=args.gap_ratios,
             n_virtual_tokens=getattr(args, 'n_virtual_tokens', 0),
             a_bins=A_BINS, b_bins=B_BINS,
+            n_onsets=n_onsets,
         ).to(args.device)
     elif args.model_type == "framewise":
         model = FramewiseOnsetDetector(
@@ -4439,7 +4530,13 @@ def train(args):
                         s2_loss = torch.tensor(0.0, device=mel.device)
                         loss = s1_loss
                     else:
-                        if use_multi_target:
+                        if n_onsets > 1:
+                            # multi-onset: logits (B, n_onsets, n_classes), target (B, n_onsets)
+                            total_onset_loss = 0
+                            for oi in range(n_onsets):
+                                total_onset_loss += criterion(logits[:, oi], target[:, oi])
+                            s2_loss = total_onset_loss / n_onsets
+                        elif use_multi_target:
                             s2_loss = criterion(logits, targets_padded, n_tgt)
                         else:
                             s2_loss = criterion(logits, target)
@@ -4548,11 +4645,18 @@ def train(args):
             b_bs = bs
             b_ns = 0; b_hit = 0; b_miss = 0; b_score = 0.0
             with torch.no_grad():
-                pred = logits.argmax(1)
-                ns = target < (N_CLASSES - 1)
+                # multi-onset: use onset_1 ([:, 0]) for backward-compat metrics
+                if n_onsets > 1 and logits.dim() == 3:
+                    logits_metric = logits[:, 0]  # (B, n_classes)
+                    target_metric = target[:, 0]   # (B,)
+                else:
+                    logits_metric = logits
+                    target_metric = target
+                pred = logits_metric.argmax(1)
+                ns = target_metric < (N_CLASSES - 1)
                 ns_count = ns.sum()
                 if ns_count > 0:
-                    t_ns = target[ns].float()
+                    t_ns = target_metric[ns].float()
                     p_ns = pred[ns].float()
                     frame_err = (p_ns - t_ns).abs()
                     pct_err = ((p_ns + 1) / (t_ns + 1) - 1.0).abs()
@@ -4664,6 +4768,23 @@ def train(args):
             global_step += 1
 
             # accumulate per-batch metrics for step graph
+            # per-onset HIT rates for multi-onset live graph
+            b_onset_hits = []  # o1, o2, o3, o4 hit rates
+            if n_onsets > 1 and logits.dim() == 3:
+                with torch.no_grad():
+                    for oi in range(n_onsets):
+                        t_oi = target[:, oi]
+                        p_oi = logits[:, oi].argmax(1)
+                        ns_oi = t_oi < (N_CLASSES - 1)
+                        if ns_oi.sum() > 0:
+                            t_ns = t_oi[ns_oi].float()
+                            p_ns = p_oi[ns_oi].float()
+                            fe = (p_ns - t_ns).abs()
+                            pe = ((p_ns + 1) / (t_ns + 1) - 1.0).abs()
+                            hit_oi = ((pe <= 0.10) | (fe <= 2)).float().mean().item()
+                        else:
+                            hit_oi = 0.0
+                        b_onset_hits.append(hit_oi)
             if b_ns > 0:
                 step_buf.append((
                     loss.item(),
@@ -4673,6 +4794,7 @@ def train(args):
                     train_w3_sum / train_ns_total if train_ns_total > 0 else 0,
                     b_stop_f1,
                     b_s1_f1,
+                    b_onset_hits,  # list of per-onset HIT rates, empty if n_onsets==1
                 ))
 
             # ── step-level live graph (every 500 steps) ──
@@ -4684,7 +4806,7 @@ def train(args):
                 base_step = global_step - 500
                 for pi, idx in enumerate(indices):
                     s = step_buf[idx]
-                    step_history.append((base_step + int((pi + 1) * 500 / n_points), s[0], s[1], s[2], s[3], s[4], s[5], s[6]))
+                    step_history.append((base_step + int((pi + 1) * 500 / n_points), s[0], s[1], s[2], s[3], s[4], s[5], s[6], s[7]))
                 step_buf.clear()
                 _save_step_graph(step_history, run_dir)
 
@@ -4743,11 +4865,13 @@ def _run_eval(model, val_loader, criterion, args, amp_enabled,
     use_mt = args.multi_target or args.model_type == "framewise"
     use_sigmoid = getattr(args, 'sigmoid_loss', False) or getattr(args, 'dice_loss', False) or args.model_type == "framewise"
     is_framewise = args.model_type == "framewise"
+    n_onsets = getattr(args, 'n_onsets', 1)
     val_loss, val_extra = validate_and_collect(
         model, val_loader, criterion, args.device, amp_enabled=amp_enabled,
         sigmoid_mode=use_sigmoid, multi_target=use_mt, framewise=is_framewise,
         ratio_criterion=ratio_criterion,
         propose_select=(args.model_type == "event_embed_propose"),
+        n_onsets=n_onsets,
     )
     # backward-compat: nearest-target metrics (always computed)
     val_targets = val_extra["targets"]
@@ -4765,6 +4889,26 @@ def _run_eval(model, val_loader, criterion, args, amp_enabled,
         val_metrics["last_repeat"] = float((np.abs(ratio_to_gap - 1.0) <= 0.05).mean())
     else:
         val_metrics["last_repeat"] = 0.0
+
+    # multi-onset per-step metrics (exp 62+)
+    if "multi_onset_preds" in val_extra:
+        mo_preds = val_extra["multi_onset_preds"]
+        mo_targets = val_extra["multi_onset_targets"]
+        per_step_metrics = []
+        for oi in range(len(mo_preds)):
+            m_oi = compute_metrics(mo_targets[oi], mo_preds[oi])
+            per_step_metrics.append(m_oi)
+            val_metrics[f"onset_{oi+1}_hit_rate"] = m_oi.get("hit_rate", 0.0)
+            val_metrics[f"onset_{oi+1}_miss_rate"] = m_oi.get("miss_rate", 1.0)
+            val_metrics[f"onset_{oi+1}_accuracy"] = m_oi.get("accuracy", 0.0)
+            val_metrics[f"onset_{oi+1}_score"] = m_oi.get("model_score", -1.0)
+        # averaged across all onset steps
+        avg_hit = np.mean([m.get("hit_rate", 0.0) for m in per_step_metrics])
+        avg_miss = np.mean([m.get("miss_rate", 1.0) for m in per_step_metrics])
+        avg_score = np.mean([m.get("model_score", -1.0) for m in per_step_metrics])
+        val_metrics["multi_onset_avg_hit"] = float(avg_hit)
+        val_metrics["multi_onset_avg_miss"] = float(avg_miss)
+        val_metrics["multi_onset_avg_score"] = float(avg_score)
 
     # ratio head metrics (exp 55+)
     if "ratio_preds" in val_extra:
@@ -4904,6 +5048,29 @@ def _run_eval(model, val_loader, criterion, args, amp_enabled,
               f"score={val_metrics.get('model_score', 0):+.3f} | "
               f"uniq={val_metrics.get('unique_preds', 0)} | lr={scheduler.get_last_lr()[0]:.2e}")
 
+    # Stage 1 + Stage 2 + multi-onset summary
+    if "s1_f1" in val_metrics:
+        print(f"    S1: F1={val_metrics['s1_f1']:.3f} P={val_metrics.get('s1_precision',0):.3f} "
+              f"R={val_metrics.get('s1_recall',0):.3f} prop={val_metrics.get('s1_avg_proposals',0):.0f} "
+              f"sep={val_metrics.get('s1_onset_conf',0)-val_metrics.get('s1_non_onset_conf',0):.3f}")
+    if "s2_picks_s1" in val_metrics:
+        print(f"    S2: picks_s1={val_metrics['s2_picks_s1']:.1%} "
+              f"agree={val_metrics.get('s2_agree_accuracy',0):.1%} "
+              f"override={val_metrics.get('s2_override_accuracy',0):.1%} "
+              f"rank={val_metrics.get('s2_pick_rank_mean',0):.1f} "
+              f"naive={val_metrics.get('s1_naive_accuracy',0):.1%}")
+    if "onset_1_hit_rate" in val_metrics:
+        n_mo = sum(1 for k in val_metrics if k.startswith("onset_") and k.endswith("_hit_rate"))
+        parts = []
+        for oi in range(1, n_mo + 1):
+            h = val_metrics.get(f"onset_{oi}_hit_rate", 0)
+            m = val_metrics.get(f"onset_{oi}_miss_rate", 0)
+            parts.append(f"o{oi}={h:.1%}/{m:.1%}")
+        avg_h = val_metrics.get("multi_onset_avg_hit", 0)
+        avg_m = val_metrics.get("multi_onset_avg_miss", 0)
+        parts.append(f"oA={avg_h:.1%}/{avg_m:.1%}")
+        print(f"    Onsets (HIT/MISS): {' | '.join(parts)}")
+
     # ── ablation benchmarks ──
     torch.cuda.empty_cache()
     bench_results = run_benchmarks(model, val_loader, args.device, amp_enabled=amp_enabled,
@@ -5003,6 +5170,7 @@ if __name__ == "__main__":
     parser.add_argument("--proposer-freeze-evals", type=int, default=2, help="Freeze Stage 2 for this many evals while Stage 1 warms up (exp 58+)")
     parser.add_argument("--proposer-pos-weight", type=float, default=5.0, help="Stage 1 BCE pos_weight (higher = more recall, exp 58+)")
     parser.add_argument("--proposer-focal-gamma", type=float, default=2.0, help="Stage 1 focal gamma (exp 58+)")
+    parser.add_argument("--n-onsets", type=int, default=1, help="Number of onsets to predict simultaneously (exp 62+, default 1)")
     parser.add_argument("--streak-loss", action="store_true", default=False, help="Streak-ratio loss weighting (exp 51+)")
     parser.add_argument("--streak-power", type=float, default=0.3, help="Streak loss weight power (default 0.3)")
     parser.add_argument("--streak-cap", type=float, default=50.0, help="Streak loss max weight cap (default 50)")
