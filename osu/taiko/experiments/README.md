@@ -97,7 +97,8 @@ Each folder contains a README with hypothesis, results, and key graphs.
 | 59-D | [Self vs Volunteer Metric Split](experiment_59d/) | Divergent | Expert=gap_cv (+0.38), Volunteers=dominant_gap_pct (-0.42). Expert values proportional variety, volunteers punish boredom |
 | 59-E | [Split Synthetic Evaluators](experiment_59e/) | Validated | Tuned evaluators outperform on target: volunteer=60% #1 (r=0.47), expert=47% (tau=0.42). Cross-eval drops to random |
 | 59-F | [Evaluator Weight Sweep](experiment_59f/) | Optimized | Expert=top-2 (47%, any temp). Volunteer=top-7 temp=0.5 (70% #1 match). Temperature barely matters |
-| 59-G | [Fresh Data Validation](experiment_59g/) | **Pending** | Run 4 models from 53-AR on 30 fresh val songs. Do synthetic evaluators reproduce the 53-AR leaderboard? |
+| 59-G | [Fresh Data Validation](experiment_59g/) | Partial | Expert+song_density nails top-2. Others swap exp44/exp45 (1pt human margin). Coarse ranking generalizes, tight races need humans |
+| 59-H | [Extended Model Comparison](experiment_59h/) | **Pending** | Synthetic eval on exp44, exp53 (reference) + exp50b, exp51, exp55, exp58 (new). 30 val songs, per-song density |
 
 ## Key Lessons
 
