@@ -1,0 +1,150 @@
+{
+  "song_density": {
+    "exp44": {
+      "n_songs": 30,
+      "matched_rate": 0.6869374139267331,
+      "close_rate": 0.7113170993486102,
+      "far_rate": 0.20587211047806578,
+      "hallucination_rate": 0.14670918540140204,
+      "density_ratio": 0.8387389107834856,
+      "gt_error_median": 9.07191333333122,
+      "avg_n_pred": 688.0,
+      "avg_n_gt": 811.2,
+      "pred_gt_ratio": 0.8797502692546804
+    },
+    "exp53": {
+      "n_songs": 30,
+      "matched_rate": 0.7168620472082249,
+      "close_rate": 0.7338057014523358,
+      "far_rate": 0.1896279327117042,
+      "hallucination_rate": 0.17884093346987404,
+      "density_ratio": 0.9091855248861423,
+      "gt_error_median": 8.103706666664003,
+      "avg_n_pred": 787.6333333333333,
+      "avg_n_gt": 811.2,
+      "pred_gt_ratio": 0.9647723957794075
+    },
+    "exp50b": {
+      "n_songs": 30,
+      "matched_rate": 0.6499540678222294,
+      "close_rate": 0.6645822225914342,
+      "far_rate": 0.25205042132341554,
+      "hallucination_rate": 0.148207655716666,
+      "density_ratio": 0.7763864092550761,
+      "gt_error_median": 18.850863333332896,
+      "avg_n_pred": 633.7666666666667,
+      "avg_n_gt": 811.2,
+      "pred_gt_ratio": 0.8166022878044649
+    },
+    "exp51": {
+      "n_songs": 30,
+      "matched_rate": 0.5449508804459811,
+      "close_rate": 0.5677270669640461,
+      "far_rate": 0.36005279550076247,
+      "hallucination_rate": 0.14932017467727104,
+      "density_ratio": 0.6413252405822618,
+      "gt_error_median": 39.79439333333465,
+      "avg_n_pred": 538.4333333333333,
+      "avg_n_gt": 811.2,
+      "pred_gt_ratio": 0.6968585881526785
+    },
+    "exp55": {
+      "n_songs": 30,
+      "matched_rate": 0.6760896574463012,
+      "close_rate": 0.6971011860690246,
+      "far_rate": 0.21748651630503585,
+      "hallucination_rate": 0.15644100705534367,
+      "density_ratio": 0.8204704442657568,
+      "gt_error_median": 13.564519999997447,
+      "avg_n_pred": 672.4,
+      "avg_n_gt": 811.2,
+      "pred_gt_ratio": 0.8609646043738979
+    },
+    "exp58": {
+      "n_songs": 30,
+      "matched_rate": 0.7285834749765631,
+      "close_rate": 0.7589391630465347,
+      "far_rate": 0.1655715589273973,
+      "hallucination_rate": 0.15610285441808316,
+      "density_ratio": 0.918177167663131,
+      "gt_error_median": 7.7132566666665605,
+      "avg_n_pred": 771.4666666666667,
+      "avg_n_gt": 811.2,
+      "pred_gt_ratio": 0.9599737464752269
+    }
+  },
+  "fixed_53ar": {
+    "exp44": {
+      "n_songs": 30,
+      "matched_rate": 0.7657975175295145,
+      "close_rate": 0.7891602749544969,
+      "far_rate": 0.1261672695119622,
+      "hallucination_rate": 0.19248432219867526,
+      "density_ratio": 1.0403384012581742,
+      "gt_error_median": 9.241684999998801,
+      "avg_n_pred": 723.8666666666667,
+      "avg_n_gt": 811.2,
+      "pred_gt_ratio": 1.0849112026906076
+    },
+    "exp53": {
+      "n_songs": 30,
+      "matched_rate": 0.782787478837843,
+      "close_rate": 0.7939965086470019,
+      "far_rate": 0.11450462500257833,
+      "hallucination_rate": 0.21443365737996117,
+      "density_ratio": 1.065545253105044,
+      "gt_error_median": 8.928856666664538,
+      "avg_n_pred": 729.5333333333333,
+      "avg_n_gt": 811.2,
+      "pred_gt_ratio": 1.116409985956689
+    },
+    "exp50b": {
+      "n_songs": 30,
+      "matched_rate": 0.7760485184064543,
+      "close_rate": 0.7928395867884876,
+      "far_rate": 0.11717411822675353,
+      "hallucination_rate": 0.21155737251066675,
+      "density_ratio": 1.0572545009526761,
+      "gt_error_median": 9.27711666666452,
+      "avg_n_pred": 730.7,
+      "avg_n_gt": 811.2,
+      "pred_gt_ratio": 1.1082305609980494
+    },
+    "exp51": {
+      "n_songs": 30,
+      "matched_rate": 0.6520722923268168,
+      "close_rate": 0.6682500406277965,
+      "far_rate": 0.24318584381383834,
+      "hallucination_rate": 0.18308590264608646,
+      "density_ratio": 0.8316759212774493,
+      "gt_error_median": 31.033753333332303,
+      "avg_n_pred": 581.3333333333334,
+      "avg_n_gt": 811.2,
+      "pred_gt_ratio": 0.8928667592447376
+    },
+    "exp55": {
+      "n_songs": 30,
+      "matched_rate": 0.757916539478575,
+      "close_rate": 0.775055520642321,
+      "far_rate": 0.13194329322246368,
+      "hallucination_rate": 0.20384588392620454,
+      "density_ratio": 1.0099354253096489,
+      "gt_error_median": 9.107779999998964,
+      "avg_n_pred": 697.5,
+      "avg_n_gt": 811.2,
+      "pred_gt_ratio": 1.0582514974416817
+    },
+    "exp58": {
+      "n_songs": 30,
+      "matched_rate": 0.7914320863302573,
+      "close_rate": 0.8133740163215987,
+      "far_rate": 0.10141307128894833,
+      "hallucination_rate": 0.19597830259979337,
+      "density_ratio": 1.0864807688571148,
+      "gt_error_median": 8.310223333330745,
+      "avg_n_pred": 734.5333333333333,
+      "avg_n_gt": 811.2,
+      "pred_gt_ratio": 1.1323763783904348
+    }
+  }
+}

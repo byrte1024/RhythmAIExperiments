@@ -99,7 +99,7 @@ Each folder contains a README with hypothesis, results, and key graphs.
 | 59-F | [Evaluator Weight Sweep](experiment_59f/) | Optimized | Expert=top-2 (47%, any temp). Volunteer=top-7 temp=0.5 (70% #1 match). Temperature barely matters |
 | 59-G | [Fresh Data Validation](experiment_59g/) | Partial | Expert+song_density nails top-2. Others swap exp44/exp45 (1pt human margin). Coarse ranking generalizes, tight races need humans |
 | 59-H | [Extended Model Comparison](experiment_59h/) | Surprising | exp51 (67.5% HIT, worst per-sample) dominates synthetic eval by 100+ pts. Per-sample accuracy inversely correlated with pattern variety. Needs human validation |
-| 59-HB | [GT Comparison for 59-H](experiment_59hb/) | **Pending** | Check actual AR quality vs ground truth for 59-H models. Is exp51's variety creativity or chaos? |
+| 59-HB | [GT Comparison for 59-H](experiment_59hb/) | Resolved | exp51's variety is from under-prediction (0.64 density ratio), not creativity. exp58 is actual best (75.9% close, 0.92 d_ratio). Synthetic evaluator needs density filter |
 
 ## Key Lessons
 
@@ -135,4 +135,4 @@ Each folder contains a README with hypothesis, results, and key graphs.
 - **Anti-entropy is a robustness tool, not accuracy tool** — entropy penalty improves corruption resilience (+2.6pp metronome) but caps HIT at 73.2%. Eliminating the disambiguation zone doesn't improve accuracy. Source: [exp 50](experiment_50/README.md), [exp 50-B](experiment_50b/README.md)
 - **Smaller prediction windows converge faster** — 33-bin window: HIT 74.2% (ATH) at eval 2. But model needs future audio for AR quality — without it, degrades to transient-spamming. Source: [exp 52-L](experiment_52/README.md)
 - **Two-stage propose-select breaks the HIT ceiling** — Stage 1 (pure audio) proposes onset candidates, Stage 2 (full context) selects. 74.6% HIT, 7 consecutive improvements, zero oscillations. Proposals are load-bearing (50pp delta when zeroed). Source: [exp 58](experiment_58/README.md)
-- **Pattern variety predicts human preference** — gap_std (+0.30), gap_cv (+0.29), dominant_gap_pct (-0.27), max_metro_streak (-0.27) are the only metrics that significantly correlate with human rankings. Audio alignment metrics show zero signal. Within-song normalization essential. Source: [exp 59-B](experiment_59b/README.md)
+- **Pattern variety predicts human preference — but non-linearly** — gap_std (+0.30), gap_cv (+0.29), dominant_gap_pct (-0.27), max_metro_streak (-0.27) correlate with human rankings. But the relationship is not linear: too little variety is metronomic (bad), too much variety indicates under-prediction/noise (also bad). Synthetic evaluators built from these metrics are useful as screening tools alongside GT matching and human data, not as standalone judges. Source: [exp 59-B](experiment_59b/README.md), [exp 59-HB](experiment_59hb/README.md)
