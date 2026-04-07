@@ -258,6 +258,30 @@ Multiple events placed per AR step. The cursor advances to the last placed event
 - `s1_precision`, `s1_recall`, `s1_f1`, `s1_avg_proposals`
 - `s2_picks_s1`, `s2_agree_accuracy`, `s2_override_accuracy`
 
+### Per-onset S1 agreement:
+- `onset_N_s2_picks_s1`, `onset_N_s2_agree_acc`, `onset_N_s2_override_acc`
+
+### Per-onset STOP distribution:
+- `onset_N_stop_pred_rate`, `onset_N_stop_target_rate`
+
+### Per-onset bin histograms:
+- `onset_N_pred_pct_X_Y`, `onset_N_tgt_pct_X_Y` (bins: 0-10, 10-25, 25-50, 50-100, 100-200, 200-250)
+
+### TaikoNation patterning metrics (from AR benchmark):
+- `tn_over_pspace` — unique 8-step pattern diversity (% of 256 possible)
+- `tn_hi_pspace` — % of GT patterns found in predicted chart
+- `tn_dc_human` — direct binary match at 23ms resolution
+- `tn_dc_rand` — similarity to random noise (~50% = structured)
+
+### Multi-onset structural metrics:
+- `strict_increasing` — % of predictions where o1 < o2 < o3 < o4 (among all-non-STOP samples). Measures whether the model learns temporal ordering.
+- `strict_stop_violation_rate` — % of predictions with onset-after-STOP pattern (e.g. [onset, STOP, onset, STOP]). Should be 0% if cascade is learned.
+- `all_stop_rate` — % of predictions where ALL 4 onsets are STOP (effective oA STOP rate).
+- `all_stop_target_rate` — same for targets (ground truth).
+
+### Eval graphs:
+Full graph set generated per onset: `eval_XXX_o1_*.png`, `eval_XXX_o2_*.png`, `eval_XXX_o3_*.png`, `eval_XXX_o4_*.png`, `eval_XXX_oA_*.png` (pooled)
+
 ## Environment
 
 | Component | Version |

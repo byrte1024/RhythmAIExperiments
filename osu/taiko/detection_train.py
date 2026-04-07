@@ -1268,14 +1268,38 @@ def compute_metrics(targets, preds):
         pred_counts[int(v)] = int(c)
     m["pred_class_counts"] = pred_counts
 
-    # STOP class (500) F1/precision/recall
+    # STOP class F1/precision/recall + rates
     stop = N_CLASSES - 1
+    m["stop_pred_rate"] = float((preds == stop).mean())
+    m["stop_target_rate"] = float((targets == stop).mean())
     tp = ((preds == stop) & (targets == stop)).sum()
     fp = ((preds == stop) & (targets != stop)).sum()
     fn = ((preds != stop) & (targets == stop)).sum()
     m["stop_precision"] = (tp / (tp + fp)).item() if (tp + fp) > 0 else 0.0
     m["stop_recall"] = (tp / (tp + fn)).item() if (tp + fn) > 0 else 0.0
     m["stop_f1"] = (2 * tp / (2 * tp + fp + fn)).item() if (2 * tp + fp + fn) > 0 else 0.0
+
+    # binned histograms for predictions and targets (excl STOP)
+    max_bin = N_CLASSES - 1
+    bin_edges = [0, 10, 25, 50, 100, 200, max_bin]
+    bin_labels = ["0-10", "10-25", "25-50", "50-100", "100-200", f"200-{max_bin}"]
+    pred_ns = preds[preds < stop]
+    tgt_ns = targets[targets < stop]
+    pred_hist = {}
+    tgt_hist = {}
+    for i in range(len(bin_edges) - 1):
+        lo, hi = bin_edges[i], bin_edges[i + 1]
+        pred_hist[bin_labels[i]] = int(((pred_ns >= lo) & (pred_ns < hi)).sum())
+        tgt_hist[bin_labels[i]] = int(((tgt_ns >= lo) & (tgt_ns < hi)).sum())
+    m["pred_hist"] = pred_hist
+    m["target_hist"] = tgt_hist
+    # flat pct versions for per-onset saving/averaging
+    n_pred_ns = max(len(pred_ns), 1)
+    n_tgt_ns = max(len(tgt_ns), 1)
+    for i in range(len(bin_edges) - 1):
+        lo, hi = bin_edges[i], bin_edges[i + 1]
+        m[f"pred_pct_{lo}_{hi}"] = float(((pred_ns >= lo) & (pred_ns < hi)).sum() / n_pred_ns)
+        m[f"tgt_pct_{lo}_{hi}"] = float(((tgt_ns >= lo) & (tgt_ns < hi)).sum() / n_tgt_ns)
 
     # non-stop samples only for frame/relative error
     ns = targets < stop
@@ -2274,6 +2298,8 @@ def run_benchmarks(model, val_loader, device, amp_enabled=False, multi_target=Fa
         pred_miss = total_pred - pred_matched  # = hallucinations
 
         ar_result = {
+            "_pred_sets": all_predicted_sets,  # raw data for TN metrics (popped after use)
+            "_gt_sets": all_gt_sets,
             "n_samples": len(samples),
             "ar_steps": AR_STEPS,
             "total_gt_onsets": int(total_gt),
@@ -2349,6 +2375,79 @@ def run_benchmarks(model, val_loader, device, amp_enabled=False, multi_target=Fa
 
     ar_result, la_result = _run_ar_inference(all_batches)
     if ar_result:
+        # TaikoNation patterning metrics on AR output
+        TN_STEP = 23  # TaikoNation's 23ms timestep
+        BIN_MS_VAL = 4.9887
+        tn_rng = np.random.default_rng(2009000042)
+
+        def _to_binary(positions_bins, step_ms=TN_STEP):
+            """Convert bin positions to TaikoNation binary array."""
+            if len(positions_bins) == 0:
+                return np.array([0], dtype=np.int32)
+            times_ms = positions_bins.astype(np.float64) * BIN_MS_VAL
+            max_ms = int(times_ms.max()) + step_ms
+            n_steps = max_ms // step_ms + 1
+            binary = np.zeros(n_steps, dtype=np.int32)
+            for t in times_ms:
+                idx = int(t) // step_ms
+                if 0 <= idx < n_steps:
+                    binary[idx] = 1
+            return binary
+
+        def _over_pspace(chart, scale=8):
+            patterns = set()
+            for i in range(len(chart) - scale + 1):
+                patterns.add(tuple(chart[i:i + scale]))
+            return (len(patterns) / 2**scale) * 100 if len(chart) >= scale else 0
+
+        def _hi_pspace(ai_chart, human_chart, scale=8):
+            ai_p = set(tuple(ai_chart[i:i+scale]) for i in range(len(ai_chart)-scale+1))
+            hu_p = set(tuple(human_chart[i:i+scale]) for i in range(len(human_chart)-scale+1))
+            return (len(ai_p & hu_p) / max(len(hu_p), 1)) * 100
+
+        def _dc_human(ai, human):
+            limit = min(len(ai), len(human))
+            if limit == 0:
+                return 0
+            start = 0
+            for i in range(limit):
+                if human[i] == 1:
+                    start = i
+                    break
+            total = limit - start
+            if total <= 0:
+                return 0
+            return float((ai[start:limit] == human[start:limit]).sum() / total) * 100
+
+        all_over_ps = []
+        all_hi_ps = []
+        all_dc_h = []
+        all_dc_rand = []
+
+        # Access the raw sets from the closure (they're still in scope from _run_ar_inference)
+        _ar_pred_sets = ar_result.pop("_pred_sets", [])
+        _ar_gt_sets = ar_result.pop("_gt_sets", [])
+        for pred_set, gt_set in zip(_ar_pred_sets, _ar_gt_sets):
+            pred_bin = _to_binary(pred_set)
+            gt_bin = _to_binary(gt_set)
+            max_len = max(len(pred_bin), len(gt_bin))
+            pred_pad = np.zeros(max_len, dtype=np.int32)
+            gt_pad = np.zeros(max_len, dtype=np.int32)
+            pred_pad[:len(pred_bin)] = pred_bin
+            gt_pad[:len(gt_bin)] = gt_bin
+
+            all_over_ps.append(_over_pspace(pred_pad))
+            all_hi_ps.append(_hi_pspace(pred_pad, gt_pad))
+            all_dc_h.append(_dc_human(pred_pad, gt_pad))
+            noise = tn_rng.integers(0, 2, size=len(pred_pad))
+            all_dc_rand.append(float((pred_pad == noise).sum() / max(len(pred_pad), 1)) * 100)
+
+        if all_over_ps:
+            ar_result["tn_over_pspace"] = float(np.mean(all_over_ps))
+            ar_result["tn_hi_pspace"] = float(np.mean(all_hi_ps))
+            ar_result["tn_dc_human"] = float(np.mean(all_dc_h))
+            ar_result["tn_dc_rand"] = float(np.mean(all_dc_rand))
+
         results["autoregress"] = ar_result
     bench_bar.set_postfix_str("autoregress"); bench_bar.update(1)
     if la_result:
@@ -4956,15 +5055,19 @@ def _run_eval(model, val_loader, criterion, args, amp_enabled,
         mo_preds = val_extra["multi_onset_preds"]
         mo_targets = val_extra["multi_onset_targets"]
         # keys to save per onset from compute_metrics
+        max_bin = N_CLASSES - 1
+        bin_edges = [0, 10, 25, 50, 100, 200, max_bin]
         save_keys = [
-            "accuracy", "unique_preds", "stop_precision", "stop_recall", "stop_f1",
+            "accuracy", "unique_preds",
+            "stop_pred_rate", "stop_target_rate", "stop_precision", "stop_recall", "stop_f1",
             "frame_error_mean", "frame_error_median", "frame_error_p90",
             "rel_error_mean", "rel_error_median", "ratio_mean", "ratio_median",
             "hit_rate", "good_rate", "miss_rate",
             "exact_match", "within_1_frame", "within_2_frames",
             "within_3pct", "within_10pct", "above_20pct",
             "model_score",
-        ]
+        ] + [f"pred_pct_{bin_edges[i]}_{bin_edges[i+1]}" for i in range(len(bin_edges)-1)] \
+          + [f"tgt_pct_{bin_edges[i]}_{bin_edges[i+1]}" for i in range(len(bin_edges)-1)]
         per_step_metrics = []
         for oi in range(len(mo_preds)):
             m_oi = compute_metrics(mo_targets[oi], mo_preds[oi])
@@ -4978,6 +5081,47 @@ def _run_eval(model, val_loader, criterion, args, amp_enabled,
             vals = [m.get(k) for m in per_step_metrics if k in m and m[k] is not None]
             if vals:
                 val_metrics[f"onset_avg_{k}"] = float(np.mean(vals))
+
+        # Multi-onset structural metrics
+        stop = N_CLASSES - 1
+        n_mo = len(mo_preds)
+        n_samples = len(mo_preds[0])
+        # Stack into (n_samples, n_onsets)
+        preds_stack = np.stack(mo_preds, axis=1)  # (N, n_onsets)
+        targets_stack = np.stack(mo_targets, axis=1)
+
+        # strict_increasing: o1 < o2 < o3 < o4 (among non-STOP predictions)
+        # Only count samples where all predicted onsets are non-STOP
+        all_non_stop = (preds_stack < stop).all(axis=1)
+        if all_non_stop.sum() > 0:
+            non_stop_preds = preds_stack[all_non_stop]
+            increasing = np.all(np.diff(non_stop_preds, axis=1) > 0, axis=1)
+            val_metrics["strict_increasing"] = float(increasing.mean())
+            val_metrics["strict_increasing_n"] = int(all_non_stop.sum())
+        else:
+            val_metrics["strict_increasing"] = 0.0
+            val_metrics["strict_increasing_n"] = 0
+
+        # strict_stop: onset then STOP then onset (violated cascade)
+        # Count samples where any onset after a STOP is not STOP
+        violated = 0
+        for i in range(n_samples):
+            saw_stop = False
+            for oi in range(n_mo):
+                if saw_stop and preds_stack[i, oi] != stop:
+                    violated += 1
+                    break
+                if preds_stack[i, oi] == stop:
+                    saw_stop = True
+        val_metrics["strict_stop_violations"] = int(violated)
+        val_metrics["strict_stop_violation_rate"] = float(violated / max(n_samples, 1))
+
+        # all_stop_rate: how often ALL onsets predict STOP (effective oA stop)
+        all_stop = (preds_stack == stop).all(axis=1)
+        val_metrics["all_stop_rate"] = float(all_stop.mean())
+        # same for targets
+        all_stop_tgt = (targets_stack == stop).all(axis=1)
+        val_metrics["all_stop_target_rate"] = float(all_stop_tgt.mean())
 
     # ratio head metrics (exp 55+)
     if "ratio_preds" in val_extra:
@@ -5059,6 +5203,25 @@ def _run_eval(model, val_loader, criterion, args, amp_enabled,
             val_metrics["s2_pick_rank_mean"] = float(ranks.mean())
             val_metrics["s2_pick_rank_median"] = float(np.median(ranks))
 
+        # per-onset S1 agreement (multi-onset mode)
+        if "multi_onset_preds" in val_extra:
+            mo_preds_list = val_extra["multi_onset_preds"]
+            mo_targets_list = val_extra["multi_onset_targets"]
+            for oi in range(len(mo_preds_list)):
+                mo_p = mo_preds_list[oi]
+                mo_t = mo_targets_list[oi]
+                ns_oi = mo_p < stop
+                if ns_oi.sum() > 0:
+                    s2_tok_oi = (A_BINS + mo_p[ns_oi]) // 4
+                    s2_tok_oi = np.clip(s2_tok_oi, 0, confs.shape[1] - 1)
+                    s1_prop_oi = preds_binary[ns_oi, s2_tok_oi]
+                    val_metrics[f"onset_{oi+1}_s2_picks_s1"] = float(s1_prop_oi.mean())
+                    s2_corr_oi = (mo_p == mo_t)[ns_oi]
+                    if (s1_prop_oi == 1).sum() > 0:
+                        val_metrics[f"onset_{oi+1}_s2_agree_acc"] = float(s2_corr_oi[s1_prop_oi == 1].mean())
+                    if (s1_prop_oi == 0).sum() > 0:
+                        val_metrics[f"onset_{oi+1}_s2_override_acc"] = float(s2_corr_oi[s1_prop_oi == 0].mean())
+
         # naive baseline: what if we just took Stage 1's earliest proposal above threshold?
         n_samples = confs.shape[0]
         naive_preds = np.full(n_samples, stop, dtype=np.int64)
@@ -5139,6 +5302,10 @@ def _run_eval(model, val_loader, criterion, args, amp_enabled,
         avg_m = val_metrics.get("onset_avg_miss_rate", 0)
         parts.append(f"oA={avg_h:.1%}/{avg_m:.1%}")
         print(f"    Onsets (HIT/MISS): {' | '.join(parts)}")
+        si = val_metrics.get("strict_increasing", 0)
+        sv = val_metrics.get("strict_stop_violation_rate", 0)
+        asr = val_metrics.get("all_stop_rate", 0)
+        print(f"    Structure: increasing={si:.1%}  stop_violations={sv:.1%}  all_stop={asr:.1%}")
 
     # ── ablation benchmarks ──
     torch.cuda.empty_cache()

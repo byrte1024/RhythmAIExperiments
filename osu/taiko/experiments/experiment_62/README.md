@@ -53,7 +53,22 @@ Same as [exp 58](../experiment_58/README.md) (ProposeSelectDetector) plus:
 
 **Live training graph**: o1, o2, o3, o4 (green shades) and oA (orange) lines alongside HIT/MISS/Loss.
 
-All existing benchmarks run on o1 for backward compatibility.
+All existing benchmarks run on o1 for backward compatibility, plus per-onset breakdown for o1-o4 and oA.
+
+**Per-onset S1 agreement**: `onset_N_s2_picks_s1`, `onset_N_s2_agree_acc`, `onset_N_s2_override_acc` — tracks whether S2 relies on S1 proposals differently for near vs far onsets.
+
+**Per-onset STOP distribution**: `onset_N_stop_pred_rate`, `onset_N_stop_target_rate` — how often each onset predicts/targets STOP. Expected: o4 targets STOP more than o1.
+
+**Per-onset bin histograms**: `onset_N_pred_pct_0_10`, `onset_N_tgt_pct_0_10`, etc. — where predictions and targets land per onset step.
+
+**TaikoNation patterning metrics on AR output**: `tn_over_pspace`, `tn_hi_pspace`, `tn_dc_human`, `tn_dc_rand` — computed from AR benchmark at 23ms binary resolution. Key comparison: does multi-onset improve pattern diversity (Over.P-Space)?
+
+**Multi-onset structural metrics**:
+- `strict_increasing` — % of samples where o1 < o2 < o3 < o4 (temporal ordering). Should be high if model understands sequence.
+- `strict_stop_violation_rate` — % with onset-after-STOP (cascade violation). Should be ~0%.
+- `all_stop_rate` — % where all 4 onsets are STOP (effective oA STOP).
+
+**Eval graphs**: Full set generated per onset (o1, o2, o3, o4, oA) — heatmaps, scatter plots, distributions.
 
 ### Warm-start & no freeze
 
