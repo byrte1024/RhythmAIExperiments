@@ -104,7 +104,7 @@ Each folder contains a README with hypothesis, results, and key graphs.
 | 61 | [TaikoNation Eval Metrics](experiment_61/) | Complete | DCHuman 90.8% vs TaikoNation 75.0% (we win placement). Over.P-Space 10.1% vs 21.3% (they win diversity, but human is 11.7% — we're closer to human) |
 | 44-RE | [Reproducibility Verification](experiment_44re/) | **Pending** | Exact exp 44 reproduction on CachyOS/RTX 4060. Verifies cross-machine reproducibility |
 | 62 | [Multi-Onset Prediction](experiment_62/) | **Running** | Predict 4 onsets simultaneously (inspired by TaikoNation). o1=74.0% at eval 4, o4=40.1%. strict_increasing=67.4% |
-| 63 | [TaikoNation Direct Comparison](experiment_63/) | **Pending** | Run TaikoNation with original weights on our 30 val songs. Same-song comparison instead of cross-paper |
+| 63 | [TaikoNation Direct Comparison](experiment_63/) | Complete | TaikoNation: 10.2% close, 399ms error, 50.9% hallucination on our songs. Doesn't generalize from ~100 curated charts. Our exp58: 75.9% close, 8ms error |
 
 ## Key Lessons
 

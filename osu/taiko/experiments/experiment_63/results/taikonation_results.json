@@ -1,0 +1,21 @@
+{
+  "n_songs": 30,
+  "avg_n_pred": 258.76666666666665,
+  "avg_n_gt": 811.2,
+  "avg_pred_gt_ratio": 0.43205188763710417,
+  "avg_matched_rate": 0.055677762070035684,
+  "avg_close_rate": 0.10220950629964386,
+  "avg_far_rate": 0.8147027235252035,
+  "avg_hallucination_rate": 0.5090712243889751,
+  "avg_gt_error_mean": 672.0111651498374,
+  "avg_gt_error_median": 398.88298166666556,
+  "avg_pred_density": 1.6524163310918152,
+  "avg_gt_density": 4.8511506951255985,
+  "avg_density_ratio": 0.3941525661589631,
+  "avg_tn_over_pspace": 34.752604166666664,
+  "avg_tn_hi_pspace": 92.93432259891362,
+  "avg_tn_dc_human": 86.44301346911475,
+  "avg_tn_dc_rand": 50.1015520010637,
+  "avg_gap_std": 982.1235869102935,
+  "avg_gap_cv": 1.6203107466943325
+}

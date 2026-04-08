@@ -122,7 +122,17 @@ LSTM + CNN architecture, directly targeting osu!taiko. Open-source weights avail
 | Density control | None | FiLM conditioning (continuous) |
 | Dataset | ~100 curated high-quality charts | 10,048 charts (all difficulties) |
 
-TaikoNation focuses on note type patterning (which notes to place). BeatDetector focuses on onset timing precision (when to place them). Future work: combine both.
+### TaikoNation Direct Run ([Exp 63](experiments/experiment_63/README.md))
+
+Ran TaikoNation with original pretrained weights on same 30 val songs:
+
+| Model | Close% | Far% | Hall% | d_ratio | err_med |
+|---|---|---|---|---|---|
+| **exp58 (ours)** | **75.9%** | **16.6%** | **15.6%** | **0.92** | **8ms** |
+| DDC Oracle | 77.1% | 14.8% | 19.9% | 1.00 | 27ms |
+| TaikoNation | 10.2% | 81.5% | 50.9% | 0.39 | 399ms |
+
+TaikoNation fails on arbitrary songs — trained on ~100 curated charts, doesn't generalize. Dataset mismatch is the primary factor, not architecture. TaikoNation focuses on note type patterning (which notes to place). BeatDetector focuses on onset timing precision (when to place them). Future work: combine both.
 
 ### TaikoNation Patterning Metrics ([Exp 61](experiments/experiment_61/README.md))
 
