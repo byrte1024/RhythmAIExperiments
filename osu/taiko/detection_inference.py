@@ -142,6 +142,8 @@ def run_inference(model, mel, conditioning, device, hop_bins=20, max_events=1000
     metronome_history = []  # (cursor_bin, closeness, multiplier) for metronome tracking
     candidate_history = []  # per-prediction: (cursor_bin, chosen_bin, [(cand_bin, conf_before, conf_after), ...])
 
+    proposal_history = []  # list of (cursor_bin, proposal_conf_array) per AR step
+
     cond_tensor = torch.tensor(conditioning, dtype=torch.float32).unsqueeze(0).to(device)
     duration_s = total_frames * BIN_MS / 1000
     pbar = tqdm(total=total_frames, desc="Inference", unit="frame",
@@ -194,8 +196,11 @@ def run_inference(model, mel, conditioning, device, hop_bins=20, max_events=1000
             # pad to 501 for compatibility with downstream code
             logits = F.pad(onset_logits, (0, 1), value=-10.0)
         elif isinstance(output, tuple):
-            # legacy models return (logits, ...) — take first element
             logits = output[0]
+            # ProposeSelectDetector: output[1] is proposal_logits (2D)
+            if output[1].dim() == 2:
+                prop_conf = torch.sigmoid(output[1]).squeeze(0).detach().cpu().numpy()
+                proposal_history.append((cursor, prop_conf))
         else:
             logits = output
 
@@ -544,6 +549,10 @@ def run_inference(model, mel, conditioning, device, hop_bins=20, max_events=1000
         # save as list of dicts (variable-length candidates per prediction)
         # pack into a compact format: separate arrays for fixed + variable data
         run_stats["_candidate_history"] = candidate_history
+
+    # per-prediction proposal confidences for viewer (ProposeSelectDetector)
+    if proposal_history:
+        run_stats["_proposal_history"] = proposal_history
 
     # per-prediction sampling timeline (sparse: cursor_bin → temp, closeness)
     # stored as numpy array for viewer: (N, 3) = [cursor_bin, temperature, closeness]
@@ -1476,6 +1485,17 @@ def main():
             json.dump(compact, f)
         print(f"Wrote candidate history to {candidates_path} ({len(compact)} predictions)")
 
+    # Save proposal confidences for viewer (ProposeSelectDetector)
+    proposals_npy_path = None
+    if "_proposal_history" in run_stats:
+        proposals_npy_path = args.output.replace(".csv", "_proposals.npz")
+        prop_hist = run_stats["_proposal_history"]
+        # Save as npz: cursors array + list of confidence arrays
+        prop_cursors = np.array([c for c, _ in prop_hist], dtype=np.int32)
+        prop_confs = np.array([conf for _, conf in prop_hist], dtype=np.float16)  # (N, n_tokens) — float16 to save space
+        np.savez_compressed(proposals_npy_path, cursors=prop_cursors, confs=prop_confs)
+        print(f"Wrote proposal confidences to {proposals_npy_path} ({len(prop_hist)} steps, {prop_confs.shape[1]} tokens each)")
+
     # Save sampling timeline if present (temperature + metronome over time)
     sampling_npy_path = None
     if "_sampling_timeline" in run_stats:
@@ -1508,6 +1528,8 @@ def main():
             cmd.extend(["--sampling-npy", sampling_npy_path])
         if candidates_path:
             cmd.extend(["--candidates-json", candidates_path])
+        if proposals_npy_path:
+            cmd.extend(["--proposals-npz", proposals_npy_path])
         if args.gif:
             cmd.extend(["--gif", args.gif, "--gif-cycles", str(args.gif_cycles)])
         subprocess.run(cmd)

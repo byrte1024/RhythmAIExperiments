@@ -82,6 +82,7 @@ def parse_args():
     parser.add_argument("--wave-npy", default=None, help="Waveform envelope .npy file")
     parser.add_argument("--sampling-npy", default=None, help="Sampling timeline .npy file (temperature + metronome)")
     parser.add_argument("--candidates-json", default=None, help="Candidate history JSON (per-prediction candidates)")
+    parser.add_argument("--proposals-npz", default=None, help="Proposal confidence history .npz (S1 per-prediction)")
     parser.add_argument("--gif", default=None, help="Path to GIF file for beat-synced animation window")
     parser.add_argument("--gif-cycles", type=int, default=1, help="Events per full GIF animation cycle (default: 1)")
     parser.add_argument("--render", default=None, help="Render to video file (e.g. output.mp4) instead of interactive mode")
@@ -386,6 +387,7 @@ class Viewer:
     def __init__(self, csv_path, audio_override=None, compare_csv=None,
                  stats_json_path=None, mel_npy_path=None, wave_npy_path=None,
                  sampling_npy_path=None, candidates_json_path=None,
+                 proposals_npz_path=None,
                  gif_path=None, gif_cycles=1):
         self.csv_path = csv_path
         audio_name, self.onsets = load_csv(csv_path)
@@ -434,6 +436,15 @@ class Viewer:
                 abs_cands = [(cursor_bin + c[0], c[1], c[2]) for c in cands]
                 self._cand_by_cursor[cursor_bin] = (chosen, abs_cands)
             print(f"Loaded candidate history: {len(self.candidate_data)} predictions, {len(self._cand_by_cursor)} cursor points")
+
+        # Proposal confidences: S1 per-prediction heatmap (ProposeSelectDetector)
+        self.proposal_cursors = None  # (N,) int32 cursor positions
+        self.proposal_confs = None    # (N, n_tokens) float16 confidences
+        if HAS_NUMPY and proposals_npz_path and os.path.exists(proposals_npz_path):
+            data = np.load(proposals_npz_path)
+            self.proposal_cursors = data["cursors"]
+            self.proposal_confs = data["confs"].astype(np.float32)
+            print(f"Loaded proposal history: {len(self.proposal_cursors)} steps, {self.proposal_confs.shape[1]} tokens each")
 
         # Beat-synced GIF
         self.gif_player = None
@@ -1069,6 +1080,77 @@ class Viewer:
                     pygame.draw.line(self.screen, (80, 80, 100), (lx, y), (lx, y + mel_h), 1)
 
             y += mel_h + 4
+
+        # --- Proposal confidence heatmap (S1, per-prediction, ghost-style) ---
+        if self.proposal_confs is not None and self.mel_data is not None:
+            prop_h = 20
+            pygame.draw.rect(self.screen, (15, 15, 25), (pad_x, y, view_w, prop_h), border_radius=2)
+
+            # Find the prediction step active at the current cursor position
+            # Use ghost logic: show the proposal for the next upcoming prediction
+            cursor_bin = int(self.now_ms / MEL_BIN_MS)
+            # Find the prediction whose cursor is <= current position, closest to it
+            idx = np.searchsorted(self.proposal_cursors, cursor_bin, side="right") - 1
+            idx = max(0, min(idx, len(self.proposal_cursors) - 1))
+
+            conf = self.proposal_confs[idx]  # (n_tokens,)
+            prop_cursor = self.proposal_cursors[idx]
+            n_tokens = len(conf)
+
+            # Map tokens to mel frames: token i covers frames [i*4, i*4+4)
+            # The proposal covers audio from (prop_cursor - A_BINS) to (prop_cursor + B_BINS)
+            # Token 0 = frame (prop_cursor - A_BINS), but we use A_BINS from inference
+            a_bins = 500  # standard
+            token_frame_start = prop_cursor - a_bins
+
+            # Build a 1D confidence strip matching the visible frame range
+            f0_vis = max(0, frame_start)
+            f1_vis = min(self.mel_data.shape[1], frame_end)
+            n_vis = f1_vis - f0_vis
+            if n_vis > 0:
+                strip = np.zeros(n_vis, dtype=np.float32)
+                for ti in range(n_tokens):
+                    token_frame = token_frame_start + ti * 4
+                    # Map to visible range
+                    local_start = token_frame - f0_vis
+                    local_end = local_start + 4
+                    s = max(0, local_start)
+                    e = min(n_vis, local_end)
+                    if s < e:
+                        strip[s:e] = conf[ti]
+
+                # Colormap: black (0) -> blue -> cyan -> white (1)
+                # Exponential scaling to emphasize peaks (x^3)
+                strip_u8 = np.clip((strip ** 3) * 255, 0, 255).astype(np.uint8)
+                prop_cmap = np.zeros((256, 3), dtype=np.uint8)
+                for i in range(256):
+                    t = i / 255.0
+                    if t < 0.5:
+                        t2 = t * 2
+                        prop_cmap[i] = [0, int(t2 * 100), int(t2 * 255)]
+                    else:
+                        t2 = (t - 0.5) * 2
+                        prop_cmap[i] = [int(t2 * 255), int(100 + t2 * 155), 255]
+
+                strip_rgb = prop_cmap[strip_u8]  # (n_vis, 3)
+                # Expand to (n_vis, prop_h, 3) then transpose for surfarray (width, height, 3)
+                prop_img = np.tile(strip_rgb[:, np.newaxis, :], (1, prop_h, 1))  # (n_vis, prop_h, 3)
+                prop_surf = pygame.surfarray.make_surface(prop_img)
+
+                slice_x_start = int((f0_vis - frame_start) * px_per_frame)
+                slice_pixel_w = max(1, int(n_vis * px_per_frame))
+                scaled = pygame.transform.scale(prop_surf, (slice_pixel_w, prop_h))
+                self.screen.blit(scaled, (pad_x + slice_x_start, y))
+
+            # Cursor line
+            cx = pad_x + int(frames_left * px_per_frame)
+            pygame.draw.line(self.screen, (255, 255, 255), (cx, y), (cx, y + prop_h), 1)
+
+            # Label
+            lbl = self.font_small.render("S1 Proposals", True, (150, 150, 200))
+            self.screen.blit(lbl, (pad_x + 2, y + 1))
+
+            y += prop_h + 2
 
         # --- Waveform (fast path via surfarray) ---
         if self.wave_data is not None:
@@ -1794,6 +1876,7 @@ def main():
                         wave_npy_path=getattr(args, 'wave_npy', None),
                         sampling_npy_path=getattr(args, 'sampling_npy', None),
                         candidates_json_path=getattr(args, 'candidates_json', None),
+                        proposals_npz_path=getattr(args, 'proposals_npz', None),
                         gif_path=args.gif, gif_cycles=args.gif_cycles)
         viewer.render_video(args.render, fps=args.render_fps)
         pygame.quit()
@@ -1804,6 +1887,7 @@ def main():
                         wave_npy_path=getattr(args, 'wave_npy', None),
                         sampling_npy_path=getattr(args, 'sampling_npy', None),
                         candidates_json_path=getattr(args, 'candidates_json', None),
+                        proposals_npz_path=getattr(args, 'proposals_npz', None),
                         gif_path=args.gif, gif_cycles=args.gif_cycles)
         viewer.run()
 
