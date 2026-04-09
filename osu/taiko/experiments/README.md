@@ -102,9 +102,11 @@ Each folder contains a README with hypothesis, results, and key graphs.
 | 59-HB | [GT Comparison for 59-H](experiment_59hb/) | Resolved | exp51's variety is from under-prediction (0.64 density ratio), not creativity. exp58 is actual best (75.9% close, 0.92 d_ratio). Synthetic evaluator needs density filter |
 | 60 | [DDC Onset Comparison](experiment_60/) | Complete | DDC Oracle (density-matched): 77.1% close vs exp58 75.9%. But exp58 has 3.4x better timing (8ms vs 27ms) and 4.3pp less hallucination. All difficulties tested |
 | 61 | [TaikoNation Eval Metrics](experiment_61/) | Complete | DCHuman 90.8% vs TaikoNation 75.0% (we win placement). Over.P-Space 10.1% vs 21.3% (they win diversity, but human is 11.7% — we're closer to human) |
-| 44-RE | [Reproducibility Verification](experiment_44re/) | **Pending** | Exact exp 44 reproduction on CachyOS/RTX 4060. Verifies cross-machine reproducibility |
-| 62 | [Multi-Onset Prediction](experiment_62/) | **Running** | Predict 4 onsets simultaneously (inspired by TaikoNation). o1=74.0% at eval 4, o4=40.1%. strict_increasing=67.4% |
+| 44-RE | [Reproducibility Verification](experiment_44re/) | Complete | Exp 44 on CachyOS/RTX 4060: 72.0% HIT at eval 5, within 0.9pp of original. Cross-machine reproducibility confirmed |
+| 62 | [Multi-Onset Prediction](experiment_62/) | Complete | 4 simultaneous onsets. o1=74.9% HIT (matches exp58 ATH). AR: P-Space 12.0% (surpasses human GT 11.7%), close=75.0%. Pattern diversity win |
+| 62-B | [Multi-Onset Truncation Ablation](experiment_62b/) | Complete | mo2 (o1+o2) best close rate (76.7%), mo3 best overall (76.5% close, 12.0% P-Space, 0.99 d_ratio). Multi-onset training improves even single-onset inference |
 | 63 | [TaikoNation Direct Comparison](experiment_63/) | Complete | TaikoNation: 10.2% close, 399ms error, 50.9% hallucination on our songs. Doesn't generalize from ~100 curated charts. Our exp58: 75.9% close, 8ms error |
+| 64 | [Delta-Encoded Multi-Onset](experiment_64/) | **Pending** | Delta encoding: each onset predicts gap from previous. Eliminates ordering violations and duplicate predictions. Expanded audio window (1752 frames). Training from scratch |
 
 ## Key Lessons
 
@@ -141,3 +143,6 @@ Each folder contains a README with hypothesis, results, and key graphs.
 - **Smaller prediction windows converge faster** — 33-bin window: HIT 74.2% (ATH) at eval 2. But model needs future audio for AR quality — without it, degrades to transient-spamming. Source: [exp 52-L](experiment_52/README.md)
 - **Two-stage propose-select breaks the HIT ceiling** — Stage 1 (pure audio) proposes onset candidates, Stage 2 (full context) selects. 74.6% HIT, 7 consecutive improvements, zero oscillations. Proposals are load-bearing (50pp delta when zeroed). Source: [exp 58](experiment_58/README.md)
 - **Pattern variety predicts human preference — but non-linearly** — gap_std (+0.30), gap_cv (+0.29), dominant_gap_pct (-0.27), max_metro_streak (-0.27) correlate with human rankings. But the relationship is not linear: too little variety is metronomic (bad), too much variety indicates under-prediction/noise (also bad). Synthetic evaluators built from these metrics are useful as screening tools alongside GT matching and human data, not as standalone judges. Source: [exp 59-B](experiment_59b/README.md), [exp 59-HB](experiment_59hb/README.md)
+- **Multi-onset training improves even single-onset inference** — exp62 checkpoint using only o1 achieves P-Space 11.0% vs exp58's 10.1%. Training on patterns teaches better individual decisions. Source: [exp 62-B](experiment_62b/README.md)
+- **Two onsets is the sweet spot for GT matching** — mo2 (76.7% close) beats both single-onset exp58 (75.9%) and full 4-onset (75.0%). o3 adds diversity, o4 adds nothing. Source: [exp 62-B](experiment_62b/README.md)
+- **Cross-machine training reproducible within ~1pp** — RTX 4060 (CachyOS Linux) vs RTX 5070 (Windows): 0.9pp HIT gap at eval 5, consistent val loss offset of ~0.036. Different CUDA kernels cause small but persistent differences. Source: [exp 44-RE](experiment_44re/README.md)

@@ -43,8 +43,29 @@ Critical flags to match exp 44's original config:
 
 ## Result
 
-*Pending*
+5 evals completed (epoch 2.25). Compared to original exp 44 at same epochs:
+
+| Eval | Epoch | 44-RE HIT | Original HIT | Gap | Val Loss Gap |
+|---|---|---|---|---|---|
+| 1 | 1.25 | 67.0% | 70.2% | **-3.1pp** | +0.123 |
+| 2 | 1.50 | 70.3% | 70.9% | **-0.6pp** | +0.025 |
+| 3 | 1.75 | 71.0% | 70.9% | **+0.1pp** | -0.012 |
+| 4 | 2.00 | 70.9% | 72.0% | **-1.2pp** | +0.037 |
+| 5 | 2.25 | 72.0% | 72.9% | **-0.9pp** | +0.036 |
+
+### Observations
+
+- **Eval 1 gap was 3.1pp but closed to <1pp by eval 3.** The CachyOS machine briefly matched the original at eval 3 (71.0% vs 70.9%).
+- **Settled at ~0.9pp behind by eval 5.** Consistent small gap, likely from different CUDA kernels (RTX 4060 vs 5070), floating point behavior, or torch.compile differences.
+- **Train loss consistently ~0.03 higher** on CachyOS, suggesting slightly different gradient accumulation.
+- **Val loss gap narrowed from 0.123 to 0.036** but didn't fully close.
 
 ## Lesson
 
-*Pending*
+1. **Cross-machine reproducibility confirmed within ~1pp.** The RTX 4060 (CachyOS, Linux) reproduces RTX 5070 (Windows) results within 0.9pp HIT at eval 5. This is within acceptable variance for neural network training.
+
+2. **Early evals show larger variance.** The 3.1pp gap at eval 1 is concerning but transient — it closed rapidly. Don't judge cross-machine runs by their first eval.
+
+3. **A small systematic gap persists.** The 0.9pp difference and 0.036 val loss gap at eval 5 suggest a real (small) hardware effect. Could be FP precision, CUDA kernel differences, or torch.compile altering computation order. Not a problem for practical use.
+
+4. **CachyOS/RTX 4060 is a viable second training machine.** Results are close enough to trust for parallel experiments and development.
