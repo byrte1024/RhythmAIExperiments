@@ -114,7 +114,7 @@ def _sample_from_candidates(candidates, confs, temperature, rng):
 
 def run_inference(model, mel, conditioning, device, hop_bins=20, max_events=10000,
                   threshold=None, sample_cfg=None, addall_cfg=None, fakeframewise=0,
-                  max_onsets=0):
+                  max_onsets=0, delta_onsets=False):
     """Autoregressive inference: predict events one at a time.
 
     sample_cfg: optional dict with keys {seed, mode, temperature, topx} for
@@ -204,11 +204,22 @@ def run_inference(model, mel, conditioning, device, hop_bins=20, max_events=1000
             preds_mo = logits.argmax(dim=-1)  # (1, n_onsets)
             n_to_use = preds_mo.size(1) if max_onsets <= 0 else min(max_onsets, preds_mo.size(1))
             events_this_step = []
-            for i in range(n_to_use):
-                p = preds_mo[0, i].item()
-                if p >= N_CLASSES - 1:  # STOP
-                    break  # cascade
-                events_this_step.append(cursor + p)
+            if delta_onsets:
+                # delta mode: each onset predicts gap from previous
+                prev_pos = cursor
+                for i in range(n_to_use):
+                    p = preds_mo[0, i].item()
+                    if p >= N_CLASSES - 1:  # STOP
+                        break
+                    events_this_step.append(prev_pos + p)
+                    prev_pos = prev_pos + p
+            else:
+                # absolute mode: each onset predicts offset from cursor
+                for i in range(n_to_use):
+                    p = preds_mo[0, i].item()
+                    if p >= N_CLASSES - 1:  # STOP
+                        break
+                    events_this_step.append(cursor + p)
             # Place all events
             for ev in events_this_step:
                 events.append(ev)
@@ -1391,10 +1402,12 @@ def main():
             }
             print(f"  AddAll: mode={args.random_mode} top={args.topx} min_conf={args.min_conf} topu_range={args.topu_range} met_suppress={met_suppress_w}")
 
+        is_delta_onsets = ckpt_args.get("delta_onsets", False)
         events, run_stats = run_inference(model, mel, conditioning, args.device, hop_bins=hop_bins,
                                           sample_cfg=sample_cfg, addall_cfg=addall_cfg,
                                           fakeframewise=args.fakeframewise,
-                                          max_onsets=args.max_onsets)
+                                          max_onsets=args.max_onsets,
+                                          delta_onsets=is_delta_onsets)
     print(f"  Predicted {len(events)} events ({len(events) / duration:.1f}/s)")
 
     # Add extra info to stats

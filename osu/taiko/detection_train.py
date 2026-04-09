@@ -135,7 +135,7 @@ class OnsetDataset(Dataset):
     def __init__(self, manifest, ds_dir, chart_indices, augment=False, subsample=1,
                  multi_target=False, ratio_head=False,
                  density_jitter_rate=0.10, density_jitter_pct=0.02,
-                 n_onsets=1):
+                 n_onsets=1, delta_onsets=False):
         self.mel_dir = os.path.join(ds_dir, "mels")
         self.charts = [manifest["charts"][i] for i in chart_indices]
         self.augment = augment
@@ -144,6 +144,7 @@ class OnsetDataset(Dataset):
         self._density_jitter_pct = density_jitter_pct
         self._ratio_head = ratio_head
         self._n_onsets = n_onsets
+        self._delta_onsets = delta_onsets
         # capture current window config (for Windows spawn workers)
         self._a_bins = A_BINS
         self._b_bins = B_BINS  # audio window (mel frames)
@@ -292,23 +293,40 @@ class OnsetDataset(Dataset):
         # Multi-onset targets (exp 62+): predict N future onsets simultaneously
         n_onsets = self._n_onsets
         if n_onsets > 1:
-            # Find all future events within b_pred
-            future_events = evt[(evt > cursor) & (evt <= cursor + self._b_pred)]
-            future_offsets_mo = (future_events.astype(np.int64) - cursor)
-            future_offsets_mo = np.sort(future_offsets_mo)
-
-            multi_targets = np.full(n_onsets, self._n_classes - 1, dtype=np.int64)  # fill with STOP
-            for i in range(min(n_onsets, len(future_offsets_mo))):
-                multi_targets[i] = future_offsets_mo[i]
-
-            # STOP cascade: once STOP appears, all following are STOP
             stop_val = self._n_classes - 1
-            saw_stop = False
-            for i in range(n_onsets):
-                if saw_stop:
-                    multi_targets[i] = stop_val
-                elif multi_targets[i] == stop_val:
-                    saw_stop = True
+
+            if self._delta_onsets:
+                # Delta encoding (exp 64+): each onset predicts gap from previous
+                # Gather future events within the expanded audio window (b_bins covers all possible deltas)
+                max_reach = cursor + n_onsets * self._b_pred
+                future_events = evt[(evt > cursor) & (evt <= max_reach)]
+                future_abs = np.sort(future_events.astype(np.int64))
+
+                multi_targets = np.full(n_onsets, stop_val, dtype=np.int64)
+                prev_pos = cursor
+                for i in range(min(n_onsets, len(future_abs))):
+                    delta = future_abs[i] - prev_pos
+                    if delta >= self._b_pred:
+                        break  # this delta and all following become STOP
+                    multi_targets[i] = delta
+                    prev_pos = future_abs[i]
+            else:
+                # Absolute encoding (exp 62): each onset predicts offset from cursor
+                future_events = evt[(evt > cursor) & (evt <= cursor + self._b_pred)]
+                future_offsets_mo = (future_events.astype(np.int64) - cursor)
+                future_offsets_mo = np.sort(future_offsets_mo)
+
+                multi_targets = np.full(n_onsets, stop_val, dtype=np.int64)
+                for i in range(min(n_onsets, len(future_offsets_mo))):
+                    multi_targets[i] = future_offsets_mo[i]
+
+                # STOP cascade: once STOP appears, all following are STOP
+                saw_stop = False
+                for i in range(n_onsets):
+                    if saw_stop:
+                        multi_targets[i] = stop_val
+                    elif multi_targets[i] == stop_val:
+                        saw_stop = True
 
             target = multi_targets  # shape (n_onsets,) instead of scalar
 
@@ -1652,7 +1670,7 @@ def threshold_sweep(targets_padded, n_targets, probs,
 # ═══════════════════════════════════════════════════════════════
 
 @torch.no_grad()
-def run_benchmarks(model, val_loader, device, amp_enabled=False, multi_target=False):
+def run_benchmarks(model, val_loader, device, amp_enabled=False, multi_target=False, delta_onsets=False):
     """Run ablation benchmarks on corrupted validation data.
 
     Returns dict of benchmark_name -> {stop_rate, mean_pred, pred_std, n_samples}.
@@ -1799,7 +1817,13 @@ def run_benchmarks(model, val_loader, device, amp_enabled=False, multi_target=Fa
             result["all_stop_target_rate"] = float((targets_stk == stop).all(axis=1).mean())
             all_ns = (preds_stk < stop).all(axis=1)
             if all_ns.sum() > 0:
-                result["strict_increasing"] = float(np.all(np.diff(preds_stk[all_ns], axis=1) > 0, axis=1).mean())
+                if delta_onsets:
+                    check_stk = preds_stk.copy()
+                    check_stk[check_stk == stop] = 0
+                    check_stk = np.cumsum(check_stk, axis=1)
+                else:
+                    check_stk = preds_stk
+                result["strict_increasing"] = float(np.all(np.diff(check_stk[all_ns], axis=1) > 0, axis=1).mean())
             else:
                 result["strict_increasing"] = 0.0
             violated = 0
@@ -3008,6 +3032,105 @@ def _save_proposer_graphs(val_extra, val_targets, val_preds, val_metrics, eval_s
     fig.tight_layout()
     fig.savefig(f"{prefix}_proposer.png", dpi=120)
     plt.close(fig)
+
+
+def _save_gapspace_graphs(val_extra, eval_step, run_dir, delta_onsets=False):
+    """Save scatter/heatmap of all onsets in cumulative absolute position space.
+
+    For delta mode: cumsum of deltas gives absolute positions.
+    For absolute mode: values are already absolute positions.
+    X-axis: target absolute position (0 to n_onsets * B_PRED)
+    Y-axis: predicted absolute position
+    Each onset colored differently.
+    """
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    from matplotlib.colors import LogNorm
+    from scipy.ndimage import gaussian_filter
+
+    mo_preds = val_extra["multi_onset_preds"]   # list of arrays per onset
+    mo_targets = val_extra["multi_onset_targets"]
+    n_mo = len(mo_preds)
+    stop = N_CLASSES - 1
+
+    eval_dir = os.path.join(run_dir, "evals")
+    prefix = os.path.join(eval_dir, f"eval_{eval_step:03d}_gapspace")
+
+    # Stack into (N, n_onsets)
+    preds_stk = np.stack(mo_preds, axis=1)    # (N, n_onsets)
+    targets_stk = np.stack(mo_targets, axis=1)
+
+    if delta_onsets:
+        # Convert deltas to absolute by cumulative sum (mask STOP as 0)
+        abs_preds = preds_stk.copy().astype(np.float64)
+        abs_targets = targets_stk.copy().astype(np.float64)
+        abs_preds[abs_preds == stop] = np.nan
+        abs_targets[abs_targets == stop] = np.nan
+        abs_preds = np.nancumsum(abs_preds, axis=1)
+        abs_targets = np.nancumsum(abs_targets, axis=1)
+        # Restore NaN for STOP positions
+        abs_preds[preds_stk == stop] = np.nan
+        abs_targets[targets_stk == stop] = np.nan
+    else:
+        abs_preds = preds_stk.astype(np.float64)
+        abs_targets = targets_stk.astype(np.float64)
+        abs_preds[abs_preds == stop] = np.nan
+        abs_targets[abs_targets == stop] = np.nan
+
+    max_abs = (N_CLASSES - 1) * n_mo  # max possible absolute position
+    onset_colors = ["#4a90d9", "#6bc46d", "#e6a817", "#eb4528"]
+
+    # ── Scatter: all onsets in absolute space ──
+    fig, ax = plt.subplots(figsize=(10, 10))
+    for oi in range(n_mo):
+        t = abs_targets[:, oi]
+        p = abs_preds[:, oi]
+        valid = ~(np.isnan(t) | np.isnan(p))
+        if valid.sum() > 0:
+            ax.scatter(t[valid], p[valid], alpha=0.02, s=1,
+                       color=onset_colors[oi % len(onset_colors)], label=f"o{oi+1}")
+    ax.plot([0, max_abs], [0, max_abs], "r--", alpha=0.5, linewidth=1)
+    ax.set_xlabel("Target absolute position (bins from cursor)")
+    ax.set_ylabel("Predicted absolute position (bins from cursor)")
+    ax.set_title(f"Eval {eval_step}: Gap-Space Scatter ({'delta' if delta_onsets else 'absolute'})")
+    ax.set_xlim(0, max_abs)
+    ax.set_ylim(0, max_abs)
+    ax.legend(markerscale=10, loc="upper left")
+    fig.tight_layout()
+    fig.savefig(f"{prefix}_scatter.png", dpi=120)
+    plt.close(fig)
+
+    # ── Heatmap: all onsets pooled in absolute space ──
+    all_t = []
+    all_p = []
+    for oi in range(n_mo):
+        t = abs_targets[:, oi]
+        p = abs_preds[:, oi]
+        valid = ~(np.isnan(t) | np.isnan(p))
+        all_t.append(t[valid])
+        all_p.append(p[valid])
+    all_t = np.concatenate(all_t) if all_t else np.array([])
+    all_p = np.concatenate(all_p) if all_p else np.array([])
+
+    if len(all_t) > 0:
+        fig, ax = plt.subplots(figsize=(10, 10))
+        fig.patch.set_facecolor("black")
+        ax.set_facecolor("black")
+        n_bins = min(500, max_abs)
+        h, xedges, yedges = np.histogram2d(all_t, all_p, bins=n_bins, range=[[0, max_abs], [0, max_abs]])
+        h = gaussian_filter(h.astype(np.float64), sigma=1.5)
+        h[h < 0.5] = np.nan
+        ax.imshow(h.T, origin="lower", aspect="auto", extent=[0, max_abs, 0, max_abs],
+                  norm=LogNorm(vmin=1), cmap="viridis")
+        ax.plot([0, max_abs], [0, max_abs], "r--", alpha=0.5, linewidth=1)
+        ax.set_xlabel("Target absolute position", color="white")
+        ax.set_ylabel("Predicted absolute position", color="white")
+        ax.set_title(f"Eval {eval_step}: Gap-Space Density ({'delta' if delta_onsets else 'absolute'})", color="white")
+        ax.tick_params(colors="white")
+        fig.tight_layout()
+        fig.savefig(f"{prefix}_heatmap.png", dpi=150)
+        plt.close(fig)
 
 
 def save_eval_graphs(targets, preds, metrics, eval_step, run_dir, extra=None, mt_metrics=None, prefix_tag=""):
@@ -4277,6 +4400,20 @@ def train(args):
     if b_pred <= 0:
         b_pred = B_BINS  # default: prediction range = audio window
     N_CLASSES = b_pred + 1
+
+    # delta-onsets: auto-expand B_BINS = (n_onsets + 1) * b_pred, aligned to conv stride
+    n_onsets = getattr(args, 'n_onsets', 1)
+    delta_onsets = getattr(args, 'delta_onsets', False)
+    if delta_onsets and n_onsets > 1:
+        auto_b_bins = (n_onsets + 1) * b_pred
+        # Round up so (A_BINS + B_BINS) is divisible by 4 (conv stem stride)
+        total = A_BINS + auto_b_bins
+        if total % 4 != 0:
+            auto_b_bins += 4 - (total % 4)
+        if B_BINS < auto_b_bins:
+            B_BINS = auto_b_bins
+            print(f"Delta-onsets: auto B_BINS = {B_BINS} (total {A_BINS + B_BINS}, div by 4)")
+
     WINDOW = A_BINS + B_BINS
     args._b_pred = b_pred  # store for dataset
     if A_BINS != 500 or B_BINS != 500 or b_pred != B_BINS:
@@ -4317,14 +4454,15 @@ def train(args):
     djr = getattr(args, 'density_jitter_rate', 0.10)
     djp = getattr(args, 'density_jitter_pct', 0.02)
     n_onsets = getattr(args, 'n_onsets', 1)
+    delta_onsets = getattr(args, 'delta_onsets', False)
     train_ds = OnsetDataset(manifest, ds_dir, train_idx, augment=True, subsample=sub,
                             multi_target=use_multi_target, ratio_head=use_ratio_head,
                             density_jitter_rate=djr, density_jitter_pct=djp,
-                            n_onsets=n_onsets)
+                            n_onsets=n_onsets, delta_onsets=delta_onsets)
     val_ds = OnsetDataset(manifest, ds_dir, val_idx, augment=False, subsample=sub,
                           multi_target=use_multi_target, ratio_head=use_ratio_head,
                           density_jitter_rate=djr, density_jitter_pct=djp,
-                          n_onsets=n_onsets)
+                          n_onsets=n_onsets, delta_onsets=delta_onsets)
     if sub > 1:
         print(f"Subsample: 1/{sub}")
     print(f"Train samples: {len(train_ds)}, Val samples: {len(val_ds)}")
@@ -5113,11 +5251,19 @@ def _run_eval(model, val_loader, criterion, args, amp_enabled,
         targets_stack = np.stack(mo_targets, axis=1)
 
         # strict_increasing: o1 < o2 < o3 < o4 (among non-STOP predictions)
-        # Only count samples where all predicted onsets are non-STOP
+        # For delta mode, convert to absolute positions first (cumsum)
+        is_delta = getattr(args, 'delta_onsets', False)
+        if is_delta:
+            check_preds = preds_stack.copy()
+            # Replace STOP with 0 for cumsum, then restore
+            check_preds[check_preds == stop] = 0
+            check_preds = np.cumsum(check_preds, axis=1)
+        else:
+            check_preds = preds_stack
         all_non_stop = (preds_stack < stop).all(axis=1)
         if all_non_stop.sum() > 0:
-            non_stop_preds = preds_stack[all_non_stop]
-            increasing = np.all(np.diff(non_stop_preds, axis=1) > 0, axis=1)
+            non_stop_check = check_preds[all_non_stop]
+            increasing = np.all(np.diff(non_stop_check, axis=1) > 0, axis=1)
             val_metrics["strict_increasing"] = float(increasing.mean())
             val_metrics["strict_increasing_n"] = int(all_non_stop.sum())
         else:
@@ -5332,7 +5478,8 @@ def _run_eval(model, val_loader, criterion, args, amp_enabled,
     # ── ablation benchmarks ──
     torch.cuda.empty_cache()
     bench_results = run_benchmarks(model, val_loader, args.device, amp_enabled=amp_enabled,
-                                   multi_target=use_mt)
+                                   multi_target=use_mt,
+                                   delta_onsets=getattr(args, 'delta_onsets', False))
     print_benchmarks(bench_results)
     save_benchmark_data(bench_results, eval_step, run_dir)
 
@@ -5354,6 +5501,11 @@ def _run_eval(model, val_loader, criterion, args, amp_enabled,
         oa_m = compute_metrics(all_mo_t, all_mo_p)
         save_eval_graphs(all_mo_t, all_mo_p, oa_m, eval_step, run_dir,
                         extra=None, mt_metrics=None, prefix_tag="_oA")
+
+    # multi-onset gap-space scatter/heatmap: all onsets in absolute position space (exp 64+)
+    if "multi_onset_preds" in val_extra and n_onsets > 1:
+        _save_gapspace_graphs(val_extra, eval_step, run_dir,
+                              delta_onsets=getattr(args, 'delta_onsets', False))
 
     # Stage 1 proposer graphs (exp 58+)
     if "proposal_confs" in val_extra:
@@ -5444,6 +5596,7 @@ if __name__ == "__main__":
     parser.add_argument("--proposer-pos-weight", type=float, default=5.0, help="Stage 1 BCE pos_weight (higher = more recall, exp 58+)")
     parser.add_argument("--proposer-focal-gamma", type=float, default=2.0, help="Stage 1 focal gamma (exp 58+)")
     parser.add_argument("--n-onsets", type=int, default=1, help="Number of onsets to predict simultaneously (exp 62+, default 1)")
+    parser.add_argument("--delta-onsets", action="store_true", default=False, help="Encode multi-onset targets as deltas from previous onset (exp 64+)")
     parser.add_argument("--streak-loss", action="store_true", default=False, help="Streak-ratio loss weighting (exp 51+)")
     parser.add_argument("--streak-power", type=float, default=0.3, help="Streak loss weight power (default 0.3)")
     parser.add_argument("--streak-cap", type=float, default=50.0, help="Streak loss max weight cap (default 50)")
