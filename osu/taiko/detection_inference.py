@@ -113,7 +113,8 @@ def _sample_from_candidates(candidates, confs, temperature, rng):
 
 
 def run_inference(model, mel, conditioning, device, hop_bins=20, max_events=10000,
-                  threshold=None, sample_cfg=None, addall_cfg=None, fakeframewise=0):
+                  threshold=None, sample_cfg=None, addall_cfg=None, fakeframewise=0,
+                  max_onsets=0):
     """Autoregressive inference: predict events one at a time.
 
     sample_cfg: optional dict with keys {seed, mode, temperature, topx} for
@@ -201,8 +202,9 @@ def run_inference(model, mel, conditioning, device, hop_bins=20, max_events=1000
         # multi-onset: logits shape (1, n_onsets, n_classes) — collect all non-STOP predictions
         if logits.dim() == 3:
             preds_mo = logits.argmax(dim=-1)  # (1, n_onsets)
+            n_to_use = preds_mo.size(1) if max_onsets <= 0 else min(max_onsets, preds_mo.size(1))
             events_this_step = []
-            for i in range(preds_mo.size(1)):
+            for i in range(n_to_use):
                 p = preds_mo[0, i].item()
                 if p >= N_CLASSES - 1:  # STOP
                     break  # cascade
@@ -992,6 +994,7 @@ def main():
     parser.add_argument("--density-peak", type=float, default=8.0, help="Target peak density")
     parser.add_argument("--density-std", type=float, default=1.5, help="Target density std")
     parser.add_argument("--hop-ms", type=float, default=100, help="Cursor hop on STOP prediction (ms, default 100)")
+    parser.add_argument("--max-onsets", type=int, default=0, help="Max onsets to place per step for multi-onset models (0=all, 1=only o1, etc.)")
     parser.add_argument("--fakeframewise", type=int, default=0, help="Only accept predictions within X bins of cursor (0=off). If prediction > X, treat as STOP.")
     parser.add_argument("--slide-frames", type=int, default=200, help="Slide step for framewise inference (mel frames, default 200)")
     parser.add_argument("--fw-threshold", type=float, default=0.3, help="Onset threshold for framewise inference (default 0.3)")
@@ -1390,7 +1393,8 @@ def main():
 
         events, run_stats = run_inference(model, mel, conditioning, args.device, hop_bins=hop_bins,
                                           sample_cfg=sample_cfg, addall_cfg=addall_cfg,
-                                          fakeframewise=args.fakeframewise)
+                                          fakeframewise=args.fakeframewise,
+                                          max_onsets=args.max_onsets)
     print(f"  Predicted {len(events)} events ({len(events) / duration:.1f}/s)")
 
     # Add extra info to stats

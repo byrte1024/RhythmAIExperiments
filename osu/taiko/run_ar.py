@@ -92,7 +92,8 @@ def safe_name(song):
     return name
 
 
-def run_inference(checkpoint, song, output_csv, density_override=None, density_mult=1.0, hop_ms=75):
+def run_inference(checkpoint, song, output_csv, density_override=None, density_mult=1.0,
+                  hop_ms=75, max_onsets=0):
     if density_override:
         d_mean = density_override["density_mean"]
         d_peak = density_override["density_peak"]
@@ -112,6 +113,8 @@ def run_inference(checkpoint, song, output_csv, density_override=None, density_m
         "--density-std", str(d_std),
         "--hop-ms", str(hop_ms),
     ]
+    if max_onsets > 0:
+        cmd += ["--max-onsets", str(max_onsets)]
 
     result = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace")
     if result.returncode != 0:
@@ -127,6 +130,10 @@ def main():
     parser.add_argument("--density-mult", type=float, default=1.0,
                         help="Density multiplier applied to song_density regime")
     parser.add_argument("--hop-ms", type=float, default=75, help="STOP hop in ms")
+    parser.add_argument("--max-onsets", type=int, default=0,
+                        help="Max onsets to place per step (0=all)")
+    parser.add_argument("--label", default=None,
+                        help="Custom label for output directory (default: auto from checkpoint path)")
     args = parser.parse_args()
 
     exp_name = args.experiment
@@ -135,11 +142,15 @@ def main():
         print(f"ERROR: Checkpoint not found: {checkpoint}")
         sys.exit(1)
 
-    # Derive a short name from the checkpoint path for the output directory
-    ckpt_stem = os.path.splitext(os.path.basename(checkpoint))[0]  # e.g. "best" or "eval_005"
-    # Walk up to find the run name (parent of checkpoints/)
-    ckpt_parent = os.path.basename(os.path.dirname(os.path.dirname(checkpoint)))  # e.g. "detect_experiment_58"
-    ckpt_label = f"{ckpt_parent}_{ckpt_stem}"  # e.g. "detect_experiment_58_best"
+    if args.label:
+        ckpt_label = args.label
+    else:
+        # Derive a short name from the checkpoint path for the output directory
+        ckpt_stem = os.path.splitext(os.path.basename(checkpoint))[0]
+        ckpt_parent = os.path.basename(os.path.dirname(os.path.dirname(checkpoint)))
+        ckpt_label = f"{ckpt_parent}_{ckpt_stem}"
+        if args.max_onsets > 0:
+            ckpt_label += f"_mo{args.max_onsets}"
 
     output_dir = os.path.join(SCRIPT_DIR, "experiments", exp_name, "ar_eval", ckpt_label)
     os.makedirs(output_dir, exist_ok=True)
@@ -147,6 +158,8 @@ def main():
     print(f"AR Inference: {exp_name}")
     print(f"  Checkpoint: {checkpoint}")
     print(f"  Label: {ckpt_label}")
+    if args.max_onsets > 0:
+        print(f"  Max onsets: {args.max_onsets}")
     print(f"  Density mult: {args.density_mult}")
     print(f"  Output: {output_dir}")
 
@@ -203,7 +216,8 @@ def main():
             pbar.set_postfix_str(f"{song['artist'][:15]} - {song['title'][:15]}")
             ok = run_inference(checkpoint, song, csv_path,
                               density_override=density_override,
-                              density_mult=args.density_mult, hop_ms=args.hop_ms)
+                              density_mult=args.density_mult, hop_ms=args.hop_ms,
+                              max_onsets=args.max_onsets)
             if ok:
                 n_ok += 1
             else:

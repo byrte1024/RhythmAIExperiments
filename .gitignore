@@ -20,6 +20,7 @@ osu/taiko/runs/*
 !osu/taiko/runs/baseline_benchmark/
 osu/taiko/graphs/
 osu/taiko/*_predicted.csv
+osu/taiko/experiments/*/ar_eval/
 
 # OS / IDE
 .DS_Store

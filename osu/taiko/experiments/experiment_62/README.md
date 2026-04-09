@@ -82,8 +82,76 @@ python detection_train.py taiko_v2 --run-name detect_experiment_62 --model-type 
 
 ## Result
 
-*Pending*
+### Per-Sample (9 evals, best at eval 9 / epoch 3.25)
+
+| Onset | HIT% | MISS% |
+|---|---|---|
+| o1 | **74.9%** | 24.6% |
+| o2 | 58.3% | 38.9% |
+| o3 | 49.7% | 40.0% |
+| o4 | 43.0% | 36.6% |
+| oAvg | 56.4% | 34.9% |
+
+Val loss: 3.103 (still decreasing at eval 9, not fully converged).
+
+**Progression**: o1 HIT climbed from 71.9% (eval 1) to 74.9% (eval 9), matching exp58's ATH (74.6%) despite the harder multi-onset task. Later onsets improved steadily but plateaued around eval 7-9.
+
+**STOP rates**: Model over-predicts STOP on later onsets (o2: 7.6% pred vs 3.2% target, o4: 22.8% vs 13.9%). Too eager to stop the cascade.
+
+**Structural metrics** (eval 9):
+- strict_increasing: 69.9% — 70% of multi-onset predictions are in correct temporal order. Climbed from 54.7% at eval 1.
+- stop_violation: 0.04% — STOP cascade works correctly.
+- all_stop: 0.9% vs target 0.8% — close to expected.
+
+### Autoregressive GT Matching (30 val songs)
+
+| Regime | Close% | Far% | Hall% | d_ratio | err_med |
+|---|---|---|---|---|---|
+| song_density | 75.0% | 16.7% | 15.9% | 0.97 | 8ms |
+| fixed_5.75 | 79.8% | 10.6% | 19.9% | 1.19 | 9ms |
+
+### Comparison to exp58 (song_density regime)
+
+| Metric | exp62 | exp58 | Delta | Better? |
+|---|---|---|---|---|
+| Close (<50ms) | 75.0% | 75.9% | -0.9pp | exp58 |
+| Far (>100ms) | 16.7% | 16.6% | +0.1pp | ≈ |
+| Hallucination | 15.9% | 15.6% | +0.3pp | ≈ |
+| Density ratio | **0.97** | 0.92 | +0.05 | **exp62** |
+| Error median | 8ms | 8ms | = | = |
+| Over. P-Space | **12.0%** | 10.1% | **+1.9pp** | **exp62** |
+| HI P-Space | **82.4%** | 81.1% | +1.3pp | **exp62** |
+| DCHuman | 90.5% | 90.8% | -0.3pp | ≈ |
+
+### TaikoNation Metrics (song_density)
+
+| Model | Over. P-Space | HI P-Space | DCHuman | OCHuman |
+|---|---|---|---|---|
+| **exp62** | **12.0%** | **82.4%** | 90.5% | 92.9% |
+| exp58 | 10.1% | 81.1% | 90.8% | — |
+| Human GT | 11.7% | — | — | — |
+
+**Exp62 surpasses human GT pattern diversity** (12.0% vs 11.7% Over.P-Space) — the first model to do so without sacrificing placement accuracy.
+
+### Pattern Variety (song_density)
+
+| Metric | exp62 | Meaning |
+|---|---|---|
+| gap_std | 174.9 | Higher = more varied timing |
+| gap_cv | 0.712 | Coefficient of variation |
+| dominant_gap_pct | 47.5% | Lower = less repetitive |
+| max_metro_streak | 13.0 | Shorter = less metronomic |
 
 ## Lesson
 
-*Pending*
+1. **Multi-onset prediction improves pattern diversity without sacrificing timing.** P-Space jumped from 10.1% to 12.0%, surpassing human GT diversity (11.7%). Close rate dropped only 0.9pp (75.0% vs 75.9%) — negligible for the diversity gain.
+
+2. **Density estimation improved.** d_ratio 0.97 vs exp58's 0.92. Multi-onset naturally places more events per AR step, reducing the systematic under-prediction problem. The 1.2x density inflation hack may no longer be needed.
+
+3. **Per-sample metrics don't tell the full story.** oAvg HIT is only 56.4% — looks bad compared to exp58's 74.6%. But o1 alone matches exp58 (74.9%), and the AR inference uses all 4 onsets together, producing charts of equivalent quality with better diversity.
+
+4. **Later onsets are fundamentally harder.** o1→o2 drops 16.7pp, o2→o3 drops 8.6pp, o3→o4 drops 6.7pp. The difficulty is front-loaded — predicting the very next onset after the first is the biggest jump.
+
+5. **STOP over-prediction is the main weakness.** The model predicts STOP 1.6-2.4x more than the target across o2-o4, cutting sequences short. This may be why the diversity gain, while significant, isn't even larger. Future work: reduce STOP weight for later onsets, or use asymmetric loss.
+
+6. **strict_increasing at 70% has room to grow.** 30% of predictions have temporal ordering violations, meaning the model sometimes predicts o3 before o2. This didn't fully converge — more training or explicit ordering constraints could help.
