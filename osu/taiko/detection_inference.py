@@ -1132,6 +1132,12 @@ def main():
             b_pred = B_BINS
         N_CLASSES = b_pred + 1
 
+        # detect n_onsets from head_proj shape
+        head_proj_shape = ckpt["model"]["head_proj.weight"].shape[0]
+        n_onsets = head_proj_shape // N_CLASSES
+        if n_onsets < 1:
+            n_onsets = 1
+
         model_kwargs = dict(
             n_mels=N_MELS,
             d_model=ckpt_args.get("d_model", 384),
@@ -1143,6 +1149,7 @@ def main():
             gap_ratios=has_gap_ratios,
             n_virtual_tokens=n_virtual,
             a_bins=A_BINS, b_bins=B_BINS,
+            n_onsets=n_onsets,
         )
     elif ModelClass == EventEmbeddingDetector:
         # detect gap_ratios: event_proj input is 5*d_model (1920) vs 3*d_model (1152)
