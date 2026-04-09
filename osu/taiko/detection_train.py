@@ -508,7 +508,8 @@ class OnsetLoss(nn.Module):
     """
 
     def __init__(self, weight=None, gamma=0.0, good_pct=0.03, fail_pct=0.20,
-                 hard_alpha=0.5, frame_tolerance=2, stop_weight=3.0):
+                 hard_alpha=0.5, frame_tolerance=2, stop_weight=3.0,
+                 ramp_alpha=0.0, ramp_exp=1.0):
         super().__init__()
         self.gamma = gamma
         self.good_pct = good_pct
@@ -516,6 +517,8 @@ class OnsetLoss(nn.Module):
         self.hard_alpha = hard_alpha
         self.frame_tolerance = frame_tolerance  # ±N frames always get some credit
         self.stop_weight = stop_weight  # extra penalty for missing STOP
+        self.ramp_alpha = ramp_alpha  # distance ramp scale (0=off)
+        self.ramp_exp = ramp_exp  # distance ramp exponent
         # precompute log thresholds
         self.log_good = math.log(1 + good_pct)   # ~0.0296
         self.log_fail = math.log(1 + fail_pct)    # ~0.182
@@ -574,6 +577,22 @@ class OnsetLoss(nn.Module):
 
         # ── mix ──
         ce = self.hard_alpha * hard_ce + (1 - self.hard_alpha) * soft_ce
+
+        # ── distance ramp: |log(pred/target)|^exp in ratio space (exp 44e+) ──
+        if self.ramp_alpha > 0:
+            stop = n_classes - 1
+            is_bin = targets != stop
+            if is_bin.any():
+                probs = F.softmax(logits, dim=-1)
+                bins = torch.arange(n_classes, device=logits.device, dtype=torch.float32)
+                expected_pred = (probs * bins).sum(dim=-1)  # model's center of mass
+                # log-ratio distance: |log((pred+1)/(target+1))|
+                bin_targets = targets.float().clamp(min=0)
+                log_dist = torch.abs(torch.log((expected_pred + 1) / (bin_targets + 1)))
+                ramp = self.ramp_alpha * (log_dist ** self.ramp_exp)
+                # Only apply to non-STOP targets
+                ramp = ramp * is_bin.float()
+                ce = ce + ramp
 
         # extra penalty when target is STOP - model must learn to stop
         if self.stop_weight > 1.0:
@@ -4644,12 +4663,17 @@ def train(args):
         ).to(args.device)
         print(f"Loss: MultiTargetOnsetLoss (hard_alpha={args.hard_alpha}, empty_weight={args.empty_weight}, recall_weight={args.recall_weight})")
     else:
+        ramp_alpha = getattr(args, 'ramp_alpha', 0.0)
+        ramp_exp = getattr(args, 'ramp_exp', 1.0)
         criterion = OnsetLoss(
             weight=loss_weights, gamma=args.focal_gamma,
             good_pct=args.good_pct, fail_pct=args.fail_pct,
             hard_alpha=args.hard_alpha, frame_tolerance=args.frame_tolerance,
             stop_weight=args.stop_weight,
+            ramp_alpha=ramp_alpha, ramp_exp=ramp_exp,
         ).to(args.device)
+        if ramp_alpha > 0:
+            print(f"  Distance ramp: alpha={ramp_alpha}, exp={ramp_exp}")
 
     # ratio head loss (exp 55+)
     ratio_criterion = None
@@ -5589,6 +5613,8 @@ if __name__ == "__main__":
     parser.add_argument("--b-pred", type=int, default=0, help="Prediction range in bins, 0=same as b-bins (exp 53+). N_CLASSES = b_pred + 1")
     parser.add_argument("--ratio-head", action="store_true", default=False, help="Add auxiliary ratio head for training (exp 55+)")
     parser.add_argument("--ratio-weight", type=float, default=0.3, help="Loss weight for ratio head")
+    parser.add_argument("--ramp-alpha", type=float, default=0.0, help="Distance ramp loss scale (0=off, exp 44e+)")
+    parser.add_argument("--ramp-exp", type=float, default=1.0, help="Distance ramp exponent (1.0=linear in log-ratio space)")
     parser.add_argument("--density-jitter-rate", type=float, default=0.10, help="Density jitter probability (default 0.10 = 10%%)")
     parser.add_argument("--density-jitter-pct", type=float, default=0.02, help="Density jitter magnitude (default 0.02 = +/-2%%)")
     parser.add_argument("--proposer-layers", type=int, default=4, help="Number of transformer layers in Stage 1 proposer (exp 58+)")
