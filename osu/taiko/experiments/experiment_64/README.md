@@ -97,8 +97,57 @@ Most gaps in the dataset are small (dense charts). Large deltas (150-249) are ra
 
 ## Result
 
-*Pending*
+### Per-Sample (11 evals, S2 unfroze at eval 3)
+
+| Onset | Best HIT | Best eval | Eval 11 HIT |
+|---|---|---|---|
+| o1 | **74.2%** | 8 | 74.1% |
+| o2 | **66.1%** | 11 | 66.1% |
+| o3 | **61.6%** | 11 | 61.6% |
+| o4 | **58.7%** | 9 | 58.2% |
+| oA | **65.0%** | 11 | 65.0% |
+
+strict_increasing: **100.0%** across all evals (ordering solved by construction).
+STOP over-prediction: 1.4-1.7x (much better than exp62's 1.7-2.4x).
+
+### Comparison to Exp 62 (absolute encoding)
+
+| Onset | Exp 64 (delta) | Exp 62 (absolute) | Improvement |
+|---|---|---|---|
+| o1 | 74.2% | 74.9% | -0.7pp |
+| o2 | **66.1%** | 58.3% | **+7.8pp** |
+| o3 | **61.6%** | 49.7% | **+11.9pp** |
+| o4 | **58.7%** | 43.0% | **+15.7pp** |
+| oA | **65.0%** | 56.4% | **+8.6pp** |
+
+o1-o4 gap: 15.5pp (delta) vs 31.9pp (absolute). Delta encoding equalizes onset difficulty.
+
+### AR GT Matching (30 val songs, song_density)
+
+| Metric | Exp 64 | Exp 62 | Exp 58 |
+|---|---|---|---|
+| Close (<50ms) | **82.0%** | 75.0% | 75.9% |
+| Far (>100ms) | **11.0%** | 16.7% | 16.6% |
+| Hallucination | 21.7% | **15.9%** | **15.6%** |
+| Density ratio | 1.11 | **0.97** | 0.92 |
+| Error median | 13ms | **8ms** | **8ms** |
+| Over. P-Space | 11.8% | **12.0%** | 10.1% |
+| HI P-Space | **88.9%** | 82.4% | 81.1% |
+| DCHuman | 86.3% | **90.5%** | **90.8%** |
+| max_metro_streak | 21.0 | **13.0** | — |
 
 ## Lesson
 
-*Pending*
+1. **Delta encoding dramatically improves later onsets.** o2-o4 gained 8-16pp over absolute encoding. The o1-o4 gap shrank from 32pp to 15pp. Predicting gaps is fundamentally easier than predicting cumulative offsets.
+
+2. **Ordering violations eliminated.** strict_increasing=100% across all evals, vs exp62's 70%. Delta encoding solves this by construction — any positive delta maintains temporal order.
+
+3. **AR close rate jumps to 82%.** +6pp over both exp58 and exp62. The model finds the right onsets more often. Delta's multi-step placement is more efficient at covering the timeline.
+
+4. **Over-prediction is the new problem.** Density ratio 1.11 (11% too many events) and hallucination 21.7% (vs 15.9%). The delta model is too eager to continue placing events. The easy gap prediction makes it reluctant to STOP — STOP over-prediction is 1.7x on o4 but this is about overall tendency to extend sequences.
+
+5. **Metronomic tendency increased.** max_metro_streak 21 vs exp62's 13. Delta encoding makes repeating the same gap trivially easy (just predict the same value 4 times). This is the flip side of "easier patterns" — the model defaults to repetition more readily.
+
+6. **HI P-Space is the best ever (88.9%).** The model covers nearly 90% of human pattern vocabulary. But Over P-Space is slightly lower and metronomic streaks are longer — the model knows human patterns but overuses the common ones.
+
+7. **Trade-off: close rate vs hallucination.** Exp64 finds more correct onsets but also creates more false ones. Exp62 is more conservative. The ideal model would combine exp64's recall with exp62's precision.
