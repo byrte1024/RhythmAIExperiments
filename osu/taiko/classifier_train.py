@@ -249,7 +249,7 @@ class PairDataset(Dataset):
         # for rating pairs: group by beatmapset_id, index charts with ratings
         self.rated_charts = []  # (chart_idx, rating, star_rating)
         for i, chart in enumerate(self.charts):
-            if "rating" in chart:
+            if "rating" in chart and "star_rating" in chart:
                 self.rated_charts.append((i, chart["rating"], chart["star_rating"]))
 
         # load global gap distribution
