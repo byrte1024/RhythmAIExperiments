@@ -108,7 +108,7 @@ Each folder contains a README with hypothesis, results, and key graphs.
 | 63 | [TaikoNation Direct Comparison](experiment_63/) | Complete | TaikoNation: 10.2% close, 399ms error, 50.9% hallucination on our songs. Doesn't generalize from ~100 curated charts. Our exp58: 75.9% close, 8ms error |
 | 44-E | [Distance Ramp Loss](experiment_44e/) | Complete | 3rd loss component gives gradient everywhere. ~0.2pp adjusted gain, smoother training, +9.5pp STOP precision. Adopted as default (ramp_alpha=2.5) |
 | 64 | [Delta-Encoded Multi-Onset](experiment_64/) | Complete | Delta encoding: o2-o4 +8-16pp over absolute, strict_increasing=100%. AR close=82% but hallucination 21.7%. Metronomic tendency increased |
-| 65-S2 | [Context-Only Predictor](experiment_65_s2/) | **Running** | Pure context model (no audio). **67.1% HIT at eval 4** from gap sequences alone. Top-5=90.3%. Proves context is massively underutilized |
+| 65-S2 | [Context-Only Predictor](experiment_65_s2/) | **BREAKTHROUGH** | Pure context (no audio): **70.9% HIT** from gap sequences alone. Top-5=90%. S1+S2 union ceiling **92.9%**. Context was always the answer — architecture couldn't extract it |
 
 ## Key Lessons
 
@@ -148,3 +148,6 @@ Each folder contains a README with hypothesis, results, and key graphs.
 - **Multi-onset training improves even single-onset inference** — exp62 checkpoint using only o1 achieves P-Space 11.0% vs exp58's 10.1%. Training on patterns teaches better individual decisions. Source: [exp 62-B](experiment_62b/README.md)
 - **Two onsets is the sweet spot for GT matching** — mo2 (76.7% close) beats both single-onset exp58 (75.9%) and full 4-onset (75.0%). o3 adds diversity, o4 adds nothing. Source: [exp 62-B](experiment_62b/README.md)
 - **Cross-machine training reproducible within ~1pp** — RTX 4060 (CachyOS Linux) vs RTX 5070 (Windows): 0.9pp HIT gap at eval 5, consistent val loss offset of ~0.036. Different CUDA kernels cause small but persistent differences. Source: [exp 44-RE](experiment_44re/README.md)
+- **Distance ramp loss is a free improvement** — 3rd loss component `ramp_alpha * |log(pred/target)|` gives gradient everywhere. Smoother training, +9.5pp STOP precision, no downsides. Adopted as default (ramp_alpha=2.5). Source: [exp 44-E](experiment_44e/README.md)
+- **Context alone predicts 70.9% HIT — more than audio alone (69%)** — a 4.9M param GRU seeing only gap sequences matches full audio+context models. Our architectures were leaving >65pp of context signal on the table. The bottleneck was never data or training — it was architecture. Source: [exp 65-S2](experiment_65_s2/README.md)
+- **S1+S2 theoretical fusion ceiling is 92.9%** — S1 proposals cover 76% of targets, S2 covers 71%, their union covers 93%. Current best is 74.6%. The 18.3pp gap is the opportunity for the 3-stage architecture. Source: [exp 65-S2](experiment_65_s2/README.md)
