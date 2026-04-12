@@ -183,8 +183,8 @@ class S2Dataset(Dataset):
 #  Metrics
 # ═══════════════════════════════════════════════════════════════
 
-def compute_metrics(targets, preds):
-    """Compute HIT/MISS/accuracy metrics."""
+def compute_metrics(targets, preds, all_probs=None):
+    """Compute HIT/MISS/accuracy metrics + softmax analysis."""
     stop = N_CLASSES - 1
     ns = targets != stop
     m = {}
@@ -229,8 +229,49 @@ def compute_metrics(targets, preds):
     m["frame_error_median"] = float(frame_err.median())
     m["unique_preds"] = int(p_ns.unique().numel())
 
-    # HIT by streak length
-    # (computed in eval, not here — needs access to raw gap sequences)
+    # ── Softmax / probability map analysis ──
+    if all_probs is not None:
+        probs_ns = all_probs[ns]  # (N_nonstopp, 251)
+        targets_ns = targets[ns]
+
+        # Confidence at target bin
+        target_conf = probs_ns[torch.arange(len(targets_ns)), targets_ns]
+        m["target_conf_mean"] = float(target_conf.mean())
+        m["target_conf_median"] = float(target_conf.median())
+
+        # Confidence at predicted bin (top-1)
+        top1_conf = probs_ns.max(dim=-1).values
+        m["top1_conf_mean"] = float(top1_conf.mean())
+        m["top1_conf_median"] = float(top1_conf.median())
+
+        # Confidence separation: top1 conf when correct vs wrong
+        correct = hit
+        if correct.sum() > 0:
+            m["conf_when_correct"] = float(top1_conf[correct].mean())
+        if (~correct).sum() > 0:
+            m["conf_when_wrong"] = float(top1_conf[~correct].mean())
+        if correct.sum() > 0 and (~correct).sum() > 0:
+            m["conf_separation"] = m["conf_when_correct"] - m["conf_when_wrong"]
+
+        # Entropy of distribution
+        entropy = -(probs_ns * torch.log(probs_ns + 1e-10)).sum(dim=-1)
+        m["entropy_mean"] = float(entropy.mean())
+        m["entropy_when_correct"] = float(entropy[correct].mean()) if correct.sum() > 0 else 0
+        m["entropy_when_wrong"] = float(entropy[~correct].mean()) if (~correct).sum() > 0 else 0
+
+        # Top-K accuracy
+        for k in [3, 5, 10]:
+            topk_preds = probs_ns[:, :stop].topk(k, dim=-1).indices  # (N, k) exclude STOP
+            topk_hit = (topk_preds == targets_ns.unsqueeze(1)).any(dim=1)
+            m[f"top{k}_accuracy"] = float(topk_hit.float().mean())
+
+        # Threshold-based F1: treat as binary detection per bin
+        # For each threshold, compute: if prob[target_bin] > threshold → detected
+        for thresh in [0.05, 0.10, 0.20, 0.30, 0.50]:
+            detected = target_conf > thresh
+            # F1 as: precision = detected & correct / detected, recall = detected & correct / total correct
+            # Simpler: just measure what % of targets have conf > threshold
+            m[f"target_above_{thresh:.2f}"] = float(detected.float().mean())
 
     return m
 
@@ -249,6 +290,8 @@ def validate(model, val_loader, criterion, device):
     all_ratios = []     # last ratio before each prediction
     all_streaks = []    # streak length at each prediction
 
+    all_probs = []
+
     with torch.no_grad():
         for gaps, ratios, mask, cond, target in val_loader:
             gaps, ratios, mask, cond, target = (
@@ -260,8 +303,10 @@ def validate(model, val_loader, criterion, device):
             total_loss += loss.item()
             n_batches += 1
 
+            probs = F.softmax(logits, dim=-1)
             all_preds.append(logits.argmax(dim=-1).cpu())
             all_targets.append(target.cpu())
+            all_probs.append(probs.cpu())
 
             # Collect context info for analysis
             g = gaps.cpu().numpy()
@@ -290,7 +335,8 @@ def validate(model, val_loader, criterion, device):
     val_loss = total_loss / max(n_batches, 1)
     preds = torch.cat(all_preds)
     targets = torch.cat(all_targets)
-    metrics = compute_metrics(targets, preds)
+    probs = torch.cat(all_probs)
+    metrics = compute_metrics(targets, preds, all_probs=probs)
 
     extra = {
         "last_gaps": np.array(all_gaps, dtype=np.float32),
@@ -678,10 +724,14 @@ def main():
                 acc = val_metrics.get("accuracy", 0)
                 sf1 = val_metrics.get("stop_f1", 0)
 
+                conf_sep = val_metrics.get('conf_separation', 0)
+                top5 = val_metrics.get('top5_accuracy', 0)
+                tgt_conf = val_metrics.get('target_conf_mean', 0)
                 print(f"\n  Eval {eval_step} (ep {epoch_frac:.2f}): "
                       f"loss={train_loss:.4f}/{val_loss:.4f} | "
                       f"HIT={hit:.1%} MISS={miss:.1%} acc={acc:.1%} "
-                      f"StpF1={sf1:.3f} uniq={val_metrics.get('unique_preds', 0)}")
+                      f"StpF1={sf1:.3f} uniq={val_metrics.get('unique_preds', 0)}\n"
+                      f"    conf_sep={conf_sep:.4f} top5={top5:.1%} tgt_conf={tgt_conf:.4f}")
 
                 # Graphs and analysis
                 save_eval_graphs(val_targets, val_preds, val_metrics, val_extra,
