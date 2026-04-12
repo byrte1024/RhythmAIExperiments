@@ -82,14 +82,63 @@ Post-corruption: sort events, merge within 2 bins, remove negative gaps, clamp t
 
 ## Result
 
-*(experiment not yet run)*
+### Phase 1: Corruption pretraining (8 evals, 4 epochs, stopped early)
 
-## Success criteria
+Plateaued by eval 3-4. Corruption detection learned fast — 98% accuracy within half an epoch.
 
-- Corruption pairs: >90% accuracy (easy, margin 3-4), >70% (hard, margin 1)
-- Rating pairs: >60% pairwise accuracy (baseline: 50% random, 52% exp 59 formula)
-- Generated charts score lower than real charts on average
-- Scores correlate with human preference from exp 53-AR
+| Metric | Eval 1 | Eval 8 (final) |
+|---|---|---|
+| Pair accuracy | 97.6% | 98.4% |
+| Val loss | 0.048 | 0.026 |
+| Margin 1 accuracy | 96% | 98% |
+| Margin 4 accuracy | 98% | 99% |
+| Monotonic | Yes | Yes (all 8 evals) |
+
+Score means at eval 8: CLEAN=+22.9, LIGHT=+11.9, MED=-2.4, HIGH=-11.0, GARBAGE=-19.7
+
+Per-pair breakdown stable at: CLEAN vs GARBAGE = 100%, LIGHT vs MED = 96%, MED vs HIGH = 90-96% (hardest pair).
+
+### Phase 2: Rating fine-tune (8 evals, 4 epochs)
+
+Corruption performance held. No catastrophic forgetting.
+
+| Metric | Eval 1 | Eval 8 (final) |
+|---|---|---|
+| Pair accuracy | 98.6% | 98.8% |
+| Val loss | 0.019 | 0.016 |
+| Monotonic | Yes | Yes (all 8 evals) |
+
+### Rating correlation (eval on full dataset)
+
+Scored all 10,027 rated charts (8 windows each). Compared model scores vs osu! user ratings.
+
+| Metric | Value | Baseline |
+|---|---|---|
+| Spearman (all charts) | **+0.091** | 0.0 (random) |
+| Spearman (per-beatmapset) | **+0.107** | 0.0 |
+| Pairwise accuracy (rating pairs) | **55.9%** (735/1315) | 50% random, 52% exp 59 formula |
+
+### Verdict
+
+**Corruption detection: excellent.** 98.8% pairwise accuracy, perfect monotonicity, massive score separation (50+ point gap CLEAN to GARBAGE). The model reliably distinguishes structural chart quality.
+
+**Human rating prediction: marginal.** Spearman 0.09 is statistically significant (p=1e-19) but very weak. 55.9% pairwise accuracy beats the exp 59 synthetic formula (52%) but falls short of the 60% target. The model is a strong corruption detector but a weak human preference predictor.
+
+### Why it didn't work better
+
+1. **Rating is per-beatmapset, not per-chart.** All diffs in a set share the same rating. Only 2,489 independent data points, not 10,027.
+2. **Ratings are extremely compressed.** Median 9.29, IQR of 0.74 points (8.88-9.62). The model must learn very fine distinctions in a narrow band.
+3. **Song quality confound.** Despite 16-bin mel bottleneck + audio augmentation, the rating signal is dominated by song popularity/quality, not chart quality.
+4. **Corruption ≠ quality.** The model learned "structurally broken charts are bad" but this doesn't capture what humans actually care about (pattern creativity, musical interpretation, flow).
+
+## Success criteria (reviewed)
+
+| Criterion | Target | Achieved | Status |
+|---|---|---|---|
+| Corruption easy pairs (margin 3-4) | >90% | 98-100% | **Pass** |
+| Corruption hard pairs (margin 1) | >70% | 90-98% | **Pass** |
+| Rating pairwise accuracy | >60% | 55.9% | **Fail** |
+| Score correlates with human pref | Spearman >0.2 | 0.091 | **Fail** |
 
 ## Data notes
 

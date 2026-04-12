@@ -109,6 +109,7 @@ Each folder contains a README with hypothesis, results, and key graphs.
 | 44-E | [Distance Ramp Loss](experiment_44e/) | Complete | 3rd loss component gives gradient everywhere. ~0.2pp adjusted gain, smoother training, +9.5pp STOP precision. Adopted as default (ramp_alpha=2.5) |
 | 64 | [Delta-Encoded Multi-Onset](experiment_64/) | Complete | Delta encoding: o2-o4 +8-16pp over absolute, strict_increasing=100%. AR close=82% but hallucination 21.7%. Metronomic tendency increased |
 | 65-S2 | [Context-Only Predictor](experiment_65_s2/) | **BREAKTHROUGH** | Pure context (no audio): **70.9% HIT** from gap sequences alone. Top-5=90%. S1+S2 union ceiling **92.9%**. Context was always the answer — architecture couldn't extract it |
+| 66-1 | [Pairwise Chart Quality Evaluator](experiment_66_1/) | Complete | Corruption detection excellent (98.8% pair acc, perfect monotonicity). Human rating prediction marginal: Spearman 0.091, 55.9% pairwise (beats exp 59's 52% but misses 60% target). Rating signal too compressed and confounded with song quality |
 
 ## Key Lessons
 
