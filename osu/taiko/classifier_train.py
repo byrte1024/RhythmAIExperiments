@@ -10,6 +10,7 @@ import json
 import random
 import argparse
 import math
+from collections import deque
 import numpy as np
 import torch
 import torch.nn as nn
@@ -1036,6 +1037,11 @@ def train(args):
         epoch_loss = 0.0
         epoch_correct = 0
         epoch_total = 0
+        # rolling window for recent metrics (last 50 batches)
+        recent_losses = deque(maxlen=50)
+        recent_correct = deque(maxlen=50)
+        recent_diffs = deque(maxlen=50)
+        recent_conf = deque(maxlen=50)
 
         n_batches = len(train_loader)
         eval_interval = max(1, n_batches // args.evals_per_epoch)
@@ -1062,13 +1068,32 @@ def train(args):
 
             # tracking
             bs = mel_a.size(0)
-            epoch_loss += loss.item() * bs
-            epoch_correct += (score_a > score_b).float().sum().item()
+            batch_loss = loss.item()
+            with torch.no_grad():
+                diffs = (score_a - score_b).detach()
+                batch_correct = (diffs > 0).float().sum().item()
+                batch_mean_diff = diffs.mean().item()
+                batch_mean_conf = diffs.abs().mean().item()
+
+            epoch_loss += batch_loss * bs
+            epoch_correct += batch_correct
             epoch_total += bs
 
-            pbar.set_postfix(
-                loss=f"{loss.item():.4f}",
-                acc=f"{epoch_correct / max(epoch_total, 1):.1%}",
+            recent_losses.append(batch_loss)
+            recent_correct.append(batch_correct / bs)
+            recent_diffs.append(batch_mean_diff)
+            recent_conf.append(batch_mean_conf)
+
+            # rolling metrics
+            r_loss = sum(recent_losses) / len(recent_losses)
+            r_acc = sum(recent_correct) / len(recent_correct)
+            r_diff = sum(recent_diffs) / len(recent_diffs)
+            r_conf = sum(recent_conf) / len(recent_conf)
+
+            pbar.set_postfix_str(
+                f"loss={r_loss:.4f} acc={r_acc:.1%} "
+                f"diff={r_diff:+.3f} conf={r_conf:.3f} "
+                f"[ep_acc={epoch_correct / max(epoch_total, 1):.1%}]"
             )
 
             # mid-epoch eval
