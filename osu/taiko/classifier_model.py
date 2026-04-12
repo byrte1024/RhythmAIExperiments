@@ -166,7 +166,7 @@ class ChartQualityEvaluator(nn.Module):
             if len(valid_idx) == 0:
                 continue
             tpos = token_pos[b, valid_idx]
-            embs = event_embs[b, valid_idx]
+            embs = event_embs[b, valid_idx].to(x.dtype)
             x[b].scatter_add_(0, tpos.unsqueeze(-1).expand(-1, self.d_model), embs)
 
         # ── transformer ──
