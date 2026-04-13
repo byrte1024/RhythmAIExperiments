@@ -25,7 +25,7 @@ import numpy as np
 import torch
 from tqdm import tqdm
 
-from scipy.stats import spearmanr
+from scipy.stats import spearmanr, pearsonr
 
 from classifier_model import ChartQualityEvaluator
 from analyze_ar import compute_gt_metrics, compute_tn_metrics, compute_pattern_metrics
@@ -193,6 +193,175 @@ def run_eval(model, model_name, songs, ar_csv_dir, device, n_windows=8):
     return results, gt_wins, gen_wins, ties
 
 
+def _save_metric_scatters(results, gen_scores, metric_keys, model_name, regime):
+    """Save scatter plots of gen_score vs each metric with polynomial fits."""
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+
+    # output directory next to the output json
+    plot_dir = os.path.join(SCRIPT_DIR, "experiments", "experiment_66_2", "results", "scatter_plots")
+    os.makedirs(plot_dir, exist_ok=True)
+
+    safe_model = model_name.replace(" ", "_").replace("(", "").replace(")", "")
+    fit_data = {}  # collect all fit results for JSON export
+
+    MAX_DEGREE = 4  # fit poly degrees 1-4
+    FIT_COLORS = {1: "#e74c3c", 2: "#2ecc71", 3: "#9b59b6", 4: "#e67e22"}
+    FIT_LABELS = {1: "linear", 2: "quadratic", 3: "cubic", 4: "quartic"}
+
+    for key, label in metric_keys:
+        vals = [r.get(key) for r in results]
+        if not all(v is not None for v in vals) or len(vals) < 5:
+            continue
+        arr = np.array(vals, dtype=np.float64)
+        if np.std(arr) < 1e-10:
+            continue
+
+        rho_s, p_s = spearmanr(gen_scores, arr)
+        rho_p, p_p = pearsonr(gen_scores, arr)
+
+        fig, ax = plt.subplots(figsize=(9, 6))
+        ax.scatter(arr, gen_scores, alpha=0.6, s=40, c="#3498db", edgecolors="#2c3e50", linewidth=0.5)
+
+        x_fit = np.linspace(arr.min(), arr.max(), 200)
+        metric_fits = {
+            "spearman_rho": float(rho_s), "spearman_p": float(p_s),
+            "pearson_r": float(rho_p), "pearson_p": float(p_p),
+            "n": len(arr),
+            "x_range": [float(arr.min()), float(arr.max())],
+            "y_range": [float(gen_scores.min()), float(gen_scores.max())],
+            "fits": {},
+        }
+
+        resid_by_degree = {}
+        for deg in range(1, MAX_DEGREE + 1):
+            if len(arr) <= deg + 1:
+                continue
+            coeffs = np.polyfit(arr, gen_scores, deg)
+            y_pred = np.polyval(coeffs, arr)
+            residual_mse = float(np.mean((gen_scores - y_pred) ** 2))
+            r_squared = float(1.0 - np.sum((gen_scores - y_pred) ** 2) / np.sum((gen_scores - np.mean(gen_scores)) ** 2))
+            resid_by_degree[deg] = residual_mse
+
+            # improvement over linear
+            improv_vs_linear = 0.0
+            if 1 in resid_by_degree and resid_by_degree[1] > 1e-10:
+                improv_vs_linear = (resid_by_degree[1] - residual_mse) / resid_by_degree[1] * 100
+
+            metric_fits["fits"][FIT_LABELS[deg]] = {
+                "degree": deg,
+                "coefficients": [float(c) for c in coeffs],
+                "mse": residual_mse,
+                "r_squared": r_squared,
+                "improvement_vs_linear_pct": float(improv_vs_linear),
+            }
+
+            style = "--" if deg == 1 else "-"
+            ax.plot(x_fit, np.polyval(coeffs, x_fit), color=FIT_COLORS[deg],
+                    linewidth=2 if deg <= 2 else 1.5, linestyle=style,
+                    label=f"{FIT_LABELS[deg]} (R²={r_squared:.3f})")
+
+        # find best degree by AIC-like criterion (penalize complexity)
+        best_deg = 1
+        best_score = float("inf")
+        for deg, info in metric_fits["fits"].items():
+            # BIC approximation: n*log(mse) + k*log(n)
+            n = len(arr)
+            k = metric_fits["fits"][deg]["degree"] + 1
+            mse = metric_fits["fits"][deg]["mse"]
+            if mse > 0:
+                bic = n * np.log(mse) + k * np.log(n)
+                metric_fits["fits"][deg]["bic"] = float(bic)
+                if bic < best_score:
+                    best_score = bic
+                    best_deg = deg
+        metric_fits["best_fit"] = best_deg
+
+        ax.set_xlabel(label, fontsize=12)
+        ax.set_ylabel("gen_score", fontsize=12)
+
+        sig_s = "***" if p_s < 0.001 else "**" if p_s < 0.01 else "*" if p_s < 0.05 else "ns"
+        sig_p = "***" if p_p < 0.001 else "**" if p_p < 0.01 else "*" if p_p < 0.05 else "ns"
+        ax.set_title(f"gen_score vs {label}\n"
+                     f"Spearman={rho_s:+.3f} ({sig_s}) | Pearson={rho_p:+.3f} ({sig_p}) | "
+                     f"best fit={best_deg}",
+                     fontsize=10)
+        ax.legend(fontsize=8, loc="best")
+        ax.grid(True, alpha=0.3)
+
+        fig.tight_layout()
+        safe_label = label.replace(" ", "_").replace("/", "_").replace("%", "pct").replace("(", "").replace(")", "").replace("<", "lt").replace(">", "gt")
+        fig.savefig(os.path.join(plot_dir, f"{safe_model}_{safe_label}.png"), dpi=120)
+        plt.close(fig)
+
+        fit_data[label] = metric_fits
+
+    # ── combined grid plot ──
+    valid_metrics = [(key, label) for key, label in metric_keys
+                     if all(r.get(key) is not None for r in results)
+                     and np.std([r.get(key, 0) for r in results]) > 1e-10]
+    n_metrics = len(valid_metrics)
+    ncols = 4
+    nrows = (n_metrics + ncols - 1) // ncols
+
+    fig, axes = plt.subplots(nrows, ncols, figsize=(5 * ncols, 4 * nrows))
+    axes = axes.flatten() if n_metrics > 1 else [axes]
+
+    for idx, (key, label) in enumerate(valid_metrics):
+        arr = np.array([r[key] for r in results], dtype=np.float64)
+        ax = axes[idx]
+        ax.scatter(arr, gen_scores, alpha=0.5, s=20, c="#3498db")
+
+        x_fit = np.linspace(arr.min(), arr.max(), 200)
+        for deg in range(1, MAX_DEGREE + 1):
+            if len(arr) <= deg + 1:
+                continue
+            coeffs = np.polyfit(arr, gen_scores, deg)
+            style = "--" if deg == 1 else "-"
+            lw = 1.5 if deg <= 2 else 1.0
+            ax.plot(x_fit, np.polyval(coeffs, x_fit), color=FIT_COLORS[deg],
+                    linewidth=lw, linestyle=style, alpha=0.8 if deg <= 2 else 0.5)
+
+        rho_s, p_s = spearmanr(gen_scores, arr)
+        rho_p, _ = pearsonr(gen_scores, arr)
+        sig = "***" if p_s < 0.001 else "**" if p_s < 0.01 else "*" if p_s < 0.05 else ""
+        best = fit_data.get(label, {}).get("best_fit", "?")
+        ax.set_title(f"{label}\nS={rho_s:+.2f}{sig} P={rho_p:+.2f} best={best}", fontsize=8)
+        ax.set_xlabel(label, fontsize=7)
+        ax.set_ylabel("score", fontsize=7)
+        ax.tick_params(labelsize=6)
+        ax.grid(True, alpha=0.2)
+
+    for i in range(len(valid_metrics), len(axes)):
+        axes[i].set_visible(False)
+
+    fig.suptitle(f"gen_score vs all metrics — {model_name} ({regime})", fontsize=12)
+    fig.tight_layout()
+    fig.savefig(os.path.join(plot_dir, f"{safe_model}_all_metrics.png"), dpi=150)
+    plt.close(fig)
+
+    # ── save fit data JSON ──
+    fit_json_path = os.path.join(plot_dir, f"{safe_model}_fits.json")
+    with open(fit_json_path, "w") as f:
+        json.dump(fit_data, f, indent=2)
+
+    # ── print summary of non-linear relationships ──
+    print(f"\n  Polynomial fit summary (improvement vs linear):")
+    print(f"  {'Metric':<25s} {'linear R²':>10s} {'quad R²':>10s} {'cubic R²':>10s} {'best':>6s} {'quad_improv':>12s}")
+    print(f"  {'-'*25} {'-'*10} {'-'*10} {'-'*10} {'-'*6} {'-'*12}")
+    for label, mf in fit_data.items():
+        fits = mf["fits"]
+        lin_r2 = fits.get("linear", {}).get("r_squared", 0)
+        quad_r2 = fits.get("quadratic", {}).get("r_squared", 0)
+        cub_r2 = fits.get("cubic", {}).get("r_squared", 0)
+        quad_imp = fits.get("quadratic", {}).get("improvement_vs_linear_pct", 0)
+        best = mf.get("best_fit", "?")
+        print(f"  {label:<25s} {lin_r2:10.4f} {quad_r2:10.4f} {cub_r2:10.4f} {best:>6} {quad_imp:+11.1f}%")
+
+    print(f"\n  Scatter plots + fits saved to {plot_dir}/")
+
+
 def print_results(results, gt_wins, gen_wins, ties, model_name, regime):
     total = gt_wins + gen_wins + ties
     print(f"\n{'='*70}")
@@ -238,16 +407,18 @@ def print_results(results, gt_wins, gen_wins, ties, model_name, regime):
 
     gen_scores = np.array([r["gen_score"] for r in results])
     print(f"\nCorrelation of gen_score with AR metrics:")
-    print(f"  {'Metric':<25s} {'Spearman':>10s} {'p-value':>12s} {'Meaning if positive':>30s}")
-    print(f"  {'-'*25} {'-'*10} {'-'*12} {'-'*30}")
+    print(f"  {'Metric':<25s} {'Spearman':>10s} {'p-value':>12s} {'Pearson':>10s} {'p-value':>12s}")
+    print(f"  {'-'*25} {'-'*10} {'-'*12} {'-'*10} {'-'*12}")
     for key, label in metric_keys:
         vals = [r.get(key) for r in results]
         if all(v is not None for v in vals) and len(vals) >= 5:
             arr = np.array(vals, dtype=np.float64)
             if np.std(arr) > 1e-10:
                 rho, p = spearmanr(gen_scores, arr)
+                r_p, p_p = pearsonr(gen_scores, arr)
                 sig = "***" if p < 0.001 else "**" if p < 0.01 else "*" if p < 0.05 else ""
-                print(f"  {label:<25s} {rho:+10.3f} {p:12.2e} {sig:>3s}")
+                sig_p = "***" if p_p < 0.001 else "**" if p_p < 0.01 else "*" if p_p < 0.05 else ""
+                print(f"  {label:<25s} {rho:+10.3f} {p:12.2e} {sig:>3s} {r_p:+10.3f} {p_p:12.2e} {sig_p:>3s}")
 
     # same for gt_score - gen_score diff
     diffs_arr = np.array(diffs)
@@ -262,6 +433,9 @@ def print_results(results, gt_wins, gen_wins, ties, model_name, regime):
                 rho, p = spearmanr(diffs_arr, arr)
                 sig = "***" if p < 0.001 else "**" if p < 0.01 else "*" if p < 0.05 else ""
                 print(f"  {label:<25s} {rho:+10.3f} {p:12.2e} {sig:>3s}")
+
+    # ── scatter plots: gen_score vs each metric ──
+    _save_metric_scatters(results, gen_scores, metric_keys, model_name, regime)
 
     # per-song breakdown
     results_sorted = sorted(results, key=lambda r: r["diff"], reverse=True)
