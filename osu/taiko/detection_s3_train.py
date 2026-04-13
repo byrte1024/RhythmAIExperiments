@@ -248,6 +248,131 @@ def compute_metrics(all_logits, all_targets, thresholds=[0.3, 0.4, 0.5, 0.6, 0.7
     return m
 
 
+def compute_conditional_metrics(s3_logits, targets, s1_confs, s2_confs, thresh=0.5):
+    """Compute S3 performance conditioned on S1/S2 agreement patterns."""
+    s3_conf = torch.sigmoid(s3_logits)
+    tgt = (targets >= 0.5).float()
+    s1_pos = (s1_confs >= thresh).float()
+    s2_pos = (s2_confs >= thresh).float()
+    s3_pos = (s3_conf >= thresh).float()
+
+    m = {}
+
+    # 4 quadrants based on S1/S2 agreement
+    both_pos = (s1_pos == 1) & (s2_pos == 1)
+    s1_only = (s1_pos == 1) & (s2_pos == 0)
+    s2_only = (s1_pos == 0) & (s2_pos == 1)
+    both_neg = (s1_pos == 0) & (s2_pos == 0)
+
+    for label, mask in [("both_agree", both_pos), ("s1_only", s1_only),
+                        ("s2_only", s2_only), ("both_miss", both_neg)]:
+        n = mask.sum().item()
+        if n > 0:
+            # S3's performance on this subset
+            tp = (s3_pos[mask] * tgt[mask]).sum().item()
+            fp = (s3_pos[mask] * (1 - tgt[mask])).sum().item()
+            fn = ((1 - s3_pos[mask]) * tgt[mask]).sum().item()
+            p = tp / (tp + fp + 1e-8)
+            r = tp / (tp + fn + 1e-8)
+            f1 = 2 * p * r / (p + r + 1e-8)
+            onset_rate = tgt[mask].mean().item()
+            m[f"cond_{label}_n"] = n
+            m[f"cond_{label}_onset_rate"] = onset_rate
+            m[f"cond_{label}_s3_f1"] = f1
+            m[f"cond_{label}_s3_prec"] = p
+            m[f"cond_{label}_s3_rec"] = r
+            # Did S3 improve over simple voting?
+            # For both_pos: baseline = accept all (prec = onset_rate)
+            # For both_neg: baseline = reject all (rec = 0)
+            m[f"cond_{label}_s3_accept_rate"] = float(s3_pos[mask].mean())
+
+    # S3 recovery rate: of onset bins both S1+S2 missed, how many does S3 find?
+    both_miss_onset = both_neg & (tgt == 1)
+    n_both_miss_onset = both_miss_onset.sum().item()
+    if n_both_miss_onset > 0:
+        s3_recovered = s3_pos[both_miss_onset].sum().item()
+        m["recovery_rate"] = s3_recovered / n_both_miss_onset
+        m["recovery_n"] = int(s3_recovered)
+        m["both_miss_onset_n"] = n_both_miss_onset
+
+    # S3 override quality: when S3 disagrees with the S1/S2 consensus
+    # Consensus = both positive → S3 suppresses (false positive filtering)
+    both_pos_s3_neg = both_pos & (s3_pos == 0)
+    if both_pos_s3_neg.sum() > 0:
+        suppress_correct = (tgt[both_pos_s3_neg] == 0).float().mean().item()
+        m["suppress_correct_rate"] = suppress_correct
+        m["suppress_n"] = int(both_pos_s3_neg.sum())
+
+    # Consensus = both negative → S3 activates (recovery attempt)
+    both_neg_s3_pos = both_neg & (s3_pos == 1)
+    if both_neg_s3_pos.sum() > 0:
+        activate_correct = (tgt[both_neg_s3_pos] == 1).float().mean().item()
+        m["activate_correct_rate"] = activate_correct
+        m["activate_n"] = int(both_neg_s3_pos.sum())
+
+    return m
+
+
+def run_benchmarks(s1_model, s2_model, s3_model, val_loader, device):
+    """Run ablation benchmarks: no_s1, no_s2, no_s1s2."""
+    s3_model.eval()
+    thresholds = [0.3, 0.4, 0.5, 0.6, 0.7]
+
+    benchmarks = {
+        "normal": {},         # standard S1+S2v2
+        "no_s1": {},          # zero S1 confidence
+        "no_s2": {},          # zero S2v2 confidence
+        "no_s1s2": {},        # zero both
+        "random_s1": {},      # random S1 confidence
+        "random_s2": {},      # random S2v2 confidence
+    }
+
+    for bench_name in benchmarks:
+        all_logits = []
+        all_targets = []
+
+        with torch.no_grad():
+            for mel, gaps, ratios, s2_mask, evt_off, evt_mask, cond, targets in val_loader:
+                mel = mel.to(device)
+                gaps, ratios, s2_mask, cond = gaps.to(device), ratios.to(device), s2_mask.to(device), cond.to(device)
+                evt_off, evt_mask = evt_off.to(device), evt_mask.to(device)
+
+                # Normal S1/S2v2 forward
+                s1_logits = s1_model(mel)
+                s1_conf = torch.sigmoid(s1_logits)
+                audio_feat = s1_model.conv(mel).transpose(1, 2)
+                audio_feat = s1_model.conv_norm(audio_feat)
+
+                s2_logits = s2_model(gaps, ratios, s2_mask, cond)
+                s2_conf = torch.sigmoid(s2_logits)
+
+                # Apply benchmark corruption
+                if bench_name == "no_s1":
+                    s1_conf = torch.zeros_like(s1_conf)
+                elif bench_name == "no_s2":
+                    s2_conf = torch.zeros_like(s2_conf)
+                elif bench_name == "no_s1s2":
+                    s1_conf = torch.zeros_like(s1_conf)
+                    s2_conf = torch.zeros_like(s2_conf)
+                elif bench_name == "random_s1":
+                    s1_conf = torch.rand_like(s1_conf)
+                elif bench_name == "random_s2":
+                    s2_conf = torch.rand_like(s2_conf)
+
+                final_logits, _ = s3_model(audio_feat, s1_conf, s2_conf,
+                                            evt_off, evt_mask, cond)
+                all_logits.append(final_logits.cpu())
+                all_targets.append(targets.cpu())
+
+        logits = torch.cat(all_logits)
+        targets = torch.cat(all_targets)
+        m = compute_metrics(logits, targets)
+        best_f1 = max(m.get(f"f1_{t:.1f}", 0) for t in thresholds)
+        benchmarks[bench_name] = {"best_f1": best_f1, "metrics": m}
+
+    return benchmarks
+
+
 def save_eval_graphs(all_logits, all_targets, aux_logits_list, metrics, eval_step, run_dir):
     import matplotlib
     matplotlib.use("Agg")
@@ -337,6 +462,8 @@ def validate(s1_model, s2_model, s3_model, val_loader, device, focal_gamma, pos_
     n_batches = 0
     all_logits = []
     all_targets = []
+    all_s1_confs = []
+    all_s2_confs = []
     all_aux = [[] for _ in range(3)]
 
     bce_pos = torch.tensor([pos_weight], device=device)
@@ -351,10 +478,8 @@ def validate(s1_model, s2_model, s3_model, val_loader, device, focal_gamma, pos_
             # Run frozen S1
             s1_logits = s1_model(mel)
             s1_conf = torch.sigmoid(s1_logits)
-            # Extract audio features from S1's conv stem
-            with torch.no_grad():
-                audio_feat = s1_model.conv(mel).transpose(1, 2)
-                audio_feat = s1_model.conv_norm(audio_feat)
+            audio_feat = s1_model.conv(mel).transpose(1, 2)
+            audio_feat = s1_model.conv_norm(audio_feat)
 
             # Run frozen S2v2
             s2_logits = s2_model(gaps, ratios, s2_mask, cond)
@@ -364,7 +489,7 @@ def validate(s1_model, s2_model, s3_model, val_loader, device, focal_gamma, pos_
             final_logits, aux_logits = s3_model(audio_feat, s1_conf, s2_conf,
                                                  evt_off, evt_mask, cond)
 
-            # Loss (average over decoder layers)
+            # Loss
             loss = 0
             for aux in aux_logits:
                 bce = F.binary_cross_entropy_with_logits(aux, targets, pos_weight=bce_pos, reduction="none")
@@ -378,16 +503,24 @@ def validate(s1_model, s2_model, s3_model, val_loader, device, focal_gamma, pos_
             n_batches += 1
             all_logits.append(final_logits.cpu())
             all_targets.append(targets.cpu())
+            all_s1_confs.append(s1_conf.cpu())
+            all_s2_confs.append(s2_conf.cpu())
             for li, aux in enumerate(aux_logits):
                 all_aux[li].append(aux.cpu())
 
     val_loss = total_loss / max(n_batches, 1)
     all_logits = torch.cat(all_logits)
     all_targets = torch.cat(all_targets)
+    all_s1 = torch.cat(all_s1_confs)
+    all_s2 = torch.cat(all_s2_confs)
     all_aux = [torch.cat(a) for a in all_aux]
     metrics = compute_metrics(all_logits, all_targets)
 
-    return val_loss, metrics, all_logits, all_targets, all_aux
+    # Conditional metrics: S3 performance based on S1/S2 agreement
+    cond_metrics = compute_conditional_metrics(all_logits, all_targets, all_s1, all_s2)
+    metrics.update(cond_metrics)
+
+    return val_loss, metrics, all_logits, all_targets, all_aux, all_s1, all_s2
 
 
 def load_frozen_s1(ckpt_path, device):
@@ -609,7 +742,7 @@ def main():
                 eval_step += 1
                 train_loss = epoch_loss / max(n_steps, 1)
 
-                val_loss, val_metrics, val_logits, val_targets, val_aux = validate(
+                val_loss, val_metrics, val_logits, val_targets, val_aux, val_s1, val_s2 = validate(
                     s1_model, s2_model, s3_model, val_loader, args.device,
                     focal_gamma, args.pos_weight)
 
@@ -626,10 +759,28 @@ def main():
                     lf1 = max(lm.get(f"f1_{t:.1f}", 0) for t in [0.3, 0.4, 0.5, 0.6, 0.7])
                     layer_f1s.append(lf1)
 
+                # Conditional metrics summary
+                recovery = val_metrics.get("recovery_rate", 0)
+                ba_f1 = val_metrics.get("cond_both_agree_s3_f1", 0)
+                s1o_f1 = val_metrics.get("cond_s1_only_s3_f1", 0)
+                s2o_f1 = val_metrics.get("cond_s2_only_s3_f1", 0)
+                bm_f1 = val_metrics.get("cond_both_miss_s3_f1", 0)
+
                 print(f"\n  Eval {eval_step} (ep {epoch_frac:.2f}): "
                       f"loss={train_loss:.4f}/{val_loss:.4f} | "
                       f"F1={best_f1:.3f}@{best_t} sep={sep:.4f} "
                       f"layers=[{', '.join(f'{f:.3f}' for f in layer_f1s)}]")
+                print(f"    Conditional: agree={ba_f1:.3f} s1only={s1o_f1:.3f} s2only={s2o_f1:.3f} "
+                      f"both_miss={bm_f1:.3f} recovery={recovery:.1%}")
+
+                # Run benchmarks every 4 evals
+                bench_results = None
+                if eval_step % 4 == 0:
+                    print("    Running benchmarks...")
+                    bench_results = run_benchmarks(s1_model, s2_model, s3_model,
+                                                    val_loader, args.device)
+                    for bname, bdata in bench_results.items():
+                        print(f"      {bname:<12}: F1={bdata['best_f1']:.3f}")
 
                 save_eval_graphs(val_logits, val_targets, val_aux, val_metrics, eval_step, run_dir)
 
@@ -643,6 +794,8 @@ def main():
                                     for k, v in val_metrics.items()},
                     "layer_f1s": [round(f, 4) for f in layer_f1s],
                 }
+                if bench_results:
+                    entry["benchmarks"] = {k: round(v["best_f1"], 4) for k, v in bench_results.items()}
                 history.append(entry)
                 with open(os.path.join(run_dir, "history.json"), "w") as f:
                     json.dump(history, f, indent=2)
