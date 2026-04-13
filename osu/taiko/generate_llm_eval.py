@@ -240,27 +240,28 @@ def encode_visual_rhythm(events_ms):
     gaps = np.diff(events_ms)
     if len(gaps) == 0:
         return "No gaps."
-    # each character = 25ms, X = note, . = silence
-    lines = []
-    resolution_ms = 25
+    # resolution: 50ms per char covers a 3-min song in ~3600 chars (~45 lines of 80)
+    resolution_ms = 50
     total_ms = events_ms[-1] - events_ms[0]
-    n_chars = min(int(total_ms / resolution_ms), 200)  # cap at 200 chars per line
+    n_chars = int(total_ms / resolution_ms) + 1
 
     # build grid
-    grid = ['.'] * (n_chars + 1)
+    grid = ['.'] * n_chars
     for t in events_ms:
         idx = int((t - events_ms[0]) / resolution_ms)
         if 0 <= idx < len(grid):
             grid[idx] = 'X'
 
-    # split into 80-char lines
+    # split into 100-char lines
     grid_str = ''.join(grid)
-    for i in range(0, len(grid_str), 80):
+    lines = []
+    line_width = 100
+    for i in range(0, len(grid_str), line_width):
         time_s = (i * resolution_ms + events_ms[0]) / 1000
-        lines.append(f"[{time_s:6.1f}s] {grid_str[i:i+80]}")
+        lines.append(f"[{time_s:6.1f}s] {grid_str[i:i+line_width]}")
 
-    return f"Visual rhythm (X=note, .=silence, each char={resolution_ms}ms):\n" + \
-           "\n".join(lines[:30])  # cap at 30 lines
+    return f"Visual rhythm (X=note, .=silence, each char={resolution_ms}ms, full song):\n" + \
+           "\n".join(lines)
 
 
 def encode_stats_only(events_ms):
@@ -578,9 +579,16 @@ In taiko, notes appear on a timeline synced to music. A good chart:
 You will be given multiple charts for the SAME song.
 Rank them from best to worst. Explain your reasoning briefly."""
 
-TASK_WITH_AUDIO = """Listen to the attached audio file, then evaluate each chart below.
-The charts are different AI-generated rhythm game note placements for this song.
-Rank them from best (most musical, best aligned with audio) to worst.
+TASK_WITH_AUDIO = """IMPORTANT: First, carefully listen to the attached audio file. Pay attention to:
+- Where the beats, drums, and rhythmic accents are
+- The song's energy curve (verse vs chorus, builds and drops)
+- The tempo and time signature
+
+Then evaluate each chart below. Each chart is a list of time gaps (in milliseconds) between consecutive notes placed by an AI rhythm game chart generator. Your job is to judge how well each chart's note placements align with the actual music you heard.
+
+A good chart places notes ON the beats and accents in the audio. A bad chart places notes at regular intervals regardless of what the music is doing, or misses obvious rhythmic moments.
+
+Rank them from best (most musical, best aligned with what you heard) to worst.
 
 Song: {song_name}
 """
@@ -621,7 +629,9 @@ def generate_prompts(song, output_dir, encoding_name, encoding_label, encode_fn)
         TASK_WITH_AUDIO.format(song_name=song["name"]) +
         f"\nChart encoding: {encoding_label}\n" +
         charts_text +
-        f"\n\nRank the charts from best to worst (e.g., {' > '.join(reversed(labels))}). Explain briefly."
+        f"\n\nBefore ranking, FIRST analyze the audio content of the attached .mp3 file — describe the rhythm, beats, tempo, and energy. "
+        f"Then compare each chart's gap patterns against what you heard. "
+        f"Finally, rank the charts from best to worst (e.g., {' > '.join(reversed(labels))})."
     )
 
     # no-audio prompt

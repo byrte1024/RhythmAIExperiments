@@ -37,16 +37,16 @@ def copy_to_clipboard(text):
 
 
 def read_multiline(prompt_text):
-    """Read multiline input until empty line."""
+    """Read multiline input. Type END on its own line to finish."""
     print(prompt_text)
-    print("  (paste response, then press Enter on an empty line to finish)")
+    print("  (paste response, then type END on its own line and press Enter)")
     lines = []
     while True:
         try:
             line = input()
         except EOFError:
             break
-        if line == "" and lines:
+        if line.strip() == "END":
             break
         lines.append(line)
     return "\n".join(lines)
@@ -60,6 +60,8 @@ def main():
     parser.add_argument("--songs", default="both", choices=["42ar", "53ar", "both"])
     parser.add_argument("--llm-eval-dir", default="llm_eval", help="LLM eval directory")
     parser.add_argument("--skip-existing", action="store_true", help="Skip songs with existing responses")
+    parser.add_argument("--overwrite", action="store_true", help="Overwrite existing responses without asking")
+    parser.add_argument("--models", default="gpt4o,claude,gemini", help="Comma-separated list of models to collect")
     args = parser.parse_args()
 
     if not args.audio and not args.no_audio:
@@ -98,7 +100,7 @@ def main():
         print(f"\n  NOTE: Upload the audio.mp3 from each song folder")
         print(f"  to the audio-capable models BEFORE pasting the prompt.\n")
 
-    models = ["gpt4o", "claude", "gemini"]
+    models = [m.strip() for m in args.models.split(",")]
     results_collected = 0
 
     for song_idx, song_dir in enumerate(song_dirs):
@@ -160,7 +162,7 @@ def main():
             resp_path = response_files[model]
 
             # check existing
-            if os.path.exists(resp_path) and os.path.getsize(resp_path) > 0:
+            if not args.overwrite and os.path.exists(resp_path) and os.path.getsize(resp_path) > 0:
                 with open(resp_path, "r", encoding="utf-8") as f:
                     existing = f.read().strip()
                 if existing:

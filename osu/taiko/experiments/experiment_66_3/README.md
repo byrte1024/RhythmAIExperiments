@@ -110,6 +110,69 @@ Then manually upload audio + paste prompts to each LLM.
 - 42-AR (large gaps) should be easier than 53-AR (subtle differences), same pattern as our neural evaluator
 - Raw gap sequences (01) will probably fail — LLMs can't parse 500+ numbers meaningfully
 
-## Result
+## Results
 
-*(manual testing in progress)*
+### Encoding 01: Raw gap sequence (ms), no audio
+
+The hardest test — just comma-separated millisecond gap values, no audio, no preprocessing.
+
+| Model | #1 match | Pairwise | Notes |
+|---|---|---|---|
+| **GPT-4o** | **4/10 (40%)** | **51.1%** | Above baseline on both. Perfect 6/6 on 53-AR song 02 |
+| Claude Opus 4.6 | 1/10 (10%) | 42.2% | Below random |
+| Gemini 2.5 Pro | 0/7 (0%) | 44.4% | Below random, hit context limits on some songs |
+
+GPT-4o is the clear winner from raw numbers alone — it independently identified metronomic patterns ("539, 539, 1067 repeated dozens of times"), structural contrast, and even estimated BPM correctly on 42-AR songs.
+
+**Per-dataset:**
+- 42-AR (3 models, large quality gaps): GPT-4o 2/5 #1, Claude 1/5, Gemini 0/5
+- 53-AR (4 models, subtle differences): GPT-4o **2/5 #1** with one perfect match (song 02: 6/6 pairwise). Claude 0/5.
+
+**vs Neural evaluator (66-2):**
+- 42-AR: 66-2 got perfect Spearman +1.0 (better than all LLMs)
+- 53-AR: 66-2 got Spearman -0.8 (worse than random). GPT-4o did better here — it can extract quality signal from pattern structure that our trained model misses
+
+**Key observations from LLM reasoning:**
+- All three LLMs correctly identified B (exp35c) as worst on 42-AR song 1 due to "539, 539, 1067" metronomic loop
+- GPT-4o showed strongest ability to reason about pattern variety and structural arcs
+- Claude gave detailed musical analysis but ranked incorrectly more often
+- Gemini estimated BPM and genre correctly but couldn't translate that into quality ranking
+
+### Encoding 07: Stats only, no audio
+
+Pre-digested summary statistics (density, gap_cv, metro streak, gap histogram, etc.) — no temporal sequence.
+
+| Model | #1 match | Pairwise |
+|---|---|---|
+| GPT-4o | 1/10 (10%) | 40.0% |
+| Claude | 1/10 (10%) | 42.2% |
+
+**Worse than raw gaps for GPT-4o** (40% → 10% #1, 51% → 40% pairwise). Both models give identical rankings — they see the same summary numbers and draw the same wrong conclusions. The stats encoding loses temporal structure. GPT-4o succeeded on raw gaps by detecting *sequential repetition patterns* (the "539, 539, 1067" loop) — invisible in aggregate stats.
+
+Key insight: **sequential pattern is more informative than aggregate statistics.** Our neural evaluator also compresses into aggregates — this may explain why it fails on subtle differences too.
+
+### Encoding 14: Musical shorthand (♩♪♬), no audio
+
+Gaps converted to note duration symbols (quarter, eighth, sixteenth).
+
+| Model | #1 match | Pairwise |
+|---|---|---|
+| GPT-4o | 1/10 (10%) | 26.7% |
+| Claude | 1/10 (10%) | 28.9% |
+
+**Worst encoding — below random.** Both models consistently prefer exp35c (human worst) on 42-AR. The symbolic abstraction equates "more diverse symbols" with quality, when the actual diversity comes from erratic timing. Removing the exact millisecond values destroys the signal.
+
+### Cross-encoding comparison (no audio)
+
+| Encoding | GPT-4o #1 | GPT-4o pw | Claude #1 | Claude pw |
+|---|---|---|---|---|
+| **01 raw gaps (ms)** | **4/10 (40%)** | **51.1%** | 1/10 (10%) | 42.2% |
+| 07 stats only | 1/10 (10%) | 40.0% | 1/10 (10%) | 42.2% |
+| 14 musical shorthand | 1/10 (10%) | 26.7% | 1/10 (10%) | 28.9% |
+| *Random baseline* | *25-33%* | *50%* | *25-33%* | *50%* |
+
+**More abstraction = worse performance.** GPT-4o needs the actual sequential patterns. Claude is roughly constant across encodings — it may not be able to extract quality signal from gap data regardless of format.
+
+### Emerging pattern
+
+GPT-4o on raw gap sequences is the only combination that reliably beats random. It appears to be pattern-matching on the literal number repetitions in the sequence — a capability that abstractions and summaries destroy.
