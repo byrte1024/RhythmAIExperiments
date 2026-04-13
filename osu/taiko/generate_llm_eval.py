@@ -575,7 +575,7 @@ In taiko, notes appear on a timeline synced to music. A good chart:
 - Avoids "metronomic" behavior (constant same-gap repetition is bad)
 - Avoids hallucinations (notes where there's no musical reason for one)
 
-You will be given multiple charts (labeled A, B, C, D) for the SAME song.
+You will be given multiple charts for the SAME song.
 Rank them from best to worst. Explain your reasoning briefly."""
 
 TASK_WITH_AUDIO = """Listen to the attached audio file, then evaluate each chart below.
@@ -621,7 +621,7 @@ def generate_prompts(song, output_dir, encoding_name, encoding_label, encode_fn)
         TASK_WITH_AUDIO.format(song_name=song["name"]) +
         f"\nChart encoding: {encoding_label}\n" +
         charts_text +
-        "\n\nRank the charts from best to worst (e.g., B > D > A > C). Explain briefly."
+        f"\n\nRank the charts from best to worst (e.g., {' > '.join(reversed(labels))}). Explain briefly."
     )
 
     # no-audio prompt
@@ -630,7 +630,7 @@ def generate_prompts(song, output_dir, encoding_name, encoding_label, encode_fn)
         TASK_NO_AUDIO.format(song_name=song["name"]) +
         f"\nChart encoding: {encoding_label}\n" +
         charts_text +
-        "\n\nRank the charts from best to worst (e.g., B > D > A > C). Explain briefly."
+        f"\n\nRank the charts from best to worst (e.g., {' > '.join(reversed(labels))}). Explain briefly."
     )
 
     enc_dir = os.path.join(output_dir, song["id"], encoding_name)

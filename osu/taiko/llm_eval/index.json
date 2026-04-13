@@ -1,0 +1,232 @@
+{
+  "songs": [
+    {
+      "id": "53ar_01",
+      "name": "Arashi - Five",
+      "models": [
+        "exp14",
+        "exp44",
+        "exp45",
+        "exp53"
+      ],
+      "human_ranking": "exp45 > exp44 > exp53 > exp14 (global)",
+      "n_charts": 4
+    },
+    {
+      "id": "53ar_02",
+      "name": "Sakurazaka46 - Growing Up Train",
+      "models": [
+        "exp14",
+        "exp44",
+        "exp45",
+        "exp53"
+      ],
+      "human_ranking": "exp45 > exp44 > exp53 > exp14 (global)",
+      "n_charts": 4
+    },
+    {
+      "id": "53ar_03",
+      "name": "Camellia - Denkoh Sekka",
+      "models": [
+        "exp14",
+        "exp44",
+        "exp45",
+        "exp53"
+      ],
+      "human_ranking": "exp45 > exp44 > exp53 > exp14 (global)",
+      "n_charts": 4
+    },
+    {
+      "id": "53ar_04",
+      "name": "REDALiCE x t+pazolite - Xterfusion",
+      "models": [
+        "exp14",
+        "exp44",
+        "exp45",
+        "exp53"
+      ],
+      "human_ranking": "exp45 > exp44 > exp53 > exp14 (global)",
+      "n_charts": 4
+    },
+    {
+      "id": "53ar_05",
+      "name": "Courtney Barnett - Stay in Your Lane",
+      "models": [
+        "exp14",
+        "exp44",
+        "exp45",
+        "exp53"
+      ],
+      "human_ranking": "exp45 > exp44 > exp53 > exp14 (global)",
+      "n_charts": 4
+    },
+    {
+      "id": "42ar_Alex_Warren_-_Ordinary_(Offici",
+      "name": "Alex Warren - Ordinary (Official Video)",
+      "models": [
+        "exp14",
+        "exp35c",
+        "exp42"
+      ],
+      "human_ranking": "exp14 > exp42 > exp35c (global)",
+      "n_charts": 3
+    },
+    {
+      "id": "42ar_Equiloud_-_Time_Machine",
+      "name": "Equiloud - Time Machine",
+      "models": [
+        "exp14",
+        "exp35c",
+        "exp42"
+      ],
+      "human_ranking": "exp14 > exp42 > exp35c (global)",
+      "n_charts": 3
+    },
+    {
+      "id": "42ar_Medalist_Season_2_OP_\u29f8_Opening",
+      "name": "Medalist Season 2 OP \u29f8 Opening Cold Night by HANA [4K 60FPS]",
+      "models": [
+        "exp14",
+        "exp35c",
+        "exp42"
+      ],
+      "human_ranking": "exp14 > exp42 > exp35c (global)",
+      "n_charts": 3
+    },
+    {
+      "id": "42ar_RoccoW_-_Chipper_Choices",
+      "name": "RoccoW - Chipper Choices",
+      "models": [
+        "exp14",
+        "exp35c",
+        "exp42"
+      ],
+      "human_ranking": "exp14 > exp42 > exp35c (global)",
+      "n_charts": 3
+    },
+    {
+      "id": "42ar_Sabrina_Carpenter_-_Manchild_(",
+      "name": "Sabrina Carpenter - Manchild (Official Video)",
+      "models": [
+        "exp14",
+        "exp35c",
+        "exp42"
+      ],
+      "human_ranking": "exp14 > exp42 > exp35c (global)",
+      "n_charts": 3
+    }
+  ],
+  "encodings": [
+    {
+      "name": "01_raw_gaps_ms",
+      "label": "Raw gap sequence (ms)",
+      "for_audio_models": true,
+      "for_text_models": true
+    },
+    {
+      "name": "02_onset_times",
+      "label": "Onset times (seconds)",
+      "for_audio_models": true,
+      "for_text_models": true
+    },
+    {
+      "name": "03_gap_ratios",
+      "label": "Consecutive gap ratios",
+      "for_audio_models": true,
+      "for_text_models": true
+    },
+    {
+      "name": "04_beat_fractions",
+      "label": "Gaps as beat fractions",
+      "for_audio_models": true,
+      "for_text_models": true
+    },
+    {
+      "name": "05_run_length",
+      "label": "Run-length encoded gaps",
+      "for_audio_models": true,
+      "for_text_models": true
+    },
+    {
+      "name": "06_visual_rhythm",
+      "label": "Visual text-art rhythm",
+      "for_audio_models": true,
+      "for_text_models": true
+    },
+    {
+      "name": "07_stats_only",
+      "label": "Statistical summary only",
+      "for_audio_models": true,
+      "for_text_models": true
+    },
+    {
+      "name": "08_density_curve",
+      "label": "Density over time",
+      "for_audio_models": true,
+      "for_text_models": true
+    },
+    {
+      "name": "09_pattern_annotated",
+      "label": "Pattern-annotated sequence",
+      "for_audio_models": true,
+      "for_text_models": true
+    },
+    {
+      "name": "10_time_grid",
+      "label": "Beat-aligned time grid",
+      "for_audio_models": true,
+      "for_text_models": true
+    },
+    {
+      "name": "11_section_summary",
+      "label": "Per-section summary",
+      "for_audio_models": true,
+      "for_text_models": true
+    },
+    {
+      "name": "12_gap_histogram",
+      "label": "Gap distribution histogram",
+      "for_audio_models": true,
+      "for_text_models": true
+    },
+    {
+      "name": "13_acceleration",
+      "label": "Tempo acceleration/deceleration",
+      "for_audio_models": true,
+      "for_text_models": true
+    },
+    {
+      "name": "14_musical_shorthand",
+      "label": "Musical shorthand notation",
+      "for_audio_models": true,
+      "for_text_models": true
+    },
+    {
+      "name": "15_grid_alignment",
+      "label": "Grid alignment analysis",
+      "for_audio_models": true,
+      "for_text_models": true
+    },
+    {
+      "name": "16_combined_report",
+      "label": "Combined structured report",
+      "for_audio_models": true,
+      "for_text_models": true
+    }
+  ],
+  "recommended_tests": {
+    "with_audio_models": [
+      "Start with 07_stats_only or 16_combined_report \u2014 gives the LLM structured info to reason about alongside audio",
+      "Try 06_visual_rhythm \u2014 visual pattern the LLM can 'see'",
+      "Try 01_raw_gaps_ms \u2014 raw numbers, baseline for how well the model reads numeric data",
+      "Try 14_musical_shorthand \u2014 closest to symbolic music notation"
+    ],
+    "text_only_models": [
+      "Start with 16_combined_report \u2014 most information",
+      "Try 07_stats_only \u2014 can it rank from statistics alone?",
+      "Try 09_pattern_annotated \u2014 highlights metronomic sections",
+      "Try 11_section_summary \u2014 temporal quality variation"
+    ],
+    "quick_test": "Use 07_stats_only on one song with audio. If the LLM gets the ranking right, try harder encodings."
+  }
+}
