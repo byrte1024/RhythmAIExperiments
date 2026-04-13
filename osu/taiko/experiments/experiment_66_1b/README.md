@@ -59,4 +59,60 @@ Runs all three steps: AR inference → quality scoring → cross-model summary.
 
 ## Result
 
-*(awaiting results)*
+### GT vs Generated: model reliably prefers real charts
+
+| Exp | P1 GT win% | P1 Diff | P2 GT win% | P2 Diff |
+|---|---|---|---|---|
+| 14 | 90.0% | +8.51 | 93.3% | +7.07 |
+| 45 | 93.3% | +9.47 | 90.0% | +8.41 |
+| 58 | 93.3% | +8.43 | 93.3% | +7.83 |
+| 62 | 96.7% | +14.46 | 93.3% | +13.13 |
+
+GT scores higher in 90-97% of songs. The model is a reliable real-vs-generated discriminator. P1 and P2 perform similarly.
+
+### Generator ranking: WRONG
+
+| Exp | Per-sample HIT% | P1 gen_score | Expected rank |
+|---|---|---|---|
+| 14 | 69.0% | +6.83 | 4th (worst) |
+| 58 | 74.6% | +6.90 | 2nd |
+| 45 | 73.6% | +5.87 | 3rd |
+| 62 | 74.9% | **+0.88** | **1st (best)** |
+
+The evaluator ranks exp 62 (our best generator) as producing the **worst** charts. Exp 14 (audio-only baseline) scores higher than exp 62. The ranking is backwards.
+
+### Why: the model thinks metronomic = good
+
+Correlation of P1 gen_score with AR metrics (pooled across all 4 experiments, n=120):
+
+| Metric | Spearman | Significance | Problem |
+|---|---|---|---|
+| **metro_streak** | **+0.312** | p=5e-4 *** | Higher score = MORE metronomic. **Backwards.** |
+| **DCHuman** | **-0.262** | p=4e-3 ** | Higher score = worse human match. **Backwards.** |
+| **gap_std** | **-0.251** | p=6e-3 ** | Higher score = less variety. **Backwards.** |
+| **gap_entropy** | **-0.194** | p=0.03 * | Higher score = less entropy. **Backwards.** |
+| close_rate | +0.188 | p=0.04 * | Correct direction, weak |
+| density | +0.193 | p=0.03 * | Higher = denser |
+
+The corruption training taught: GARBAGE (random) is bad, CLEAN (structured) is good. The model generalized this to: **regularity = quality**. But real chart quality is an inverted U — too regular (metronomic) is just as bad as too random (noise).
+
+Exp 62 scores lowest because it has the highest pattern diversity (metro_streak=12.9, dominant_gap_pct=47%, P-Space=12.4). The evaluator penalizes exactly what makes it good.
+
+### GT matching detail
+
+| Exp | close% | hall% | d_ratio | gap_cv | metro_streak | dom_gap% |
+|---|---|---|---|---|---|---|
+| 14 | 70.6% | 16.6% | 0.87 | 0.705 | 25.7 | 51.1% |
+| 45 | 68.0% | 15.6% | 0.81 | 0.699 | 18.2 | 49.1% |
+| 58 | 75.9% | 15.6% | 0.92 | 0.690 | 15.5 | 48.6% |
+| 62 | 75.0% | 15.9% | 0.97 | 0.712 | 12.9 | 47.0% |
+
+Exp 62 has the best density_ratio (0.97) and lowest metro_streak (12.9) — it's the most human-like generator. But the evaluator scores it lowest.
+
+### P1 vs P2: no meaningful difference
+
+Rating fine-tuning (P2) barely changed behavior. Same orderings, similar win rates. The noisy rating signal didn't overcome the corruption bias.
+
+## Lesson
+
+**Unidirectional corruption creates a regularity bias.** Training only on CLEAN → RANDOM teaches "structured = good" which is the opposite of what makes charts creative. The evaluator needs bidirectional corruption — both "too random" AND "too metronomic" should score lower than real charts. This is the motivation for exp 66-2.
