@@ -314,3 +314,22 @@ S2 cannot run autoregressive inference alone. With zero context at the start of 
 6. **The confidence separation (0.109) means S3 can trust S2 selectively.** When S2 is confident, it's more likely correct. S3 can learn to weight S2's signal higher when S2's entropy is low.
 
 7. **The architecture bottleneck is confirmed.** Our current models don't lack the data or the training — they lack the architecture to extract context signal. A separate 4.9M param context model extracts more than a 23.5M param joint model ever did.
+
+### Overlap V2: Per-Bin Comparison (S1 Conformer vs S2 GRU)
+
+Ran both the new dedicated S1 (ConformerProposer, 29.6M, per-bin sigmoid) and S2 (ContextPredictor, 4.9M, 251-class softmax → per-bin conversion) on 100K val samples.
+
+| Model | Best F1 | Best Threshold | Onset Conf | Non-Onset Conf | Separation |
+|---|---|---|---|---|---|
+| S1 (audio) | **0.712** | 0.50 | 0.623 | 0.091 | **0.531** |
+| S2 (context) | 0.189 | 0.40 | 0.117 | 0.030 | 0.087 |
+
+**S2's per-bin F1 is 0.189 — terrible.** The 251-class softmax → per-bin conversion doesn't work. S2 concentrates probability on 1-3 bins (its strength as a single-prediction model), but this produces near-zero confidence on most bins, giving ~13% recall at any threshold.
+
+The models speak fundamentally different languages:
+- **S1**: "these 25 bins might have onsets" (broad coverage, high recall)
+- **S2**: "bin 33 is the answer" (peaked prediction, no coverage)
+
+Per-bin comparison is meaningless when one model does detection (many positives) and the other does classification (one positive). **S2 needs to be retrained as a per-bin detector** (250 independent sigmoids) to enable direct comparison and combination with S1.
+
+8. **S2's 251-class softmax output is incompatible with per-bin fusion.** The softmax concentrates mass on few bins — great for top-1/top-5 accuracy, terrible for per-bin coverage. A per-bin sigmoid variant (S2-v2) is needed for the 3-stage architecture where S1 and S2 must speak the same language.
