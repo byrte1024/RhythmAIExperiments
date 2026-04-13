@@ -115,6 +115,8 @@ Each folder contains a README with hypothesis, results, and key graphs.
 | 66-1b | [Corruption Evaluator on AR Charts](experiment_66_1b/) | **Key insight** | 90-97% GT win rate (real > generated) but ranks generators **backwards** — scores exp 62 (best) lowest, exp 14 (worst) highest. metro_streak +0.31 correlation: model thinks metronomic = good. Unidirectional corruption training creates regularity bias |
 | 66-2 | [Bidirectional Corruption Evaluator](experiment_66_2/) | Promising | gap_cv flipped positive (+0.26), GT win rate 97-100%, both directions monotonic. Generator ranking still doesn't match HIT% but may be correct — HIT% doesn't predict human preference either. Spread between generators tiny (0.15) vs real gap (0.85). Needs human preference validation |
 | 66-2b | [Evaluator vs Human Preference](experiment_66_2b/) | **Split result** | 42-AR: **perfect Spearman +1.0** — evaluator matches human ranking exactly (exp14>exp42>exp35c). 53-AR: fails (Spearman -0.8), models too similar to distinguish. Works for large quality gaps, not subtle preferences |
+| 66-2c | [Evaluator vs osu! Ratings](experiment_66_2c/) | Running | 66-2 bidirectional model scored against osu! user ratings on full dataset |
+| 66-3 | [LLM-as-Judge for Chart Quality](experiment_66_3/) | Running | GPT-4o, Claude Opus 4.6, Gemini 2.5 Pro evaluate charts from 16 different text encodings ± audio. Novel approach — no prior work on LLM chart evaluation |
 
 ## Key Lessons
 
