@@ -1,0 +1,482 @@
+{
+  "ckpt1": {
+    "53ar": {
+      "self": {
+        "first_match": 1,
+        "n_songs": 10,
+        "first_match_pct": 0.1,
+        "pairwise_correct": 30,
+        "pairwise_total": 60,
+        "pairwise_accuracy": 0.5,
+        "global_eval_ranking": [
+          "exp53",
+          "exp14",
+          "exp44",
+          "exp45"
+        ],
+        "global_human_ranking": [
+          "exp45",
+          "exp44",
+          "exp53",
+          "exp14"
+        ],
+        "spearman": -0.7999999999999999
+      },
+      "eval": {
+        "first_match": 0,
+        "n_songs": 5,
+        "first_match_pct": 0.0,
+        "pairwise_correct": 8,
+        "pairwise_total": 30,
+        "pairwise_accuracy": 0.26666666666666666,
+        "global_eval_ranking": [
+          "exp53",
+          "exp14",
+          "exp44",
+          "exp45"
+        ],
+        "global_human_ranking": [
+          "exp44",
+          "exp45",
+          "exp53",
+          "exp14"
+        ],
+        "spearman": -0.6000000000000001
+      },
+      "total": {
+        "first_match": 1,
+        "n_songs": 10,
+        "first_match_pct": 0.1,
+        "pairwise_correct": 26,
+        "pairwise_total": 59,
+        "pairwise_accuracy": 0.4406779661016949,
+        "global_eval_ranking": [
+          "exp53",
+          "exp14",
+          "exp44",
+          "exp45"
+        ],
+        "global_human_ranking": [
+          "exp45",
+          "exp44",
+          "exp53",
+          "exp14"
+        ],
+        "spearman": -0.7999999999999999
+      },
+      "scores": {
+        "01": {
+          "exp14": -0.5342819727957249,
+          "exp44": -0.5385137218981981,
+          "exp45": -0.5173880800139159,
+          "exp53": -0.5217563109472394
+        },
+        "02": {
+          "exp14": -0.48582237027585506,
+          "exp44": -0.5440479964017868,
+          "exp45": -0.5645247157663107,
+          "exp53": -0.5400340976193547
+        },
+        "03": {
+          "exp14": -0.5905573070049286,
+          "exp44": -0.6394558902829885,
+          "exp45": -0.6887244358658791,
+          "exp53": -0.6353765968233347
+        },
+        "04": {
+          "exp14": -0.5875548459589481,
+          "exp44": -0.6356163080781698,
+          "exp45": -0.6158482078462839,
+          "exp53": -0.6551399847958237
+        },
+        "05": {
+          "exp14": -0.5984533978626132,
+          "exp44": -0.6065036419313401,
+          "exp45": -0.6523417728021741,
+          "exp53": -0.5513812713325024
+        },
+        "06": {
+          "exp14": -0.6916607394814491,
+          "exp44": -0.704101646784693,
+          "exp45": -0.6707907635718584,
+          "exp53": -0.6535714427009225
+        },
+        "07": {
+          "exp14": -0.5600324422121048,
+          "exp44": -0.5552112860605121,
+          "exp45": -0.5173356540035456,
+          "exp53": -0.5372262659948319
+        },
+        "08": {
+          "exp14": -0.6612366917543113,
+          "exp44": -0.6094369851052761,
+          "exp45": -0.653563879430294,
+          "exp53": -0.5071451310068369
+        },
+        "09": {
+          "exp14": -0.755203440785408,
+          "exp44": -0.7248986288905144,
+          "exp45": -0.7162027880549431,
+          "exp53": -0.6887301318347454
+        },
+        "10": {
+          "exp14": -0.7617118619382381,
+          "exp44": -0.7571231611073017,
+          "exp45": -0.786453727632761,
+          "exp53": -0.6681420635432005
+        }
+      }
+    },
+    "42ar": {
+      "self": {
+        "first_match": 4,
+        "n_songs": 9,
+        "first_match_pct": 0.4444444444444444,
+        "pairwise_correct": 12,
+        "pairwise_total": 27,
+        "pairwise_accuracy": 0.4444444444444444,
+        "global_eval_ranking": [
+          "exp14",
+          "exp42",
+          "exp35c"
+        ],
+        "global_human_ranking": [
+          "exp14",
+          "exp42",
+          "exp35c"
+        ],
+        "spearman": 1.0
+      },
+      "eval": {
+        "first_match": 2,
+        "n_songs": 5,
+        "first_match_pct": 0.4,
+        "pairwise_correct": 10,
+        "pairwise_total": 15,
+        "pairwise_accuracy": 0.6666666666666666,
+        "global_eval_ranking": [
+          "exp14",
+          "exp42",
+          "exp35c"
+        ],
+        "global_human_ranking": [
+          "exp14",
+          "exp35c",
+          "exp42"
+        ],
+        "spearman": 0.5
+      },
+      "total": {
+        "first_match": 4,
+        "n_songs": 9,
+        "first_match_pct": 0.4444444444444444,
+        "pairwise_correct": 11,
+        "pairwise_total": 22,
+        "pairwise_accuracy": 0.5,
+        "global_eval_ranking": [
+          "exp14",
+          "exp42",
+          "exp35c"
+        ],
+        "global_human_ranking": [
+          "exp14",
+          "exp42",
+          "exp35c"
+        ],
+        "spearman": 1.0
+      },
+      "scores": {
+        "Alex Warren - Ordinary (Official Video)": {
+          "exp14": -0.7272057346999645,
+          "exp35c": -0.7836579577997327,
+          "exp42": -0.6686674598604441
+        },
+        "Equiloud - Time Machine": {
+          "exp14": -0.8414145894348621,
+          "exp35c": -0.8065656796097755,
+          "exp42": -0.7666133418679237
+        },
+        "Medalist Season 2 OP \u29f8 Opening Cold Night by HANA [4K 60FPS]": {
+          "exp14": -0.7069162838160992,
+          "exp35c": -0.7237514946609735,
+          "exp42": -0.7401496153324842
+        },
+        "RoccoW - Chipper Choices": {
+          "exp14": -0.847978550940752,
+          "exp35c": -0.7561230100691319,
+          "exp42": -0.9635640643537045
+        },
+        "Sabrina Carpenter - Manchild (Official Video)": {
+          "exp14": -0.6118350243195891,
+          "exp35c": -0.5772669650614262,
+          "exp42": -0.6560063846409321
+        },
+        "Snow Man \u30aa\u30c9\u30ed\u30a6\u30bc\uff01 Music Video": {
+          "exp14": -0.6165379714220762,
+          "exp35c": -0.8841802254319191,
+          "exp42": -0.6501134824939072
+        },
+        "The Bug Club - Watching the Omnibus (Official Audio)": {
+          "exp14": -0.5816991198807955,
+          "exp35c": -0.6090409718453884,
+          "exp42": -0.7478798197116703
+        },
+        "Weird Nightmare - Might See You There (Official Music Video)": {
+          "exp14": -0.5944682210683823,
+          "exp35c": -0.7511012777686119,
+          "exp42": -0.5762459635734558
+        },
+        "XAMIYA - KIKYU (Official Lyric Video)": {
+          "exp14": -0.694507472217083,
+          "exp35c": -0.7417091056704521,
+          "exp42": -0.6816387847065926
+        },
+        "muque - DARK GAME(Official Music Video)": {
+          "exp14": -0.6515675596892834,
+          "exp35c": -0.729266656562686,
+          "exp42": -0.6345953829586506
+        }
+      }
+    }
+  },
+  "ckpt2": {
+    "53ar": {
+      "self": {
+        "first_match": 2,
+        "n_songs": 10,
+        "first_match_pct": 0.2,
+        "pairwise_correct": 28,
+        "pairwise_total": 60,
+        "pairwise_accuracy": 0.4666666666666667,
+        "global_eval_ranking": [
+          "exp53",
+          "exp45",
+          "exp14",
+          "exp44"
+        ],
+        "global_human_ranking": [
+          "exp45",
+          "exp44",
+          "exp53",
+          "exp14"
+        ],
+        "spearman": 0.0
+      },
+      "eval": {
+        "first_match": 2,
+        "n_songs": 5,
+        "first_match_pct": 0.4,
+        "pairwise_correct": 16,
+        "pairwise_total": 30,
+        "pairwise_accuracy": 0.5333333333333333,
+        "global_eval_ranking": [
+          "exp53",
+          "exp45",
+          "exp14",
+          "exp44"
+        ],
+        "global_human_ranking": [
+          "exp44",
+          "exp45",
+          "exp53",
+          "exp14"
+        ],
+        "spearman": -0.39999999999999997
+      },
+      "total": {
+        "first_match": 2,
+        "n_songs": 10,
+        "first_match_pct": 0.2,
+        "pairwise_correct": 28,
+        "pairwise_total": 59,
+        "pairwise_accuracy": 0.4745762711864407,
+        "global_eval_ranking": [
+          "exp53",
+          "exp45",
+          "exp14",
+          "exp44"
+        ],
+        "global_human_ranking": [
+          "exp45",
+          "exp44",
+          "exp53",
+          "exp14"
+        ],
+        "spearman": 0.0
+      },
+      "scores": {
+        "01": {
+          "exp14": 6.151316486299038,
+          "exp44": 4.655038582161069,
+          "exp45": 7.752096999436617,
+          "exp53": 6.079687777673826
+        },
+        "02": {
+          "exp14": 12.49660555832088,
+          "exp44": 9.640903670340776,
+          "exp45": 8.335724577307701,
+          "exp53": 9.546659398823977
+        },
+        "03": {
+          "exp14": 10.286282571032643,
+          "exp44": 10.662926638498902,
+          "exp45": 11.06781929731369,
+          "exp53": 13.709150433540344
+        },
+        "04": {
+          "exp14": 2.7566896080970764,
+          "exp44": 2.457731321454048,
+          "exp45": 5.249640801921487,
+          "exp53": 5.319878675043583
+        },
+        "05": {
+          "exp14": 6.823016494512558,
+          "exp44": 7.448767811059952,
+          "exp45": 7.653270237147808,
+          "exp53": 7.765766113996506
+        },
+        "06": {
+          "exp14": 0.29806428402662277,
+          "exp44": -1.5578533429652452,
+          "exp45": -0.21957437694072723,
+          "exp53": 1.283729145070538
+        },
+        "07": {
+          "exp14": 2.3535323292016983,
+          "exp44": 1.304296687245369,
+          "exp45": 1.686028078198433,
+          "exp53": 1.0574925690889359
+        },
+        "08": {
+          "exp14": 0.6658687088638544,
+          "exp44": -2.9294699504971504,
+          "exp45": 0.3338494896888733,
+          "exp53": 2.019754722714424
+        },
+        "09": {
+          "exp14": -1.5875273011624813,
+          "exp44": 3.5193369071930647,
+          "exp45": 1.802446112036705,
+          "exp53": 2.9700555503368378
+        },
+        "10": {
+          "exp14": -4.226739931851625,
+          "exp44": -4.691520493477583,
+          "exp45": -5.390932068228722,
+          "exp53": -1.0027413591742516
+        }
+      }
+    },
+    "42ar": {
+      "self": {
+        "first_match": 1,
+        "n_songs": 9,
+        "first_match_pct": 0.1111111111111111,
+        "pairwise_correct": 8,
+        "pairwise_total": 27,
+        "pairwise_accuracy": 0.2962962962962963,
+        "global_eval_ranking": [
+          "exp42",
+          "exp35c",
+          "exp14"
+        ],
+        "global_human_ranking": [
+          "exp14",
+          "exp42",
+          "exp35c"
+        ],
+        "spearman": -0.5
+      },
+      "eval": {
+        "first_match": 1,
+        "n_songs": 5,
+        "first_match_pct": 0.2,
+        "pairwise_correct": 7,
+        "pairwise_total": 15,
+        "pairwise_accuracy": 0.4666666666666667,
+        "global_eval_ranking": [
+          "exp42",
+          "exp35c",
+          "exp14"
+        ],
+        "global_human_ranking": [
+          "exp14",
+          "exp35c",
+          "exp42"
+        ],
+        "spearman": -1.0
+      },
+      "total": {
+        "first_match": 2,
+        "n_songs": 9,
+        "first_match_pct": 0.2222222222222222,
+        "pairwise_correct": 8,
+        "pairwise_total": 22,
+        "pairwise_accuracy": 0.36363636363636365,
+        "global_eval_ranking": [
+          "exp42",
+          "exp35c",
+          "exp14"
+        ],
+        "global_human_ranking": [
+          "exp14",
+          "exp42",
+          "exp35c"
+        ],
+        "spearman": -0.5
+      },
+      "scores": {
+        "Alex Warren - Ordinary (Official Video)": {
+          "exp14": -0.3924480751156807,
+          "exp35c": -0.008420059457421303,
+          "exp42": 4.640843855217099
+        },
+        "Equiloud - Time Machine": {
+          "exp14": 0.6306529229041189,
+          "exp35c": -2.8928616903722286,
+          "exp42": 3.8685286547988653
+        },
+        "Medalist Season 2 OP \u29f8 Opening Cold Night by HANA [4K 60FPS]": {
+          "exp14": -1.2111266404390335,
+          "exp35c": -0.7862590253353119,
+          "exp42": 1.5414929240942001
+        },
+        "RoccoW - Chipper Choices": {
+          "exp14": 7.259274526964873,
+          "exp35c": 5.618822880089283,
+          "exp42": 8.707150872796774
+        },
+        "Sabrina Carpenter - Manchild (Official Video)": {
+          "exp14": 0.8854542206972837,
+          "exp35c": 1.8601372053381056,
+          "exp42": 1.9566962346434593
+        },
+        "Snow Man \u30aa\u30c9\u30ed\u30a6\u30bc\uff01 Music Video": {
+          "exp14": -2.7344780266284943,
+          "exp35c": -2.998589798808098,
+          "exp42": -0.18153448775410652
+        },
+        "The Bug Club - Watching the Omnibus (Official Audio)": {
+          "exp14": 5.335718058049679,
+          "exp35c": 10.729012440890074,
+          "exp42": 2.3645912054926157
+        },
+        "Weird Nightmare - Might See You There (Official Music Video)": {
+          "exp14": 5.15352725982666,
+          "exp35c": 15.18472634255886,
+          "exp42": 7.010862797498703
+        },
+        "XAMIYA - KIKYU (Official Lyric Video)": {
+          "exp14": -5.046877516666427,
+          "exp35c": -8.509097546339035,
+          "exp42": -10.315680692205206
+        },
+        "muque - DARK GAME(Official Music Video)": {
+          "exp14": -1.67979247123003,
+          "exp35c": -1.5938150882720947,
+          "exp42": 0.5457826666533947
+        }
+      }
+    }
+  }
+}
