@@ -1,27 +1,21 @@
-"""S3 3-stage AR inference with sampling matrix sweep.
+"""S3 AR analysis with independent AR per combination.
 
-Runs S1+S2v2+S3 on val songs, then evaluates all combinations of:
-  - Combination: S1_ONLY, S2_ONLY, S3_ONLY, ADD, MULTIPLY, S3_NO_S1, S3_NO_S2
-  - Sampling: MAX, FIRST_THRESH, ALL_THRESH
-
-Since all operate on cached per-step logits, we run inference once and sweep offline.
+Each combination runs its own AR loop (cursor depends on decisions).
+All 3 models run at each step, but each combo makes its own placement decisions.
 
 Usage:
     cd osu/taiko
-    python detection_s3_inference.py \
+    python detection_s3_ar_analysis.py \
         --s1-checkpoint runs/s1_experiment_65/checkpoints/best.pt \
         --s2-checkpoint runs/s2v2_experiment_65/checkpoints/best.pt \
-        --s3-checkpoint runs/s3_experiment_65/checkpoints/best.pt \
-        --output-dir experiments/experiment_65_s3/ar_eval
+        --s3-checkpoint runs/s3_experiment_65/checkpoints/eval_001.pt
 """
 
 import argparse
 import json
-import math
 import os
 import random
 import sys
-import time
 
 import numpy as np
 import torch
@@ -43,15 +37,10 @@ N_FFT = 2048
 F_MIN = 20.0
 F_MAX = 8000.0
 BIN_MS = HOP_LENGTH / SAMPLE_RATE * 1000
-MIN_CURSOR_BIN = 0  # AR starts from beginning
 
 DATASET_DIR = os.path.join(SCRIPT_DIR, "datasets", "taiko_v2")
 AUDIO_DIR = os.path.join(SCRIPT_DIR, "audio")
 
-
-# ═══════════════════════════════════════════════════════════════
-#  Model loading
-# ═══════════════════════════════════════════════════════════════
 
 def load_s1(ckpt_path, device):
     from detection_s1_model import ConformerProposer
@@ -90,10 +79,6 @@ def load_s3(ckpt_path, device, s1_d_model=384):
     model.to(device).eval()
     return model
 
-
-# ═══════════════════════════════════════════════════════════════
-#  Audio / song selection (same 30 val songs as run_ar.py)
-# ═══════════════════════════════════════════════════════════════
 
 def load_audio_mel(audio_path, device):
     y, _ = librosa.load(audio_path, sr=SAMPLE_RATE, mono=True)
@@ -148,10 +133,6 @@ def select_30_val_songs(manifest):
     return [candidates[int(i * step)] for i in range(n)]
 
 
-# ═══════════════════════════════════════════════════════════════
-#  AR inference — collect per-step logits
-# ═══════════════════════════════════════════════════════════════
-
 def extract_mel_window(mel, cursor):
     n_mels, total = mel.shape
     start = cursor - A_BINS
@@ -166,185 +147,104 @@ def extract_mel_window(mel, cursor):
 
 
 def build_context(events, cursor):
-    """Build gap/ratio sequences for S2v2 from event list."""
-    past = [e for e in events if e <= cursor]
-    past = past[-C_EVENTS:]
+    past = [e for e in events if e <= cursor][-C_EVENTS:]
     n = len(past)
-
     gaps = np.zeros(C_EVENTS, dtype=np.float32)
     ratios = np.zeros(C_EVENTS, dtype=np.float32)
-    mask = np.ones(C_EVENTS, dtype=bool)
+    s2_mask = np.ones(C_EVENTS, dtype=bool)
     offsets = np.zeros(C_EVENTS, dtype=np.int64)
     evt_mask = np.ones(C_EVENTS, dtype=bool)
 
     if n > 0:
-        past_arr = np.array(past, dtype=np.int64)
-        raw_gaps = np.zeros(n, dtype=np.float32)
+        pa = np.array(past, dtype=np.int64)
+        rg = np.zeros(n, dtype=np.float32)
         if n >= 2:
-            raw_gaps[1:] = np.diff(past_arr).astype(np.float32)
-            raw_gaps[0] = raw_gaps[1]
+            rg[1:] = np.diff(pa).astype(np.float32)
+            rg[0] = rg[1]
         else:
-            raw_gaps[0] = 30.0
-        raw_gaps = np.maximum(raw_gaps, 1.0)
-
-        raw_ratios = np.ones(n, dtype=np.float32)
+            rg[0] = 30.0
+        rg = np.maximum(rg, 1.0)
+        rr = np.ones(n, dtype=np.float32)
         if n >= 2:
             for i in range(1, n):
-                raw_ratios[i] = np.clip(raw_gaps[i] / max(raw_gaps[i-1], 1.0), 0.1, 10.0)
-
+                rr[i] = np.clip(rg[i] / max(rg[i-1], 1.0), 0.1, 10.0)
         s = C_EVENTS - n
-        gaps[s:] = raw_gaps
-        ratios[s:] = raw_ratios
-        mask[s:] = False
-
-        off = past_arr - cursor
-        offsets[-n:] = off
+        gaps[s:] = rg
+        ratios[s:] = rr
+        s2_mask[s:] = False
+        offsets[-n:] = pa - cursor
         evt_mask[-n:] = False
 
-    return gaps, ratios, mask, offsets, evt_mask
+    return gaps, ratios, s2_mask, offsets, evt_mask
+
+
+def combine(s1, s2, s3, method):
+    if method == "S1_ONLY": return s1
+    if method == "S2_ONLY": return s2
+    if method == "S3_ONLY": return s3
+    if method == "ADD_EQUAL": return (s1 + s2 + s3) / 3
+    if method == "ADD_S3_HEAVY": return 0.2 * s1 + 0.2 * s2 + 0.6 * s3
+    if method == "ADD_S1S2": return (s1 + s2) / 2
+    if method == "MULTIPLY": return np.cbrt(s1 * s2 * s3 + 1e-10)
+    if method == "MULTIPLY_S1S2": return np.sqrt(s1 * s2 + 1e-10)
+    if method == "MAX_S1S2": return np.maximum(s1, s2)
+    if method == "MIN_S1S2": return np.minimum(s1, s2)
+    return s3
 
 
 @torch.no_grad()
-def run_ar_collect(s1_model, s2_model, s3_model, mel, song, device, hop_bins=20):
-    """Run AR, collect per-step S1/S2/S3 logits for offline sweep."""
+def run_ar(s1_model, s2_model, s3_model, mel, song, device,
+           combo, threshold, sampling, hop_bins=20):
     total_frames = mel.shape[1]
     events = []
     cursor = 0
     cond = np.array([song["density_mean"], song["density_peak"], song["density_std"]], dtype=np.float32)
     cond_t = torch.tensor(cond).unsqueeze(0).to(device)
 
-    steps = []  # list of {cursor, s1_conf, s2_conf, s3_conf}
-
-    pbar = tqdm(total=total_frames, desc="AR", leave=False,
-                bar_format="{l_bar}{bar}| {n_fmt}/{total_fmt} {postfix}")
-
     for _ in range(50000):
         if cursor >= total_frames:
             break
-        pbar.n = min(cursor, total_frames)
-        pbar.set_postfix_str(f"{len(events)} events")
-        pbar.refresh()
 
-        # Mel window
-        mel_window = extract_mel_window(mel, cursor)
-        mel_t = torch.from_numpy(mel_window).unsqueeze(0).to(device)
+        mel_w = extract_mel_window(mel, cursor)
+        mel_t = torch.from_numpy(mel_w).unsqueeze(0).to(device)
 
-        # S1
-        s1_logits = s1_model(mel_t)
-        s1_conf = torch.sigmoid(s1_logits).squeeze(0).cpu().numpy()  # (250,)
-        audio_feat = s1_model.conv(mel_t).transpose(1, 2)
-        audio_feat = s1_model.conv_norm(audio_feat)
+        s1_conf = torch.sigmoid(s1_model(mel_t)).squeeze(0).cpu().numpy()
+        audio_feat = s1_model.conv_norm(s1_model.conv(mel_t).transpose(1, 2))
 
-        # S2v2 context
-        gaps, ratios, s2_mask, evt_off, evt_mask = build_context(events, cursor)
-        gaps_t = torch.from_numpy(gaps).unsqueeze(0).to(device)
-        ratios_t = torch.from_numpy(ratios).unsqueeze(0).to(device)
-        s2_mask_t = torch.from_numpy(s2_mask).unsqueeze(0).to(device)
+        g, r, sm, eo, em = build_context(events, cursor)
+        s2_conf = torch.sigmoid(s2_model(
+            torch.from_numpy(g).unsqueeze(0).to(device),
+            torch.from_numpy(r).unsqueeze(0).to(device),
+            torch.from_numpy(sm).unsqueeze(0).to(device),
+            cond_t)).squeeze(0).cpu().numpy()
 
-        s2_logits = s2_model(gaps_t, ratios_t, s2_mask_t, cond_t)
-        s2_conf = torch.sigmoid(s2_logits).squeeze(0).cpu().numpy()  # (250,)
+        s3_logits, _ = s3_model(
+            audio_feat,
+            torch.from_numpy(s1_conf).unsqueeze(0).to(device),
+            torch.from_numpy(s2_conf).unsqueeze(0).to(device),
+            torch.from_numpy(eo).unsqueeze(0).to(device),
+            torch.from_numpy(em).unsqueeze(0).to(device),
+            cond_t)
+        s3_conf = torch.sigmoid(s3_logits).squeeze(0).cpu().numpy()
 
-        # S3
-        evt_off_t = torch.from_numpy(evt_off).unsqueeze(0).to(device)
-        evt_mask_t = torch.from_numpy(evt_mask).unsqueeze(0).to(device)
-        s1_conf_t = torch.from_numpy(s1_conf).unsqueeze(0).to(device)
-        s2_conf_t = torch.from_numpy(s2_conf).unsqueeze(0).to(device)
+        conf = combine(s1_conf, s2_conf, s3_conf, combo)
 
-        s3_logits, _ = s3_model(audio_feat, s1_conf_t, s2_conf_t, evt_off_t, evt_mask_t, cond_t)
-        s3_conf = torch.sigmoid(s3_logits).squeeze(0).cpu().numpy()  # (250,)
-
-        steps.append({
-            "cursor": cursor,
-            "s1": s1_conf,
-            "s2": s2_conf,
-            "s3": s3_conf,
-        })
-
-        # Default AR advance: use S3 MAX for event placement
-        best_bin = int(s3_conf.argmax())
-        if s3_conf[best_bin] < 0.3:
-            # STOP — hop forward
-            cursor += hop_bins
-        else:
-            event_pos = cursor + best_bin
-            events.append(event_pos)
-            cursor = event_pos
-
-    pbar.close()
-    return events, steps
-
-
-# ═══════════════════════════════════════════════════════════════
-#  Offline sweep: apply combinations + sampling to cached logits
-# ═══════════════════════════════════════════════════════════════
-
-def apply_combination(steps, method, params=None):
-    """Apply a combination method to cached per-step logits. Returns events list."""
-    if params is None:
-        params = {}
-    thresh = params.get("threshold", 0.5)
-    hop_bins = params.get("hop_bins", 20)
-
-    events = []
-    cursor = 0
-
-    for step in steps:
-        if step["cursor"] != cursor:
-            cursor = step["cursor"]  # sync (shouldn't diverge for first pass)
-
-        s1 = step["s1"]
-        s2 = step["s2"]
-        s3 = step["s3"]
-
-        # Combine
-        if method == "S1_ONLY":
-            conf = s1
-        elif method == "S2_ONLY":
-            conf = s2
-        elif method == "S3_ONLY":
-            conf = s3
-        elif method == "ADD_EQUAL":
-            conf = (s1 + s2 + s3) / 3
-        elif method == "ADD_S3_HEAVY":
-            conf = 0.2 * s1 + 0.2 * s2 + 0.6 * s3
-        elif method == "ADD_S1S2":
-            conf = (s1 + s2) / 2
-        elif method == "MULTIPLY":
-            conf = np.cbrt(s1 * s2 * s3 + 1e-10)
-        elif method == "MULTIPLY_S1S2":
-            conf = np.sqrt(s1 * s2 + 1e-10)
-        elif method == "S3_NO_S1":
-            # S3 was trained with S1 — what if S1 was zero?
-            conf = s3  # can't re-run, just use S3 as-is
-        elif method == "S3_NO_S2":
-            conf = s3
-        elif method == "MAX_S1S2":
-            conf = np.maximum(s1, s2)
-        elif method == "MIN_S1S2":
-            conf = np.minimum(s1, s2)
-        else:
-            conf = s3
-
-        # Sample: MAX
-        sampling = params.get("sampling", "MAX")
         if sampling == "MAX":
             best = int(conf.argmax())
-            if conf[best] < thresh:
+            if conf[best] < threshold:
                 cursor += hop_bins
             else:
                 events.append(cursor + best)
                 cursor = cursor + best
-
         elif sampling == "FIRST_THRESH":
-            above = np.where(conf >= thresh)[0]
+            above = np.where(conf >= threshold)[0]
             if len(above) > 0:
                 events.append(cursor + int(above[0]))
                 cursor = cursor + int(above[0])
             else:
                 cursor += hop_bins
-
         elif sampling == "ALL_THRESH":
-            above = np.where(conf >= thresh)[0]
+            above = np.where(conf >= threshold)[0]
             if len(above) > 0:
                 for b in above:
                     events.append(cursor + int(b))
@@ -355,49 +255,105 @@ def apply_combination(steps, method, params=None):
     return events
 
 
-# ═══════════════════════════════════════════════════════════════
-#  GT matching (from analyze_ar.py)
-# ═══════════════════════════════════════════════════════════════
+TN_STEP_MS = 23
+
+def events_ms_to_binary(events_ms, step_ms=TN_STEP_MS):
+    if len(events_ms) == 0:
+        return np.array([], dtype=np.int32)
+    max_time = int(max(events_ms)) + step_ms
+    n_steps = max_time // step_ms + 1
+    binary = np.zeros(n_steps, dtype=np.int32)
+    for t in events_ms:
+        idx = int(t) // step_ms
+        if 0 <= idx < n_steps:
+            binary[idx] = 1
+    return binary
+
+def tn_over_pspace(chart, scale=8):
+    patterns = set()
+    last_ind = len(chart) - scale + 1
+    if last_ind <= 0:
+        return 0.0
+    for i in range(last_ind):
+        patterns.add(tuple(chart[i:i + scale]))
+    return float(len(patterns) / 2**scale * 100)
+
+def tn_hi_pspace(ai_chart, human_chart, scale=8):
+    ai_p = set()
+    hu_p = set()
+    for i in range(len(ai_chart) - scale + 1):
+        ai_p.add(tuple(ai_chart[i:i + scale]))
+    for i in range(len(human_chart) - scale + 1):
+        hu_p.add(tuple(human_chart[i:i + scale]))
+    if len(hu_p) == 0:
+        return 0.0
+    return float(len(ai_p & hu_p) / len(hu_p) * 100)
+
+def tn_dc_human(ai_chart, human_chart):
+    limit = min(len(ai_chart), len(human_chart))
+    if limit == 0:
+        return 0.0
+    start = 0
+    for i in range(limit):
+        if human_chart[i] == 1:
+            start = i
+            break
+    total = limit - start
+    if total <= 0:
+        return 0.0
+    return float((ai_chart[start:limit] == human_chart[start:limit]).sum() / total * 100)
+
+def compute_tn_metrics(pred_ms, gt_ms):
+    pb = events_ms_to_binary(pred_ms)
+    gb = events_ms_to_binary(gt_ms)
+    if len(pb) < 16 or len(gb) < 16:
+        return None
+    ml = max(len(pb), len(gb))
+    pp = np.zeros(ml, dtype=np.int32)
+    gp = np.zeros(ml, dtype=np.int32)
+    pp[:len(pb)] = pb
+    gp[:len(gb)] = gb
+    return {
+        "over_pspace": tn_over_pspace(pp),
+        "hi_pspace": tn_hi_pspace(pp, gp),
+        "dc_human": tn_dc_human(pp, gp),
+    }
 
 def compute_gt_metrics(pred_ms, gt_ms):
     if len(pred_ms) == 0 or len(gt_ms) == 0:
         return None
-    pred_sorted = np.sort(pred_ms)
-    gt_sorted = np.sort(gt_ms)
-
-    def _closest(arr, val):
-        idx = np.searchsorted(arr, val)
-        best = float("inf")
-        for j in [idx - 1, idx, idx + 1]:
-            if 0 <= j < len(arr):
-                best = min(best, abs(arr[j] - val))
-        return best
-
-    gt_errors = np.array([_closest(pred_sorted, g) for g in gt_sorted])
-    pred_errors = np.array([_closest(gt_sorted, p) for p in pred_sorted])
-
-    return {
-        "n_pred": len(pred_sorted),
-        "n_gt": len(gt_sorted),
-        "close_rate": float((gt_errors <= 50).mean()),
-        "far_rate": float((gt_errors > 100).mean()),
-        "hallucination_rate": float((pred_errors > 100).mean()),
-        "gt_error_median": float(np.median(gt_errors)),
+    ps = np.sort(pred_ms)
+    gs = np.sort(gt_ms)
+    def _c(arr, v):
+        i = np.searchsorted(arr, v)
+        return min(abs(arr[max(0,j)] - v) for j in [i-1, i, i+1] if 0 <= j < len(arr))
+    ge = np.array([_c(ps, g) for g in gs])
+    pe = np.array([_c(gs, p) for p in ps])
+    np_, ng = len(ps), len(gs)
+    pd = np_ / max((ps[-1]-ps[0])/1000, 0.1) if np_ > 1 else 0
+    gd = ng / max((gs[-1]-gs[0])/1000, 0.1) if ng > 1 else 0
+    result = {
+        "n_pred": np_, "n_gt": ng,
+        "close_rate": float((ge <= 50).mean()),
+        "far_rate": float((ge > 100).mean()),
+        "hallucination_rate": float((pe > 100).mean()),
+        "gt_error_median": float(np.median(ge)),
+        "density_ratio": pd / max(gd, 0.01),
     }
+    tn = compute_tn_metrics(pred_ms, gt_ms)
+    if tn:
+        result.update(tn)
+    return result
 
-
-# ═══════════════════════════════════════════════════════════════
-#  Main
-# ═══════════════════════════════════════════════════════════════
 
 def main():
-    parser = argparse.ArgumentParser(description="S3 AR inference with sampling matrix sweep")
+    parser = argparse.ArgumentParser()
     parser.add_argument("--s1-checkpoint", required=True)
     parser.add_argument("--s2-checkpoint", required=True)
     parser.add_argument("--s3-checkpoint", required=True)
     parser.add_argument("--output-dir", default=os.path.join(SCRIPT_DIR, "experiments", "experiment_65_s3", "ar_eval"))
     parser.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
-    parser.add_argument("--n-songs", type=int, default=30)
+    parser.add_argument("--n-songs", type=int, default=10)
     args = parser.parse_args()
 
     os.makedirs(args.output_dir, exist_ok=True)
@@ -412,89 +368,88 @@ def main():
     s1_model = load_s1(args.s1_checkpoint, args.device)
     s2_model = load_s2v2(args.s2_checkpoint, args.device)
     s3_model = load_s3(args.s3_checkpoint, args.device, s1_d_model=s1_model.d_model)
-    print("  All loaded")
+    print("  Loaded")
 
-    # Sweep config
-    combinations = [
-        "S1_ONLY", "S2_ONLY", "S3_ONLY",
-        "ADD_EQUAL", "ADD_S3_HEAVY", "ADD_S1S2",
-        "MULTIPLY", "MULTIPLY_S1S2",
-        "MAX_S1S2", "MIN_S1S2",
+    configs = [
+        ("S3_ONLY", "MAX", 0.3),
+        ("S3_ONLY", "MAX", 0.4),
+        ("S3_ONLY", "MAX", 0.5),
+        ("S3_ONLY", "FIRST_THRESH", 0.3),
+        ("S3_ONLY", "FIRST_THRESH", 0.5),
+        ("S1_ONLY", "MAX", 0.5),
+        ("S2_ONLY", "MAX", 0.5),
+        ("ADD_EQUAL", "MAX", 0.3),
+        ("ADD_EQUAL", "MAX", 0.5),
+        ("ADD_S3_HEAVY", "MAX", 0.3),
+        ("ADD_S3_HEAVY", "MAX", 0.5),
+        ("ADD_S1S2", "MAX", 0.5),
+        ("MULTIPLY", "MAX", 0.3),
+        ("MULTIPLY_S1S2", "MAX", 0.3),
+        ("MIN_S1S2", "MAX", 0.3),
+        ("S3_ONLY", "ALL_THRESH", 0.5),
+        ("S3_ONLY", "ALL_THRESH", 0.6),
+        ("ADD_EQUAL", "ALL_THRESH", 0.5),
     ]
-    samplings = ["MAX", "FIRST_THRESH", "ALL_THRESH"]
-    thresholds = [0.3, 0.4, 0.5, 0.6]
 
-    all_results = {}
+    all_results = {f"{c}_{s}_{t}": [] for c, s, t in configs}
 
     for si, song in enumerate(songs):
         print(f"\n[{si+1}/{len(songs)}] {song['artist'][:20]} - {song['title'][:25]} (d={song['density_mean']:.1f})")
 
-        # Load audio
         mel, duration = load_audio_mel(song["audio_path"], args.device)
-        print(f"  Mel: {mel.shape}, {duration:.1f}s")
-
-        # Load GT
         gt_events = np.load(os.path.join(DATASET_DIR, "events", song["event_file"]))
         gt_ms = gt_events.astype(np.float64) * BIN_MS
 
-        # Run AR once, collect per-step logits
-        events_default, steps = run_ar_collect(s1_model, s2_model, s3_model, mel, song, args.device)
-        print(f"  AR: {len(events_default)} events, {len(steps)} steps")
+        for combo, sampling, thresh in tqdm(configs, desc="Configs", leave=False):
+            key = f"{combo}_{sampling}_{thresh}"
+            events = run_ar(s1_model, s2_model, s3_model, mel, song, args.device,
+                            combo, thresh, sampling)
+            pred_ms = np.array(events, dtype=np.float64) * BIN_MS
+            result = compute_gt_metrics(pred_ms, gt_ms)
+            if result:
+                all_results[key].append(result)
 
-        # Sweep all combinations × samplings × thresholds
-        for combo in combinations:
-            for sampling in samplings:
-                for thresh in thresholds:
-                    key = f"{combo}_{sampling}_{thresh}"
-                    events = apply_combination(steps, combo,
-                                               {"threshold": thresh, "sampling": sampling, "hop_bins": 20})
-                    pred_ms = np.array(events, dtype=np.float64) * BIN_MS
-                    gt_result = compute_gt_metrics(pred_ms, gt_ms)
+        # Quick print
+        for key in ["S3_ONLY_MAX_0.5", "S1_ONLY_MAX_0.5", "ADD_EQUAL_MAX_0.5"]:
+            if all_results[key]:
+                r = all_results[key][-1]
+                print(f"  {key}: close={r['close_rate']:.1%} hall={r['hallucination_rate']:.1%} d={r['density_ratio']:.2f}")
 
-                    if key not in all_results:
-                        all_results[key] = []
-                    if gt_result:
-                        all_results[key].append(gt_result)
-
-    # ── Aggregate ──
+    # Aggregate
     print(f"\n{'='*90}")
     print(f"RESULTS ({len(songs)} songs)")
     print(f"{'='*90}")
-    print(f"{'Config':<40} {'Close%':>7} {'Far%':>6} {'Hall%':>6} {'ErrMed':>7} {'#pred':>6}")
-    print("-" * 80)
+    print(f"{'Config':<40} {'Close%':>7} {'Far%':>6} {'Hall%':>6} {'ErrMed':>7} {'d_ratio':>8} {'P-Space':>8} {'HI-PS':>6} {'DCHum':>6}")
+    print("-" * 100)
 
     summary = {}
     for key in sorted(all_results.keys()):
         results = all_results[key]
         if not results:
             continue
-        avg = lambda k: float(np.mean([r[k] for r in results]))
-        close = avg("close_rate")
-        far = avg("far_rate")
-        hall = avg("hallucination_rate")
-        err = avg("gt_error_median")
-        n_pred = avg("n_pred")
+        avg = lambda k: float(np.mean([r[k] for r in results if k in r]))
         summary[key] = {
-            "close": close, "far": far, "hall": hall, "err_med": err, "n_pred": n_pred,
+            "close": avg("close_rate"), "far": avg("far_rate"),
+            "hall": avg("hallucination_rate"), "err_med": avg("gt_error_median"),
+            "d_ratio": avg("density_ratio"), "n_pred": avg("n_pred"),
+            "over_pspace": avg("over_pspace"), "hi_pspace": avg("hi_pspace"),
+            "dc_human": avg("dc_human"),
         }
 
-    # Sort by close rate descending
     for key in sorted(summary.keys(), key=lambda k: -summary[k]["close"]):
         s = summary[key]
-        print(f"  {key:<40} {s['close']:>6.1%} {s['far']:>5.1%} {s['hall']:>5.1%} {s['err_med']:>6.0f}ms {s['n_pred']:>6.0f}")
+        print(f"  {key:<40} {s['close']:>6.1%} {s['far']:>5.1%} {s['hall']:>5.1%} {s['err_med']:>6.0f}ms {s['d_ratio']:>7.2f} {s['over_pspace']:>7.1f}% {s['hi_pspace']:>5.1f}% {s['dc_human']:>5.1f}%")
 
-    # Save
     with open(os.path.join(args.output_dir, "sweep_results.json"), "w") as f:
         json.dump(summary, f, indent=2)
-    print(f"\nSaved to {args.output_dir}/sweep_results.json")
 
-    # Top 10
-    print(f"\n{'='*60}")
-    print("TOP 10 by close rate:")
-    top = sorted(summary.keys(), key=lambda k: -summary[k]["close"])[:10]
-    for i, key in enumerate(top):
+    # Top 5
+    print(f"\nTOP 5:")
+    for i, key in enumerate(sorted(summary.keys(), key=lambda k: -summary[k]["close"])[:5]):
         s = summary[key]
-        print(f"  {i+1}. {key:<40} close={s['close']:.1%} hall={s['hall']:.1%}")
+        print(f"  {i+1}. {key:<35} close={s['close']:.1%} hall={s['hall']:.1%} d={s['d_ratio']:.2f}")
+
+    print(f"\nSaved to {args.output_dir}/sweep_results.json")
 
 
 if __name__ == "__main__":
