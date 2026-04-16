@@ -63,8 +63,58 @@ The key question: does TaikoNation perform better on its own evaluation songs th
 
 ## Result
 
-*Pending*
+### Our Models on TaikoNation's Charts
+
+| Model | Close% | Far% | Hall% | d_ratio | Err Med | Over.PS | HI-PS | DCHuman |
+|---|---|---|---|---|---|---|---|---|
+| **exp58** | **79.6%** | **7.4%** | **8.5%** | **0.92** | **11ms** | 15.5% | 87.8% | 84.2% |
+| exp45 | 75.7% | 7.7% | 9.4% | 0.88 | 12ms | 15.4% | 90.2% | 83.7% |
+| exp44 | 74.2% | 10.3% | 7.6% | 0.83 | 11ms | 13.8% | 82.0% | 85.5% |
+| exp14 | 71.9% | 13.2% | 9.4% | 0.83 | 10ms | 17.1% | 88.1% | 85.8% |
+
+### TaikoNation on Its Own Charts (our run)
+
+| Metric | Our run | Published | Gap |
+|---|---|---|---|
+| Over. P-Space | 41.3% | 21.3% | +20pp |
+| HI P-Space | 89.7% | 94.1% | -4.4pp |
+| DCHuman | 81.9% | 75.0% | +6.9pp |
+| DCRand | 49.6% | 50.4% | -0.8pp |
+| Close (<50ms) | 9.8% | — | — |
+| Hallucination | 46.5% | — | — |
+| Error median | 413ms | — | — |
+| Density ratio | 0.25 | — | — |
+
+### Human GT Self-Metrics (validation)
+
+| | Our measurement | Their published |
+|---|---|---|
+| Over. P-Space | 13.8% | 14.5% |
+| DCRand | 50.1% | 50.2% |
+
+Within 0.7pp — confirms our metric computation is correct.
+
+### Caveat: TaikoNation Reproduction Likely Incorrect
+
+The dramatic discrepancy between our TaikoNation run and their published results (P-Space 41.3% vs 21.3%, density ratio 0.25) strongly suggests we are running their model incorrectly. Possible causes:
+
+1. **Wrong checkpoint** — their repository may contain multiple checkpoints; we may have the wrong one
+2. **Preprocessing mismatch** — they use essentia for feature extraction, we use librosa. Normalization, hop size, or frequency range differences could produce incompatible features
+3. **Architecture reconstruction error** — we rebuilt their TFLearn model from paper/code; a small difference in layer connections would produce degraded output
+4. **Inference logic mismatch** — how we feed context back (note queue) or decode the 4-step output may not match their implementation
+
+The 0.25 density ratio (287 predicted events vs 1082 GT) is the smoking gun — the model is dramatically under-predicting, suggesting it's not receiving features in the format it expects.
+
+**Our model results on these charts are valid** — they use our own pipeline end-to-end. The TaikoNation comparison should be treated as approximate until reproduction issues are resolved.
 
 ## Lesson
 
-*Pending*
+1. **Our models dominate on TaikoNation's own charts.** exp58 achieves 79.6% close rate, 11ms timing, 8.5% hallucination on these songs. This is consistent with our val set results — our models generalize.
+
+2. **TaikoNation's model doesn't work in our reproduction.** 9.8% close, 413ms error, same as on our songs (exp63). This is likely a reproduction issue, not necessarily TaikoNation's actual performance.
+
+3. **Our metric computation is validated.** Human GT P-Space matches their published value within 0.7pp. The metrics are correct; the model reproduction is the problem.
+
+4. **exp58 beats TaikoNation's published DCHuman.** Even comparing our 84.2% to their published 75.0% (giving them the benefit of correct reproduction), we win by +9.2pp on their metric, on their songs.
+
+5. **Pattern diversity is comparable.** Our models' P-Space (13.8-17.1%) is in the same range as Human GT (13.8%) and TaikoNation's published (21.3%). We're closer to human patterns; their high diversity may indicate noise.
