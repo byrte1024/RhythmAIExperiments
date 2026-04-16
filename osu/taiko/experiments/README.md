@@ -106,6 +106,7 @@ Each folder contains a README with hypothesis, results, and key graphs.
 | 62 | [Multi-Onset Prediction](experiment_62/) | Complete | 4 simultaneous onsets. o1=74.9% HIT (matches exp58 ATH). AR: P-Space 12.0% (surpasses human GT 11.7%), close=75.0%. Pattern diversity win |
 | 62-B | [Multi-Onset Truncation Ablation](experiment_62b/) | Complete | mo2 (o1+o2) best close rate (76.7%), mo3 best overall (76.5% close, 12.0% P-Space, 0.99 d_ratio). Multi-onset training improves even single-onset inference |
 | 63 | [TaikoNation Direct Comparison](experiment_63/) | Complete | TaikoNation: 10.2% close, 399ms error, 50.9% hallucination on our songs. Doesn't generalize from ~100 curated charts. Our exp58: 75.9% close, 8ms error |
+| 63-B | [TaikoNation Apples-to-Apples](experiment_63b/) | **Pending** | Run our models on TaikoNation's exact 10 evaluation charts (shared by Emily Halina). First true head-to-head comparison on same songs |
 | 44-E | [Distance Ramp Loss](experiment_44e/) | Complete | 3rd loss component gives gradient everywhere. ~0.2pp adjusted gain, smoother training, +9.5pp STOP precision. Adopted as default (ramp_alpha=2.5) |
 | 64 | [Delta-Encoded Multi-Onset](experiment_64/) | Complete | Delta encoding: o2-o4 +8-16pp over absolute, strict_increasing=100%. AR close=82% but hallucination 21.7%. Metronomic tendency increased |
 | 65-S1 | [Dedicated Audio Proposer](experiment_65_s1/) | Complete | Conformer 8-layer, per-bin output. F1=0.698, conf sep 0.52. 29.6M params |
