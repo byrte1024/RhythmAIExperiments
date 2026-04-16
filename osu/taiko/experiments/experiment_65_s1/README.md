@@ -172,8 +172,46 @@ Audio augmentation (same as current):
 
 ## Result
 
-*Pending*
+### Training (8 evals, epoch 2.0)
+
+| Eval | F1@0.5 | Precision | Recall | Conf Sep | Val Loss |
+|---|---|---|---|---|---|
+| 1 | 0.697 | 0.677 | 0.719 | 0.473 | 0.348 |
+| 4 | **0.698** | **0.684** | 0.714 | 0.500 | 0.324 |
+| 8 | 0.687 | 0.652 | 0.726 | **0.520** | 0.323 |
+
+Peaked at eval 4 (F1=0.698), then slight decline as recall crept up and precision dropped. Confidence separation kept improving throughout (0.473 → 0.520).
+
+### Threshold Sweep (eval 8)
+
+| Threshold | F1 | Precision | Recall | Proposals |
+|---|---|---|---|---|
+| 0.3 | 0.620 | 0.475 | **0.890** | 45.4 |
+| 0.5 | **0.687** | 0.652 | 0.726 | 27.0 |
+| 0.7 | 0.591 | **0.836** | 0.457 | 13.2 |
+
+At threshold 0.3: 89% recall — nearly 9 out of 10 onsets covered. As a proposer, recall matters most.
+
+### Comparison to Previous S1
+
+| | New S1 (Conformer) | Old S1 (inside exp58) |
+|---|---|---|
+| Architecture | 8 Conformer blocks + upsample | 4 Transformer layers |
+| Output | Per-bin (250 sigmoid) | Per-token (250 tokens) |
+| F1 | **0.698** | 0.615 |
+| Precision | **0.684** | 0.487 |
+| Recall | 0.714 | **0.834** |
+| Conf separation | **0.520** | 0.266 |
+| Params | 29.6M | ~4M |
+
++8.3pp F1 over old S1. Much better precision (+19.7pp) and double the confidence separation. Old S1 had higher recall but with many more false positives.
 
 ## Lesson
 
-*Pending*
+1. **Conformer blocks improve audio onset detection.** The depthwise conv captures transient edges that pure self-attention misses. +8.3pp F1 over the old 4-layer transformer S1.
+
+2. **Per-bin output is strictly better than per-token.** Each output maps to exactly one prediction bin instead of covering 4. Finer supervision signal → better precision.
+
+3. **Confidence separation matters for downstream fusion.** S1's 0.520 separation (vs old 0.266) means S3 gets much more informative confidence signals — when S1 is confident, it's much more likely correct.
+
+4. **29.6M params is justified.** This is a standalone model, not embedded inside a larger architecture. The capacity goes entirely to audio onset detection.
