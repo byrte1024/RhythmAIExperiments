@@ -83,6 +83,7 @@ def parse_args():
     parser.add_argument("--sampling-npy", default=None, help="Sampling timeline .npy file (temperature + metronome)")
     parser.add_argument("--candidates-json", default=None, help="Candidate history JSON (per-prediction candidates)")
     parser.add_argument("--proposals-npz", default=None, help="Proposal confidence history .npz (S1 per-prediction)")
+    parser.add_argument("--s3confs-npz", default=None, help="S3 confidence maps .npz (s1/s2/s3 per step)")
     parser.add_argument("--gif", default=None, help="Path to GIF file for beat-synced animation window")
     parser.add_argument("--gif-cycles", type=int, default=1, help="Events per full GIF animation cycle (default: 1)")
     parser.add_argument("--render", default=None, help="Render to video file (e.g. output.mp4) instead of interactive mode")
@@ -387,7 +388,7 @@ class Viewer:
     def __init__(self, csv_path, audio_override=None, compare_csv=None,
                  stats_json_path=None, mel_npy_path=None, wave_npy_path=None,
                  sampling_npy_path=None, candidates_json_path=None,
-                 proposals_npz_path=None,
+                 proposals_npz_path=None, s3confs_npz_path=None,
                  gif_path=None, gif_cycles=1):
         self.csv_path = csv_path
         audio_name, self.onsets = load_csv(csv_path)
@@ -445,6 +446,19 @@ class Viewer:
             self.proposal_cursors = data["cursors"]
             self.proposal_confs = data["confs"].astype(np.float32)
             print(f"Loaded proposal history: {len(self.proposal_cursors)} steps, {self.proposal_confs.shape[1]} tokens each")
+
+        # S3 confidence maps: s1/s2/s3 per AR step
+        self.s3conf_cursors = None
+        self.s3conf_s1 = None
+        self.s3conf_s2 = None
+        self.s3conf_s3 = None
+        if HAS_NUMPY and s3confs_npz_path and os.path.exists(s3confs_npz_path):
+            data = np.load(s3confs_npz_path)
+            self.s3conf_cursors = data["cursors"]
+            self.s3conf_s1 = data["s1"].astype(np.float32)
+            self.s3conf_s2 = data["s2"].astype(np.float32)
+            self.s3conf_s3 = data["s3"].astype(np.float32)
+            print(f"Loaded S3 confidence maps: {len(self.s3conf_cursors)} steps, {self.s3conf_s1.shape[1]} bins each")
 
         # Beat-synced GIF
         self.gif_player = None
@@ -1151,6 +1165,65 @@ class Viewer:
             self.screen.blit(lbl, (pad_x + 2, y + 1))
 
             y += prop_h + 2
+
+        # --- S3 combined confidence heatmap (R=S1, G=S2, B=S3) ---
+        # White=all agree, Red=S1 only, Green=S2 only, Blue=S3 only
+        # Yellow=S1+S2 but not S3, Cyan=S2+S3 but not S1, Magenta=S1+S3 but not S2
+        if self.s3conf_cursors is not None and self.mel_data is not None:
+            strip_h = 24
+            b_pred = self.s3conf_s1.shape[1]
+
+            cursor_bin = int(self.now_ms / MEL_BIN_MS)
+            idx = np.searchsorted(self.s3conf_cursors, cursor_bin, side="right") - 1
+            idx = max(0, min(idx, len(self.s3conf_cursors) - 1))
+            step_cursor = self.s3conf_cursors[idx]
+
+            s1_data = self.s3conf_s1[idx]
+            s2_data = self.s3conf_s2[idx]
+            s3_data = self.s3conf_s3[idx]
+
+            pygame.draw.rect(self.screen, (15, 15, 25), (pad_x, y, view_w, strip_h), border_radius=2)
+
+            f0_vis = max(0, frame_start)
+            f1_vis = min(self.mel_data.shape[1], frame_end)
+            n_vis = f1_vis - f0_vis
+
+            if n_vis > 0:
+                s1_strip = np.zeros(n_vis, dtype=np.float32)
+                s2_strip = np.zeros(n_vis, dtype=np.float32)
+                s3_strip = np.zeros(n_vis, dtype=np.float32)
+
+                for bi in range(b_pred):
+                    frame_pos = step_cursor + bi
+                    local = frame_pos - f0_vis
+                    if 0 <= local < n_vis:
+                        s1_strip[local] = max(s1_strip[local], s1_data[bi])
+                        s2_strip[local] = max(s2_strip[local], s2_data[bi])
+                        s3_strip[local] = max(s3_strip[local], s3_data[bi])
+
+                # Apply exponential scaling
+                r = np.clip((s1_strip ** 2) * 255, 0, 255).astype(np.uint8)
+                g = np.clip((s2_strip ** 2) * 255, 0, 255).astype(np.uint8)
+                b = np.clip((s3_strip ** 2) * 255, 0, 255).astype(np.uint8)
+
+                strip_rgb = np.stack([r, g, b], axis=-1)  # (n_vis, 3)
+                strip_img = np.tile(strip_rgb[:, np.newaxis, :], (1, strip_h, 1))
+                strip_surf = pygame.surfarray.make_surface(strip_img)
+
+                slice_x_start = int((f0_vis - frame_start) * px_per_frame)
+                slice_pixel_w = max(1, int(n_vis * px_per_frame))
+                scaled = pygame.transform.scale(strip_surf, (slice_pixel_w, strip_h))
+                self.screen.blit(scaled, (pad_x + slice_x_start, y))
+
+            # Cursor line
+            cx = pad_x + int(frames_left * px_per_frame)
+            pygame.draw.line(self.screen, (255, 255, 255), (cx, y), (cx, y + strip_h), 1)
+
+            # Label
+            lbl = self.font_small.render("S1/S2/S3 (R/G/B)", True, (180, 180, 200))
+            self.screen.blit(lbl, (pad_x + 2, y + 1))
+
+            y += strip_h + 2
 
         # --- Waveform (fast path via surfarray) ---
         if self.wave_data is not None:
@@ -1877,6 +1950,7 @@ def main():
                         sampling_npy_path=getattr(args, 'sampling_npy', None),
                         candidates_json_path=getattr(args, 'candidates_json', None),
                         proposals_npz_path=getattr(args, 'proposals_npz', None),
+                        s3confs_npz_path=getattr(args, 's3confs_npz', None),
                         gif_path=args.gif, gif_cycles=args.gif_cycles)
         viewer.render_video(args.render, fps=args.render_fps)
         pygame.quit()
@@ -1888,6 +1962,7 @@ def main():
                         sampling_npy_path=getattr(args, 'sampling_npy', None),
                         candidates_json_path=getattr(args, 'candidates_json', None),
                         proposals_npz_path=getattr(args, 'proposals_npz', None),
+                        s3confs_npz_path=getattr(args, 's3confs_npz', None),
                         gif_path=args.gif, gif_cycles=args.gif_cycles)
         viewer.run()
 

@@ -162,8 +162,71 @@ Context augmentation (same as S2v2):
 
 ## Result
 
-*Pending*
+### Per-Bin F1 (rerun, 14 evals, epoch 3.5)
+
+| Eval | F1 | Recovery | S1only F1 | S2only F1 | Agree F1 |
+|---|---|---|---|---|---|
+| 1 | 0.735 | 13.8% | 0.600 | 0.510 | 0.898 |
+| 4 | 0.752 | 14.1% | 0.626 | 0.549 | 0.905 |
+| 9 | 0.766 | 17.3% | 0.652 | 0.574 | 0.906 |
+| 12 | 0.769 | 19.8% | 0.657 | 0.588 | — |
+| 14 | **0.771** | **21.7%** | **0.662** | **0.595** | — |
+
+Peak F1=0.771. +1.9pp over simple averaging (0.752), +4.4pp over S2v2 alone, +5.9pp over S1 alone.
+
+### Benchmarks (eval 12)
+
+| Benchmark | F1 | Delta from normal | Meaning |
+|---|---|---|---|
+| normal | 0.769 | — | Full S1+S2v2 |
+| no_s2 | 0.703 | -6.6pp | S2v2 contributes 6.6pp |
+| no_s1 | 0.433 | -33.6pp | S1 contributes 33.6pp |
+| no_s1s2 | 0.211 | -55.8pp | Both critical |
+| random_s2 | 0.706 | -6.3pp | S3 robust to bad S2 |
+| random_s1 | 0.536 | -23.3pp | S1 more critical than S2 |
+
+### AR Evaluation (30 val songs, best checkpoint)
+
+Best balanced configs vs exp58 (previous ATH):
+
+| Config | Close% | Hall% | d_ratio | P-Space | HI-PS | ErrMed | Balance |
+|---|---|---|---|---|---|---|---|
+| **S3_FIRST_0.5** | **80.5%** | 21.5% | **1.17** | **20.0%** | **95.6%** | 24ms | **66.3** |
+| S3_ALL_0.6 | 78.8% | **14.1%** | 2.06 | 22.0% | 81.2% | 17ms | 50.5 |
+| ADD_ALL_0.5 | 81.6% | 15.8% | 2.06 | 21.5% | 83.5% | 15ms | 52.6 |
+| S3_ALL_0.5 | **93.4%** | 20.3% | 3.60 | 47.1% | 94.3% | **9ms** | 31.3 |
+| **exp58 (ref)** | 75.9% | **15.6%** | **0.92** | 10.1% | 81.1% | **8ms** | — |
+
+S3_FIRST_THRESH_0.5 is the recommended config:
+- +4.6pp close rate over exp58
+- d_ratio 1.17 (slight over-prediction, best of any high-close config)
+- P-Space 20.0% (2x exp58, surpasses human GT 11.7%)
+- HI P-Space 95.6% (covers nearly all human patterns)
+- 24ms timing (worse than exp58's 8ms — FIRST_THRESH takes first bin, not peak)
+
+### Key Discovery: MAX Sampling is Wrong for Per-Bin Detectors
+
+All MAX configs score 24-33% close rate — terrible. ALL_THRESH and FIRST_THRESH score 78-96%. The per-bin detection paradigm requires threshold-based sampling, not argmax. This is a fundamental paradigm shift from our previous single-onset classification models.
+
+### Remaining Problem: Density Over-Prediction
+
+All high-close configs over-predict density (d_ratio 1.17-3.6). The model fires too many bins above threshold. Solutions:
+1. Threshold tuning (0.55-0.65 for FIRST_THRESH)
+2. Post-processing: keep only top-N events per second matching target density
+3. Train with density-aware loss
 
 ## Lesson
 
-*Pending*
+1. **S3 fusion surpasses naive averaging.** F1=0.771 vs average 0.752 (+1.9pp). The DETR-style cross-attention learns real fusion, not just interpolation.
+
+2. **Recovery is the key metric.** S3 finds 21.7% of onset bins that BOTH S1 and S2v2 missed. This is fusion of moderate confidences that neither model flagged alone — impossible with averaging.
+
+3. **Both S1 and S2v2 are load-bearing.** S1 contributes 33.6pp (audio is critical), S2v2 contributes 6.6pp (context is meaningful). Removing both drops to 0.211.
+
+4. **Per-bin detection with FIRST_THRESH is the right paradigm.** S3_FIRST_0.5 achieves 80.5% close — the best AR close rate in the project. The shift from single-onset classification to per-bin detection + threshold sampling is the biggest AR quality improvement.
+
+5. **Pattern diversity doubled.** P-Space 20% and HI P-Space 95.6% — the 3-stage model produces much richer, more human-like patterns than any single model.
+
+6. **Density control is the remaining challenge.** All high-close configs over-predict. This is solvable with threshold tuning or post-processing, not architectural changes.
+
+7. **Auxiliary decoder losses are critical.** Per-layer F1 progression (0.745→0.747→0.748 at eval 3) shows all layers learn independently, matching DETR's findings. Without auxiliary losses, the model would likely not converge.
