@@ -295,6 +295,22 @@ def main():
         d_peak = density * 2
         d_std = density * 0.3
 
+        # Check for TaikoNation prediction
+        tn_csv = os.path.join(csv_dir, f"{bsid}_taikonation_predicted.csv")
+        if os.path.exists(tn_csv):
+            pred_ms = load_csv_events_ms(tn_csv)
+            if len(pred_ms) >= 2:
+                gt_result = compute_gt_metrics(pred_ms, gt_ms)
+                tn_result = compute_tn_metrics(pred_ms, gt_ms, tn_rng)
+                if gt_result and tn_result:
+                    if "taikonation_run" not in model_results:
+                        model_results["taikonation_run"] = []
+                    combined = {**gt_result, **tn_result, "chart": f"{artist} - {title}"}
+                    model_results["taikonation_run"].append(combined)
+                    print(f"    TaikoNation: close={gt_result['close_rate']:.1%} "
+                          f"hall={gt_result['hallucination_rate']:.1%} "
+                          f"DCHum={tn_result['dc_human']:.1f}%")
+
         # Run each model
         for model_name, ckpt_path in available_models.items():
             safe = f"{bsid}_{model_name}"
@@ -334,8 +350,12 @@ def main():
     print(f"\n{'Model':<15} {'Close%':>7} {'Match%':>7} {'Far%':>6} {'Hall%':>6} {'d_ratio':>8} {'err_med':>8} | {'OverPS':>7} {'HI-PS':>6} {'DCHum':>6} {'OCHum':>6} {'DCRand':>7}")
     print("-" * 110)
 
-    # Our models
-    for model_name in available_models:
+    # All models (ours + TaikoNation run)
+    all_model_names = list(available_models.keys())
+    if "taikonation_run" in model_results and model_results["taikonation_run"]:
+        all_model_names.append("taikonation_run")
+
+    for model_name in all_model_names:
         results = model_results[model_name]
         if not results:
             print(f"  {model_name:<13} (no data)")
@@ -368,8 +388,8 @@ def main():
         "human_gt": {},
         "published": PUBLISHED,
     }
-    for model_name in available_models:
-        results = model_results[model_name]
+    for model_name in all_model_names:
+        results = model_results.get(model_name, [])
         if not results:
             continue
         avg = lambda k: float(np.mean([r[k] for r in results]))
