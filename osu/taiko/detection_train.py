@@ -1084,7 +1084,7 @@ def _top3_gap_peaks(gaps, tolerance=0.05):
 @torch.no_grad()
 def validate_and_collect(model, loader, criterion, device, amp_enabled=False, sigmoid_mode=False, framewise=False,
                          multi_target=False, ratio_criterion=None, propose_select=False,
-                         n_onsets=1):
+                         n_onsets=1, fusion_classifier=False):
     """Single pass: compute val loss AND collect predictions + extra data for graphs."""
     model.eval()
     all_targets = []       # single-target: (N,), multi-target: not used
@@ -1139,6 +1139,42 @@ def validate_and_collect(model, loader, criterion, device, amp_enabled=False, si
                 # create compat logits for legacy metrics
                 logits = torch.zeros(B_fw, N_CLASSES, device=device)
                 logits[:, :500:4] = onset_probs * 10
+            elif fusion_classifier:
+                model_raw = model._orig_mod if hasattr(model, '_orig_mod') else model
+                frozen_s1 = model_raw._frozen_s1
+                frozen_s2 = model_raw._frozen_s2
+                s1_logits = frozen_s1(mel)
+                s1_conf = torch.sigmoid(s1_logits)
+                audio_feat = frozen_s1.conv_norm(frozen_s1.conv(mel).transpose(1, 2))
+                B_fc = mel.size(0)
+                fc_gaps = torch.zeros(B_fc, C_EVENTS, device=device)
+                fc_ratios = torch.zeros(B_fc, C_EVENTS, device=device)
+                fc_s2mask = torch.ones(B_fc, C_EVENTS, dtype=torch.bool, device=device)
+                for b in range(B_fc):
+                    valid = ~evt_mask[b]
+                    n_v = valid.sum().item()
+                    if n_v >= 2:
+                        offs = evt_off[b][valid].float()
+                        diffs = offs[1:] - offs[:-1]
+                        diffs = diffs.clamp(min=1.0)
+                        rg = torch.ones(n_v, device=device)
+                        rg[1:] = diffs
+                        rg[0] = rg[1] if n_v >= 2 else 30.0
+                        rr = torch.ones(n_v, device=device)
+                        for i in range(1, n_v):
+                            rr[i] = (rg[i-1] / rg[i]).clamp(0.1, 10.0)
+                        s = C_EVENTS - n_v
+                        fc_gaps[b, s:] = rg
+                        fc_ratios[b, s:] = rr
+                        fc_s2mask[b, s:] = False
+                    elif n_v == 1:
+                        fc_gaps[b, -1] = 30.0
+                        fc_ratios[b, -1] = 1.0
+                        fc_s2mask[b, -1] = False
+                s2_logits = frozen_s2(fc_gaps, fc_ratios, fc_s2mask, cond)
+                s2_conf = torch.sigmoid(s2_logits)
+                logits = model(audio_feat, s1_conf, s2_conf, evt_off, evt_mask, cond)
+                loss = criterion(logits, target)
             else:
                 output = model(mel, evt_off, evt_mask, cond)
                 if isinstance(output, tuple) and propose_select:
@@ -1689,7 +1725,7 @@ def threshold_sweep(targets_padded, n_targets, probs,
 # ═══════════════════════════════════════════════════════════════
 
 @torch.no_grad()
-def run_benchmarks(model, val_loader, device, amp_enabled=False, multi_target=False, delta_onsets=False):
+def run_benchmarks(model, val_loader, device, amp_enabled=False, multi_target=False, delta_onsets=False, fusion_classifier=False):
     """Run ablation benchmarks on corrupted validation data.
 
     Returns dict of benchmark_name -> {stop_rate, mean_pred, pred_std, n_samples}.
@@ -1698,10 +1734,11 @@ def run_benchmarks(model, val_loader, device, amp_enabled=False, multi_target=Fa
     model.eval()
     rng = np.random.default_rng(42)
 
-    # collect a subset of batches (10% of val set)
+    # collect a subset of batches (10% of val set, or ~1.7% for fusion_classifier)
     all_batches = []
     total_samples = 0
-    target_samples = len(val_loader.dataset) // 10
+    divisor = 60 if fusion_classifier else 10
+    target_samples = len(val_loader.dataset) // divisor
     for batch in val_loader:
         all_batches.append(batch)
         total_samples += batch[0].size(0)
@@ -1709,6 +1746,66 @@ def run_benchmarks(model, val_loader, device, amp_enabled=False, multi_target=Fa
             break
 
     stop = N_CLASSES - 1
+
+    # Helper: run forward pass for any model type, returns logits (B, N_CLASSES)
+    def _forward(model, mel, evt_off, evt_mask, cond, s1_override=None, s2_override=None):
+        """Forward pass that handles fusion_classifier and standard models.
+
+        s1_override / s2_override: if not None, replace S1/S2v2 confidences (for benchmarks).
+        """
+        if fusion_classifier:
+            model_raw = model._orig_mod if hasattr(model, '_orig_mod') else model
+            frozen_s1 = model_raw._frozen_s1
+            frozen_s2 = model_raw._frozen_s2
+
+            # S1 audio features + confidence
+            s1_logits = frozen_s1(mel)
+            s1_conf = torch.sigmoid(s1_logits) if s1_override is None else s1_override
+            audio_feat = frozen_s1.conv_norm(frozen_s1.conv(mel).transpose(1, 2))
+
+            # S2v2 gaps/ratios from events
+            B_fc = mel.size(0)
+            fc_gaps = torch.zeros(B_fc, C_EVENTS, device=mel.device)
+            fc_ratios = torch.zeros(B_fc, C_EVENTS, device=mel.device)
+            fc_s2mask = torch.ones(B_fc, C_EVENTS, dtype=torch.bool, device=mel.device)
+            for b in range(B_fc):
+                valid = ~evt_mask[b]
+                n_v = valid.sum().item()
+                if n_v >= 2:
+                    offs = evt_off[b][valid].float()
+                    diffs = offs[1:] - offs[:-1]
+                    diffs = diffs.clamp(min=1.0)
+                    rg_t = torch.ones(n_v, device=mel.device)
+                    rg_t[1:] = diffs
+                    rg_t[0] = rg_t[1] if n_v >= 2 else 30.0
+                    rr_t = torch.ones(n_v, device=mel.device)
+                    for i in range(1, n_v):
+                        rr_t[i] = (rg_t[i-1] / rg_t[i]).clamp(0.1, 10.0)
+                    s = C_EVENTS - n_v
+                    fc_gaps[b, s:] = rg_t
+                    fc_ratios[b, s:] = rr_t
+                    fc_s2mask[b, s:] = False
+                elif n_v == 1:
+                    fc_gaps[b, -1] = 30.0
+                    fc_ratios[b, -1] = 1.0
+                    fc_s2mask[b, -1] = False
+
+            s2_logits = frozen_s2(fc_gaps, fc_ratios, fc_s2mask, cond)
+            s2_conf = torch.sigmoid(s2_logits) if s2_override is None else s2_override
+
+            logits = model(audio_feat, s1_conf, s2_conf, evt_off, evt_mask, cond)
+            return logits
+        else:
+            output = model(mel, evt_off, evt_mask, cond)
+            if isinstance(output, tuple) and len(output) == 2 and output[1].dim() == 1:
+                onset_logits, stop_logit = output
+                logits = F.pad(onset_logits, (0, 1), value=-10.0)
+                logits[:, N_CLASSES - 1] = stop_logit * 5.0
+                return logits
+            elif isinstance(output, tuple):
+                return output[0]
+            else:
+                return output
 
     def _compute_prev_gaps(evt_off, evt_mask):
         """Compute prev_gap (last gap between context events) per sample."""
@@ -1734,7 +1831,11 @@ def run_benchmarks(model, val_loader, device, amp_enabled=False, multi_target=Fa
         return float((np.abs(ratio_to_gap - 1.0) <= 0.05).mean())
 
     def run_corrupted(batches, corrupt_fn, name):
-        """Run model on corrupted batches, return full arrays + summary stats."""
+        """Run model on corrupted batches, return full arrays + summary stats.
+
+        corrupt_fn returns (mel, evt_off, evt_mask, cond) or
+        (mel, evt_off, evt_mask, cond, s1_override, s2_override) for fusion_classifier.
+        """
         all_preds = []
         all_targets = []
         all_prev_gaps = []
@@ -1754,23 +1855,26 @@ def run_benchmarks(model, val_loader, device, amp_enabled=False, multi_target=Fa
             # compute prev_gaps from ORIGINAL events before corruption
             all_prev_gaps.append(_compute_prev_gaps(evt_off, evt_mask))
 
-            mel, evt_off, evt_mask, cond = corrupt_fn(
+            corrupted = corrupt_fn(
                 mel.clone(), evt_off.clone(), evt_mask.clone(), cond.clone(), target
             )
+            if len(corrupted) == 6:
+                mel, evt_off, evt_mask, cond, s1_ov, s2_ov = corrupted
+            else:
+                mel, evt_off, evt_mask, cond = corrupted
+                s1_ov, s2_ov = None, None
+
             mel = mel.to(device, non_blocking=True)
             evt_off = evt_off.to(device, non_blocking=True)
             evt_mask = evt_mask.to(device, non_blocking=True)
             cond = cond.to(device, non_blocking=True)
+            if s1_ov is not None:
+                s1_ov = s1_ov.to(device, non_blocking=True)
+            if s2_ov is not None:
+                s2_ov = s2_ov.to(device, non_blocking=True)
             with torch.autocast("cuda", enabled=amp_enabled):
-                output = model(mel, evt_off, evt_mask, cond)
-                if isinstance(output, tuple) and len(output) == 2 and output[1].dim() == 1:
-                    onset_logits, stop_logit = output
-                    logits_full = F.pad(onset_logits, (0, 1), value=-10.0)
-                    logits_full[:, N_CLASSES - 1] = stop_logit * 5.0
-                elif isinstance(output, tuple):
-                    logits_full = output[0]
-                else:
-                    logits_full = output
+                logits_full = _forward(model, mel, evt_off, evt_mask, cond,
+                                       s1_override=s1_ov, s2_override=s2_ov)
 
                 # multi-onset: collect per-onset data
                 if logits_full.dim() == 3:
@@ -2012,113 +2116,99 @@ def run_benchmarks(model, val_loader, device, amp_enabled=False, multi_target=Fa
     results["random_density"] = run_corrupted(all_batches, random_density, "random_density")
     bench_bar.set_postfix_str("random_density"); bench_bar.update(1)
 
-    # 11) NoAudio_A - kill only past audio (first A_BINS frames)
-    def no_audio_a(mel, evt_off, evt_mask, cond, target):
-        mel[:, :, :A_BINS] = 0
-        return mel, evt_off, evt_mask, cond
-    results["no_audio_a"] = run_corrupted(all_batches, no_audio_a, "no_audio_a")
-    bench_bar.set_postfix_str("no_audio_a"); bench_bar.update(1)
+    if not fusion_classifier:
+        # 11-18: Internal model benchmarks (skip for fusion_classifier)
+        def no_audio_a(mel, evt_off, evt_mask, cond, target):
+            mel[:, :, :A_BINS] = 0
+            return mel, evt_off, evt_mask, cond
+        results["no_audio_a"] = run_corrupted(all_batches, no_audio_a, "no_audio_a")
+        bench_bar.set_postfix_str("no_audio_a"); bench_bar.update(1)
 
-    # 12) NoAudio_B - kill only future audio (last B_BINS frames)
-    def no_audio_b(mel, evt_off, evt_mask, cond, target):
-        mel[:, :, A_BINS:] = 0
-        return mel, evt_off, evt_mask, cond
-    results["no_audio_b"] = run_corrupted(all_batches, no_audio_b, "no_audio_b")
-    bench_bar.set_postfix_str("no_audio_b"); bench_bar.update(1)
+        def no_audio_b(mel, evt_off, evt_mask, cond, target):
+            mel[:, :, A_BINS:] = 0
+            return mel, evt_off, evt_mask, cond
+        results["no_audio_b"] = run_corrupted(all_batches, no_audio_b, "no_audio_b")
+        bench_bar.set_postfix_str("no_audio_b"); bench_bar.update(1)
 
-    # 13) NoAudio_E - kill audio within ±10 frames of each event onset
-    def no_audio_e(mel, evt_off, evt_mask, cond, target):
-        B, C = evt_off.shape
-        for b in range(B):
-            valid = ~evt_mask[b].bool()
-            if not valid.any():
-                continue
-            offsets = evt_off[b][valid]
-            for off in offsets:
-                # offset is relative to cursor, mel starts at -A_BINS
-                frame_idx = int(off.item()) + A_BINS  # position in mel window
-                lo = max(0, frame_idx - 10)
-                hi = min(mel.size(2), frame_idx + 11)
-                mel[b, :, lo:hi] = 0
-        return mel, evt_off, evt_mask, cond
-    results["no_audio_e"] = run_corrupted(all_batches, no_audio_e, "no_audio_e")
-    bench_bar.set_postfix_str("no_audio_e"); bench_bar.update(1)
+        def no_audio_e(mel, evt_off, evt_mask, cond, target):
+            B, C = evt_off.shape
+            for b in range(B):
+                valid = ~evt_mask[b].bool()
+                if not valid.any():
+                    continue
+                offsets = evt_off[b][valid]
+                for off in offsets:
+                    frame_idx = int(off.item()) + A_BINS
+                    lo = max(0, frame_idx - 10)
+                    hi = min(mel.size(2), frame_idx + 11)
+                    mel[b, :, lo:hi] = 0
+            return mel, evt_off, evt_mask, cond
+        results["no_audio_e"] = run_corrupted(all_batches, no_audio_e, "no_audio_e")
+        bench_bar.set_postfix_str("no_audio_e"); bench_bar.update(1)
 
-    # 14) SwapOut - replace past audio (A) with random audio from another sample in the batch
-    def swap_out(mel, evt_off, evt_mask, cond, target):
-        B = mel.size(0)
-        if B > 1:
-            perm = torch.randperm(B)
-            # ensure no self-swap
-            for i in range(B):
-                if perm[i] == i:
-                    perm[i] = (i + 1) % B
-            mel[:, :, :A_BINS] = mel[perm, :, :A_BINS].clone()
-        return mel, evt_off, evt_mask, cond
-    results["swap_out"] = run_corrupted(all_batches, swap_out, "swap_out")
-    bench_bar.set_postfix_str("swap_out"); bench_bar.update(1)
+        def swap_out(mel, evt_off, evt_mask, cond, target):
+            B = mel.size(0)
+            if B > 1:
+                perm = torch.randperm(B)
+                for i in range(B):
+                    if perm[i] == i:
+                        perm[i] = (i + 1) % B
+                mel[:, :, :A_BINS] = mel[perm, :, :A_BINS].clone()
+            return mel, evt_off, evt_mask, cond
+        results["swap_out"] = run_corrupted(all_batches, swap_out, "swap_out")
+        bench_bar.set_postfix_str("swap_out"); bench_bar.update(1)
 
-    # 15) NoEvents_Past - kill only out-of-window events (keep in-window events intact)
-    def no_events_past(mel, evt_off, evt_mask, cond, target):
-        B, C = evt_off.shape
-        for b in range(B):
-            valid = ~evt_mask[b].bool()
-            if not valid.any():
-                continue
-            # mask out events with offset < -A_BINS (out of audio window)
-            oow = valid & (evt_off[b] < -A_BINS)
-            evt_off[b][oow] = 0
-            evt_mask[b][oow] = True
-        return mel, evt_off, evt_mask, cond
-    results["no_events_past"] = run_corrupted(all_batches, no_events_past, "no_events_past")
-    bench_bar.set_postfix_str("no_events_past"); bench_bar.update(1)
+        def no_events_past(mel, evt_off, evt_mask, cond, target):
+            B, C = evt_off.shape
+            for b in range(B):
+                valid = ~evt_mask[b].bool()
+                if not valid.any():
+                    continue
+                oow = valid & (evt_off[b] < -A_BINS)
+                evt_off[b][oow] = 0
+                evt_mask[b][oow] = True
+            return mel, evt_off, evt_mask, cond
+        results["no_events_past"] = run_corrupted(all_batches, no_events_past, "no_events_past")
+        bench_bar.set_postfix_str("no_events_past"); bench_bar.update(1)
 
-    # 16) EventEmbed_RatioBlank - set gap ratios to 1.0 (neutral)
-    # Gap ratios use sinusoidal encoding of ratio*50, so ratio=1.0 → value=50
-    # We modify the event_offsets to make all consecutive gaps equal → ratio=1.0
-    # Simpler: just make events evenly spaced so ratios are all 1.0
-    def event_ratio_blank(mel, evt_off, evt_mask, cond, target):
-        B, C = evt_off.shape
-        for b in range(B):
-            valid = ~evt_mask[b].bool()
-            n_valid = valid.sum().item()
-            if n_valid < 2:
-                continue
-            # get the valid offsets, compute their mean gap, make evenly spaced
-            offsets = evt_off[b][valid].clone()
-            mean_gap = max(1, int((offsets[-1] - offsets[0]).item() / max(n_valid - 1, 1)))
-            new_offsets = torch.arange(n_valid, dtype=torch.long, device=evt_off.device) * mean_gap + offsets[0]
-            evt_off[b][valid] = new_offsets
-        return mel, evt_off, evt_mask, cond
-    results["event_ratio_blank"] = run_corrupted(all_batches, event_ratio_blank, "event_ratio_blank")
-    bench_bar.set_postfix_str("event_ratio_blank"); bench_bar.update(1)
+        def event_ratio_blank(mel, evt_off, evt_mask, cond, target):
+            B, C = evt_off.shape
+            for b in range(B):
+                valid = ~evt_mask[b].bool()
+                n_valid = valid.sum().item()
+                if n_valid < 2:
+                    continue
+                offsets = evt_off[b][valid].clone()
+                mean_gap = max(1, int((offsets[-1] - offsets[0]).item() / max(n_valid - 1, 1)))
+                new_offsets = torch.arange(n_valid, dtype=torch.long, device=evt_off.device) * mean_gap + offsets[0]
+                evt_off[b][valid] = new_offsets
+            return mel, evt_off, evt_mask, cond
+        results["event_ratio_blank"] = run_corrupted(all_batches, event_ratio_blank, "event_ratio_blank")
+        bench_bar.set_postfix_str("event_ratio_blank"); bench_bar.update(1)
 
-    # 17) EventEmbed_GapBlank - set all gaps to 0 (all events at same position)
-    def event_gap_blank(mel, evt_off, evt_mask, cond, target):
-        B, C = evt_off.shape
-        for b in range(B):
-            valid = ~evt_mask[b].bool()
-            if not valid.any():
-                continue
-            # set all valid events to the same offset (the most recent one)
-            last_offset = evt_off[b][valid][-1].item()
-            evt_off[b][valid] = last_offset
-        return mel, evt_off, evt_mask, cond
-    results["event_gap_blank"] = run_corrupted(all_batches, event_gap_blank, "event_gap_blank")
-    bench_bar.set_postfix_str("event_gap_blank"); bench_bar.update(1)
+        def event_gap_blank(mel, evt_off, evt_mask, cond, target):
+            B, C = evt_off.shape
+            for b in range(B):
+                valid = ~evt_mask[b].bool()
+                if not valid.any():
+                    continue
+                last_offset = evt_off[b][valid][-1].item()
+                evt_off[b][valid] = last_offset
+            return mel, evt_off, evt_mask, cond
+        results["event_gap_blank"] = run_corrupted(all_batches, event_gap_blank, "event_gap_blank")
+        bench_bar.set_postfix_str("event_gap_blank"); bench_bar.update(1)
 
-    # 18) EventEmbed_RatioGapBlank - both ratio and gap blanked
-    def event_ratio_gap_blank(mel, evt_off, evt_mask, cond, target):
-        B, C = evt_off.shape
-        for b in range(B):
-            valid = ~evt_mask[b].bool()
-            if not valid.any():
-                continue
-            last_offset = evt_off[b][valid][-1].item()
-            evt_off[b][valid] = last_offset
-        return mel, evt_off, evt_mask, cond
-    results["event_ratio_gap_blank"] = run_corrupted(all_batches, event_ratio_gap_blank, "event_ratio_gap_blank")
-    bench_bar.set_postfix_str("event_ratio_gap_blank"); bench_bar.update(1)
+        def event_ratio_gap_blank(mel, evt_off, evt_mask, cond, target):
+            B, C = evt_off.shape
+            for b in range(B):
+                valid = ~evt_mask[b].bool()
+                if not valid.any():
+                    continue
+                last_offset = evt_off[b][valid][-1].item()
+                evt_off[b][valid] = last_offset
+            return mel, evt_off, evt_mask, cond
+        results["event_ratio_gap_blank"] = run_corrupted(all_batches, event_ratio_gap_blank, "event_ratio_gap_blank")
+        bench_bar.set_postfix_str("event_ratio_gap_blank"); bench_bar.update(1)
 
     # 19-20) Proposal override benchmarks (exp 58+ only)
     model_raw_bench = model._orig_mod if hasattr(model, '_orig_mod') else model
@@ -2128,19 +2218,52 @@ def run_benchmarks(model, val_loader, device, amp_enabled=False, multi_target=Fa
     except ImportError:
         is_propose_select = False
     if is_propose_select:
-        # 19) Zero proposals - Stage 2 gets no Stage 1 signal
         def identity(mel, evt_off, evt_mask, cond, target):
             return mel, evt_off, evt_mask, cond
         model_raw_bench._proposal_override = "zero"
         results["proposal_zero"] = run_corrupted(all_batches, identity, "proposal_zero")
         bench_bar.set_postfix_str("proposal_zero"); bench_bar.update(1)
 
-        # 20) Random proposals - Stage 2 gets noise instead of real proposals
         model_raw_bench._proposal_override = "random"
         results["proposal_random"] = run_corrupted(all_batches, identity, "proposal_random")
         bench_bar.set_postfix_str("proposal_random"); bench_bar.update(1)
 
-        model_raw_bench._proposal_override = None  # restore normal behavior
+        model_raw_bench._proposal_override = None
+
+    # ── Fusion classifier benchmarks (exp 65-S3v2) ──
+    if fusion_classifier:
+        b_pred = N_CLASSES - 1
+
+        def no_s1(mel, evt_off, evt_mask, cond, target):
+            s1_ov = torch.zeros(mel.size(0), b_pred)
+            return mel, evt_off, evt_mask, cond, s1_ov, None
+        results["no_s1"] = run_corrupted(all_batches, no_s1, "no_s1")
+        bench_bar.set_postfix_str("no_s1"); bench_bar.update(1)
+
+        def no_s2(mel, evt_off, evt_mask, cond, target):
+            s2_ov = torch.zeros(mel.size(0), b_pred)
+            return mel, evt_off, evt_mask, cond, None, s2_ov
+        results["no_s2"] = run_corrupted(all_batches, no_s2, "no_s2")
+        bench_bar.set_postfix_str("no_s2"); bench_bar.update(1)
+
+        def no_s1s2(mel, evt_off, evt_mask, cond, target):
+            s1_ov = torch.zeros(mel.size(0), b_pred)
+            s2_ov = torch.zeros(mel.size(0), b_pred)
+            return mel, evt_off, evt_mask, cond, s1_ov, s2_ov
+        results["no_s1s2"] = run_corrupted(all_batches, no_s1s2, "no_s1s2")
+        bench_bar.set_postfix_str("no_s1s2"); bench_bar.update(1)
+
+        def random_s1(mel, evt_off, evt_mask, cond, target):
+            s1_ov = torch.rand(mel.size(0), b_pred)
+            return mel, evt_off, evt_mask, cond, s1_ov, None
+        results["random_s1"] = run_corrupted(all_batches, random_s1, "random_s1")
+        bench_bar.set_postfix_str("random_s1"); bench_bar.update(1)
+
+        def random_s2(mel, evt_off, evt_mask, cond, target):
+            s2_ov = torch.rand(mel.size(0), b_pred)
+            return mel, evt_off, evt_mask, cond, None, s2_ov
+        results["random_s2"] = run_corrupted(all_batches, random_s2, "random_s2")
+        bench_bar.set_postfix_str("random_s2"); bench_bar.update(1)
 
     # ── 21) Autoregressive benchmarks ──
     # Run like real inference: predict, move cursor, feed prediction back.
@@ -2253,15 +2376,7 @@ def run_benchmarks(model, val_loader, device, amp_enabled=False, multi_target=Fa
 
             for step in range(AR_STEPS):
                 with torch.no_grad(), torch.autocast("cuda", enabled=amp_enabled):
-                    output = model(mel_s, evt_off_s, evt_mask_s, cond_s)
-                    if isinstance(output, tuple) and len(output) == 2 and output[1].dim() == 1:
-                        onset_logits, stop_logit = output
-                        logits = F.pad(onset_logits, (0, 1), value=-10.0)
-                        logits[:, N_CLASSES - 1] = stop_logit * 5.0
-                    elif isinstance(output, tuple):
-                        logits = output[0]
-                    else:
-                        logits = output
+                    logits = _forward(model, mel_s, evt_off_s, evt_mask_s, cond_s)
                     # multi-onset: use onset_1 for AR benchmark
                     if logits.dim() == 3:
                         logits = logits[:, 0]
@@ -4539,6 +4654,53 @@ def train(args):
             a_bins=A_BINS, b_bins=B_BINS,
             ratio_head=getattr(args, 'ratio_head', False),
         ).to(args.device)
+    elif args.model_type == "fusion_classifier":
+        from detection_s3v2_model import FusionClassifier
+        from detection_s1_model import ConformerProposer
+        from detection_s2v2_model import ContextProposer
+
+        # Load frozen S1
+        assert args.s1_checkpoint, "--s1-checkpoint required for fusion_classifier"
+        assert args.s2_checkpoint, "--s2-checkpoint required for fusion_classifier"
+        s1_ckpt = torch.load(args.s1_checkpoint, map_location=args.device, weights_only=False)
+        s1_args = s1_ckpt["args"]
+        frozen_s1 = ConformerProposer(
+            n_mels=80, d_model=s1_args.get("d_model", 384),
+            n_layers=s1_args.get("n_layers", 8), n_heads=8,
+            conv_kernel=s1_args.get("conv_kernel", 31),
+            a_bins=A_BINS, b_bins=B_BINS, b_pred=N_CLASSES - 1,
+        ).to(args.device)
+        frozen_s1.load_state_dict(s1_ckpt["model"])
+        frozen_s1.eval()
+        for p in frozen_s1.parameters():
+            p.requires_grad = False
+        print(f"  Frozen S1: {sum(p.numel() for p in frozen_s1.parameters()):,} params")
+
+        # Load frozen S2v2
+        s2_ckpt = torch.load(args.s2_checkpoint, map_location=args.device, weights_only=False)
+        s2_args = s2_ckpt["args"]
+        frozen_s2 = ContextProposer(
+            d_model=s2_args.get("d_model", 256),
+            n_gru_layers=s2_args.get("n_gru_layers", 4),
+            b_pred=N_CLASSES - 1, max_events=C_EVENTS,
+        ).to(args.device)
+        frozen_s2.load_state_dict(s2_ckpt["model"])
+        frozen_s2.eval()
+        for p in frozen_s2.parameters():
+            p.requires_grad = False
+        print(f"  Frozen S2v2: {sum(p.numel() for p in frozen_s2.parameters()):,} params")
+
+        model = FusionClassifier(
+            d_model=args.d_model, d_audio=s1_args.get("d_model", 384),
+            n_layers=args.enc_layers + args.fusion_layers,
+            n_heads=args.n_heads, n_classes=N_CLASSES,
+            dropout=args.dropout, a_bins=A_BINS, b_bins=B_BINS,
+            max_events=C_EVENTS, gap_ratios=args.gap_ratios,
+        ).to(args.device)
+
+        # Store frozen models on the model for access in training loop
+        model._frozen_s1 = frozen_s1
+        model._frozen_s2 = frozen_s2
     elif args.model_type == "event_embed_propose":
         from detection_model import ProposeSelectDetector
         model = ProposeSelectDetector(
@@ -4838,6 +5000,69 @@ def train(args):
                     logits = torch.zeros(mel.size(0), N_CLASSES, device=mel.device)
                     # put onset_probs into first 125 positions scaled up
                     logits[:, :500:4] = onset_probs * 10  # rough proxy for compat
+                elif args.model_type == "fusion_classifier":
+                    model_raw = model._orig_mod if hasattr(model, '_orig_mod') else model
+                    frozen_s1 = model_raw._frozen_s1
+                    frozen_s2 = model_raw._frozen_s2
+
+                    with torch.no_grad():
+                        # S1: audio features + confidence
+                        s1_logits = frozen_s1(mel)
+                        s1_conf = torch.sigmoid(s1_logits)
+                        audio_feat = frozen_s1.conv_norm(frozen_s1.conv(mel).transpose(1, 2))
+
+                        # S2v2: compute gaps/ratios from event offsets
+                        B_fc = mel.size(0)
+                        fc_gaps = torch.zeros(B_fc, C_EVENTS, device=mel.device)
+                        fc_ratios = torch.zeros(B_fc, C_EVENTS, device=mel.device)
+                        fc_s2mask = torch.ones(B_fc, C_EVENTS, dtype=torch.bool, device=mel.device)
+                        for b in range(B_fc):
+                            valid = ~evt_mask[b]
+                            n_v = valid.sum().item()
+                            if n_v >= 2:
+                                offs = evt_off[b][valid].float()
+                                diffs = offs[1:] - offs[:-1]
+                                diffs = diffs.clamp(min=1.0)
+                                rg = torch.ones(n_v, device=mel.device)
+                                rg[1:] = diffs
+                                rg[0] = rg[1] if n_v >= 2 else 30.0
+                                rr = torch.ones(n_v, device=mel.device)
+                                for i in range(1, n_v):
+                                    rr[i] = (rg[i-1] / rg[i]).clamp(0.1, 10.0)
+                                s = C_EVENTS - n_v
+                                fc_gaps[b, s:] = rg
+                                fc_ratios[b, s:] = rr
+                                fc_s2mask[b, s:] = False
+                            elif n_v == 1:
+                                fc_gaps[b, -1] = 30.0
+                                fc_ratios[b, -1] = 1.0
+                                fc_s2mask[b, -1] = False
+
+                        s2_logits = frozen_s2(fc_gaps, fc_ratios, fc_s2mask, cond)
+                        s2_conf = torch.sigmoid(s2_logits)
+
+                    # Proposal augmentation: shake + blackout
+                    if model.training:
+                        s1_conf = s1_conf + torch.randn_like(s1_conf) * 0.05
+                        s2_conf = s2_conf + torch.randn_like(s2_conf) * 0.05
+                        s1_conf = s1_conf.clamp(0, 1)
+                        s2_conf = s2_conf.clamp(0, 1)
+                        import random as _rnd
+                        for b in range(B_fc):
+                            if _rnd.random() < 0.05:
+                                choice = _rnd.randint(0, 2)
+                                if choice == 0:
+                                    s1_conf[b] = 0
+                                elif choice == 1:
+                                    s2_conf[b] = 0
+                                else:
+                                    s1_conf[b] = 0
+                                    s2_conf[b] = 0
+
+                    logits = model(audio_feat, s1_conf, s2_conf, evt_off, evt_mask, cond)
+                    loss = criterion(logits, target)
+                    output = None
+
                 elif args.model_type == "event_embed_propose":
                     # set freeze flag so model skips Stage 2 forward during freeze
                     s2_freeze_evals = getattr(args, 'proposer_freeze_evals', 2)
@@ -5216,6 +5441,7 @@ def _run_eval(model, val_loader, criterion, args, amp_enabled,
         ratio_criterion=ratio_criterion,
         propose_select=(args.model_type == "event_embed_propose"),
         n_onsets=n_onsets,
+        fusion_classifier=(args.model_type == "fusion_classifier"),
     )
     # backward-compat: nearest-target metrics (always computed)
     val_targets = val_extra["targets"]
@@ -5503,7 +5729,8 @@ def _run_eval(model, val_loader, criterion, args, amp_enabled,
     torch.cuda.empty_cache()
     bench_results = run_benchmarks(model, val_loader, args.device, amp_enabled=amp_enabled,
                                    multi_target=use_mt,
-                                   delta_onsets=getattr(args, 'delta_onsets', False))
+                                   delta_onsets=getattr(args, 'delta_onsets', False),
+                                   fusion_classifier=(args.model_type == "fusion_classifier"))
     print_benchmarks(bench_results)
     save_benchmark_data(bench_results, eval_step, run_dir)
 
@@ -5593,8 +5820,8 @@ if __name__ == "__main__":
     parser.add_argument("--lr", type=float, default=3e-4)
     parser.add_argument("--wd", type=float, default=0.01)
     parser.add_argument("--d-model", type=int, default=384)
-    parser.add_argument("--model-type", default="unified", choices=["unified", "dual_stream", "interleaved", "context_film", "framewise", "event_embed", "event_embed_propose"],
-                        help="Model architecture: unified, dual_stream, interleaved, context_film, framewise, or event_embed (exp 42+)")
+    parser.add_argument("--model-type", default="unified", choices=["unified", "dual_stream", "interleaved", "context_film", "framewise", "event_embed", "event_embed_propose", "fusion_classifier"],
+                        help="Model architecture: unified, dual_stream, interleaved, context_film, framewise, event_embed (exp 42+), or fusion_classifier (exp 65-S3v2)")
     parser.add_argument("--enc-layers", type=int, default=4, help="AudioEncoder transformer layers")
     parser.add_argument("--gap-enc-layers", type=int, default=2, help="GapEncoder self-attention layers")
     parser.add_argument("--cross-attn-layers", type=int, default=2, help="Cross-attention fusion layers (dual_stream only)")
@@ -5642,6 +5869,8 @@ if __name__ == "__main__":
     parser.add_argument("--evals-per-epoch", type=int, default=1, help="Run eval N times per epoch (default 1 = end only)")
     parser.add_argument("--resume", action="store_true", help="Resume from latest checkpoint in the run")
     parser.add_argument("--warm-start", type=str, default=None, help="Path to checkpoint to load matching weights from")
+    parser.add_argument("--s1-checkpoint", type=str, default=None, help="Frozen S1 checkpoint for fusion_classifier (exp 65-S3v2)")
+    parser.add_argument("--s2-checkpoint", type=str, default=None, help="Frozen S2v2 checkpoint for fusion_classifier (exp 65-S3v2)")
     parser.add_argument("--no-compile", action="store_true", help="Disable torch.compile")
     parser.add_argument("--amp", action="store_true", help="Enable mixed precision (experimental on Windows)")
     parser.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
