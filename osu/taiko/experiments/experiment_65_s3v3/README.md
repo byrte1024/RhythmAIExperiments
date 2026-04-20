@@ -69,7 +69,7 @@ python detection_train.py taiko_v2 --run-name s3v3_experiment_65 \
 
 Batch size 256 since the S3v3 model itself is tiny (~1-2M params). S1/S2v2 still run per sample (need mel + events) but their forward passes are fast.
 
-Running on CachyOS (RTX 4060, 8GB).
+Running on Windows (RTX 5070, 12GB).
 
 ## Result
 

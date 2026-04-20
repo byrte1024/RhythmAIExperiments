@@ -125,5 +125,5 @@ These directly measure dependence on each signal. Unlike S3v2 where the model co
 | Python | 3.13.12 |
 | PyTorch | 2.12.0.dev20260307+cu128 (nightly) |
 | CUDA | 12.8 |
-| GPU | NVIDIA GeForce RTX 4060 (8 GB) |
-| OS | CachyOS (Linux) |
+| GPU | NVIDIA GeForce RTX 5070 (12 GB) |
+| OS | Windows 11 |
