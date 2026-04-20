@@ -1,14 +1,14 @@
-"""S3 AR analysis with independent AR per combination.
+"""S3 AR analysis — single config, detailed stats.
 
-Each combination runs its own AR loop (cursor depends on decisions).
-All 3 models run at each step, but each combo makes its own placement decisions.
+Runs S1+S2v2+S3 AR on val songs. Computes GT matching, TaikoNation metrics,
+and detailed S1/S2/S3 agreement analysis.
 
 Usage:
     cd osu/taiko
     python detection_s3_ar_analysis.py \
         --s1-checkpoint runs/s1_experiment_65/checkpoints/best.pt \
         --s2-checkpoint runs/s2v2_experiment_65/checkpoints/best.pt \
-        --s3-checkpoint runs/s3_experiment_65/checkpoints/eval_001.pt
+        --s3-checkpoint runs/s3v2_experiment_65/checkpoints/best.pt
 """
 
 import argparse
@@ -37,10 +37,15 @@ N_FFT = 2048
 F_MIN = 20.0
 F_MAX = 8000.0
 BIN_MS = HOP_LENGTH / SAMPLE_RATE * 1000
+TN_STEP_MS = 23
 
 DATASET_DIR = os.path.join(SCRIPT_DIR, "datasets", "taiko_v2")
 AUDIO_DIR = os.path.join(SCRIPT_DIR, "audio")
 
+
+# ═══════════════════════════════════════════════════════════════
+#  Model loading
+# ═══════════════════════════════════════════════════════════════
 
 def load_s1(ckpt_path, device):
     from detection_s1_model import ConformerProposer
@@ -50,7 +55,8 @@ def load_s1(ckpt_path, device):
                               n_layers=a.get("n_layers", 8), n_heads=8,
                               conv_kernel=a.get("conv_kernel", 31),
                               a_bins=A_BINS, b_bins=B_BINS, b_pred=B_PRED)
-    model.load_state_dict(ckpt["model"])
+    state = {k: v for k, v in ckpt["model"].items() if not k.startswith("_frozen_")}
+    model.load_state_dict(state)
     model.to(device).eval()
     return model
 
@@ -62,23 +68,46 @@ def load_s2v2(ckpt_path, device):
     model = ContextProposer(d_model=a.get("d_model", 256),
                             n_gru_layers=a.get("n_gru_layers", 4),
                             b_pred=B_PRED, max_events=C_EVENTS)
-    model.load_state_dict(ckpt["model"])
+    state = {k: v for k, v in ckpt["model"].items() if not k.startswith("_frozen_")}
+    model.load_state_dict(state)
     model.to(device).eval()
     return model
 
 
 def load_s3(ckpt_path, device, s1_d_model=384):
-    from detection_s3_model import FusionSelector
     ckpt = torch.load(ckpt_path, map_location=device, weights_only=False)
     a = ckpt["args"]
-    model = FusionSelector(d_model=a.get("d_model", 192), d_audio=s1_d_model,
-                           n_enc_layers=a.get("n_enc_layers", 4),
-                           n_dec_layers=a.get("n_dec_layers", 3),
-                           n_heads=8, a_bins=A_BINS, b_bins=B_BINS, b_pred=B_PRED)
-    model.load_state_dict(ckpt["model"])
+    state_keys = set(ckpt["model"].keys())
+
+    if "head_smooth.0.weight" in state_keys:
+        from detection_s3v2_model import FusionClassifier
+        model = FusionClassifier(
+            d_model=a.get("d_model", 384), d_audio=s1_d_model,
+            n_layers=a.get("enc_layers", 4) + a.get("fusion_layers", 4),
+            n_heads=a.get("n_heads", 8), n_classes=B_PRED + 1,
+            a_bins=A_BINS, b_bins=B_BINS,
+            gap_ratios=a.get("gap_ratios", True),
+        )
+        model._is_classifier = True
+    else:
+        from detection_s3_model import FusionSelector
+        model = FusionSelector(
+            d_model=a.get("d_model", 192), d_audio=s1_d_model,
+            n_enc_layers=a.get("n_enc_layers", 4),
+            n_dec_layers=a.get("n_dec_layers", 3),
+            n_heads=8, a_bins=A_BINS, b_bins=B_BINS, b_pred=B_PRED,
+        )
+        model._is_classifier = False
+
+    state = {k: v for k, v in ckpt["model"].items() if not k.startswith("_frozen_")}
+    model.load_state_dict(state)
     model.to(device).eval()
     return model
 
+
+# ═══════════════════════════════════════════════════════════════
+#  Audio / songs
+# ═══════════════════════════════════════════════════════════════
 
 def load_audio_mel(audio_path, device):
     y, _ = librosa.load(audio_path, sr=SAMPLE_RATE, mono=True)
@@ -154,7 +183,6 @@ def build_context(events, cursor):
     s2_mask = np.ones(C_EVENTS, dtype=bool)
     offsets = np.zeros(C_EVENTS, dtype=np.int64)
     evt_mask = np.ones(C_EVENTS, dtype=bool)
-
     if n > 0:
         pa = np.array(past, dtype=np.int64)
         rg = np.zeros(n, dtype=np.float32)
@@ -174,32 +202,24 @@ def build_context(events, cursor):
         s2_mask[s:] = False
         offsets[-n:] = pa - cursor
         evt_mask[-n:] = False
-
     return gaps, ratios, s2_mask, offsets, evt_mask
 
 
-def combine(s1, s2, s3, method):
-    if method == "S1_ONLY": return s1
-    if method == "S2_ONLY": return s2
-    if method == "S3_ONLY": return s3
-    if method == "ADD_EQUAL": return (s1 + s2 + s3) / 3
-    if method == "ADD_S3_HEAVY": return 0.2 * s1 + 0.2 * s2 + 0.6 * s3
-    if method == "ADD_S1S2": return (s1 + s2) / 2
-    if method == "MULTIPLY": return np.cbrt(s1 * s2 * s3 + 1e-10)
-    if method == "MULTIPLY_S1S2": return np.sqrt(s1 * s2 + 1e-10)
-    if method == "MAX_S1S2": return np.maximum(s1, s2)
-    if method == "MIN_S1S2": return np.minimum(s1, s2)
-    return s3
-
+# ═══════════════════════════════════════════════════════════════
+#  AR inference with per-step stats
+# ═══════════════════════════════════════════════════════════════
 
 @torch.no_grad()
-def run_ar(s1_model, s2_model, s3_model, mel, song, device,
-           combo, threshold, sampling, hop_bins=20):
+def run_ar(s1_model, s2_model, s3_model, mel, song, device, hop_bins=20):
     total_frames = mel.shape[1]
     events = []
     cursor = 0
     cond = np.array([song["density_mean"], song["density_peak"], song["density_std"]], dtype=np.float32)
     cond_t = torch.tensor(cond).unsqueeze(0).to(device)
+    is_classifier = getattr(s3_model, '_is_classifier', False)
+
+    # Per-step tracking
+    step_stats = []
 
     for _ in range(50000):
         if cursor >= total_frames:
@@ -208,9 +228,12 @@ def run_ar(s1_model, s2_model, s3_model, mel, song, device,
         mel_w = extract_mel_window(mel, cursor)
         mel_t = torch.from_numpy(mel_w).unsqueeze(0).to(device)
 
-        s1_conf = torch.sigmoid(s1_model(mel_t)).squeeze(0).cpu().numpy()
+        # S1
+        s1_logits = s1_model(mel_t)
+        s1_conf = torch.sigmoid(s1_logits).squeeze(0).cpu().numpy()
         audio_feat = s1_model.conv_norm(s1_model.conv(mel_t).transpose(1, 2))
 
+        # S2v2
         g, r, sm, eo, em = build_context(events, cursor)
         s2_conf = torch.sigmoid(s2_model(
             torch.from_numpy(g).unsqueeze(0).to(device),
@@ -218,44 +241,93 @@ def run_ar(s1_model, s2_model, s3_model, mel, song, device,
             torch.from_numpy(sm).unsqueeze(0).to(device),
             cond_t)).squeeze(0).cpu().numpy()
 
-        s3_logits, _ = s3_model(
+        # S3
+        s3_input = (
             audio_feat,
             torch.from_numpy(s1_conf).unsqueeze(0).to(device),
             torch.from_numpy(s2_conf).unsqueeze(0).to(device),
             torch.from_numpy(eo).unsqueeze(0).to(device),
             torch.from_numpy(em).unsqueeze(0).to(device),
-            cond_t)
-        s3_conf = torch.sigmoid(s3_logits).squeeze(0).cpu().numpy()
+            cond_t,
+        )
 
-        conf = combine(s1_conf, s2_conf, s3_conf, combo)
+        if is_classifier:
+            s3_logits = s3_model(*s3_input)
+            s3_probs = torch.softmax(s3_logits, dim=-1).squeeze(0).cpu().numpy()
+            pred = int(np.argmax(s3_probs))
+            is_stop = pred >= B_PRED
+            pred_conf = s3_probs[pred]
+        else:
+            s3_logits, _ = s3_model(*s3_input)
+            s3_conf = torch.sigmoid(s3_logits).squeeze(0).cpu().numpy()
+            pred = int(s3_conf.argmax())
+            is_stop = s3_conf[pred] < 0.5
+            pred_conf = s3_conf[pred]
 
-        if sampling == "MAX":
-            best = int(conf.argmax())
-            if conf[best] < threshold:
-                cursor += hop_bins
-            else:
-                events.append(cursor + best)
-                cursor = cursor + best
-        elif sampling == "FIRST_THRESH":
-            above = np.where(conf >= threshold)[0]
-            if len(above) > 0:
-                events.append(cursor + int(above[0]))
-                cursor = cursor + int(above[0])
-            else:
-                cursor += hop_bins
-        elif sampling == "ALL_THRESH":
-            above = np.where(conf >= threshold)[0]
-            if len(above) > 0:
-                for b in above:
-                    events.append(cursor + int(b))
-                cursor = cursor + int(above[-1])
-            else:
-                cursor += hop_bins
+        # Track per-step stats
+        if not is_stop:
+            s1_at_pred = float(s1_conf[min(pred, B_PRED - 1)])
+            s2_at_pred = float(s2_conf[min(pred, B_PRED - 1)])
+            s1_max = float(s1_conf.max())
+            s2_max = float(s2_conf.max())
+            s1_argmax = int(s1_conf.argmax())
+            s2_argmax = int(s2_conf.argmax())
 
-    return events
+            step_stats.append({
+                "pred": pred,
+                "pred_conf": float(pred_conf),
+                "s1_at_pred": s1_at_pred,
+                "s2_at_pred": s2_at_pred,
+                "s1_max": s1_max,
+                "s2_max": s2_max,
+                "s1_argmax": s1_argmax,
+                "s2_argmax": s2_argmax,
+                "s1_agrees": abs(s1_argmax - pred) <= 3,
+                "s2_agrees": abs(s2_argmax - pred) <= 3,
+            })
+
+        # Advance
+        if is_stop:
+            cursor += hop_bins
+        else:
+            events.append(cursor + pred)
+            cursor = cursor + pred
+
+    return events, step_stats
 
 
-TN_STEP_MS = 23
+# ═══════════════════════════════════════════════════════════════
+#  Metrics
+# ═══════════════════════════════════════════════════════════════
+
+def compute_gt_metrics(pred_ms, gt_ms):
+    if len(pred_ms) == 0 or len(gt_ms) == 0:
+        return None
+    ps = np.sort(pred_ms)
+    gs = np.sort(gt_ms)
+    def _c(arr, v):
+        i = np.searchsorted(arr, v)
+        best = float("inf")
+        for j in [i-1, i, i+1]:
+            if 0 <= j < len(arr):
+                best = min(best, abs(arr[j] - v))
+        return best
+    ge = np.array([_c(ps, g) for g in gs])
+    pe = np.array([_c(gs, p) for p in ps])
+    n_pred, n_gt = len(ps), len(gs)
+    pd = n_pred / max((ps[-1]-ps[0])/1000, 0.1) if n_pred > 1 else 0
+    gd = n_gt / max((gs[-1]-gs[0])/1000, 0.1) if n_gt > 1 else 0
+    return {
+        "n_pred": n_pred, "n_gt": n_gt,
+        "matched_rate": float((ge <= 25).mean()),
+        "close_rate": float((ge <= 50).mean()),
+        "far_rate": float((ge > 100).mean()),
+        "hallucination_rate": float((pe > 100).mean()),
+        "gt_error_mean": float(ge.mean()),
+        "gt_error_median": float(np.median(ge)),
+        "density_ratio": pd / max(gd, 0.01),
+    }
+
 
 def events_ms_to_binary(events_ms, step_ms=TN_STEP_MS):
     if len(events_ms) == 0:
@@ -269,91 +341,59 @@ def events_ms_to_binary(events_ms, step_ms=TN_STEP_MS):
             binary[idx] = 1
     return binary
 
-def tn_over_pspace(chart, scale=8):
-    patterns = set()
-    last_ind = len(chart) - scale + 1
-    if last_ind <= 0:
-        return 0.0
-    for i in range(last_ind):
-        patterns.add(tuple(chart[i:i + scale]))
-    return float(len(patterns) / 2**scale * 100)
-
-def tn_hi_pspace(ai_chart, human_chart, scale=8):
-    ai_p = set()
-    hu_p = set()
-    for i in range(len(ai_chart) - scale + 1):
-        ai_p.add(tuple(ai_chart[i:i + scale]))
-    for i in range(len(human_chart) - scale + 1):
-        hu_p.add(tuple(human_chart[i:i + scale]))
-    if len(hu_p) == 0:
-        return 0.0
-    return float(len(ai_p & hu_p) / len(hu_p) * 100)
-
-def tn_dc_human(ai_chart, human_chart):
-    limit = min(len(ai_chart), len(human_chart))
-    if limit == 0:
-        return 0.0
-    start = 0
-    for i in range(limit):
-        if human_chart[i] == 1:
-            start = i
-            break
-    total = limit - start
-    if total <= 0:
-        return 0.0
-    return float((ai_chart[start:limit] == human_chart[start:limit]).sum() / total * 100)
 
 def compute_tn_metrics(pred_ms, gt_ms):
     pb = events_ms_to_binary(pred_ms)
     gb = events_ms_to_binary(gt_ms)
     if len(pb) < 16 or len(gb) < 16:
-        return None
+        return {}
     ml = max(len(pb), len(gb))
     pp = np.zeros(ml, dtype=np.int32)
     gp = np.zeros(ml, dtype=np.int32)
     pp[:len(pb)] = pb
     gp[:len(gb)] = gb
-    return {
-        "over_pspace": tn_over_pspace(pp),
-        "hi_pspace": tn_hi_pspace(pp, gp),
-        "dc_human": tn_dc_human(pp, gp),
-    }
 
-def compute_gt_metrics(pred_ms, gt_ms):
-    if len(pred_ms) == 0 or len(gt_ms) == 0:
-        return None
-    ps = np.sort(pred_ms)
-    gs = np.sort(gt_ms)
-    def _c(arr, v):
-        i = np.searchsorted(arr, v)
-        return min(abs(arr[max(0,j)] - v) for j in [i-1, i, i+1] if 0 <= j < len(arr))
-    ge = np.array([_c(ps, g) for g in gs])
-    pe = np.array([_c(gs, p) for p in ps])
-    np_, ng = len(ps), len(gs)
-    pd = np_ / max((ps[-1]-ps[0])/1000, 0.1) if np_ > 1 else 0
-    gd = ng / max((gs[-1]-gs[0])/1000, 0.1) if ng > 1 else 0
-    result = {
-        "n_pred": np_, "n_gt": ng,
-        "close_rate": float((ge <= 50).mean()),
-        "far_rate": float((ge > 100).mean()),
-        "hallucination_rate": float((pe > 100).mean()),
-        "gt_error_median": float(np.median(ge)),
-        "density_ratio": pd / max(gd, 0.01),
-    }
-    tn = compute_tn_metrics(pred_ms, gt_ms)
-    if tn:
-        result.update(tn)
-    return result
+    # Over P-Space
+    scale = 8
+    patterns = set()
+    for i in range(len(pp) - scale + 1):
+        patterns.add(tuple(pp[i:i+scale]))
+    over_ps = len(patterns) / 2**scale * 100
 
+    # HI P-Space
+    ai_p = set()
+    hu_p = set()
+    for i in range(len(pp) - scale + 1):
+        ai_p.add(tuple(pp[i:i+scale]))
+    for i in range(len(gp) - scale + 1):
+        hu_p.add(tuple(gp[i:i+scale]))
+    hi_ps = len(ai_p & hu_p) / max(len(hu_p), 1) * 100
+
+    # DCHuman
+    limit = min(len(pp), len(gp))
+    start = 0
+    for i in range(limit):
+        if gp[i] == 1:
+            start = i
+            break
+    total = limit - start
+    dc_h = float((pp[start:limit] == gp[start:limit]).sum() / max(total, 1) * 100) if total > 0 else 0
+
+    return {"over_pspace": over_ps, "hi_pspace": hi_ps, "dc_human": dc_h}
+
+
+# ═══════════════════════════════════════════════════════════════
+#  Main
+# ═══════════════════════════════════════════════════════════════
 
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--s1-checkpoint", required=True)
     parser.add_argument("--s2-checkpoint", required=True)
     parser.add_argument("--s3-checkpoint", required=True)
-    parser.add_argument("--output-dir", default=os.path.join(SCRIPT_DIR, "experiments", "experiment_65_s3", "ar_eval"))
+    parser.add_argument("--output-dir", default=os.path.join(SCRIPT_DIR, "experiments", "experiment_65_s3v2", "ar_eval"))
     parser.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
-    parser.add_argument("--n-songs", type=int, default=10)
+    parser.add_argument("--n-songs", type=int, default=30)
     args = parser.parse_args()
 
     os.makedirs(args.output_dir, exist_ok=True)
@@ -368,88 +408,142 @@ def main():
     s1_model = load_s1(args.s1_checkpoint, args.device)
     s2_model = load_s2v2(args.s2_checkpoint, args.device)
     s3_model = load_s3(args.s3_checkpoint, args.device, s1_d_model=s1_model.d_model)
-    print("  Loaded")
+    is_cls = getattr(s3_model, '_is_classifier', False)
+    print(f"  S3 type: {'classifier (single-onset)' if is_cls else 'selector (per-bin)'}")
 
-    configs = [
-        ("S3_ONLY", "MAX", 0.3),
-        ("S3_ONLY", "MAX", 0.4),
-        ("S3_ONLY", "MAX", 0.5),
-        ("S3_ONLY", "FIRST_THRESH", 0.3),
-        ("S3_ONLY", "FIRST_THRESH", 0.5),
-        ("S1_ONLY", "MAX", 0.5),
-        ("S2_ONLY", "MAX", 0.5),
-        ("ADD_EQUAL", "MAX", 0.3),
-        ("ADD_EQUAL", "MAX", 0.5),
-        ("ADD_S3_HEAVY", "MAX", 0.3),
-        ("ADD_S3_HEAVY", "MAX", 0.5),
-        ("ADD_S1S2", "MAX", 0.5),
-        ("MULTIPLY", "MAX", 0.3),
-        ("MULTIPLY_S1S2", "MAX", 0.3),
-        ("MIN_S1S2", "MAX", 0.3),
-        ("S3_ONLY", "ALL_THRESH", 0.5),
-        ("S3_ONLY", "ALL_THRESH", 0.6),
-        ("ADD_EQUAL", "ALL_THRESH", 0.5),
-    ]
-
-    all_results = {f"{c}_{s}_{t}": [] for c, s, t in configs}
+    all_gt = []
+    all_tn = []
+    all_step_stats = []
 
     for si, song in enumerate(songs):
-        print(f"\n[{si+1}/{len(songs)}] {song['artist'][:20]} - {song['title'][:25]} (d={song['density_mean']:.1f})")
+        print(f"\n[{si+1}/{len(songs)}] {song['artist'][:25]} - {song['title'][:25]} (d={song['density_mean']:.1f})")
 
         mel, duration = load_audio_mel(song["audio_path"], args.device)
         gt_events = np.load(os.path.join(DATASET_DIR, "events", song["event_file"]))
         gt_ms = gt_events.astype(np.float64) * BIN_MS
 
-        for combo, sampling, thresh in tqdm(configs, desc="Configs", leave=False):
-            key = f"{combo}_{sampling}_{thresh}"
-            events = run_ar(s1_model, s2_model, s3_model, mel, song, args.device,
-                            combo, thresh, sampling)
-            pred_ms = np.array(events, dtype=np.float64) * BIN_MS
-            result = compute_gt_metrics(pred_ms, gt_ms)
-            if result:
-                all_results[key].append(result)
+        events, step_stats = run_ar(s1_model, s2_model, s3_model, mel, song, args.device)
+        pred_ms = np.array(events, dtype=np.float64) * BIN_MS
 
-        # Quick print
-        for key in ["S3_ONLY_MAX_0.5", "S1_ONLY_MAX_0.5", "ADD_EQUAL_MAX_0.5"]:
-            if all_results[key]:
-                r = all_results[key][-1]
-                print(f"  {key}: close={r['close_rate']:.1%} hall={r['hallucination_rate']:.1%} d={r['density_ratio']:.2f}")
+        gt_result = compute_gt_metrics(pred_ms, gt_ms)
+        tn_result = compute_tn_metrics(pred_ms, gt_ms)
 
-    # Aggregate
-    print(f"\n{'='*90}")
-    print(f"RESULTS ({len(songs)} songs)")
-    print(f"{'='*90}")
-    print(f"{'Config':<40} {'Close%':>7} {'Far%':>6} {'Hall%':>6} {'ErrMed':>7} {'d_ratio':>8} {'P-Space':>8} {'HI-PS':>6} {'DCHum':>6}")
-    print("-" * 100)
+        if gt_result:
+            all_gt.append(gt_result)
+            print(f"  close={gt_result['close_rate']:.1%} hall={gt_result['hallucination_rate']:.1%} "
+                  f"d={gt_result['density_ratio']:.2f} err={gt_result['gt_error_median']:.0f}ms "
+                  f"events={gt_result['n_pred']}")
+        if tn_result:
+            all_tn.append(tn_result)
 
-    summary = {}
-    for key in sorted(all_results.keys()):
-        results = all_results[key]
-        if not results:
-            continue
-        avg = lambda k: float(np.mean([r[k] for r in results if k in r]))
-        summary[key] = {
-            "close": avg("close_rate"), "far": avg("far_rate"),
-            "hall": avg("hallucination_rate"), "err_med": avg("gt_error_median"),
-            "d_ratio": avg("density_ratio"), "n_pred": avg("n_pred"),
-            "over_pspace": avg("over_pspace"), "hi_pspace": avg("hi_pspace"),
-            "dc_human": avg("dc_human"),
+        all_step_stats.extend(step_stats)
+
+    # ═══════════════════════════════════════════════════════════
+    #  Aggregate
+    # ═══════════════════════════════════════════════════════════
+    print(f"\n{'='*80}")
+    print(f"RESULTS ({len(songs)} songs, {len(all_step_stats)} AR steps)")
+    print(f"{'='*80}")
+
+    if all_gt:
+        avg = lambda k: float(np.mean([r[k] for r in all_gt]))
+        print(f"\nGT Matching:")
+        print(f"  Close (<50ms):    {avg('close_rate'):.1%}")
+        print(f"  Matched (<25ms):  {avg('matched_rate'):.1%}")
+        print(f"  Far (>100ms):     {avg('far_rate'):.1%}")
+        print(f"  Hallucination:    {avg('hallucination_rate'):.1%}")
+        print(f"  Density ratio:    {avg('density_ratio'):.2f}")
+        print(f"  Error median:     {avg('gt_error_median'):.0f}ms")
+
+    if all_tn:
+        avg = lambda k: float(np.mean([r[k] for r in all_tn if k in r]))
+        print(f"\nTaikoNation Metrics:")
+        print(f"  Over. P-Space:    {avg('over_pspace'):.1f}%")
+        print(f"  HI P-Space:       {avg('hi_pspace'):.1f}%")
+        print(f"  DCHuman:          {avg('dc_human'):.1f}%")
+
+    # ═══════════════════════════════════════════════════════════
+    #  S1/S2/S3 agreement analysis
+    # ═══════════════════════════════════════════════════════════
+    if all_step_stats:
+        stats = all_step_stats
+        n = len(stats)
+        print(f"\nS1/S2/S3 Agreement ({n} onset steps):")
+
+        s1_at = np.array([s["s1_at_pred"] for s in stats])
+        s2_at = np.array([s["s2_at_pred"] for s in stats])
+        s1_max = np.array([s["s1_max"] for s in stats])
+        s2_max = np.array([s["s2_max"] for s in stats])
+        s1_agrees = np.array([s["s1_agrees"] for s in stats])
+        s2_agrees = np.array([s["s2_agrees"] for s in stats])
+        pred_conf = np.array([s["pred_conf"] for s in stats])
+
+        print(f"  S1 conf at S3's pick:   mean={s1_at.mean():.3f}  med={np.median(s1_at):.3f}")
+        print(f"  S2 conf at S3's pick:   mean={s2_at.mean():.3f}  med={np.median(s2_at):.3f}")
+        print(f"  S1 max conf:            mean={s1_max.mean():.3f}")
+        print(f"  S2 max conf:            mean={s2_max.mean():.3f}")
+        print(f"  S3 pred conf:           mean={pred_conf.mean():.3f}")
+        print(f"  S1 agrees (±3 bins):    {s1_agrees.mean():.1%}")
+        print(f"  S2 agrees (±3 bins):    {s2_agrees.mean():.1%}")
+        print(f"  Both agree:             {(s1_agrees & s2_agrees).mean():.1%}")
+        print(f"  Neither agrees:         {(~s1_agrees & ~s2_agrees).mean():.1%}")
+
+        # S1 high vs low at pred
+        s1_high = s1_at > 0.5
+        s2_high = s2_at > 0.5
+        print(f"\n  S1 conf > 0.5 at pred:  {s1_high.mean():.1%}")
+        print(f"  S2 conf > 0.5 at pred:  {s2_high.mean():.1%}")
+        print(f"  Both > 0.5:             {(s1_high & s2_high).mean():.1%}")
+        print(f"  S1 only > 0.5:          {(s1_high & ~s2_high).mean():.1%}")
+        print(f"  S2 only > 0.5:          {(~s1_high & s2_high).mean():.1%}")
+        print(f"  Neither > 0.5:          {(~s1_high & ~s2_high).mean():.1%}")
+
+        # When S3 picks where S1 disagrees
+        s1_disagree = ~s1_agrees
+        if s1_disagree.sum() > 0:
+            print(f"\n  When S1 disagrees ({s1_disagree.sum()} steps):")
+            print(f"    S2 agrees:     {s2_agrees[s1_disagree].mean():.1%}")
+            print(f"    S2 conf:       {s2_at[s1_disagree].mean():.3f}")
+            print(f"    S3 conf:       {pred_conf[s1_disagree].mean():.3f}")
+
+        s2_disagree = ~s2_agrees
+        if s2_disagree.sum() > 0:
+            print(f"  When S2 disagrees ({s2_disagree.sum()} steps):")
+            print(f"    S1 agrees:     {s1_agrees[s2_disagree].mean():.1%}")
+            print(f"    S1 conf:       {s1_at[s2_disagree].mean():.3f}")
+            print(f"    S3 conf:       {pred_conf[s2_disagree].mean():.3f}")
+
+    # ═══════════════════════════════════════════════════════════
+    #  Comparison reference
+    # ═══════════════════════════════════════════════════════════
+    print(f"\n{'='*80}")
+    print("Reference (previous models, song_density regime):")
+    print("  exp58:  close=75.9%  hall=15.6%  d_ratio=0.92  err=8ms  P-Space=10.1%")
+    print("  exp62:  close=75.0%  hall=15.9%  d_ratio=0.97  err=8ms  P-Space=12.0%")
+
+    # Save
+    results = {}
+    if all_gt:
+        avg = lambda k: float(np.mean([r[k] for r in all_gt]))
+        results["gt"] = {k: avg(k) for k in all_gt[0]}
+    if all_tn:
+        avg = lambda k: float(np.mean([r[k] for r in all_tn if k in r]))
+        results["tn"] = {k: avg(k) for k in all_tn[0]}
+    if all_step_stats:
+        results["agreement"] = {
+            "s1_conf_at_pred": float(s1_at.mean()),
+            "s2_conf_at_pred": float(s2_at.mean()),
+            "s1_agrees": float(s1_agrees.mean()),
+            "s2_agrees": float(s2_agrees.mean()),
+            "both_agree": float((s1_agrees & s2_agrees).mean()),
+            "neither_agree": float((~s1_agrees & ~s2_agrees).mean()),
+            "s1_high_at_pred": float(s1_high.mean()),
+            "s2_high_at_pred": float(s2_high.mean()),
         }
 
-    for key in sorted(summary.keys(), key=lambda k: -summary[k]["close"]):
-        s = summary[key]
-        print(f"  {key:<40} {s['close']:>6.1%} {s['far']:>5.1%} {s['hall']:>5.1%} {s['err_med']:>6.0f}ms {s['d_ratio']:>7.2f} {s['over_pspace']:>7.1f}% {s['hi_pspace']:>5.1f}% {s['dc_human']:>5.1f}%")
-
-    with open(os.path.join(args.output_dir, "sweep_results.json"), "w") as f:
-        json.dump(summary, f, indent=2)
-
-    # Top 5
-    print(f"\nTOP 5:")
-    for i, key in enumerate(sorted(summary.keys(), key=lambda k: -summary[k]["close"])[:5]):
-        s = summary[key]
-        print(f"  {i+1}. {key:<35} close={s['close']:.1%} hall={s['hall']:.1%} d={s['d_ratio']:.2f}")
-
-    print(f"\nSaved to {args.output_dir}/sweep_results.json")
+    with open(os.path.join(args.output_dir, "ar_results.json"), "w") as f:
+        json.dump(results, f, indent=2)
+    print(f"\nSaved to {args.output_dir}/ar_results.json")
 
 
 if __name__ == "__main__":

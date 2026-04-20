@@ -46,7 +46,9 @@ def load_s1(ckpt_path, device):
                               n_layers=a.get("n_layers", 8), n_heads=8,
                               conv_kernel=a.get("conv_kernel", 31),
                               a_bins=A_BINS, b_bins=B_BINS, b_pred=B_PRED)
-    model.load_state_dict(ckpt["model"])
+    # Filter out frozen S1/S2 weights that got saved with the checkpoint
+    state = {k: v for k, v in ckpt["model"].items() if not k.startswith("_frozen_")}
+    model.load_state_dict(state)
     model.to(device).eval()
     return model
 
@@ -58,20 +60,43 @@ def load_s2v2(ckpt_path, device):
     model = ContextProposer(d_model=a.get("d_model", 256),
                             n_gru_layers=a.get("n_gru_layers", 4),
                             b_pred=B_PRED, max_events=C_EVENTS)
-    model.load_state_dict(ckpt["model"])
+    # Filter out frozen S1/S2 weights that got saved with the checkpoint
+    state = {k: v for k, v in ckpt["model"].items() if not k.startswith("_frozen_")}
+    model.load_state_dict(state)
     model.to(device).eval()
     return model
 
 
 def load_s3(ckpt_path, device, s1_d_model=384):
-    from detection_s3_model import FusionSelector
+    """Load S3 — auto-detects FusionSelector (per-bin) vs FusionClassifier (single-onset)."""
     ckpt = torch.load(ckpt_path, map_location=device, weights_only=False)
     a = ckpt["args"]
-    model = FusionSelector(d_model=a.get("d_model", 192), d_audio=s1_d_model,
-                           n_enc_layers=a.get("n_enc_layers", 4),
-                           n_dec_layers=a.get("n_dec_layers", 3),
-                           n_heads=8, a_bins=A_BINS, b_bins=B_BINS, b_pred=B_PRED)
-    model.load_state_dict(ckpt["model"])
+    state_keys = set(ckpt["model"].keys())
+
+    # Detect model type: FusionClassifier has head_smooth, FusionSelector has dec_self_attn
+    if "head_smooth.0.weight" in state_keys:
+        from detection_s3v2_model import FusionClassifier
+        model = FusionClassifier(
+            d_model=a.get("d_model", 384), d_audio=s1_d_model,
+            n_layers=a.get("enc_layers", 4) + a.get("fusion_layers", 4),
+            n_heads=a.get("n_heads", 8), n_classes=B_PRED + 1,
+            a_bins=A_BINS, b_bins=B_BINS,
+            gap_ratios=a.get("gap_ratios", True),
+        )
+        model._is_classifier = True
+    else:
+        from detection_s3_model import FusionSelector
+        model = FusionSelector(
+            d_model=a.get("d_model", 192), d_audio=s1_d_model,
+            n_enc_layers=a.get("n_enc_layers", 4),
+            n_dec_layers=a.get("n_dec_layers", 3),
+            n_heads=8, a_bins=A_BINS, b_bins=B_BINS, b_pred=B_PRED,
+        )
+        model._is_classifier = False
+
+    # Filter out frozen S1/S2 weights that got saved with the checkpoint
+    state = {k: v for k, v in ckpt["model"].items() if not k.startswith("_frozen_")}
+    model.load_state_dict(state)
     model.to(device).eval()
     return model
 
@@ -188,24 +213,48 @@ def run_inference(s1_model, s2_model, s3_model, mel, conditioning, device,
             torch.from_numpy(sm).unsqueeze(0).to(device),
             cond_t)).squeeze(0).cpu().numpy()
 
-        # S3
-        s3_logits, _ = s3_model(
+        # S3 (auto-detect per-bin vs single-onset)
+        is_classifier = getattr(s3_model, '_is_classifier', False)
+        s3_input = (
             audio_feat,
             torch.from_numpy(s1_conf).unsqueeze(0).to(device),
             torch.from_numpy(s2_conf).unsqueeze(0).to(device),
             torch.from_numpy(eo).unsqueeze(0).to(device),
             torch.from_numpy(em).unsqueeze(0).to(device),
-            cond_t)
-        s3_conf = torch.sigmoid(s3_logits).squeeze(0).cpu().numpy()
+            cond_t,
+        )
+        if is_classifier:
+            # FusionClassifier: returns (B, 251) logits — single onset
+            s3_logits = s3_model(*s3_input)
+            s3_conf = torch.softmax(s3_logits, dim=-1).squeeze(0).cpu().numpy()  # (251,)
+            # For per-bin confidence maps (viewer), use softmax over onset bins
+            s3_conf_bins = s3_conf[:B_PRED]  # (250,) drop STOP
+        else:
+            # FusionSelector: returns ((B, 250) logits, aux_list) — per-bin
+            s3_logits, _ = s3_model(*s3_input)
+            s3_conf = torch.sigmoid(s3_logits).squeeze(0).cpu().numpy()  # (250,)
+            s3_conf_bins = s3_conf
 
-        # Save per-step data for viewer
+        # Save per-step data for viewer (always 250 bins)
         step_cursors.append(cursor)
         step_s1.append(s1_conf.astype(np.float16))
         step_s2.append(s2_conf.astype(np.float16))
-        step_s3.append(s3_conf.astype(np.float16))
+        step_s3.append(s3_conf_bins.astype(np.float16))
 
-        # Combine
-        conf = combine(s1_conf, s2_conf, s3_conf, method)
+        # For classifier mode, use argmax directly (single-onset like exp58)
+        if is_classifier and method == "S3_ONLY" and sampling == "MAX":
+            pred = int(np.argmax(s3_conf))  # includes STOP at index 250
+            if pred >= B_PRED:
+                # STOP
+                cursor += hop_bins
+                stop_count += 1
+            else:
+                events.append(cursor + pred)
+                cursor = cursor + pred
+            continue
+
+        # Combine (per-bin mode)
+        conf = combine(s1_conf, s2_conf, s3_conf_bins, method)
 
         # Sample
         if sampling == "MAX":
