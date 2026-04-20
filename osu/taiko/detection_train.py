@@ -1084,7 +1084,7 @@ def _top3_gap_peaks(gaps, tolerance=0.05):
 @torch.no_grad()
 def validate_and_collect(model, loader, criterion, device, amp_enabled=False, sigmoid_mode=False, framewise=False,
                          multi_target=False, ratio_criterion=None, propose_select=False,
-                         n_onsets=1, fusion_classifier=False):
+                         n_onsets=1, fusion_classifier=False, pure_proposal_fusion=False):
     """Single pass: compute val loss AND collect predictions + extra data for graphs."""
     model.eval()
     all_targets = []       # single-target: (N,), multi-target: not used
@@ -1139,6 +1139,41 @@ def validate_and_collect(model, loader, criterion, device, amp_enabled=False, si
                 # create compat logits for legacy metrics
                 logits = torch.zeros(B_fw, N_CLASSES, device=device)
                 logits[:, :500:4] = onset_probs * 10
+            elif pure_proposal_fusion:
+                model_raw = model._orig_mod if hasattr(model, '_orig_mod') else model
+                frozen_s1 = model_raw._frozen_s1
+                frozen_s2 = model_raw._frozen_s2
+                s1_logits = frozen_s1(mel)
+                s1_conf = torch.sigmoid(s1_logits)
+                B_fc = mel.size(0)
+                fc_gaps = torch.zeros(B_fc, C_EVENTS, device=device)
+                fc_ratios = torch.zeros(B_fc, C_EVENTS, device=device)
+                fc_s2mask = torch.ones(B_fc, C_EVENTS, dtype=torch.bool, device=device)
+                for b in range(B_fc):
+                    valid = ~evt_mask[b]
+                    n_v = valid.sum().item()
+                    if n_v >= 2:
+                        offs = evt_off[b][valid].float()
+                        diffs = offs[1:] - offs[:-1]
+                        diffs = diffs.clamp(min=1.0)
+                        rg_t = torch.ones(n_v, device=device)
+                        rg_t[1:] = diffs
+                        rg_t[0] = rg_t[1] if n_v >= 2 else 30.0
+                        rr_t = torch.ones(n_v, device=device)
+                        for i in range(1, n_v):
+                            rr_t[i] = (rg_t[i-1] / rg_t[i]).clamp(0.1, 10.0)
+                        s = C_EVENTS - n_v
+                        fc_gaps[b, s:] = rg_t
+                        fc_ratios[b, s:] = rr_t
+                        fc_s2mask[b, s:] = False
+                    elif n_v == 1:
+                        fc_gaps[b, -1] = 30.0
+                        fc_ratios[b, -1] = 1.0
+                        fc_s2mask[b, -1] = False
+                s2_logits = frozen_s2(fc_gaps, fc_ratios, fc_s2mask, cond)
+                s2_conf = torch.sigmoid(s2_logits)
+                logits = model(s1_conf, s2_conf)
+                loss = criterion(logits, target)
             elif fusion_classifier:
                 model_raw = model._orig_mod if hasattr(model, '_orig_mod') else model
                 frozen_s1 = model_raw._frozen_s1
@@ -1793,7 +1828,13 @@ def run_benchmarks(model, val_loader, device, amp_enabled=False, multi_target=Fa
             s2_logits = frozen_s2(fc_gaps, fc_ratios, fc_s2mask, cond)
             s2_conf = torch.sigmoid(s2_logits) if s2_override is None else s2_override
 
-            logits = model(audio_feat, s1_conf, s2_conf, evt_off, evt_mask, cond)
+            # PureProposalFusion only takes s1_conf, s2_conf
+            from detection_s3v3_model import PureProposalFusion as _PPF
+            model_check = model._orig_mod if hasattr(model, '_orig_mod') else model
+            if isinstance(model_check, _PPF):
+                logits = model(s1_conf, s2_conf)
+            else:
+                logits = model(audio_feat, s1_conf, s2_conf, evt_off, evt_mask, cond)
             return logits
         else:
             output = model(mel, evt_off, evt_mask, cond)
@@ -4701,6 +4742,50 @@ def train(args):
         # Store frozen models on the model for access in training loop
         model._frozen_s1 = frozen_s1
         model._frozen_s2 = frozen_s2
+    elif args.model_type == "pure_proposal_fusion":
+        from detection_s3v3_model import PureProposalFusion
+        from detection_s1_model import ConformerProposer
+        from detection_s2v2_model import ContextProposer
+
+        assert args.s1_checkpoint, "--s1-checkpoint required"
+        assert args.s2_checkpoint, "--s2-checkpoint required"
+
+        # Load frozen S1
+        s1_ckpt = torch.load(args.s1_checkpoint, map_location=args.device, weights_only=False)
+        s1_args = s1_ckpt["args"]
+        frozen_s1 = ConformerProposer(
+            n_mels=80, d_model=s1_args.get("d_model", 384),
+            n_layers=s1_args.get("n_layers", 8), n_heads=8,
+            conv_kernel=s1_args.get("conv_kernel", 31),
+            a_bins=A_BINS, b_bins=B_BINS, b_pred=N_CLASSES - 1,
+        ).to(args.device)
+        frozen_s1.load_state_dict(s1_ckpt["model"])
+        frozen_s1.eval()
+        for p in frozen_s1.parameters():
+            p.requires_grad = False
+        print(f"  Frozen S1: {sum(p.numel() for p in frozen_s1.parameters()):,} params")
+
+        # Load frozen S2v2
+        s2_ckpt = torch.load(args.s2_checkpoint, map_location=args.device, weights_only=False)
+        s2_args = s2_ckpt["args"]
+        frozen_s2 = ContextProposer(
+            d_model=s2_args.get("d_model", 256),
+            n_gru_layers=s2_args.get("n_gru_layers", 4),
+            b_pred=N_CLASSES - 1, max_events=C_EVENTS,
+        ).to(args.device)
+        frozen_s2.load_state_dict(s2_ckpt["model"])
+        frozen_s2.eval()
+        for p in frozen_s2.parameters():
+            p.requires_grad = False
+        print(f"  Frozen S2v2: {sum(p.numel() for p in frozen_s2.parameters()):,} params")
+
+        model = PureProposalFusion(
+            d_model=args.d_model, n_layers=args.enc_layers + args.fusion_layers,
+            n_heads=args.n_heads, n_classes=N_CLASSES, b_pred=N_CLASSES - 1,
+        ).to(args.device)
+
+        model._frozen_s1 = frozen_s1
+        model._frozen_s2 = frozen_s2
     elif args.model_type == "event_embed_propose":
         from detection_model import ProposeSelectDetector
         model = ProposeSelectDetector(
@@ -5000,6 +5085,66 @@ def train(args):
                     logits = torch.zeros(mel.size(0), N_CLASSES, device=mel.device)
                     # put onset_probs into first 125 positions scaled up
                     logits[:, :500:4] = onset_probs * 10  # rough proxy for compat
+                elif args.model_type == "pure_proposal_fusion":
+                    model_raw = model._orig_mod if hasattr(model, '_orig_mod') else model
+                    frozen_s1 = model_raw._frozen_s1
+                    frozen_s2 = model_raw._frozen_s2
+
+                    with torch.no_grad():
+                        s1_logits = frozen_s1(mel)
+                        s1_conf = torch.sigmoid(s1_logits)
+
+                        B_fc = mel.size(0)
+                        fc_gaps = torch.zeros(B_fc, C_EVENTS, device=mel.device)
+                        fc_ratios = torch.zeros(B_fc, C_EVENTS, device=mel.device)
+                        fc_s2mask = torch.ones(B_fc, C_EVENTS, dtype=torch.bool, device=mel.device)
+                        for b in range(B_fc):
+                            valid = ~evt_mask[b]
+                            n_v = valid.sum().item()
+                            if n_v >= 2:
+                                offs = evt_off[b][valid].float()
+                                diffs = offs[1:] - offs[:-1]
+                                diffs = diffs.clamp(min=1.0)
+                                rg = torch.ones(n_v, device=mel.device)
+                                rg[1:] = diffs
+                                rg[0] = rg[1] if n_v >= 2 else 30.0
+                                rr = torch.ones(n_v, device=mel.device)
+                                for i in range(1, n_v):
+                                    rr[i] = (rg[i-1] / rg[i]).clamp(0.1, 10.0)
+                                s = C_EVENTS - n_v
+                                fc_gaps[b, s:] = rg
+                                fc_ratios[b, s:] = rr
+                                fc_s2mask[b, s:] = False
+                            elif n_v == 1:
+                                fc_gaps[b, -1] = 30.0
+                                fc_ratios[b, -1] = 1.0
+                                fc_s2mask[b, -1] = False
+
+                        s2_logits = frozen_s2(fc_gaps, fc_ratios, fc_s2mask, cond)
+                        s2_conf = torch.sigmoid(s2_logits)
+
+                    # Proposal augmentation
+                    if model.training:
+                        s1_conf = s1_conf + torch.randn_like(s1_conf) * 0.05
+                        s2_conf = s2_conf + torch.randn_like(s2_conf) * 0.05
+                        s1_conf = s1_conf.clamp(0, 1)
+                        s2_conf = s2_conf.clamp(0, 1)
+                        import random as _rnd
+                        for b in range(B_fc):
+                            if _rnd.random() < 0.05:
+                                choice = _rnd.randint(0, 2)
+                                if choice == 0:
+                                    s1_conf[b] = 0
+                                elif choice == 1:
+                                    s2_conf[b] = 0
+                                else:
+                                    s1_conf[b] = 0
+                                    s2_conf[b] = 0
+
+                    logits = model(s1_conf, s2_conf)
+                    loss = criterion(logits, target)
+                    output = None
+
                 elif args.model_type == "fusion_classifier":
                     model_raw = model._orig_mod if hasattr(model, '_orig_mod') else model
                     frozen_s1 = model_raw._frozen_s1
@@ -5442,6 +5587,7 @@ def _run_eval(model, val_loader, criterion, args, amp_enabled,
         propose_select=(args.model_type == "event_embed_propose"),
         n_onsets=n_onsets,
         fusion_classifier=(args.model_type == "fusion_classifier"),
+        pure_proposal_fusion=(args.model_type == "pure_proposal_fusion"),
     )
     # backward-compat: nearest-target metrics (always computed)
     val_targets = val_extra["targets"]
@@ -5730,7 +5876,7 @@ def _run_eval(model, val_loader, criterion, args, amp_enabled,
     bench_results = run_benchmarks(model, val_loader, args.device, amp_enabled=amp_enabled,
                                    multi_target=use_mt,
                                    delta_onsets=getattr(args, 'delta_onsets', False),
-                                   fusion_classifier=(args.model_type == "fusion_classifier"))
+                                   fusion_classifier=(args.model_type in ("fusion_classifier", "pure_proposal_fusion")))
     print_benchmarks(bench_results)
     save_benchmark_data(bench_results, eval_step, run_dir)
 
@@ -5820,8 +5966,8 @@ if __name__ == "__main__":
     parser.add_argument("--lr", type=float, default=3e-4)
     parser.add_argument("--wd", type=float, default=0.01)
     parser.add_argument("--d-model", type=int, default=384)
-    parser.add_argument("--model-type", default="unified", choices=["unified", "dual_stream", "interleaved", "context_film", "framewise", "event_embed", "event_embed_propose", "fusion_classifier"],
-                        help="Model architecture: unified, dual_stream, interleaved, context_film, framewise, event_embed (exp 42+), or fusion_classifier (exp 65-S3v2)")
+    parser.add_argument("--model-type", default="unified", choices=["unified", "dual_stream", "interleaved", "context_film", "framewise", "event_embed", "event_embed_propose", "fusion_classifier", "pure_proposal_fusion"],
+                        help="Model architecture: unified, dual_stream, interleaved, context_film, framewise, event_embed (exp 42+), fusion_classifier (exp 65-S3v2), or pure_proposal_fusion (exp 65-S3v3)")
     parser.add_argument("--enc-layers", type=int, default=4, help="AudioEncoder transformer layers")
     parser.add_argument("--gap-enc-layers", type=int, default=2, help="GapEncoder self-attention layers")
     parser.add_argument("--cross-attn-layers", type=int, default=2, help="Cross-attention fusion layers (dual_stream only)")
