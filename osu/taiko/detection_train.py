@@ -3308,6 +3308,146 @@ def _save_gapspace_graphs(val_extra, eval_step, run_dir, delta_onsets=False):
         plt.close(fig)
 
 
+def _save_star_graphs(targets, preds, val_ds, eval_step, run_dir, min_stars, max_stars):
+    """Save per-star scatter plots and star-vs-performance correlation."""
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    from scipy.ndimage import gaussian_filter
+    from matplotlib.colors import LogNorm
+
+    eval_dir = os.path.join(run_dir, "evals")
+    os.makedirs(eval_dir, exist_ok=True)
+    prefix = os.path.join(eval_dir, f"eval_{eval_step:03d}")
+    stop = N_CLASSES - 1
+    max_bin = N_CLASSES - 1
+
+    # Build per-sample star ratings
+    sample_stars = np.zeros(len(targets), dtype=np.float32)
+    idx = 0
+    for ci_local in range(len(val_ds.charts)):
+        chart = val_ds.charts[ci_local]
+        sr = chart.get("star_rating", 0)
+        n_from = sum(1 for s in val_ds.samples if s[0] == ci_local)
+        sample_stars[idx:idx + n_from] = sr
+        idx += n_from
+
+    ns = targets < stop
+    t_ns = targets[ns]
+    p_ns = preds[ns]
+    stars_ns = sample_stars[ns]
+
+    if len(t_ns) == 0:
+        return
+
+    in_range = (stars_ns >= min_stars) & (stars_ns < max_stars)
+    out_range = ~in_range
+
+    # ── 1. Scatter: in-range vs out-range ──
+    fig, axes = plt.subplots(1, 2, figsize=(16, 8))
+
+    for ax_i, (mask, label, color) in enumerate([
+        (in_range, f"In range ({min_stars}-{max_stars} stars)", "#4a90d9"),
+        (out_range, f"Out of range", "#eb4528"),
+    ]):
+        ax = axes[ax_i]
+        if mask.sum() > 0:
+            ax.scatter(t_ns[mask], p_ns[mask], alpha=0.02, s=1, color=color)
+        ax.plot([0, max_bin], [0, max_bin], "r--", alpha=0.5, linewidth=1)
+        ax.set_xlabel("Target bin")
+        ax.set_ylabel("Predicted bin")
+        ax.set_title(f"{label} (n={mask.sum():,})")
+        ax.set_xlim(0, max_bin)
+        ax.set_ylim(0, max_bin)
+
+    fig.suptitle(f"Eval {eval_step}: Target vs Predicted by Star Range", fontsize=13)
+    fig.tight_layout()
+    fig.savefig(f"{prefix}_star_scatter.png", dpi=120)
+    plt.close(fig)
+
+    # ── 2. Heatmaps: in-range vs out-range ──
+    fig, axes = plt.subplots(1, 2, figsize=(16, 8))
+
+    for ax_i, (mask, label) in enumerate([
+        (in_range, f"In range ({min_stars}-{max_stars})"),
+        (out_range, "Out of range"),
+    ]):
+        ax = axes[ax_i]
+        fig.patch.set_facecolor("black") if ax_i == 0 else None
+        ax.set_facecolor("black")
+        if mask.sum() > 100:
+            h, _, _ = np.histogram2d(t_ns[mask], p_ns[mask], bins=250,
+                                     range=[[0, max_bin], [0, max_bin]])
+            h = gaussian_filter(h.astype(np.float64), sigma=1.0)
+            h[h < 0.5] = np.nan
+            ax.imshow(h.T, origin="lower", aspect="auto", extent=[0, max_bin, 0, max_bin],
+                      norm=LogNorm(vmin=1), cmap="viridis")
+        ax.plot([0, max_bin], [0, max_bin], "r--", alpha=0.5, linewidth=1)
+        ax.set_xlabel("Target", color="white")
+        ax.set_ylabel("Predicted", color="white")
+        ax.set_title(f"{label} (n={mask.sum():,})", color="white")
+        ax.tick_params(colors="white")
+
+    fig.patch.set_facecolor("black")
+    fig.suptitle(f"Eval {eval_step}: Density Heatmap by Star Range", color="white", fontsize=13)
+    fig.tight_layout()
+    fig.savefig(f"{prefix}_star_heatmap.png", dpi=150, facecolor="black")
+    plt.close(fig)
+
+    # ── 3. HIT/MISS rate vs star rating ──
+    pct_err = np.abs(p_ns.astype(np.float64) / (t_ns.astype(np.float64) + 1) - 1)
+    frame_err = np.abs(p_ns.astype(np.float64) - t_ns.astype(np.float64))
+    hit = (pct_err <= 0.03) | (frame_err <= 1)
+    miss = pct_err > 0.20
+
+    star_bins = np.arange(0, 11, 0.5)
+    hit_by_star = []
+    miss_by_star = []
+    n_by_star = []
+    star_centers = []
+
+    for i in range(len(star_bins) - 1):
+        lo, hi = star_bins[i], star_bins[i + 1]
+        mask = (stars_ns >= lo) & (stars_ns < hi)
+        n = mask.sum()
+        if n >= 20:
+            hit_by_star.append(float(hit[mask].mean()))
+            miss_by_star.append(float(miss[mask].mean()))
+            n_by_star.append(n)
+            star_centers.append((lo + hi) / 2)
+
+    if len(star_centers) >= 3:
+        fig, axes = plt.subplots(1, 2, figsize=(16, 6))
+
+        # HIT rate vs stars
+        ax = axes[0]
+        ax.bar(star_centers, [h * 100 for h in hit_by_star],
+               width=0.45, color="#6bc46d", alpha=0.8)
+        ax.axvspan(min_stars, max_stars, alpha=0.15, color="blue", label="Training range")
+        ax.set_xlabel("Star Rating")
+        ax.set_ylabel("HIT%")
+        ax.set_title(f"Eval {eval_step}: HIT Rate by Star Rating")
+        ax.legend()
+        ax.grid(True, alpha=0.3)
+        ax.set_ylim(0, 100)
+
+        # MISS rate vs stars
+        ax = axes[1]
+        ax.bar(star_centers, [m * 100 for m in miss_by_star],
+               width=0.45, color="#eb4528", alpha=0.8)
+        ax.axvspan(min_stars, max_stars, alpha=0.15, color="blue", label="Training range")
+        ax.set_xlabel("Star Rating")
+        ax.set_ylabel("MISS%")
+        ax.set_title(f"Eval {eval_step}: MISS Rate by Star Rating")
+        ax.legend()
+        ax.grid(True, alpha=0.3)
+        ax.set_ylim(0, 100)
+
+        fig.tight_layout()
+        fig.savefig(f"{prefix}_star_performance.png", dpi=120)
+        plt.close(fig)
+
+
 def save_eval_graphs(targets, preds, metrics, eval_step, run_dir, extra=None, mt_metrics=None, prefix_tag=""):
     """Generate and save all graphs for this eval.
 
@@ -4621,6 +4761,20 @@ def train(args):
     # split
     random.seed(42)
     train_idx, val_idx = split_by_song(manifest, val_ratio=0.1)
+
+    # Star rating filter
+    min_stars = getattr(args, 'min_stars', 0)
+    max_stars = getattr(args, 'max_stars', 99)
+    if min_stars > 0 or max_stars < 99:
+        charts = manifest["charts"]
+        def _star_ok(idx):
+            sr = charts[idx].get("star_rating", 0)
+            return min_stars <= sr < max_stars
+        before_train, before_val = len(train_idx), len(val_idx)
+        train_idx = [i for i in train_idx if _star_ok(i)]
+        val_idx = [i for i in val_idx if _star_ok(i)]
+        print(f"Star filter [{min_stars}, {max_stars}): train {before_train}→{len(train_idx)}, val {before_val}→{len(val_idx)}")
+
     print(f"Train: {len(train_idx)} charts, Val: {len(val_idx)} charts")
 
     use_multi_target = args.multi_target or args.model_type == "framewise"
@@ -5594,6 +5748,32 @@ def _run_eval(model, val_loader, criterion, args, amp_enabled,
     val_preds = val_extra["preds"]
     val_metrics = compute_metrics(val_targets, val_preds)
 
+    # Per-difficulty metrics (stars < 4, 4-6, >= 6)
+    min_stars = getattr(args, 'min_stars', 0)
+    max_stars = getattr(args, 'max_stars', 99)
+    if min_stars > 0 or max_stars < 99:
+        charts = manifest["charts"]
+        val_ds_ref = val_loader.dataset
+        star_buckets = {"low": (0, 4), "mid": (4, 6), "high": (6, 99)}
+        for bname, (slo, shi) in star_buckets.items():
+            # Build mask: which val samples belong to charts in this star range
+            mask = np.zeros(len(val_targets), dtype=bool)
+            idx = 0
+            for ci_local in range(len(val_ds_ref.charts)):
+                chart = val_ds_ref.charts[ci_local]
+                sr = chart.get("star_rating", 0)
+                in_bucket = slo <= sr < shi
+                # Count samples from this chart
+                n_from_chart = sum(1 for s in val_ds_ref.samples if s[0] == ci_local)
+                if in_bucket:
+                    mask[idx:idx + n_from_chart] = True
+                idx += n_from_chart
+            if mask.sum() > 0 and mask.sum() < len(val_targets):
+                bm = compute_metrics(val_targets[mask], val_preds[mask])
+                for k, v in bm.items():
+                    val_metrics[f"star_{bname}_{k}"] = v
+                val_metrics[f"star_{bname}_n"] = int(mask.sum())
+
     # last_repeat: % of non-stop predictions within 5% of prev_gap
     prev_gaps = val_extra["prev_gaps"]
     stop = N_CLASSES - 1
@@ -5844,6 +6024,18 @@ def _run_eval(model, val_loader, criterion, args, amp_enabled,
               f"score={val_metrics.get('model_score', 0):+.3f} | "
               f"uniq={val_metrics.get('unique_preds', 0)} | lr={scheduler.get_last_lr()[0]:.2e}")
 
+    # Per-difficulty breakdown
+    if "star_mid_hit_rate" in val_metrics:
+        parts = []
+        for bname in ["low", "mid", "high"]:
+            h = val_metrics.get(f"star_{bname}_hit_rate", 0)
+            m = val_metrics.get(f"star_{bname}_miss_rate", 0)
+            n = val_metrics.get(f"star_{bname}_n", 0)
+            if n > 0:
+                parts.append(f"{bname}={h:.1%}/{m:.1%} (n={n})")
+        if parts:
+            print(f"    Stars: {' | '.join(parts)}")
+
     # Stage 1 + Stage 2 + multi-onset summary
     if "s1_f1" in val_metrics:
         print(f"    S1: F1={val_metrics['s1_f1']:.3f} P={val_metrics.get('s1_precision',0):.3f} "
@@ -5883,6 +6075,13 @@ def _run_eval(model, val_loader, criterion, args, amp_enabled,
     # save eval graphs
     save_eval_graphs(val_targets, val_preds, val_metrics, eval_step, run_dir,
                      extra=val_extra, mt_metrics=mt_metrics, prefix_tag="_o1" if "multi_onset_preds" in val_extra else "")
+
+    # Per-star scatter + correlation graphs
+    min_stars_g = getattr(args, 'min_stars', 0)
+    max_stars_g = getattr(args, 'max_stars', 99)
+    if min_stars_g > 0 or max_stars_g < 99:
+        _save_star_graphs(val_targets, val_preds, val_loader.dataset, eval_step, run_dir,
+                          min_stars_g, max_stars_g)
 
     # multi-onset: save eval graphs for o2, o3, o4, oA
     if "multi_onset_preds" in val_extra:
@@ -6017,6 +6216,8 @@ if __name__ == "__main__":
     parser.add_argument("--warm-start", type=str, default=None, help="Path to checkpoint to load matching weights from")
     parser.add_argument("--s1-checkpoint", type=str, default=None, help="Frozen S1 checkpoint for fusion_classifier (exp 65-S3v2)")
     parser.add_argument("--s2-checkpoint", type=str, default=None, help="Frozen S2v2 checkpoint for fusion_classifier (exp 65-S3v2)")
+    parser.add_argument("--min-stars", type=float, default=0, help="Minimum star rating filter (0=off)")
+    parser.add_argument("--max-stars", type=float, default=99, help="Maximum star rating filter (99=off)")
     parser.add_argument("--no-compile", action="store_true", help="Disable torch.compile")
     parser.add_argument("--amp", action="store_true", help="Enable mixed precision (experimental on Windows)")
     parser.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
