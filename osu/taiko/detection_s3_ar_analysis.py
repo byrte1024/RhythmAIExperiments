@@ -79,7 +79,17 @@ def load_s3(ckpt_path, device, s1_d_model=384):
     a = ckpt["args"]
     state_keys = set(ckpt["model"].keys())
 
-    if "head_smooth.0.weight" in state_keys:
+    if "input_proj.0.weight" in state_keys and "head.1.weight" in state_keys:
+        from detection_s3v3_model import PureProposalFusion
+        model = PureProposalFusion(
+            d_model=a.get("d_model", 128),
+            n_layers=a.get("enc_layers", 2) + a.get("fusion_layers", 2),
+            n_heads=a.get("n_heads", 4),
+            n_classes=B_PRED + 1, b_pred=B_PRED,
+        )
+        model._is_classifier = True
+        model._is_pure_proposal = True
+    elif "head_smooth.0.weight" in state_keys:
         from detection_s3v2_model import FusionClassifier
         model = FusionClassifier(
             d_model=a.get("d_model", 384), d_audio=s1_d_model,
@@ -89,6 +99,7 @@ def load_s3(ckpt_path, device, s1_d_model=384):
             gap_ratios=a.get("gap_ratios", True),
         )
         model._is_classifier = True
+        model._is_pure_proposal = False
     else:
         from detection_s3_model import FusionSelector
         model = FusionSelector(
@@ -217,6 +228,7 @@ def run_ar(s1_model, s2_model, s3_model, mel, song, device, hop_bins=20):
     cond = np.array([song["density_mean"], song["density_peak"], song["density_std"]], dtype=np.float32)
     cond_t = torch.tensor(cond).unsqueeze(0).to(device)
     is_classifier = getattr(s3_model, '_is_classifier', False)
+    is_pure = getattr(s3_model, '_is_pure_proposal', False)
 
     # Per-step tracking
     step_stats = []
@@ -242,14 +254,18 @@ def run_ar(s1_model, s2_model, s3_model, mel, song, device, hop_bins=20):
             cond_t)).squeeze(0).cpu().numpy()
 
         # S3
-        s3_input = (
-            audio_feat,
-            torch.from_numpy(s1_conf).unsqueeze(0).to(device),
-            torch.from_numpy(s2_conf).unsqueeze(0).to(device),
-            torch.from_numpy(eo).unsqueeze(0).to(device),
-            torch.from_numpy(em).unsqueeze(0).to(device),
-            cond_t,
-        )
+        s1_conf_t = torch.from_numpy(s1_conf).unsqueeze(0).to(device)
+        s2_conf_t = torch.from_numpy(s2_conf).unsqueeze(0).to(device)
+
+        if is_pure:
+            s3_input = (s1_conf_t, s2_conf_t)
+        else:
+            s3_input = (
+                audio_feat, s1_conf_t, s2_conf_t,
+                torch.from_numpy(eo).unsqueeze(0).to(device),
+                torch.from_numpy(em).unsqueeze(0).to(device),
+                cond_t,
+            )
 
         if is_classifier:
             s3_logits = s3_model(*s3_input)

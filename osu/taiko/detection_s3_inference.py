@@ -73,8 +73,20 @@ def load_s3(ckpt_path, device, s1_d_model=384):
     a = ckpt["args"]
     state_keys = set(ckpt["model"].keys())
 
-    # Detect model type: FusionClassifier has head_smooth, FusionSelector has dec_self_attn
-    if "head_smooth.0.weight" in state_keys:
+    # Detect model type from state dict keys
+    if "input_proj.0.weight" in state_keys and "head.1.weight" in state_keys:
+        # PureProposalFusion (S3v3): has input_proj + head, no audio_proj/event embeddings
+        from detection_s3v3_model import PureProposalFusion
+        model = PureProposalFusion(
+            d_model=a.get("d_model", 128),
+            n_layers=a.get("enc_layers", 2) + a.get("fusion_layers", 2),
+            n_heads=a.get("n_heads", 4),
+            n_classes=B_PRED + 1, b_pred=B_PRED,
+        )
+        model._is_classifier = True
+        model._is_pure_proposal = True
+    elif "head_smooth.0.weight" in state_keys:
+        # FusionClassifier (S3v2): has head_smooth
         from detection_s3v2_model import FusionClassifier
         model = FusionClassifier(
             d_model=a.get("d_model", 384), d_audio=s1_d_model,
@@ -84,7 +96,9 @@ def load_s3(ckpt_path, device, s1_d_model=384):
             gap_ratios=a.get("gap_ratios", True),
         )
         model._is_classifier = True
+        model._is_pure_proposal = False
     else:
+        # FusionSelector (S3): DETR-style per-bin
         from detection_s3_model import FusionSelector
         model = FusionSelector(
             d_model=a.get("d_model", 192), d_audio=s1_d_model,
@@ -93,6 +107,7 @@ def load_s3(ckpt_path, device, s1_d_model=384):
             n_heads=8, a_bins=A_BINS, b_bins=B_BINS, b_pred=B_PRED,
         )
         model._is_classifier = False
+        model._is_pure_proposal = False
 
     # Filter out frozen S1/S2 weights that got saved with the checkpoint
     state = {k: v for k, v in ckpt["model"].items() if not k.startswith("_frozen_")}
@@ -213,16 +228,22 @@ def run_inference(s1_model, s2_model, s3_model, mel, conditioning, device,
             torch.from_numpy(sm).unsqueeze(0).to(device),
             cond_t)).squeeze(0).cpu().numpy()
 
-        # S3 (auto-detect per-bin vs single-onset)
+        # S3 (auto-detect model type)
         is_classifier = getattr(s3_model, '_is_classifier', False)
-        s3_input = (
-            audio_feat,
-            torch.from_numpy(s1_conf).unsqueeze(0).to(device),
-            torch.from_numpy(s2_conf).unsqueeze(0).to(device),
-            torch.from_numpy(eo).unsqueeze(0).to(device),
-            torch.from_numpy(em).unsqueeze(0).to(device),
-            cond_t,
-        )
+        is_pure = getattr(s3_model, '_is_pure_proposal', False)
+
+        s1_conf_t = torch.from_numpy(s1_conf).unsqueeze(0).to(device)
+        s2_conf_t = torch.from_numpy(s2_conf).unsqueeze(0).to(device)
+
+        if is_pure:
+            s3_input = (s1_conf_t, s2_conf_t)
+        else:
+            s3_input = (
+                audio_feat, s1_conf_t, s2_conf_t,
+                torch.from_numpy(eo).unsqueeze(0).to(device),
+                torch.from_numpy(em).unsqueeze(0).to(device),
+                cond_t,
+            )
         if is_classifier:
             # FusionClassifier: returns (B, 251) logits — single onset
             s3_logits = s3_model(*s3_input)
@@ -338,6 +359,8 @@ def main():
     parser.add_argument("--hop-ms", type=float, default=100, help="STOP hop in ms")
     parser.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
     parser.add_argument("--andlaunch", action="store_true", help="Launch viewer after inference")
+    parser.add_argument("--gif", default=None, help="Path to GIF for beat-synced animation in viewer")
+    parser.add_argument("--gif-cycles", type=int, default=1, help="Events per full GIF cycle")
     args = parser.parse_args()
 
     # Temp dir for viewer-only mode (no explicit output)
@@ -469,6 +492,8 @@ def main():
                "--stats-json", stats_path,
                "--mel-npy", mel_npy_path, "--wave-npy", wave_npy_path,
                "--s3confs-npz", conf_path]
+        if args.gif:
+            cmd.extend(["--gif", args.gif, "--gif-cycles", str(args.gif_cycles)])
         print(f"\nLaunching viewer...")
         subprocess.run(cmd)
 
