@@ -11,8 +11,6 @@ osu/taiko/audio/
 osu/taiko/charts/
 osu/taiko/data/
 osu/taiko/datasets/*
-!osu/taiko/datasets/fetch_ranked_status.py
-!osu/taiko/datasets/fetch_ratings.py
 osu/taiko/mels/
 osu/taiko/metadata.csv
 mels/
@@ -38,3 +36,13 @@ venv_baseline
 
 # Personal scripts (credentials)
 personal_scripts/
+
+# Secrets
+.env
+*.env
+secrets.json
+osu/taiko2/secrets.json
+
+# taiko2 generated data
+osu/taiko2/datasets/
+osu/taiko2/runs/
