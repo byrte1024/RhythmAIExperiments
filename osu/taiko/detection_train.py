@@ -5752,7 +5752,6 @@ def _run_eval(model, val_loader, criterion, args, amp_enabled,
     min_stars = getattr(args, 'min_stars', 0)
     max_stars = getattr(args, 'max_stars', 99)
     if min_stars > 0 or max_stars < 99:
-        charts = manifest["charts"]
         val_ds_ref = val_loader.dataset
         star_buckets = {"low": (0, 4), "mid": (4, 6), "high": (6, 99)}
         for bname, (slo, shi) in star_buckets.items():
