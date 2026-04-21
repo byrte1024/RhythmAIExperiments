@@ -34,7 +34,7 @@ Identical to exp58: ProposeSelectDetector. Only the training data changes.
 | d_model | 384, 8 heads |
 | Gap ratios | ON |
 | Density jitter | ±10% at 30% |
-| Proposer freeze | 2 evals |
+| Proposer freeze | **4 evals** (2x data = 2x longer warmup) |
 | **Star filter** | **4.0 ≤ stars < 6.0** |
 | ramp_alpha | 2.5 (from exp44e) |
 
@@ -46,7 +46,7 @@ python detection_train.py taiko_v2 --run-name detect_experiment_58d \
     --model-type event_embed_propose \
     --a-bins 500 --b-pred 250 --gap-ratios \
     --density-jitter-rate 0.30 --density-jitter-pct 0.10 \
-    --proposer-freeze-evals 2 \
+    --proposer-freeze-evals 4 \
     --min-stars 4 --max-stars 6 \
     --ramp-alpha 2.5 \
     --epochs 50 --batch-size 48 --evals-per-epoch 4 --workers 3

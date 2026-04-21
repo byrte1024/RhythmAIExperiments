@@ -146,7 +146,7 @@ After freeze: loss = s2_loss + 0.5 * s1_loss
 | Evals per epoch | 4 |
 | Proposer layers | 4 |
 | Selector layers | 8 |
-| Proposer freeze | 2 evals |
+| Proposer freeze | 4 evals (longer warmup for smaller dataset) |
 | S1 pos_weight | 5.0 |
 | S1 focal gamma | 2.0 |
 | Gap ratios | ON |
