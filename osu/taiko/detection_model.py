@@ -1809,6 +1809,10 @@ class ProposeSelectDetector(nn.Module):
             logits = raw  # (B, n_classes) — backward compat
             logits = logits + self.head_smooth(logits.unsqueeze(1)).squeeze(1)
 
+        # optionally return cursor token embedding (for RatioHeads in exp 67)
+        if getattr(self, '_return_cursor_token', False):
+            return logits, proposal_logits, cursor
+
         # return both proposal logits (for Stage 1 loss) and onset logits (for Stage 2 loss)
         return logits, proposal_logits
 

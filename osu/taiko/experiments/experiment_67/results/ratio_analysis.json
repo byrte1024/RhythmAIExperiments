@@ -1,0 +1,16 @@
+{
+  "n_samples": 5799322,
+  "n_with_offset": 0,
+  "n_no_context": 457,
+  "n_no_dominant": 70,
+  "offset_mean": 0.0,
+  "offset_median": 0.0,
+  "offset_pct_zero": 1.0,
+  "dominant_gap_mean": 32.20575481630235,
+  "dominant_gap_median": 30.0,
+  "dominant_coverage_mean": 0.49684551047622827,
+  "ratio_top1_mean": 1.2225843754242154,
+  "ratio_top1_median": 1.0,
+  "ratio_top1_p1": 0.42857142857142855,
+  "ratio_top1_p99": 4.0588235294117645
+}

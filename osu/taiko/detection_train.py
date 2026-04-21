@@ -13,6 +13,7 @@ from torch.utils.data import Dataset, DataLoader, WeightedRandomSampler
 from tqdm import tqdm
 
 from detection_model import OnsetDetector, DualStreamOnsetDetector, InterleavedOnsetDetector, ContextFiLMDetector, FramewiseOnsetDetector, EventEmbeddingDetector
+from detection_ratio_model import RatioHeads, compute_ratio_loss as ratio_hill_loss, get_ratio_bins, ratio_to_bin, bin_to_ratio, N_RATIO_CLASSES, RATIO_STOP, N_RATIO_BINS as RATIO_N_BINS
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 
@@ -135,7 +136,7 @@ class OnsetDataset(Dataset):
     def __init__(self, manifest, ds_dir, chart_indices, augment=False, subsample=1,
                  multi_target=False, ratio_head=False,
                  density_jitter_rate=0.10, density_jitter_pct=0.02,
-                 n_onsets=1, delta_onsets=False):
+                 n_onsets=1, delta_onsets=False, cursor_offset_aug=False):
         self.mel_dir = os.path.join(ds_dir, "mels")
         self.charts = [manifest["charts"][i] for i in chart_indices]
         self.augment = augment
@@ -145,6 +146,7 @@ class OnsetDataset(Dataset):
         self._ratio_head = ratio_head
         self._n_onsets = n_onsets
         self._delta_onsets = delta_onsets
+        self._cursor_offset_aug = cursor_offset_aug
         # capture current window config (for Windows spawn workers)
         self._a_bins = A_BINS
         self._b_bins = B_BINS  # audio window (mel frames)
@@ -211,6 +213,17 @@ class OnsetDataset(Dataset):
             cursor = max(0, evt[0] - self._b_pred) if len(evt) > 0 else 0
         else:
             cursor = int(evt[ei - 1])
+
+        # Cursor offset augmentation (30%): shift cursor between last event and next
+        # Simulates AR STOP-hop situations. Applied BEFORE mel window extraction.
+        cursor_offset = 0  # distance from last event
+        if self.augment and getattr(self, '_cursor_offset_aug', False) and ei > 0 and ei < len(evt):
+            if random.random() < 0.30:
+                max_shift = min(int(evt[ei]) - cursor, self._b_pred // 2)
+                if max_shift > 1:
+                    shift = random.randint(1, max_shift)
+                    cursor_offset = shift
+                    cursor = cursor + shift
 
         # target: uses b_pred (prediction range)
         if ei < len(evt):
@@ -374,6 +387,7 @@ class OnsetDataset(Dataset):
             torch.tensor(target, dtype=torch.long),
             torch.tensor(ratio_target, dtype=torch.long),
             torch.from_numpy(proposal_tokens),
+            torch.tensor(cursor_offset, dtype=torch.long),  # for ratio mode Head 2 target
         )
 
     def _augment(self, mel_window, past_bins):
@@ -1084,7 +1098,8 @@ def _top3_gap_peaks(gaps, tolerance=0.05):
 @torch.no_grad()
 def validate_and_collect(model, loader, criterion, device, amp_enabled=False, sigmoid_mode=False, framewise=False,
                          multi_target=False, ratio_criterion=None, propose_select=False,
-                         n_onsets=1, fusion_classifier=False, pure_proposal_fusion=False):
+                         n_onsets=1, fusion_classifier=False, pure_proposal_fusion=False,
+                         ratio_propose_select=False):
     """Single pass: compute val loss AND collect predictions + extra data for graphs."""
     model.eval()
     all_targets = []       # single-target: (N,), multi-target: not used
@@ -1102,6 +1117,14 @@ def validate_and_collect(model, loader, criterion, device, amp_enabled=False, si
     all_ratio_targets = [] # ratio head targets (exp 55+)
     all_proposal_confs = []  # Stage 1 confidences (exp 58+)
     all_proposal_has_onset = []  # which tokens actually have onsets (exp 58+)
+    # ratio_propose_select collectors (exp 67)
+    all_rps_divisor_preds = []
+    all_rps_divisor_targets = []
+    all_rps_offset_preds = []
+    all_rps_offset_targets = []
+    all_rps_ratio_preds = []
+    all_rps_ratio_targets = []
+    all_rps_derived_bins = []
     # multi-onset per-step collectors (exp 62+)
     all_multi_onset_preds = [[] for _ in range(n_onsets)] if n_onsets > 1 else None
     all_multi_onset_targets = [[] for _ in range(n_onsets)] if n_onsets > 1 else None
@@ -1114,7 +1137,7 @@ def validate_and_collect(model, loader, criterion, device, amp_enabled=False, si
             targets_padded = targets_padded.to(device, non_blocking=True)
             n_tgt = n_tgt.to(device, non_blocking=True)
         else:
-            mel, evt_off, evt_mask, cond, target, _ratio_target, _proposal_tokens = batch
+            mel, evt_off, evt_mask, cond, target, _ratio_target, _proposal_tokens = batch[:7]
             target = target.to(device, non_blocking=True)
 
         mel = mel.to(device, non_blocking=True)
@@ -1210,6 +1233,71 @@ def validate_and_collect(model, loader, criterion, device, amp_enabled=False, si
                 s2_conf = torch.sigmoid(s2_logits)
                 logits = model(audio_feat, s1_conf, s2_conf, evt_off, evt_mask, cond)
                 loss = criterion(logits, target)
+            elif ratio_propose_select:
+                # ratio_propose_select mode (exp 67): backbone + ratio heads
+                model_raw_v = model._orig_mod if hasattr(model, '_orig_mod') else model
+                backbone_out = model(mel, evt_off, evt_mask, cond)
+                onset_logits_v, proposal_logits_val, cursor_token_v = backbone_out
+                ratio_heads_v = model_raw_v._ratio_heads
+                divisor_logits_v, offset_logits_v, ratio_logits_v, derived_bin_v = ratio_heads_v(cursor_token_v)
+
+                # Use derived_bin for predictions (map 250->STOP=500)
+                logits = torch.zeros(mel.size(0), N_CLASSES, device=device)
+                derived_for_logits_v = derived_bin_v.clone()
+                derived_for_logits_v[derived_for_logits_v >= 250] = N_CLASSES - 1  # STOP
+                logits.scatter_(1, derived_for_logits_v.unsqueeze(1).clamp(0, N_CLASSES - 1), 10.0)
+                ratio_is_stop_v = (ratio_logits_v.argmax(dim=-1) == RATIO_STOP)
+                logits[ratio_is_stop_v, :] = 0.0
+                logits[ratio_is_stop_v, N_CLASSES - 1] = 10.0
+
+                loss = criterion(onset_logits_v, target)
+
+                # Collect ratio_propose_select data
+                all_rps_divisor_preds.append(divisor_logits_v.argmax(1).cpu().numpy())
+                all_rps_offset_preds.append(offset_logits_v.argmax(1).cpu().numpy())
+                all_rps_ratio_preds.append(ratio_logits_v.argmax(1).cpu().numpy())
+                all_rps_derived_bins.append(derived_bin_v.cpu().numpy())
+
+                # Compute targets for divisor/offset
+                eo_v = evt_off.cpu().numpy()
+                em_v = evt_mask.cpu().numpy()
+                B_v = mel.size(0)
+                div_tgt = np.zeros(B_v, dtype=np.int64)
+                off_tgt = np.zeros(B_v, dtype=np.int64)
+                if len(batch) == 8:
+                    off_tgt = batch[7].numpy().clip(0, ratio_heads_v.o_bins - 1)
+                for b in range(B_v):
+                    valid = ~em_v[b]
+                    if valid.sum() >= 2:
+                        offsets = eo_v[b][valid]
+                        gaps = np.abs(np.diff(offsets)).astype(np.float64)
+                        gaps = gaps[gaps > 0]
+                        if len(gaps) >= 1:
+                            from collections import Counter
+                            rounded = (gaps // 3) * 3
+                            dominant = Counter(rounded.astype(int).tolist()).most_common(1)[0][0]
+                            dominant = max(1, int(dominant))
+                            div_tgt[b] = min(dominant, ratio_heads_v.d_bins - 1)
+                all_rps_divisor_targets.append(div_tgt)
+                all_rps_offset_targets.append(off_tgt)
+
+                # Compute ratio targets
+                is_stop_v = (target.cpu().numpy() == N_CLASSES - 1)
+                div_pred_val = (divisor_logits_v.softmax(-1).cpu().numpy() * (np.arange(ratio_heads_v.d_bins) + 1)).sum(axis=-1)
+                ratio_tgt = np.full(B_v, RATIO_STOP, dtype=np.int64)
+                for b in range(B_v):
+                    if not is_stop_v[b]:
+                        t = target[b].item()
+                        rv = (t + off_tgt[b]) / max(div_pred_val[b], 1.0)
+                        rv = max(0.125, min(8.0, rv))
+                        ratio_tgt[b] = ratio_to_bin(rv)
+                all_rps_ratio_targets.append(ratio_tgt)
+
+                # Collect proposal data for Stage 1 metrics
+                prop_conf = torch.sigmoid(proposal_logits_val).cpu().numpy()
+                all_proposal_confs.append(prop_conf)
+                all_proposal_has_onset.append(_proposal_tokens.numpy())
+
             else:
                 output = model(mel, evt_off, evt_mask, cond)
                 if isinstance(output, tuple) and propose_select:
@@ -1358,6 +1446,14 @@ def validate_and_collect(model, loader, criterion, device, amp_enabled=False, si
     if n_onsets > 1 and all_multi_onset_preds is not None and len(all_multi_onset_preds[0]) > 0:
         extra["multi_onset_preds"] = [np.concatenate(all_multi_onset_preds[oi]) for oi in range(n_onsets)]
         extra["multi_onset_targets"] = [np.concatenate(all_multi_onset_targets[oi]) for oi in range(n_onsets)]
+    if all_rps_divisor_preds:
+        extra["rps_divisor_preds"] = np.concatenate(all_rps_divisor_preds)
+        extra["rps_divisor_targets"] = np.concatenate(all_rps_divisor_targets)
+        extra["rps_offset_preds"] = np.concatenate(all_rps_offset_preds)
+        extra["rps_offset_targets"] = np.concatenate(all_rps_offset_targets)
+        extra["rps_ratio_preds"] = np.concatenate(all_rps_ratio_preds)
+        extra["rps_ratio_targets"] = np.concatenate(all_rps_ratio_targets)
+        extra["rps_derived_bins"] = np.concatenate(all_rps_derived_bins)
     return val_loss, extra
 
 
@@ -1891,7 +1987,7 @@ def run_benchmarks(model, val_loader, device, amp_enabled=False, multi_target=Fa
                 target[n_tgt == 0] = stop
                 target = target.clamp(0, stop)
             else:
-                mel, evt_off, evt_mask, cond, target, _ratio_target, _proposal_tokens = batch
+                mel, evt_off, evt_mask, cond, target, _ratio_target, _proposal_tokens = batch[:7]
 
             # compute prev_gaps from ORIGINAL events before corruption
             all_prev_gaps.append(_compute_prev_gaps(evt_off, evt_mask))
@@ -2343,7 +2439,7 @@ def run_benchmarks(model, val_loader, device, amp_enabled=False, multi_target=Fa
             if multi_target:
                 mel, evt_off, evt_mask, cond, targets_padded, n_tgt, _ratio_target, _proposal_tokens = batch
             else:
-                mel, evt_off, evt_mask, cond, target, _ratio_target, _proposal_tokens = batch
+                mel, evt_off, evt_mask, cond, target, _ratio_target, _proposal_tokens = batch[:7]
 
             B = mel.size(0)
             for b in range(B):
@@ -3446,6 +3542,110 @@ def _save_star_graphs(targets, preds, val_ds, eval_step, run_dir, min_stars, max
         fig.tight_layout()
         fig.savefig(f"{prefix}_star_performance.png", dpi=120)
         plt.close(fig)
+
+
+def _save_ratio_graphs(val_extra, val_metrics, eval_step, run_dir):
+    """Save ratio_propose_select analysis graphs (exp 67).
+
+    Generates:
+    - Ratio target vs predicted scatter
+    - Ratio target vs predicted distribution comparison
+    - Divisor distribution (predicted vs actual dominant gaps)
+    - Offset distribution (predicted vs actual)
+    """
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+
+    eval_dir = os.path.join(run_dir, "evals")
+    os.makedirs(eval_dir, exist_ok=True)
+    prefix = os.path.join(eval_dir, f"eval_{eval_step:03d}_ratio")
+
+    div_preds = val_extra["rps_divisor_preds"]
+    div_targets = val_extra["rps_divisor_targets"]
+    off_preds = val_extra["rps_offset_preds"]
+    off_targets = val_extra["rps_offset_targets"]
+    ratio_preds = val_extra["rps_ratio_preds"]
+    ratio_targets = val_extra["rps_ratio_targets"]
+    derived_bins = val_extra["rps_derived_bins"]
+
+    _rb = get_ratio_bins()  # (255,) ratio bin centers
+
+    fig, axes = plt.subplots(2, 3, figsize=(18, 10))
+
+    # 1. Ratio target vs predicted scatter (in ratio space)
+    ax = axes[0, 0]
+    valid_ratio = (ratio_targets < RATIO_STOP) & (ratio_preds < RATIO_STOP)
+    if valid_ratio.sum() > 0:
+        rt_vals = _rb[ratio_targets[valid_ratio]]
+        rp_vals = _rb[ratio_preds[valid_ratio]]
+        ax.scatter(rt_vals, rp_vals, alpha=0.05, s=1, color="#4a90d9")
+        ax.plot([0, 8], [0, 8], "r--", alpha=0.5, linewidth=1)
+    ax.set_xlabel("Target Ratio")
+    ax.set_ylabel("Predicted Ratio")
+    ax.set_title(f"Ratio: Target vs Predicted (n={valid_ratio.sum():,})")
+    ax.set_xlim(0, 8)
+    ax.set_ylim(0, 8)
+
+    # 2. Ratio distribution comparison
+    ax = axes[0, 1]
+    if valid_ratio.sum() > 0:
+        ax.hist(_rb[ratio_targets[valid_ratio]], bins=50, alpha=0.6, label="Target", color="#4a90d9", density=True)
+        ax.hist(_rb[ratio_preds[valid_ratio]], bins=50, alpha=0.6, label="Predicted", color="#eb4528", density=True)
+    n_stop_tgt = (ratio_targets == RATIO_STOP).sum()
+    n_stop_pred = (ratio_preds == RATIO_STOP).sum()
+    ax.set_xlabel("Ratio Value")
+    ax.set_ylabel("Density")
+    ax.set_title(f"Ratio Distribution (STOP: tgt={n_stop_tgt:,} pred={n_stop_pred:,})")
+    ax.legend(fontsize=8)
+
+    # 3. Divisor distribution (predicted vs actual)
+    ax = axes[0, 2]
+    valid_div = div_targets > 0
+    if valid_div.sum() > 0:
+        ax.hist(div_targets[valid_div], bins=100, range=(0, 250), alpha=0.6, label="Target", color="#4a90d9", density=True)
+        ax.hist(div_preds[valid_div], bins=100, range=(0, 250), alpha=0.6, label="Predicted", color="#eb4528", density=True)
+    ax.set_xlabel("Divisor (dominant gap, frames)")
+    ax.set_ylabel("Density")
+    ax.set_title("Divisor Distribution")
+    ax.legend(fontsize=8)
+
+    # 4. Offset distribution (predicted vs actual)
+    ax = axes[1, 0]
+    ax.hist(off_targets, bins=50, range=(0, 100), alpha=0.6, label="Target", color="#4a90d9", density=True)
+    ax.hist(off_preds, bins=50, range=(0, 100), alpha=0.6, label="Predicted", color="#eb4528", density=True)
+    ax.set_xlabel("Cursor Offset (frames)")
+    ax.set_ylabel("Density")
+    ax.set_title("Offset Distribution")
+    ax.legend(fontsize=8)
+
+    # 5. Divisor scatter: target vs predicted
+    ax = axes[1, 1]
+    if valid_div.sum() > 0:
+        ax.scatter(div_targets[valid_div], div_preds[valid_div], alpha=0.03, s=1, color="#4a90d9")
+        ax.plot([0, 250], [0, 250], "r--", alpha=0.5, linewidth=1)
+    ax.set_xlabel("Target Divisor")
+    ax.set_ylabel("Predicted Divisor")
+    ax.set_title("Divisor: Target vs Predicted")
+    ax.set_xlim(0, 250)
+    ax.set_ylim(0, 250)
+
+    # 6. Key metrics summary
+    ax = axes[1, 2]
+    text_lines = []
+    for k in ["rps_divisor_accuracy", "rps_offset_accuracy", "rps_ratio_accuracy",
+              "rps_ratio_hit_rate", "rps_ratio_miss_rate", "rps_derived_hit_rate"]:
+        v = val_metrics.get(k, 0)
+        text_lines.append(f"{k}: {v:.3f}")
+    ax.text(0.1, 0.5, "\n".join(text_lines), transform=ax.transAxes, fontsize=11,
+            va="center", fontfamily="monospace")
+    ax.set_title("Summary")
+    ax.axis("off")
+
+    fig.suptitle(f"Ratio Propose-Select Analysis (eval {eval_step})", fontsize=14, fontweight="bold")
+    fig.tight_layout()
+    fig.savefig(f"{prefix}_analysis.png", dpi=120)
+    plt.close(fig)
 
 
 def save_eval_graphs(targets, preds, metrics, eval_step, run_dir, extra=None, mt_metrics=None, prefix_tag=""):
@@ -4784,14 +4984,17 @@ def train(args):
     djp = getattr(args, 'density_jitter_pct', 0.02)
     n_onsets = getattr(args, 'n_onsets', 1)
     delta_onsets = getattr(args, 'delta_onsets', False)
+    use_cursor_offset_aug = (args.model_type == "ratio_propose_select")
     train_ds = OnsetDataset(manifest, ds_dir, train_idx, augment=True, subsample=sub,
                             multi_target=use_multi_target, ratio_head=use_ratio_head,
                             density_jitter_rate=djr, density_jitter_pct=djp,
-                            n_onsets=n_onsets, delta_onsets=delta_onsets)
+                            n_onsets=n_onsets, delta_onsets=delta_onsets,
+                            cursor_offset_aug=use_cursor_offset_aug)
     val_ds = OnsetDataset(manifest, ds_dir, val_idx, augment=False, subsample=sub,
                           multi_target=use_multi_target, ratio_head=use_ratio_head,
                           density_jitter_rate=djr, density_jitter_pct=djp,
-                          n_onsets=n_onsets, delta_onsets=delta_onsets)
+                          n_onsets=n_onsets, delta_onsets=delta_onsets,
+                          cursor_offset_aug=use_cursor_offset_aug)
     if sub > 1:
         print(f"Subsample: 1/{sub}")
     print(f"Train samples: {len(train_ds)}, Val samples: {len(val_ds)}")
@@ -4940,6 +5143,27 @@ def train(args):
 
         model._frozen_s1 = frozen_s1
         model._frozen_s2 = frozen_s2
+    elif args.model_type == "ratio_propose_select":
+        from detection_model import ProposeSelectDetector
+        model = ProposeSelectDetector(
+            n_mels=80, d_model=args.d_model,
+            n_proposer_layers=getattr(args, 'proposer_layers', 4),
+            n_selector_layers=args.enc_layers + args.fusion_layers,
+            n_heads=args.n_heads,
+            n_classes=N_CLASSES, max_events=C_EVENTS, dropout=args.dropout,
+            gap_ratios=args.gap_ratios,
+            n_virtual_tokens=getattr(args, 'n_virtual_tokens', 0),
+            a_bins=A_BINS, b_bins=B_BINS,
+            n_onsets=1,  # ratio mode uses single onset
+        ).to(args.device)
+        # Attach RatioHeads module (exp 67)
+        model._return_cursor_token = True
+        model._ratio_heads = RatioHeads(
+            d_model=args.d_model,
+            d_bins=250,  # divisor bins (1-250 frames)
+            o_bins=100,  # offset bins (0-99 frames)
+        ).to(args.device)
+        print(f"  RatioHeads: {sum(p.numel() for p in model._ratio_heads.parameters()):,} params")
     elif args.model_type == "event_embed_propose":
         from detection_model import ProposeSelectDetector
         model = ProposeSelectDetector(
@@ -5210,7 +5434,11 @@ def train(args):
                 target[n_tgt == 0] = N_CLASSES - 1
                 target = target.clamp(0, N_CLASSES - 1)
             else:
-                mel, evt_off, evt_mask, cond, target, ratio_target, proposal_tokens_batch = batch
+                if len(batch) == 8:
+                    mel, evt_off, evt_mask, cond, target, ratio_target, proposal_tokens_batch, cursor_offset_batch = batch
+                else:
+                    mel, evt_off, evt_mask, cond, target, ratio_target, proposal_tokens_batch = batch
+                    cursor_offset_batch = None
                 target = target.to(args.device, non_blocking=True)
                 ratio_target = ratio_target.to(args.device, non_blocking=True)
 
@@ -5361,6 +5589,161 @@ def train(args):
                     logits = model(audio_feat, s1_conf, s2_conf, evt_off, evt_mask, cond)
                     loss = criterion(logits, target)
                     output = None
+
+                elif args.model_type == "ratio_propose_select":
+                    # ── ratio_propose_select mode (exp 67) ──
+                    # NOTE: do NOT freeze S2 for ratio_propose_select -- we need the
+                    # cursor token for Head 1+2 warmup. Instead, warmup only trains
+                    # S1 + Head 1+2, while Head 3 (ratio) is frozen.
+                    ratio_freeze_evals = getattr(args, 'ratio_freeze_evals', 1)
+                    model_raw = model._orig_mod if hasattr(model, '_orig_mod') else model
+                    model_raw._s2_frozen = False  # always run full backbone
+                    is_warmup = (eval_step < ratio_freeze_evals)
+
+                    # Forward through backbone (returns cursor token too)
+                    backbone_out = model(mel, evt_off, evt_mask, cond)
+                    onset_logits, proposal_logits, cursor_token_emb = backbone_out
+                    logits = onset_logits
+
+                    # Proposal targets: precomputed in dataset
+                    proposal_target = proposal_tokens_batch.to(mel.device, non_blocking=True)
+
+                    # Stage 1 loss: focal BCE (same as event_embed_propose)
+                    s1_gamma = getattr(args, 'proposer_focal_gamma', 2.0)
+                    s1_pos_weight = torch.tensor(getattr(args, 'proposer_pos_weight', 5.0), device=mel.device)
+                    s1_bce = F.binary_cross_entropy_with_logits(
+                        proposal_logits, proposal_target, reduction='none',
+                        pos_weight=s1_pos_weight)
+                    with torch.no_grad():
+                        p_t = torch.sigmoid(proposal_logits) * proposal_target + \
+                              (1 - torch.sigmoid(proposal_logits)) * (1 - proposal_target)
+                        focal_weight = (1 - p_t) ** s1_gamma
+                    s1_loss = (s1_bce * focal_weight).mean()
+
+                    if is_warmup:
+                        # Warmup: only S1 loss + Head 1+2 loss (freeze ratio head)
+                        # Still compute Head 1+2 to warm them up
+                        ratio_heads = model_raw._ratio_heads
+                        divisor_logits, offset_logits, ratio_logits_rps, derived_bin = ratio_heads(cursor_token_emb.detach())
+
+                        # Compute dominant gap target from event offsets
+                        _dominant_gap_target = torch.zeros(mel.size(0), dtype=torch.long, device=mel.device)
+                        _cursor_offset_target = torch.zeros(mel.size(0), dtype=torch.long, device=mel.device)
+                        if cursor_offset_batch is not None:
+                            _cursor_offset_target = cursor_offset_batch.to(mel.device, non_blocking=True).clamp(0, ratio_heads.o_bins - 1)
+                        eo_np = evt_off.cpu().numpy()
+                        em_np = evt_mask.cpu().numpy()
+                        for b in range(mel.size(0)):
+                            valid = ~em_np[b]
+                            if valid.sum() >= 2:
+                                offsets = eo_np[b][valid]
+                                gaps = np.abs(np.diff(offsets)).astype(np.float64)
+                                gaps = gaps[gaps > 0]
+                                if len(gaps) >= 1:
+                                    # dominant gap = most common gap (rounded, then most frequent)
+                                    from collections import Counter
+                                    rounded = (gaps // 3) * 3
+                                    dominant = Counter(rounded.astype(int).tolist()).most_common(1)[0][0]
+                                    dominant = max(1, int(dominant))
+                                    _dominant_gap_target[b] = min(dominant, ratio_heads.d_bins - 1)
+
+                        loss_A_div = F.cross_entropy(divisor_logits, _dominant_gap_target)
+                        loss_A_off = F.cross_entropy(offset_logits, _cursor_offset_target)
+                        loss_A = loss_A_div + loss_A_off
+                        loss = s1_loss + 0.1 * loss_A
+                        s2_loss = torch.tensor(0.0, device=mel.device)
+                        # Use derived_bin for tqdm metrics (map 250->STOP=500)
+                        logits = torch.zeros(mel.size(0), N_CLASSES, device=mel.device)
+                        derived_for_logits = derived_bin.clone()
+                        derived_for_logits[derived_for_logits >= 250] = N_CLASSES - 1  # STOP
+                        logits.scatter_(1, derived_for_logits.unsqueeze(1).clamp(0, N_CLASSES - 1), 10.0)
+                    else:
+                        # Full training: all losses
+                        ratio_heads = model_raw._ratio_heads
+
+                        # ── Head 1+2 targets ──
+                        _dominant_gap_target = torch.zeros(mel.size(0), dtype=torch.long, device=mel.device)
+                        _cursor_offset_target = torch.zeros(mel.size(0), dtype=torch.long, device=mel.device)
+                        if cursor_offset_batch is not None:
+                            _cursor_offset_target = cursor_offset_batch.to(mel.device, non_blocking=True).clamp(0, ratio_heads.o_bins - 1)
+                        eo_np = evt_off.cpu().numpy()
+                        em_np = evt_mask.cpu().numpy()
+                        for b in range(mel.size(0)):
+                            valid = ~em_np[b]
+                            if valid.sum() >= 2:
+                                offsets = eo_np[b][valid]
+                                gaps = np.abs(np.diff(offsets)).astype(np.float64)
+                                gaps = gaps[gaps > 0]
+                                if len(gaps) >= 1:
+                                    from collections import Counter
+                                    rounded = (gaps // 3) * 3
+                                    dominant = Counter(rounded.astype(int).tolist()).most_common(1)[0][0]
+                                    dominant = max(1, int(dominant))
+                                    _dominant_gap_target[b] = min(dominant, ratio_heads.d_bins - 1)
+
+                        # Forward through RatioHeads with STOP GRADIENT from loss B to heads 1+2
+                        cursor_for_heads12 = cursor_token_emb.detach()  # stop grad for head 1+2
+                        divisor_logits_sg, offset_logits_sg, _, _ = ratio_heads(cursor_for_heads12)
+
+                        # Loss A: Head 1+2 CE (detached from loss B)
+                        loss_A_div = F.cross_entropy(divisor_logits_sg, _dominant_gap_target)
+                        loss_A_off = F.cross_entropy(offset_logits_sg, _cursor_offset_target)
+                        loss_A = loss_A_div + loss_A_off
+
+                        # Forward through RatioHeads WITH gradient (for loss B / Head 3)
+                        divisor_logits, offset_logits, ratio_logits_rps, derived_bin = ratio_heads(cursor_token_emb)
+
+                        # ── Loss B: Head 3 (ratio) ──
+                        # Primary: OnsetLoss on derived_bin
+                        loss_B_onset = criterion(
+                            # Build logits from derived_bin for OnsetLoss
+                            # Actually use the backbone onset_logits for this, let derived_bin inform metrics
+                            onset_logits, target)
+
+                        # Dynamic ratio target: (target_bin + cursor_offset) / divisor_pred_value
+                        with torch.no_grad():
+                            divisor_probs = torch.softmax(divisor_logits, dim=-1)
+                            divisor_bins_t = torch.arange(ratio_heads.d_bins, device=mel.device, dtype=torch.float32)
+                            divisor_pred_value = (divisor_probs * (divisor_bins_t + 1)).sum(dim=-1)  # (B,) +1 to avoid 0
+                            cursor_off_float = _cursor_offset_target.float()
+                            target_float = target.float()
+                            # For non-STOP: ratio = (target + cursor_offset) / divisor
+                            is_stop = (target == N_CLASSES - 1)
+                            ratio_value = torch.where(
+                                is_stop,
+                                torch.zeros_like(target_float),
+                                (target_float + cursor_off_float) / divisor_pred_value.clamp(min=1.0),
+                            )
+                            # Snap to ratio bins
+                            _ratio_bins_t = torch.tensor(get_ratio_bins(), device=mel.device)
+                            # For each sample, find closest ratio bin
+                            ratio_target_rps = torch.full((mel.size(0),), RATIO_STOP, dtype=torch.long, device=mel.device)
+                            for b in range(mel.size(0)):
+                                if not is_stop[b]:
+                                    rv = ratio_value[b].item()
+                                    rv = max(0.125, min(8.0, rv))
+                                    ratio_target_rps[b] = ratio_to_bin(rv)
+
+                        # Ratio distance loss
+                        loss_B_ratio = ratio_hill_loss(ratio_logits_rps, ratio_target_rps)
+
+                        loss_B = loss_B_onset + loss_B_ratio
+                        s2_loss = loss_B
+
+                        # Combined: loss_B + 0.1 * loss_A + 0.5 * s1_loss
+                        loss = loss_B + 0.1 * loss_A + 0.5 * s1_loss
+
+                        # Use derived_bin for tqdm HIT/MISS metrics (map 250->STOP=500)
+                        logits = torch.zeros(mel.size(0), N_CLASSES, device=mel.device)
+                        derived_for_logits = derived_bin.clone()
+                        derived_for_logits[derived_for_logits >= 250] = N_CLASSES - 1  # STOP
+                        logits.scatter_(1, derived_for_logits.unsqueeze(1).clamp(0, N_CLASSES - 1), 10.0)
+                        # Also mark STOP where ratio head explicitly predicts STOP
+                        ratio_is_stop = (ratio_logits_rps.argmax(dim=-1) == RATIO_STOP)
+                        logits[ratio_is_stop, :] = 0.0
+                        logits[ratio_is_stop, N_CLASSES - 1] = 10.0
+
+                    output = None  # not a stop_token tuple
 
                 elif args.model_type == "event_embed_propose":
                     # set freeze flag so model skips Stage 2 forward during freeze
@@ -5563,13 +5946,18 @@ def train(args):
                     train_stop_fn += fn
             if getattr(args, 'ratio_head', False) and isinstance(output, tuple):
                 b_ratio_loss = ratio_loss.item()
+            if args.model_type == "ratio_propose_select":
+                b_ratio_loss = loss_A.item()  # show aux loss (divisor+offset) in tqdm rL slot
             # Stage 1 proposer metrics for tqdm (exp 58+)
             b_s1_f1 = 0.0
             b_s1_loss = 0.0
             b_s2_loss = 0.0
-            if args.model_type == "event_embed_propose":
+            if args.model_type in ("event_embed_propose", "ratio_propose_select"):
                 b_s1_loss = s1_loss.item()
-                b_s2_loss = s2_loss.item() if eval_step >= getattr(args, 'proposer_freeze_evals', 2) else 0.0
+                if args.model_type == "ratio_propose_select":
+                    b_s2_loss = s2_loss.item() if eval_step >= getattr(args, 'ratio_freeze_evals', 1) else 0.0
+                else:
+                    b_s2_loss = s2_loss.item() if eval_step >= getattr(args, 'proposer_freeze_evals', 2) else 0.0
                 with torch.no_grad():
                     s1_pred = (torch.sigmoid(proposal_logits) >= 0.5).float()
                     s1_tp = (s1_pred * proposal_target).sum().item()
@@ -5611,10 +5999,11 @@ def train(args):
                         t_sf1_denom = 2*train_stop_tp + train_stop_fp + train_stop_fn
                         t_sf1 = 2*train_stop_tp / t_sf1_denom if t_sf1_denom > 0 else 0.0
                         stats += f" sF1={t_sf1:.2f}|{r_sF1:.2f} sR={r_sR:.3f}"
-                    # ratio head stats
+                    # ratio head / aux loss stats
                     r_rL = sum(r[9] for r in recent_buf) / len(recent_buf) if recent_buf else 0
                     if r_rL > 0:
-                        stats += f" rL={r_rL:.3f}"
+                        rL_label = "auxL" if args.model_type == "ratio_propose_select" else "rL"
+                        stats += f" {rL_label}={r_rL:.3f}"
                     # Stage 1 proposer stats (exp 58+)
                     r_s1f1 = sum(r[10] for r in recent_buf) / len(recent_buf) if recent_buf else 0
                     r_s1L = sum(r[11] for r in recent_buf) / len(recent_buf) if recent_buf else 0
@@ -5742,6 +6131,7 @@ def _run_eval(model, val_loader, criterion, args, amp_enabled,
         n_onsets=n_onsets,
         fusion_classifier=(args.model_type == "fusion_classifier"),
         pure_proposal_fusion=(args.model_type == "pure_proposal_fusion"),
+        ratio_propose_select=(args.model_type == "ratio_propose_select"),
     )
     # backward-compat: nearest-target metrics (always computed)
     val_targets = val_extra["targets"]
@@ -5890,6 +6280,73 @@ def _run_eval(model, val_loader, criterion, args, amp_enabled,
             val_metrics["ratio_good_rate"] = (log_err <= log_fail).mean().item()
             val_metrics["ratio_miss_rate"] = (log_err > log_fail).mean().item()
             val_metrics["ratio_valid_pct"] = valid.mean().item()
+
+    # ratio_propose_select metrics (exp 67)
+    if "rps_divisor_preds" in val_extra:
+        div_p = val_extra["rps_divisor_preds"]
+        div_t = val_extra["rps_divisor_targets"]
+        off_p = val_extra["rps_offset_preds"]
+        off_t = val_extra["rps_offset_targets"]
+        ratio_p = val_extra["rps_ratio_preds"]
+        ratio_t = val_extra["rps_ratio_targets"]
+        derived = val_extra["rps_derived_bins"]
+
+        # Divisor accuracy (exact match and within tolerance)
+        valid_div = div_t > 0
+        if valid_div.sum() > 0:
+            val_metrics["rps_divisor_accuracy"] = float((div_p[valid_div] == div_t[valid_div]).mean())
+            div_err = np.abs(div_p[valid_div].astype(float) - div_t[valid_div].astype(float))
+            val_metrics["rps_divisor_within_3"] = float((div_err <= 3).mean())
+            val_metrics["rps_divisor_mean_err"] = float(div_err.mean())
+        else:
+            val_metrics["rps_divisor_accuracy"] = 0.0
+
+        # Offset accuracy
+        val_metrics["rps_offset_accuracy"] = float((off_p == off_t).mean())
+        off_err = np.abs(off_p.astype(float) - off_t.astype(float))
+        val_metrics["rps_offset_mean_err"] = float(off_err.mean())
+
+        # Ratio accuracy (using ratio bins)
+        _rb = get_ratio_bins()
+        valid_ratio = (ratio_t < RATIO_STOP) & (ratio_p < RATIO_STOP)
+        if valid_ratio.sum() > 0:
+            rt_vals = _rb[ratio_t[valid_ratio]]
+            rp_vals = _rb[ratio_p[valid_ratio]]
+            log_err = np.abs(np.log(rp_vals) - np.log(rt_vals))
+            val_metrics["rps_ratio_accuracy"] = float((ratio_p[valid_ratio] == ratio_t[valid_ratio]).mean())
+            val_metrics["rps_ratio_log_err_mean"] = float(log_err.mean())
+            val_metrics["rps_ratio_hit_rate"] = float((log_err <= np.log(1.03)).mean())
+            val_metrics["rps_ratio_good_rate"] = float((log_err <= np.log(1.10)).mean())
+            val_metrics["rps_ratio_miss_rate"] = float((log_err > np.log(1.20)).mean())
+        else:
+            val_metrics["rps_ratio_accuracy"] = 0.0
+            val_metrics["rps_ratio_hit_rate"] = 0.0
+            val_metrics["rps_ratio_miss_rate"] = 1.0
+
+        # STOP accuracy for ratio head
+        is_stop_t = ratio_t == RATIO_STOP
+        is_stop_p = ratio_p == RATIO_STOP
+        val_metrics["rps_ratio_stop_f1"] = 0.0
+        tp_s = ((is_stop_p) & (is_stop_t)).sum()
+        fp_s = ((is_stop_p) & (~is_stop_t)).sum()
+        fn_s = ((~is_stop_p) & (is_stop_t)).sum()
+        if (2 * tp_s + fp_s + fn_s) > 0:
+            val_metrics["rps_ratio_stop_f1"] = float(2 * tp_s / (2 * tp_s + fp_s + fn_s))
+
+        # Derived bin hit rate (final output accuracy)
+        stop = N_CLASSES - 1
+        tgt_arr = val_extra["targets"]
+        ns_mask = tgt_arr < stop
+        if ns_mask.sum() > 0:
+            t_ns = tgt_arr[ns_mask].astype(float)
+            d_ns = derived[ns_mask].astype(float)
+            frame_err = np.abs(d_ns - t_ns)
+            pct_err = np.abs((d_ns + 1) / (t_ns + 1) - 1.0)
+            val_metrics["rps_derived_hit_rate"] = float(((pct_err <= 0.03) | (frame_err <= 1)).mean())
+            val_metrics["rps_derived_miss_rate"] = float((pct_err > 0.20).mean())
+        else:
+            val_metrics["rps_derived_hit_rate"] = 0.0
+            val_metrics["rps_derived_miss_rate"] = 1.0
 
     # Stage 1 proposer metrics (exp 58+)
     if "proposal_confs" in val_extra:
@@ -6062,6 +6519,15 @@ def _run_eval(model, val_loader, criterion, args, amp_enabled,
         asr = val_metrics.get("all_stop_rate", 0)
         print(f"    Structure: increasing={si:.1%}  stop_violations={sv:.1%}  all_stop={asr:.1%}")
 
+    # ratio_propose_select summary (exp 67)
+    if "rps_divisor_accuracy" in val_metrics:
+        print(f"    RPS: div_acc={val_metrics.get('rps_divisor_accuracy',0):.3f} "
+              f"off_acc={val_metrics.get('rps_offset_accuracy',0):.3f} "
+              f"ratio_HIT={val_metrics.get('rps_ratio_hit_rate',0):.1%} "
+              f"ratio_MISS={val_metrics.get('rps_ratio_miss_rate',0):.1%} "
+              f"stop_F1={val_metrics.get('rps_ratio_stop_f1',0):.3f} "
+              f"derived_HIT={val_metrics.get('rps_derived_hit_rate',0):.1%}")
+
     # ── ablation benchmarks ──
     torch.cuda.empty_cache()
     bench_results = run_benchmarks(model, val_loader, args.device, amp_enabled=amp_enabled,
@@ -6105,6 +6571,10 @@ def _run_eval(model, val_loader, criterion, args, amp_enabled,
     # Stage 1 proposer graphs (exp 58+)
     if "proposal_confs" in val_extra:
         _save_proposer_graphs(val_extra, val_targets, val_preds, val_metrics, eval_step, run_dir)
+
+    # Ratio propose-select graphs (exp 67)
+    if "rps_divisor_preds" in val_extra:
+        _save_ratio_graphs(val_extra, val_metrics, eval_step, run_dir)
 
     # ── save eval data ──
     # strip non-serializable arrays from mt_metrics before saving
@@ -6164,8 +6634,8 @@ if __name__ == "__main__":
     parser.add_argument("--lr", type=float, default=3e-4)
     parser.add_argument("--wd", type=float, default=0.01)
     parser.add_argument("--d-model", type=int, default=384)
-    parser.add_argument("--model-type", default="unified", choices=["unified", "dual_stream", "interleaved", "context_film", "framewise", "event_embed", "event_embed_propose", "fusion_classifier", "pure_proposal_fusion"],
-                        help="Model architecture: unified, dual_stream, interleaved, context_film, framewise, event_embed (exp 42+), fusion_classifier (exp 65-S3v2), or pure_proposal_fusion (exp 65-S3v3)")
+    parser.add_argument("--model-type", default="unified", choices=["unified", "dual_stream", "interleaved", "context_film", "framewise", "event_embed", "event_embed_propose", "fusion_classifier", "pure_proposal_fusion", "ratio_propose_select"],
+                        help="Model architecture: unified, dual_stream, interleaved, context_film, framewise, event_embed (exp 42+), fusion_classifier (exp 65-S3v2), pure_proposal_fusion (exp 65-S3v3), or ratio_propose_select (exp 67)")
     parser.add_argument("--enc-layers", type=int, default=4, help="AudioEncoder transformer layers")
     parser.add_argument("--gap-enc-layers", type=int, default=2, help="GapEncoder self-attention layers")
     parser.add_argument("--cross-attn-layers", type=int, default=2, help="Cross-attention fusion layers (dual_stream only)")
@@ -6190,6 +6660,7 @@ if __name__ == "__main__":
     parser.add_argument("--density-jitter-pct", type=float, default=0.02, help="Density jitter magnitude (default 0.02 = +/-2%%)")
     parser.add_argument("--proposer-layers", type=int, default=4, help="Number of transformer layers in Stage 1 proposer (exp 58+)")
     parser.add_argument("--proposer-freeze-evals", type=int, default=2, help="Freeze Stage 2 for this many evals while Stage 1 warms up (exp 58+)")
+    parser.add_argument("--ratio-freeze-evals", type=int, default=1, help="Freeze ratio head (Head 3) for this many evals while divisor/offset warm up (exp 67+)")
     parser.add_argument("--proposer-pos-weight", type=float, default=5.0, help="Stage 1 BCE pos_weight (higher = more recall, exp 58+)")
     parser.add_argument("--proposer-focal-gamma", type=float, default=2.0, help="Stage 1 focal gamma (exp 58+)")
     parser.add_argument("--n-onsets", type=int, default=1, help="Number of onsets to predict simultaneously (exp 62+, default 1)")
