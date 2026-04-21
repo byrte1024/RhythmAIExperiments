@@ -1,7 +1,7 @@
 """Concrete EventSampler implementations."""
 from __future__ import annotations
 
-from ..types.dataset import EventSampler, EventSamplerConfig
+from ..domain.dataset import EventSampler, EventSamplerConfig
 
 
 class FixedRateEventSampler(EventSampler):

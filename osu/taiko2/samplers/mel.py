@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from ..types.dataset import AudioSampler, MelSamplerConfig
+from ..domain.dataset import AudioSampler, MelSamplerConfig
 
 
 class MelSampler(AudioSampler):

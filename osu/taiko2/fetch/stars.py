@@ -5,7 +5,7 @@ from dataclasses import replace
 from pathlib import Path
 
 from ..persistence.manifest import load_manifest, save_manifest
-from ..types.dataset import DatasetManifest
+from ..domain.dataset import DatasetManifest
 from .client import BATCH_SIZE, OsuV2Client
 
 

@@ -12,7 +12,7 @@ from pathlib import Path
 
 import numpy as np
 
-from ..types.beatmap import AudioRef, Pack, Track
+from ..domain.beatmap import AudioRef, Pack, Track
 from .osu import parse_osu_text
 
 

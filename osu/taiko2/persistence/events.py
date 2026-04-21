@@ -12,7 +12,7 @@ from pathlib import Path
 
 import numpy as np
 
-from ..types.beatmap import OnsetBinned, OnsetKind
+from ..domain.beatmap import OnsetBinned, OnsetKind
 
 _KIND_ORDER: tuple[OnsetKind, ...] = (
     OnsetKind.DON,

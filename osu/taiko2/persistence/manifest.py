@@ -11,7 +11,7 @@ from dataclasses import asdict, fields
 from pathlib import Path
 from typing import Any
 
-from ..types.dataset import (
+from ..domain.dataset import (
     AudioSamplerConfig,
     ChartEntry,
     DatasetManifest,

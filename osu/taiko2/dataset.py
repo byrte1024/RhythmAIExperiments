@@ -16,8 +16,8 @@ import numpy as np
 from .persistence.events import save_events
 from .persistence.features import save_features
 from .persistence.manifest import save_manifest
-from .types.beatmap import AudioRef, Pack, Track
-from .types.dataset import (
+from .domain.beatmap import AudioRef, Pack, Track
+from .domain.dataset import (
     AudioSampler,
     ChartEntry,
     DatasetManifest,
