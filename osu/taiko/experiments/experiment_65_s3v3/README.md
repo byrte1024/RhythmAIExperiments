@@ -73,8 +73,59 @@ Running on Windows (RTX 5070, 12GB).
 
 ## Result
 
-*Pending*
+### Per-Sample (4 evals, epoch 2.0)
+
+| Eval | HIT | MISS | Acc | StpF1 | Val Loss |
+|---|---|---|---|---|---|
+| 1 | 64.0% | 35.5% | 46.7% | 0.436 | 3.676 |
+| 2 | 65.6% | 34.0% | 48.4% | 0.391 | 3.579 |
+| 3 | 66.9% | 32.7% | 48.9% | 0.426 | 3.417 |
+| 4 | **67.8%** | **31.8%** | 49.7% | 0.454 | 3.335 |
+
+67.8% HIT from pure proposals alone. Still climbing at epoch 2.0.
+
+### Benchmarks: BOTH Signals Used
+
+| Benchmark | Acc | Delta from normal |
+|---|---|---|
+| normal | 60.6% | — |
+| no_s1 | 46.0% | **-14.6pp** (S1 critical) |
+| no_s2 | 54.8% | **-5.8pp** (S2 contributes!) |
+| random_s1 | 0.4% | -60.2pp |
+| random_s2 | 47.8% | **-12.8pp** |
+| no_s1s2 | 4.1% | -56.5pp |
+
+Unlike S3v2 (which ignored S2v2 entirely), S3v3 genuinely uses both signals. Removing S2v2 costs 5.8pp, randomizing it costs 12.8pp. Without both, the model is helpless (4.1%).
+
+### AR Evaluation (30 songs)
+
+| Metric | S3v3 | S3v2 | exp58 |
+|---|---|---|---|
+| Close% | 60.0% | 65.8% | **75.9%** |
+| Hall% | **15.4%** | 14.6% | 15.6% |
+| d_ratio | 0.70 | 0.78 | **0.92** |
+| Error med | 34ms | 35ms | **8ms** |
+| P-Space | 9.4% | 9.9% | **10.1%** |
+
+AR quality is poor — 60% close, heavily under-predicting (d_ratio 0.70), metronomic (P-Space 9.4%). Without audio features for precise timing, AR errors compound.
+
+### Agreement (AR)
+
+| | S3v3 | S3v2 |
+|---|---|---|
+| S1 agrees | 23.8% | 18.1% |
+| S2 agrees | 37.3% | 33.3% |
+| Both agree | 12.2% | 9.0% |
+| Neither | 51.1% | 57.7% |
+
+S3v3 follows proposals more than S3v2 (51% neither vs 58%) — forced to by design. But proposals aren't precise enough for AR on their own.
 
 ## Lesson
 
-*Pending*
+1. **Proposal signals ARE sufficient for per-sample prediction.** 67.8% HIT from S1+S2v2 confidences alone, no audio features. This proves the signals work — S3v2 chose to ignore them, not that they were useless.
+
+2. **Both S1 and S2v2 contribute when the model can't bypass them.** S2v2 contributes 5.8-12.8pp when there's no audio fallback. The blackout augmentation + audio features in S3v2 taught it to ignore S2v2; removing audio forces genuine fusion.
+
+3. **Proposals alone fail in AR.** 60% close rate, metronomic, under-predicting. Without audio for timing refinement, small errors compound. STOP behavior degrades (d_ratio 0.70).
+
+4. **The integration problem remains unsolved.** S3v2 has audio but ignores proposals. S3v3 uses proposals but lacks audio for AR. The architecture must force the model to use BOTH audio and proposals without letting audio dominate. Ratio-based prediction or architectural separation may be needed.
