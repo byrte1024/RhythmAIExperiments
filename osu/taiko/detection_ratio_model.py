@@ -89,6 +89,13 @@ class RatioHeads(nn.Module):
             nn.GELU(),
             nn.Linear(d_model, N_RATIO_CLASSES),
         )
+        # Conv1d smoothing on ratio logits (same approach as onset output head)
+        # Forces neighboring ratio bins to have correlated values, prevents banding
+        self.ratio_smooth = nn.Sequential(
+            nn.Conv1d(1, 8, kernel_size=5, padding=2),
+            nn.GELU(),
+            nn.Conv1d(8, 1, kernel_size=5, padding=2),
+        )
 
     def forward(self, cursor_token):
         """
@@ -124,6 +131,8 @@ class RatioHeads(nn.Module):
         # Head 3: Ratio (cursor + divisor_emb + offset_emb)
         ratio_input = cursor_token + div_emb + off_emb
         ratio_logits = self.ratio_head(ratio_input)  # (B, 256)
+        # Conv1d smoothing: correlate neighboring ratio bins to prevent banding
+        ratio_logits = ratio_logits + self.ratio_smooth(ratio_logits.unsqueeze(1)).squeeze(1)
 
         # Derive final bin offset for metrics
         ratio_probs = torch.softmax(ratio_logits, dim=-1)

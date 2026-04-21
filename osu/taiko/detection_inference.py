@@ -19,6 +19,7 @@ from tqdm import tqdm
 from collections import Counter
 
 from detection_model import OnsetDetector, DualStreamOnsetDetector, InterleavedOnsetDetector, ContextFiLMDetector, FramewiseOnsetDetector, EventEmbeddingDetector, AdditiveOnsetDetector, RerankerOnsetDetector, LegacyOnsetDetector, Exp17OnsetDetector, Exp18OnsetDetector, ProposeSelectDetector
+from detection_ratio_model import RatioHeads, RATIO_STOP
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 
@@ -182,7 +183,32 @@ def run_inference(model, mel, conditioning, device, hop_bins=20, max_events=1000
         mask_tensor = torch.from_numpy(evt_mask).unsqueeze(0).to(device)
 
         output = model(mel_tensor, evt_tensor, mask_tensor, cond_tensor)
-        if isinstance(output, tuple) and len(output) == 2 and output[1].dim() == 1:
+        if isinstance(output, tuple) and len(output) == 3 and hasattr(model, '_ratio_heads'):
+            # ratio_propose_select (exp 67): 3-tuple = (logits, proposal_logits, cursor_token)
+            _logits, proposal_logits, cursor_token = output
+            if proposal_logits.dim() == 2:
+                prop_conf = torch.sigmoid(proposal_logits).squeeze(0).detach().cpu().numpy()
+                proposal_history.append((cursor, prop_conf))
+            with torch.no_grad():
+                _div_logits, _off_logits, _ratio_logits, derived_bin = model._ratio_heads(cursor_token)
+            pred_bin = derived_bin[0].item()
+            ratio_pred_class = _ratio_logits.argmax(dim=-1)[0].item()
+            if ratio_pred_class == RATIO_STOP:
+                # STOP predicted by ratio head
+                pred = N_CLASSES - 1
+                cursor_history.append((total_calls, cursor, pred))
+                stop_count += 1
+                stop_positions.append(cursor)
+                cursor += hop_bins
+                continue
+            # Use derived_bin as the onset offset
+            pred = min(pred_bin, N_CLASSES - 2)  # clamp to valid onset range
+            cursor_history.append((total_calls, cursor, pred))
+            events.append(cursor + pred)
+            event_offsets.append(pred)
+            cursor = cursor + pred
+            continue
+        elif isinstance(output, tuple) and len(output) == 2 and output[1].dim() == 1:
             onset_logits, stop_logit = output
             # stop token: check stop logit first
             stop_prob = torch.sigmoid(stop_logit).item()
@@ -1105,6 +1131,7 @@ def main():
 
     has_event_embed = "event_presence_emb" in state_keys
     has_propose_select = "proposer_head.0.weight" in state_keys
+    has_ratio_heads = any(k.startswith("_ratio_heads.") for k in state_keys)
 
     if has_propose_select:
         ModelClass = ProposeSelectDetector  # exp 58+ (two-stage propose-select)
@@ -1302,7 +1329,20 @@ def main():
 
     model = ModelClass(**model_kwargs).to(args.device)
     state = ckpt["model"]
-    if ModelClass == RerankerOnsetDetector:
+    if has_ratio_heads:
+        # ratio_propose_select (exp 67): split state dict into backbone + RatioHeads
+        backbone_state = {k: v for k, v in state.items() if not k.startswith("_ratio_heads.")}
+        ratio_state = {k[len("_ratio_heads."):]: v for k, v in state.items() if k.startswith("_ratio_heads.")}
+        model.load_state_dict(backbone_state)
+        # Build and attach RatioHeads
+        d_model = ckpt_args.get("d_model", 384)
+        d_bins = ckpt_args.get("d_bins", 250)
+        o_bins = ckpt_args.get("o_bins", 100)
+        ratio_heads = RatioHeads(d_model=d_model, d_bins=d_bins, o_bins=o_bins).to(args.device)
+        ratio_heads.load_state_dict(ratio_state)
+        model._ratio_heads = ratio_heads
+        model._return_cursor_token = True
+    elif ModelClass == RerankerOnsetDetector:
         # Handle score_proj shape mismatches between exp 19-23 variants
         score_proj_key = "context_path.score_proj.0.weight"
         current_shape = model.state_dict().get(score_proj_key, torch.empty(0)).shape
@@ -1315,7 +1355,9 @@ def main():
             model.load_state_dict(state)
     else:
         model.load_state_dict(state)
-    if ModelClass == ProposeSelectDetector:
+    if has_ratio_heads:
+        print(f"  (exp 67 checkpoint - ratio_propose_select, {n_proposer} proposer + {n_selector} selector layers, RatioHeads attached)")
+    elif ModelClass == ProposeSelectDetector:
         print(f"  (exp 58+ checkpoint - propose-select detector, {n_proposer} proposer + {n_selector} selector layers)")
     elif ModelClass == EventEmbeddingDetector:
         print("  (exp 42+ checkpoint - event embedding detector)")
