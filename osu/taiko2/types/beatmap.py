@@ -27,6 +27,17 @@ class Onset:
 
 
 @dataclass(frozen=True, slots=True)
+class OnsetBinned(Onset):
+    """An Onset with its time quantized to an event-sampler bin index.
+
+    `bin` is always computed against a specific `EventSampler`'s framerate
+    (bins per second). The original `time_ms` is preserved so the mapping
+    stays invertible and re-binnable under a different framerate.
+    """
+    bin: int = 0
+
+
+@dataclass(frozen=True, slots=True)
 class Density:
     mean: float
     peak: int
