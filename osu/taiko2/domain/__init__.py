@@ -17,6 +17,7 @@ from .beatmap import (
     Track,
 )
 from .chart import Chart, ChartComparison, ChartMetrics
+from .inference import ChartPredictor, Conditioning, PredictorConfig
 from .dataset import (
     AudioSampler,
     AudioSamplerConfig,
@@ -54,6 +55,9 @@ __all__ = [
     "ChartComparison",
     "ChartEntry",
     "ChartMetrics",
+    "ChartPredictor",
+    "Conditioning",
+    "PredictorConfig",
     "CheckpointMeta",
     "DataSample",
     "DataSampler",
