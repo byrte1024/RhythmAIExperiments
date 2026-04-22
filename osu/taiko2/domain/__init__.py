@@ -24,13 +24,17 @@ from .augmentation import (
     PostSampleAugmentation,
     PreSampleAugmentation,
 )
+from .chart import Chart, ChartComparison, ChartMetrics
 from .sampling import DataSample, DataSampler, DataSamplerConfig
 
 __all__ = [
     "AudioRef",
     "AudioSampler",
     "AudioSamplerConfig",
+    "Chart",
+    "ChartComparison",
     "ChartEntry",
+    "ChartMetrics",
     "DatasetManifest",
     "DataSample",
     "DataSampler",

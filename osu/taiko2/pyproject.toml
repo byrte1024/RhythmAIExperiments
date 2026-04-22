@@ -17,6 +17,7 @@ dependencies = [
     "tqdm==4.67.3",
     "requests==2.32.5",
     "matplotlib==3.10.8",
+    "pygame==2.6.1",
     "triton-windows==3.6.0.post25 ; sys_platform == 'win32'",
 ]
 

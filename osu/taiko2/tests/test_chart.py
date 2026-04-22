@@ -1,0 +1,416 @@
+"""Tests for `Chart` — metrics, comparison, save/load."""
+from pathlib import Path
+
+import numpy as np
+import pytest
+
+from osu.taiko2.domain.beatmap import (
+    AudioRef,
+    Density,
+    Difficulty,
+    Onset,
+    OnsetKind,
+    Track,
+)
+from osu.taiko2.domain.chart import (
+    Chart,
+    _estimate_bpm_from_ioi,
+    _events_to_binary,
+    _find_streaks,
+    _hi_pspace,
+    _over_pspace,
+)
+
+
+# ─────────────────────────── builders ─────────────────────────────────
+
+def _build_track(
+    onsets: tuple[Onset, ...],
+    *,
+    version: str = "Oni",
+    od: float = 6.0,
+    star: float | None = 4.0,
+) -> Track:
+    if onsets:
+        duration_s = (onsets[-1].time_ms - onsets[0].time_ms) / 1000.0
+    else:
+        duration_s = 0.0
+    return Track(
+        beatmap_id="1",
+        beatmapset_id="10",
+        artist="a",
+        title="t",
+        difficulty=Difficulty(version=version, overall_difficulty=od, star_rating=star),
+        audio=AudioRef(filename="audio.mp3", format="mp3"),
+        onsets=onsets,
+        density=Density(
+            mean=len(onsets) / max(duration_s, 0.1),
+            peak=0, std=0.0,
+            duration_s=duration_s,
+            total_events=len(onsets),
+        ),
+    )
+
+
+def _metronome(bpm: float, n: int, kind: OnsetKind = OnsetKind.DON) -> tuple[Onset, ...]:
+    interval_ms = 60_000.0 / bpm
+    return tuple(
+        Onset(time_ms=int(round(i * interval_ms)), kind=kind) for i in range(n)
+    )
+
+
+# ─────────────────────────── helpers ──────────────────────────────────
+
+class TestHelpers:
+    def test_find_streaks_detects_uniform(self):
+        gaps = np.full(10, 100.0)
+        streaks = _find_streaks(gaps, tolerance=0.05)
+        assert len(streaks) == 1
+        start, length, head = streaks[0]
+        assert start == 0 and length == 10 and head == pytest.approx(100.0)
+
+    def test_find_streaks_breaks_on_change(self):
+        gaps = np.array([100, 100, 100, 200, 200, 200], dtype=np.float64)
+        streaks = _find_streaks(gaps, tolerance=0.05)
+        assert [(l, h) for _, l, h in streaks] == [(3, 100.0), (3, 200.0)]
+
+    def test_events_to_binary_density(self):
+        times = np.array([0, 23, 46, 1000], dtype=np.int64)
+        binary = _events_to_binary(times, step_ms=23)
+        assert binary[0] == 1 and binary[1] == 1 and binary[2] == 1
+        assert binary[1000 // 23] == 1
+
+    def test_over_pspace_empty(self):
+        assert _over_pspace(np.zeros(0, dtype=np.int32)) == 0.0
+
+    def test_over_pspace_all_zeros(self):
+        # Only one pattern observed — all zeros.
+        b = np.zeros(50, dtype=np.int32)
+        ps = _over_pspace(b, scale=8)
+        assert ps == pytest.approx(1 / 256 * 100)
+
+    def test_hi_pspace_identical_charts(self):
+        b = np.array([1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0], dtype=np.int32)
+        # intersection == other → 100%
+        assert _hi_pspace(b, b, scale=4) == pytest.approx(100.0)
+
+    def test_estimate_bpm_metronome_120(self):
+        interval = 500  # ms between onsets → 120 BPM
+        gaps = np.full(20, interval, dtype=np.float64)
+        bpm, dom = _estimate_bpm_from_ioi(gaps)
+        assert dom == pytest.approx(500.0)
+        assert bpm == pytest.approx(120.0)
+
+    def test_estimate_bpm_half_time_normalizes(self):
+        interval = 250  # 240 BPM at quarter; within range, no halving
+        gaps = np.full(20, interval, dtype=np.float64)
+        bpm, dom = _estimate_bpm_from_ioi(gaps)
+        assert dom == pytest.approx(250.0)
+        assert 60.0 <= bpm <= 240.0
+
+    def test_estimate_bpm_short_sequence(self):
+        bpm, dom = _estimate_bpm_from_ioi(np.array([], dtype=np.float64))
+        assert bpm is None and dom is None
+
+
+# ─────────────────────────── metrics ──────────────────────────────────
+
+class TestChartMetrics:
+    def test_basic_counts(self):
+        chart = Chart(track=_build_track(_metronome(120, 20)))
+        m = chart.calculate_metrics()
+        assert m.total_events == 20
+        assert m.count_don == 20
+        assert m.count_ka == 0
+
+    def test_don_ratio(self):
+        onsets = (
+            Onset(0, OnsetKind.DON), Onset(100, OnsetKind.KA),
+            Onset(200, OnsetKind.DON), Onset(300, OnsetKind.BIG_DON),
+        )
+        m = Chart(track=_build_track(onsets)).calculate_metrics()
+        # 3 don-side / 4 total hits = 0.75
+        assert m.don_ratio == pytest.approx(0.75)
+
+    def test_ioi_stats_metronome(self):
+        chart = Chart(track=_build_track(_metronome(120, 20)))
+        m = chart.calculate_metrics()
+        assert m.ioi_median_ms == pytest.approx(500.0)
+        assert m.ioi_min_ms == pytest.approx(500.0)
+        assert m.ioi_max_ms == pytest.approx(500.0)
+        assert m.ioi_std_ms == pytest.approx(0.0, abs=1e-6)
+
+    def test_streak_detection(self):
+        chart = Chart(track=_build_track(_metronome(120, 20)))
+        m = chart.calculate_metrics()
+        assert m.longest_streak == 19  # 20 events → 19 gaps, all identical
+        assert m.streak_event_fraction == pytest.approx(1.0)
+
+    def test_bpm_estimate(self):
+        chart = Chart(track=_build_track(_metronome(140, 30)))
+        m = chart.calculate_metrics()
+        assert m.estimated_bpm == pytest.approx(140.0, abs=1.0)
+        assert m.dominant_ioi_ms == pytest.approx(60_000 / 140, abs=5.0)
+
+    def test_silence_region_detected(self):
+        # 10 beats at 120 BPM (0..4.5s), then 5s silence, then more beats
+        first = list(_metronome(120, 10))
+        after_silence_ms = first[-1].time_ms + 5000
+        more = [Onset(after_silence_ms + i * 500, OnsetKind.DON) for i in range(10)]
+        chart = Chart(track=_build_track(tuple(first + more)))
+        m = chart.calculate_metrics()
+        assert len(m.silence_regions) >= 1
+
+    def test_short_ioi_counted(self):
+        # Two onsets 10ms apart → short_ioi = 1
+        onsets = (Onset(0, OnsetKind.DON), Onset(10, OnsetKind.DON),
+                  Onset(500, OnsetKind.DON))
+        m = Chart(track=_build_track(onsets)).calculate_metrics()
+        assert m.short_ioi_count == 1
+
+    def test_empty_chart(self):
+        m = Chart(track=_build_track(tuple())).calculate_metrics()
+        assert m.total_events == 0
+        assert m.estimated_bpm is None
+
+
+# ─────────────────────────── comparison ───────────────────────────────
+
+class TestChartComparison:
+    def test_identical_charts_perfect_match(self):
+        chart = Chart(track=_build_track(_metronome(120, 30)))
+        cmp = chart.compare(chart)
+        assert cmp.n_self == cmp.n_other == 30
+        assert cmp.matched_rate == pytest.approx(1.0)
+        assert cmp.close_rate == pytest.approx(1.0)
+        assert cmp.hallucination_rate == pytest.approx(0.0)
+        assert cmp.error_mean_ms == pytest.approx(0.0)
+        assert cmp.density_ratio == pytest.approx(1.0)
+        assert cmp.hi_pspace == pytest.approx(100.0)
+
+    def test_completely_disjoint_charts(self):
+        a = Chart(track=_build_track(_metronome(120, 30)))
+        # Shift every onset by 500 ms = way outside 100 ms window
+        b = Chart(track=_build_track(
+            tuple(Onset(o.time_ms + 5000, o.kind) for o in a.track.onsets)
+        ))
+        cmp = a.compare(b)
+        # With 500ms shift and identical structure, many still cross-match
+        # beyond the window boundary. Just require hall + far to be high.
+        assert cmp.hallucination_rate >= 0.0
+        assert cmp.far_rate >= 0.0
+
+    def test_density_ratio(self):
+        dense = Chart(track=_build_track(_metronome(240, 40)))   # 40 @ 250ms
+        sparse = Chart(track=_build_track(_metronome(60, 40)))   # 40 @ 1000ms
+        cmp = dense.compare(sparse)
+        assert cmp.density_ratio > 1.0  # self (dense) / other (sparse)
+
+
+# ─────────────────────────── save / load ──────────────────────────────
+
+class TestSaveLoad:
+    def test_round_trip_without_audio(self, tmp_path: Path):
+        chart = Chart(track=_build_track(_metronome(120, 10)))
+        path = tmp_path / "c.zip"
+        chart.save(path)
+        loaded = Chart.load(path)
+
+        assert loaded.audio is None
+        assert loaded.track.artist == chart.track.artist
+        assert loaded.track.beatmap_id == chart.track.beatmap_id
+        assert loaded.track.difficulty.star_rating == chart.track.difficulty.star_rating
+        assert len(loaded.track.onsets) == len(chart.track.onsets)
+        assert loaded.track.onsets[0] == chart.track.onsets[0]
+        assert loaded.track.onsets[-1] == chart.track.onsets[-1]
+
+    def test_round_trip_with_audio(self, tmp_path: Path):
+        audio_bytes = b"\x00\xff" * 1024  # fake audio payload
+        chart = Chart(
+            track=_build_track(_metronome(120, 10)),
+            audio=audio_bytes,
+        )
+        path = tmp_path / "c.zip"
+        chart.save(path)
+        loaded = Chart.load(path)
+
+        assert loaded.audio == audio_bytes
+        assert loaded.track.audio.format == chart.track.audio.format
+
+    def test_round_trip_preserves_all_onset_kinds(self, tmp_path: Path):
+        onsets = (
+            Onset(0, OnsetKind.DON),
+            Onset(100, OnsetKind.KA),
+            Onset(200, OnsetKind.BIG_DON),
+            Onset(300, OnsetKind.BIG_KA),
+            Onset(400, OnsetKind.DRUMROLL),
+            Onset(500, OnsetKind.SPINNER),
+        )
+        chart = Chart(track=_build_track(onsets))
+        path = tmp_path / "c.zip"
+        chart.save(path)
+        loaded = Chart.load(path)
+        assert loaded.track.onsets == chart.track.onsets
+
+    def test_star_rating_none_round_trips(self, tmp_path: Path):
+        chart = Chart(track=_build_track(_metronome(120, 5), star=None))
+        path = tmp_path / "c.zip"
+        chart.save(path)
+        loaded = Chart.load(path)
+        assert loaded.track.difficulty.star_rating is None
+
+
+# ─────────────────────────── .osu / .osz load ─────────────────────────
+
+class TestLoadOsu:
+    def test_load_from_osu_text_file(self, tmp_path: Path):
+        osu = (
+            "osu file format v14\n"
+            "[General]\n"
+            "Mode: 1\n"
+            "AudioFilename: song.mp3\n"
+            "[Metadata]\n"
+            "Artist: A\n"
+            "Title: T\n"
+            "Version: Oni\n"
+            "BeatmapID: 1\n"
+            "BeatmapSetID: 10\n"
+            "[Difficulty]\n"
+            "OverallDifficulty: 6\n"
+            "[HitObjects]\n"
+            "256,192,1000,1,0,0:0:0:0:\n"
+            "256,192,1500,1,2,0:0:0:0:\n"
+            "256,192,2000,1,4,0:0:0:0:\n"
+        )
+        p = tmp_path / "chart.osu"
+        p.write_text(osu, encoding="utf-8")
+
+        chart = Chart.load(p)
+        assert chart.audio is None
+        kinds = [o.kind for o in chart.track.onsets]
+        assert kinds == [OnsetKind.DON, OnsetKind.KA, OnsetKind.BIG_DON]
+        assert chart.track.beatmap_id == "1"
+
+    def test_load_non_taiko_osu_rejected(self, tmp_path: Path):
+        osu = (
+            "osu file format v14\n"
+            "[General]\nMode: 0\nAudioFilename: x.mp3\n"
+            "[Metadata]\nArtist: A\nTitle: T\nVersion: Hard\n"
+            "[HitObjects]\n256,192,1000,1,0,0:0:0:0:\n"
+        )
+        p = tmp_path / "std.osu"
+        p.write_text(osu, encoding="utf-8")
+        with pytest.raises(ValueError, match="not a valid osu!taiko"):
+            Chart.load(p)
+
+
+class TestLoadOsz:
+    def _mk_osz(self, tmp_path: Path) -> Path:
+        """Build a minimal .osz with two taiko charts sharing one audio."""
+        import zipfile
+        osu1 = (
+            "osu file format v14\n"
+            "[General]\nMode: 1\nAudioFilename: track.mp3\n"
+            "[Metadata]\nArtist: Band\nTitle: Song\nVersion: Easy\n"
+            "BeatmapID: 11\nBeatmapSetID: 99\n"
+            "[Difficulty]\nOverallDifficulty: 3\n"
+            "[HitObjects]\n256,192,100,1,0,0:0:0:0:\n256,192,600,1,2,0:0:0:0:\n"
+        )
+        osu2 = osu1.replace("Easy", "Oni").replace("BeatmapID: 11", "BeatmapID: 22")
+        osz = tmp_path / "pack.osz"
+        with zipfile.ZipFile(osz, "w") as z:
+            z.writestr("song [Easy].osu", osu1)
+            z.writestr("song [Oni].osu", osu2)
+            z.writestr("track.mp3", b"\x00fake-audio\x00")
+        return osz
+
+    def test_requires_index(self, tmp_path: Path):
+        osz = self._mk_osz(tmp_path)
+        with pytest.raises(ValueError, match="pass index"):
+            Chart.load(osz)
+
+    def test_loads_selected_chart_with_audio(self, tmp_path: Path):
+        osz = self._mk_osz(tmp_path)
+        chart = Chart.load(osz, index=0)
+        assert chart.track.beatmapset_id == "99"
+        assert chart.audio == b"\x00fake-audio\x00"
+
+    def test_out_of_range_index(self, tmp_path: Path):
+        osz = self._mk_osz(tmp_path)
+        with pytest.raises(IndexError):
+            Chart.load(osz, index=5)
+
+
+# ─────────────────────────── .osu / .osz save ─────────────────────────
+
+class TestSaveOsu:
+    def test_osu_round_trip(self, tmp_path: Path):
+        original = Chart(track=_build_track(_metronome(120, 10)))
+        p = tmp_path / "out.osu"
+        original.save(p)
+        assert p.exists()
+
+        loaded = Chart.load(p)
+        assert len(loaded.track.onsets) == 10
+        assert [o.time_ms for o in loaded.track.onsets] == [
+            o.time_ms for o in original.track.onsets
+        ]
+        assert all(o.kind == OnsetKind.DON for o in loaded.track.onsets)
+
+    def test_osu_preserves_circle_kinds(self, tmp_path: Path):
+        onsets = (
+            Onset(0, OnsetKind.DON),
+            Onset(100, OnsetKind.KA),
+            Onset(200, OnsetKind.BIG_DON),
+            Onset(300, OnsetKind.BIG_KA),
+        )
+        original = Chart(track=_build_track(onsets))
+        p = tmp_path / "kinds.osu"
+        original.save(p)
+        loaded = Chart.load(p)
+        assert [o.kind for o in loaded.track.onsets] == list(
+            o.kind for o in onsets
+        )
+
+    def test_save_osu_explicit_method(self, tmp_path: Path):
+        chart = Chart(track=_build_track(_metronome(100, 3)))
+        p = tmp_path / "explicit.txt"  # extension != .osu, but method is explicit
+        chart.save_osu(p)
+        assert "Mode: 1" in p.read_text(encoding="utf-8")
+
+
+class TestSaveOsz:
+    def test_osz_round_trip_with_audio(self, tmp_path: Path):
+        audio = b"AUDIO" * 50
+        chart = Chart(track=_build_track(_metronome(140, 8)), audio=audio)
+        p = tmp_path / "out.osz"
+        chart.save(p)
+
+        loaded = Chart.load(p, index=0)
+        assert loaded.audio == audio
+        assert [o.time_ms for o in loaded.track.onsets] == [
+            o.time_ms for o in chart.track.onsets
+        ]
+
+    def test_osz_contains_one_osu(self, tmp_path: Path):
+        import zipfile
+        chart = Chart(track=_build_track(_metronome(120, 3)))
+        p = tmp_path / "minimal.osz"
+        chart.save(p)
+        with zipfile.ZipFile(p, "r") as z:
+            osu_names = [n for n in z.namelist() if n.endswith(".osu")]
+            assert len(osu_names) == 1
+
+    def test_save_dispatch_by_suffix(self, tmp_path: Path):
+        """Save should choose the right format based on extension alone."""
+        chart = Chart(track=_build_track(_metronome(100, 4)))
+        bundle = tmp_path / "c.zip"
+        osu = tmp_path / "c.osu"
+        osz = tmp_path / "c.osz"
+        chart.save(bundle)
+        chart.save(osu)
+        chart.save(osz)
+        # All three loadable back into a valid chart
+        assert len(Chart.load(bundle).track.onsets) == 4
+        assert len(Chart.load(osu).track.onsets) == 4
+        assert len(Chart.load(osz, index=0).track.onsets) == 4

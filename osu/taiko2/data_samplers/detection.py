@@ -19,8 +19,20 @@ from typing import Any
 
 import numpy as np
 
+import os
+
 from ..domain.augmentation import AugmentationPipeline
-from ..domain.beatmap import OnsetKind, RelativeOnset
+from ..domain.beatmap import (
+    AudioRef,
+    Density,
+    Difficulty,
+    Onset,
+    OnsetKind,
+    RelativeOnset,
+    Track,
+)
+from ..domain.chart import Chart
+from ..domain.dataset import ChartEntry
 from ..domain.sampling import DataSample, DataSampler, DataSamplerConfig
 from ..persistence.manifest import load_manifest
 from ..persistence.events import _KIND_ORDER  # shared kind_id → OnsetKind map
@@ -188,12 +200,15 @@ class TaikoDetectionSampler(
         )
         # Parallel arrays per chart, indexed by chart_idx
         self._chart_ids: list[str] = []
+        self._chart_entries: list[ChartEntry] = []     # manifest row per chart
         self._features: list[np.ndarray] = []          # mmap'd (F, T)
         self._event_bins: list[np.ndarray] = []        # (N,) int32
         self._event_times_ms: list[np.ndarray] = []    # (N,) int32
         self._event_kind_ids: list[np.ndarray] = []    # (N,) uint8
         # Flat sample index: (chart_idx, event_idx)
         self._samples: list[tuple[int, int]] = []
+        # Fast lookup from chart_id to the chart_idx used by the arrays
+        self._id_to_idx: dict[str, int] = {}
 
     # ── Lifecycle ─────────────────────────────────────────────────────
 
@@ -217,11 +232,13 @@ class TaikoDetectionSampler(
 
         self._manifest = manifest
         self._chart_ids.clear()
+        self._chart_entries.clear()
         self._features.clear()
         self._event_bins.clear()
         self._event_times_ms.clear()
         self._event_kind_ids.clear()
         self._samples.clear()
+        self._id_to_idx.clear()
 
         allowed_ids = chart_ids_for_split(
             manifest, cfg.split, cfg.split_ratios, cfg.split_seed,
@@ -245,10 +262,12 @@ class TaikoDetectionSampler(
 
             chart_idx = len(self._chart_ids)
             self._chart_ids.append(entry.chart_id)
+            self._chart_entries.append(entry)
             self._features.append(features)
             self._event_bins.append(bins)
             self._event_times_ms.append(times)
             self._event_kind_ids.append(kinds)
+            self._id_to_idx[entry.chart_id] = chart_idx
 
             # Per-chart overlap filter: cursors within this chart iterate
             # monotonically (ei → cursor is non-decreasing), so we only need
@@ -310,6 +329,92 @@ class TaikoDetectionSampler(
     # training loops should call `augment_*` explicitly.
     def get_sample(self, n: int) -> TaikoDetectionSample:
         return self.raw_sample(n)
+
+    # ── Chart-level access (not sample-level) ─────────────────────────
+
+    def count_charts(self) -> int:
+        """Number of charts in the current split (after file-existence
+        and split filtering). Distinct from `count_samples` which counts
+        the (chart, event-index) sample grid."""
+        self._require_loaded()
+        return len(self._chart_ids)
+
+    def chart_ids(self) -> tuple[str, ...]:
+        """Chart IDs in this split, in sampler index order. Stable across
+        runs for the same config."""
+        self._require_loaded()
+        return tuple(self._chart_ids)
+
+    def get_chart(self, n: int) -> Chart:
+        """Return the n-th chart in the current split as a `Chart` object.
+
+        Reconstructs the `Track` from the manifest entry + the stored
+        (times_ms, kind_ids) event arrays — so onset kinds round-trip
+        (DON/KA/etc.), not just bins.
+
+        `Chart.audio` is always `None` here: datasets store mel
+        spectrograms, not raw audio. Pair with an external audio source
+        (or load from the original `.osz`) if playback is needed.
+        """
+        self._require_loaded()
+        if n < 0 or n >= len(self._chart_ids):
+            raise IndexError(
+                f"chart index {n} out of range ({len(self._chart_ids)} charts)"
+            )
+        return self._build_chart(n)
+
+    def get_chart_by_id(self, chart_id: str) -> Chart:
+        """Return a `Chart` by its `chart_id`. Raises `KeyError` if the
+        id isn't in the current split.
+        """
+        self._require_loaded()
+        if chart_id not in self._id_to_idx:
+            raise KeyError(f"chart_id {chart_id!r} not in split")
+        return self._build_chart(self._id_to_idx[chart_id])
+
+    def _build_chart(self, chart_idx: int) -> Chart:
+        entry = self._chart_entries[chart_idx]
+        times_ms = self._event_times_ms[chart_idx]
+        kind_ids = self._event_kind_ids[chart_idx]
+
+        onsets = tuple(
+            Onset(
+                time_ms=int(t),
+                kind=(
+                    _KIND_ORDER[int(k)]
+                    if 0 <= int(k) < len(_KIND_ORDER)
+                    else OnsetKind.UNKNOWN
+                ),
+            )
+            for t, k in zip(times_ms, kind_ids)
+        )
+
+        audio_format = os.path.splitext(entry.audio_filename)[1].lstrip(".").lower()
+
+        track = Track(
+            beatmap_id=entry.beatmap_id,
+            beatmapset_id=entry.beatmapset_id,
+            artist=entry.artist,
+            title=entry.title,
+            difficulty=Difficulty(
+                version=entry.difficulty_version,
+                overall_difficulty=entry.overall_difficulty,
+                star_rating=entry.star_rating,
+            ),
+            audio=AudioRef(
+                filename=entry.audio_filename,
+                format=audio_format,
+            ),
+            onsets=onsets,
+            density=Density(
+                mean=entry.density_mean,
+                peak=entry.density_peak,
+                std=entry.density_std,
+                duration_s=entry.duration_s,
+                total_events=entry.total_events,
+            ),
+        )
+        return Chart(track=track, audio=None)
 
     # ── Internals ─────────────────────────────────────────────────────
 

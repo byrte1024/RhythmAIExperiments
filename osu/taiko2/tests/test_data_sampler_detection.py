@@ -322,6 +322,110 @@ class TestSplitOverrides:
         assert val.config.batch_size == 1
 
 
+# ─────────────────────────── chart-level access ───────────────────────
+
+class TestChartAccess:
+    """Fetching Chart objects (not samples) from a loaded dataset."""
+
+    def test_count_charts_matches_split(self, tiny_dataset: Path):
+        s = TaikoDetectionSampler(TaikoDetectionSamplerConfig(
+            batch_size=1, dataset_root=tiny_dataset, split="all",
+            min_cursor_bin=0,
+        ))
+        s.load_data()
+        assert s.count_charts() == 4
+
+    def test_chart_ids_order_stable(self, tiny_dataset: Path):
+        cfg = TaikoDetectionSamplerConfig(
+            batch_size=1, dataset_root=tiny_dataset, min_cursor_bin=0,
+        )
+        a = TaikoDetectionSampler(cfg)
+        b = TaikoDetectionSampler(cfg)
+        a.load_data(); b.load_data()
+        assert a.chart_ids() == b.chart_ids()
+
+    def test_get_chart_returns_chart_with_onsets(self, tiny_dataset: Path):
+        from osu.taiko2.domain.chart import Chart
+        s = TaikoDetectionSampler(TaikoDetectionSamplerConfig(
+            batch_size=1, dataset_root=tiny_dataset, min_cursor_bin=0,
+        ))
+        s.load_data()
+        chart = s.get_chart(0)
+        assert isinstance(chart, Chart)
+        # Fixture gives 10 onsets per chart
+        assert len(chart.track.onsets) == 10
+        # All DON in the fixture
+        assert all(o.kind == OnsetKind.DON for o in chart.track.onsets)
+        # Audio isn't carried in dataset form
+        assert chart.audio is None
+
+    def test_get_chart_preserves_metadata(self, tiny_dataset: Path):
+        s = TaikoDetectionSampler(TaikoDetectionSamplerConfig(
+            batch_size=1, dataset_root=tiny_dataset, min_cursor_bin=0,
+        ))
+        s.load_data()
+        chart = s.get_chart(0)
+        # chart_id like "song1 [Normal]" / etc. — artist/title/version
+        # plumb through to the reconstructed Track.
+        assert chart.track.artist == "a"
+        assert chart.track.title == "t"
+        assert chart.track.difficulty.version in {"Normal", "Oni"}
+        assert chart.track.audio.format == "mp3"
+
+    def test_get_chart_by_id_round_trips(self, tiny_dataset: Path):
+        s = TaikoDetectionSampler(TaikoDetectionSamplerConfig(
+            batch_size=1, dataset_root=tiny_dataset, min_cursor_bin=0,
+        ))
+        s.load_data()
+        for i, cid in enumerate(s.chart_ids()):
+            by_idx = s.get_chart(i)
+            by_id = s.get_chart_by_id(cid)
+            assert by_idx.track.beatmap_id == by_id.track.beatmap_id
+            assert by_idx.track.onsets == by_id.track.onsets
+
+    def test_get_chart_respects_split(self, tiny_dataset: Path):
+        common = dict(
+            batch_size=1, dataset_root=tiny_dataset,
+            split_ratios=(("train", 0.5), ("val", 0.5)),
+            split_seed=0, min_cursor_bin=0,
+        )
+        train = TaikoDetectionSampler(TaikoDetectionSamplerConfig(**common, split="train"))
+        val = TaikoDetectionSampler(TaikoDetectionSamplerConfig(**common, split="val"))
+        train.load_data(); val.load_data()
+
+        train_songs = {train.get_chart(i).track.beatmapset_id
+                       for i in range(train.count_charts())}
+        val_songs = {val.get_chart(i).track.beatmapset_id
+                     for i in range(val.count_charts())}
+        assert train_songs.isdisjoint(val_songs)
+
+    def test_get_chart_out_of_range(self, tiny_dataset: Path):
+        s = TaikoDetectionSampler(TaikoDetectionSamplerConfig(
+            batch_size=1, dataset_root=tiny_dataset, min_cursor_bin=0,
+        ))
+        s.load_data()
+        with pytest.raises(IndexError):
+            s.get_chart(s.count_charts())
+
+    def test_get_chart_unknown_id_raises(self, tiny_dataset: Path):
+        s = TaikoDetectionSampler(TaikoDetectionSamplerConfig(
+            batch_size=1, dataset_root=tiny_dataset, min_cursor_bin=0,
+        ))
+        s.load_data()
+        with pytest.raises(KeyError):
+            s.get_chart_by_id("nonexistent [Xxx]")
+
+    def test_get_chart_callable_on_returned_chart(self, tiny_dataset: Path):
+        """The reconstructed Chart should work with Chart's own methods."""
+        s = TaikoDetectionSampler(TaikoDetectionSamplerConfig(
+            batch_size=1, dataset_root=tiny_dataset, min_cursor_bin=0,
+        ))
+        s.load_data()
+        chart = s.get_chart(0)
+        metrics = chart.calculate_metrics()
+        assert metrics.total_events == 10
+
+
 # ─────────────────────────── split tests ──────────────────────────────
 
 class TestSplit:

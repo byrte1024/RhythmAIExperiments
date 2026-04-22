@@ -46,3 +46,6 @@ osu/taiko2/secrets.json
 # taiko2 generated data
 osu/taiko2/datasets/
 osu/taiko2/runs/
+
+# taiko2 analysis — per-chart JSONs (10k+ files); keep summary/CSV/graphs tracked
+osu/taiko2/analysis/*/chart_metrics/
