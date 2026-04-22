@@ -140,31 +140,93 @@ experiment is not hypothesis-driven — mark `No hypothesis`.
 
 ### Results summary (post-run, required)
 
-Exact table shape:
+**Two tables. Both mandatory.**
+
+**(a) Final-eval comparison vs baseline**, exact shape:
 
 ```markdown
-| Metric | Baseline (exp N) | This run | Δ | Direction |
+| Metric | Baseline (exp N) | This run (final) | Δ | Direction |
 |---|---:|---:|---:|:---:|
 | val/single/hit_e1 | 71.9% | 73.1% | +1.2pp | ↑ good |
 | val/single/miss   | 27.5% | 26.0% | −1.5pp | ↓ good |
 | train/overall/loss| 2.41  | 2.32  | −0.09  | ↓ good |
 ```
 
-Same numbers in `metrics.json` for machine-queryable crunching.
+**(b) Per-eval progression across the whole run.** One row per eval
+step (eval 1, eval 2, …). Include **every metric the trainer
+reported**, even ones you don't care about — reviewers need to see the
+full picture, not the curated subset. Long runs can abbreviate headers
+but never hide rows.
+
+```markdown
+| Eval | Step  | val/single/hit_e1 | val/single/miss | val/single/loss | train/running/loss | train/overall/loss | lr     | wall_time |
+|-----:|------:|------------------:|----------------:|----------------:|-------------------:|-------------------:|-------:|----------:|
+|   1  |  2000 |             0.412 |           0.580 |           3.881 |              4.230 |              4.230 | 3.0e-4 |    00:12  |
+|   2  |  4000 |             0.554 |           0.430 |           3.241 |              3.110 |              3.675 | 3.0e-4 |    00:24  |
+| …    |       |                   |                 |                 |                    |                    |        |           |
+| 48   | 96000 |             0.731 |           0.260 |           2.317 |              2.285 |              2.410 | 1.2e-5 |    11:34  |
+```
+
+Generate the per-eval table directly from `runs/{run_name}/metrics.jsonl`
+— don't hand-curate. If a metric was reported in any eval, it must
+appear as a column.
+
+Both tables' numbers are also in [`metrics.json`](./metrics.json) for
+machine-queryable crunching.
 
 ### Visualizations (post-run, required)
 
 **At least two PNGs.** Mandatory:
 
 - Training loss over steps (log-y).
-- Validation metric progression.
+- Validation metric progression over evals — same x-axis as the
+  per-eval progression table in **Results summary (b)**.
 
-Plus whatever's relevant: overfit curve, per-star-rating eval,
-prediction distribution, AR density adherence, etc.
+**Custom graphs are encouraged.** Add anything the experiment makes
+more visible: overfit curves, per-star-rating breakdowns, prediction
+distributions, AR density adherence, entropy-over-time, per-kind
+confusion, model-internal attention plots — whatever lets a reviewer
+see what changed. Don't strip a graph because "it didn't tell us
+anything new"; that's information about the experiment too.
 
-Reference as relative markdown images:
+Numbering convention:
+- `01_train_loss.png`, `02_val_progression.png` — the two mandatory.
+- `03_*.png` onward — custom. Name descriptively (`03_hit_by_star.png`,
+  `04_prediction_distribution.png`). Reference in the README with a
+  one-sentence caption each:
+
 ```markdown
-![](graphs/01_train_loss.png)
+![train loss](graphs/01_train_loss.png)
+*Training loss, log-y. Convergence plateau around step 40k.*
+
+![hit by star rating](graphs/03_hit_by_star.png)
+*Per-star-rating HIT E1 on val. This run improves most at 3-5★;
+7★+ tail unchanged.*
+```
+
+### Custom data (optional — encouraged)
+
+Any data that doesn't fit the standard tables or graphs goes in
+`custom/` alongside the README. Rules:
+
+- One directory per kind of artifact: `custom/attention_maps/`,
+  `custom/ar_density_curves/`, `custom/confusion_per_kind/`.
+- Each directory has its own `README.md` with a one-paragraph
+  explanation of what it contains, how it was computed, and what the
+  main takeaway is.
+- Prefer CSV/JSON for data, PNG for graphs, `.npz` for tensors.
+  Nothing so large it needs to be gitignored — summaries only.
+- Reference anything important from the main README under a
+  **Custom analyses** section (post-run, optional):
+
+```markdown
+## Custom analyses
+
+- [Attention maps](custom/attention_maps/) — Layer 6 attention on 10
+  hand-picked windows; shows the model attending strongly to the most
+  recent 2 past events under short-IOI regimes.
+- [AR density curves](custom/ar_density_curves/) — Per-chart density
+  sweep across conditioning values.
 ```
 
 ### Vs prediction (post-run)

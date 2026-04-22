@@ -74,23 +74,49 @@ Everything below comes from real measurements, not predictions.
 
 ## Results summary
 
-| Metric | Baseline (exp N) | This run | Δ | Direction |
+### Final vs baseline
+
+| Metric | Baseline (exp N) | This run (final) | Δ | Direction |
 |---|---:|---:|---:|:---:|
 | val/single/hit_e1 | — | — | — | — |
 | val/single/miss | — | — | — | — |
 | train/overall/loss | — | — | — | — |
 
-Final eval: eval step `{n}`, wall time `{mm:ss}`, epochs `{k}`.
+Final eval: eval step `{n}`, wall time `{hh:mm}`, epochs `{k}`.
 
-Machine-readable copy: [`metrics.json`](./metrics.json).
+### Per-eval progression
+
+{One row per eval. Include **every** metric the trainer reported.
+Generated from `runs/{run_name}/metrics.jsonl`.}
+
+| Eval | Step | val/single/hit_e1 | val/single/miss | val/single/loss | train/running/loss | train/overall/loss | lr | wall_time |
+|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| 1 | — | — | — | — | — | — | — | — |
+| 2 | — | — | — | — | — | — | — | — |
+| … |   |   |   |   |   |   |   |   |
+
+Machine-readable copies (both tables): [`metrics.json`](./metrics.json).
 
 ## Visualizations
 
 ![Training loss](graphs/01_train_loss.png)
-![Validation metric](graphs/02_val_metric.png)
+*Training loss over steps (log-y).*
 
-{Add more as relevant: overfit curves, per-star-rating eval, AR
-density adherence, prediction distribution, etc.}
+![Validation progression](graphs/02_val_progression.png)
+*{Watched metric} across evals.*
+
+{Add custom graphs as needed — overfit curves, per-star-rating eval,
+prediction distribution, AR density adherence, attention maps, per-
+kind confusion, anything else. Each gets a numbered file in `graphs/`
+and a one-sentence caption here.}
+
+## Custom analyses (optional)
+
+{Reference anything under `custom/` — directories with their own
+READMEs explaining what each artifact shows. Keep entries short;
+point at the sub-README for detail.}
+
+- [{Name}](custom/{slug}/) — {one-sentence summary}.
 
 ## Vs prediction
 

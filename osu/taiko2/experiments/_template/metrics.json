@@ -2,21 +2,45 @@
   "experiment_id": "NNN-slug",
   "run_name": "exp_NNN_slug",
   "baseline_experiment": "NNN-previous-slug",
-  "eval_step": null,
-  "final_metrics": {
-    "val/single/hit_e1": null,
-    "val/single/miss": null,
-    "train/overall/loss": null
+
+  "final": {
+    "eval_step": null,
+    "wall_time_s": null,
+    "epoch": null,
+    "metrics": {
+      "val/single/hit_e1": null,
+      "val/single/miss": null,
+      "train/overall/loss": null
+    },
+    "baseline": {
+      "val/single/hit_e1": null,
+      "val/single/miss": null,
+      "train/overall/loss": null
+    },
+    "deltas": {
+      "val/single/hit_e1": null,
+      "val/single/miss": null,
+      "train/overall/loss": null
+    }
   },
-  "baseline_metrics": {
-    "val/single/hit_e1": null,
-    "val/single/miss": null,
-    "train/overall/loss": null
-  },
-  "deltas": {
-    "val/single/hit_e1": null,
-    "val/single/miss": null,
-    "train/overall/loss": null
-  },
-  "hypothesis_outcome": null
+
+  "per_eval": [
+    {
+      "eval": 1,
+      "step": 2000,
+      "wall_time_s": null,
+      "lr": null,
+      "metrics": {
+        "val/single/hit_e1": null,
+        "val/single/miss": null,
+        "val/single/loss": null,
+        "train/running/loss": null,
+        "train/overall/loss": null
+      }
+    }
+  ],
+
+  "hypothesis_outcome": null,
+
+  "_comment": "Populate `per_eval` with one entry per eval step — include ALL metric keys the trainer emitted, not just the curated subset. The README tables are generated from these arrays."
 }
