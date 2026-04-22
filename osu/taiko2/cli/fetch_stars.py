@@ -5,7 +5,7 @@ Credentials come from the secrets module (env vars `OSU_CLIENT_ID` /
 
 Usage::
 
-    python -m osu.taiko2.fetch_stars --dataset taiko2_v1
+    python -m osu.taiko2.cli.fetch_stars --dataset taiko2_v1
 """
 from __future__ import annotations
 
@@ -13,7 +13,7 @@ import argparse
 import sys
 from pathlib import Path
 
-from .fetch.stars import update_manifest_stars
+from ..fetch.stars import update_manifest_stars
 
 
 def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
@@ -23,7 +23,7 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     p.add_argument("--dataset", required=True,
                    help="Dataset name (under --datasets-dir) or path to dataset root.")
     p.add_argument("--datasets-dir", type=Path,
-                   default=Path(__file__).resolve().parent / "datasets")
+                   default=Path(__file__).resolve().parent.parent / "datasets")
     p.add_argument("--no-progress", action="store_true")
     return p.parse_args(argv)
 

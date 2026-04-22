@@ -15,7 +15,7 @@ Output layout::
 
 Usage (defaults give a clean 5 ms / 200 Hz grid on both axes)::
 
-    python -m osu.taiko2.prepare_dataset \\
+    python -m osu.taiko2.cli.prepare_dataset \\
         --name taiko2_v1 \\
         --charts-dir osu/taiko/charts
 
@@ -36,10 +36,10 @@ from typing import Any
 
 from tqdm import tqdm
 
-from .dataset import build_dataset
-from .parsing import load_audio_waveform, load_pack
-from .domain.beatmap import AudioRef, Pack
-from .domain.dataset import AudioSampler, EventSampler
+from ..dataset import build_dataset
+from ..parsing import load_audio_waveform, load_pack
+from ..domain.beatmap import AudioRef, Pack
+from ..domain.dataset import AudioSampler, EventSampler
 
 # ─────────────────────────── sampler registry ──────────────────────────
 # Short aliases map to (sampler_spec, config_spec) where each spec is
@@ -182,7 +182,7 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     p.add_argument("--charts-dir", type=Path, required=True,
                    help="Directory containing .osz archives (recursed).")
     p.add_argument("--out-dir", type=Path,
-                   default=Path(__file__).resolve().parent / "datasets",
+                   default=Path(__file__).resolve().parent.parent / "datasets",
                    help="Root output directory (default: osu/taiko2/datasets)")
 
     p.add_argument("--audio-sampler", default="mel",

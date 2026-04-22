@@ -7,6 +7,7 @@ from .beatmap import (
     OnsetBinned,
     OnsetKind,
     Pack,
+    RelativeOnset,
     Track,
 )
 from .dataset import (
@@ -18,6 +19,7 @@ from .dataset import (
     EventSamplerConfig,
     MelSamplerConfig,
 )
+from .sampling import DataSample, DataSampler, DataSamplerConfig
 
 __all__ = [
     "AudioRef",
@@ -25,6 +27,9 @@ __all__ = [
     "AudioSamplerConfig",
     "ChartEntry",
     "DatasetManifest",
+    "DataSample",
+    "DataSampler",
+    "DataSamplerConfig",
     "Density",
     "Difficulty",
     "EventSampler",
@@ -34,5 +39,6 @@ __all__ = [
     "OnsetBinned",
     "OnsetKind",
     "Pack",
+    "RelativeOnset",
     "Track",
 ]

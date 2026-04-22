@@ -24,7 +24,7 @@ Output layout::
 
 Usage::
 
-    python -m osu.taiko2.analyze_dataset --dataset taiko2_v1
+    python -m osu.taiko2.cli.analyze_dataset --dataset taiko2_v1
 """
 from __future__ import annotations
 
@@ -39,10 +39,10 @@ from typing import Any
 import numpy as np
 from tqdm import tqdm
 
-from .domain.beatmap import OnsetBinned, OnsetKind
-from .domain.dataset import ChartEntry, DatasetManifest
-from .persistence.events import load_events
-from .persistence.manifest import load_manifest
+from ..domain.beatmap import OnsetBinned, OnsetKind
+from ..domain.dataset import ChartEntry, DatasetManifest
+from ..persistence.events import load_events
+from ..persistence.manifest import load_manifest
 
 EVENT_KINDS: tuple[OnsetKind, ...] = (
     OnsetKind.DON,
@@ -468,11 +468,11 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
                    help="Dataset name (directory under --datasets-dir) OR "
                         "a path to a dataset root.")
     p.add_argument("--datasets-dir", type=Path,
-                   default=Path(__file__).resolve().parent / "datasets",
+                   default=Path(__file__).resolve().parent.parent / "datasets",
                    help="Root containing named datasets (default: "
                         "osu/taiko2/datasets).")
     p.add_argument("--out-dir", type=Path,
-                   default=Path(__file__).resolve().parent / "analysis",
+                   default=Path(__file__).resolve().parent.parent / "analysis",
                    help="Output root (default: osu/taiko2/analysis). "
                         "Results land in {out_dir}/{dataset_name}/.")
     p.add_argument("--max-charts", type=int, default=None,

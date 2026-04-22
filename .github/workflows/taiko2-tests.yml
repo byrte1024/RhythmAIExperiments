@@ -1,0 +1,34 @@
+name: taiko2 tests
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - 'osu/taiko2/**'
+      - '.github/workflows/taiko2-tests.yml'
+  pull_request:
+    paths:
+      - 'osu/taiko2/**'
+      - '.github/workflows/taiko2-tests.yml'
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+
+      # Tests exercise only pure-Python / numpy code paths. MelSampler and
+      # librosa imports are lazy (inside methods), so the full torch-nightly
+      # stack isn't required — install just what pytest + the tested modules
+      # actually import.
+      - name: Install test deps
+        run: pip install numpy==2.4.2 pytest==8.4.2
+
+      - name: Run pytest
+        run: python -m pytest osu/taiko2/tests -q

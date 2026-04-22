@@ -20,6 +20,11 @@ dependencies = [
     "triton-windows==3.6.0.post25 ; sys_platform == 'win32'",
 ]
 
+[dependency-groups]
+dev = [
+    "pytest==8.4.2",
+]
+
 # Don't try to build taiko2 as a distributable package; we only need a
 # managed venv with pinned deps. The code is imported via PYTHONPATH.
 [tool.uv]

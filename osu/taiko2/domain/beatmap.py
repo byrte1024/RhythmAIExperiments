@@ -38,6 +38,18 @@ class OnsetBinned(Onset):
 
 
 @dataclass(frozen=True, slots=True)
+class RelativeOnset(OnsetBinned):
+    """An OnsetBinned with its position relative to a sampler cursor.
+
+    `cursor_offset = onset.bin - cursor_bin`. Negative values are past the
+    cursor, positive are future. The absolute `bin` / `time_ms` are kept
+    so a downstream consumer can still reconstruct absolute positions
+    without carrying the cursor around.
+    """
+    cursor_offset: int = 0
+
+
+@dataclass(frozen=True, slots=True)
 class Density:
     mean: float
     peak: int
