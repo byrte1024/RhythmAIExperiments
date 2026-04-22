@@ -8,8 +8,7 @@ cross-repo links, not duplicated here.
 
 | # | Name | Status | Key result |
 |---|------|--------|------------|
-
-*(empty — first entry comes with the exp 45 port.)*
+| [001](001-exp45-smoke/) | exp 45 port, subsample-16 smoke | `Complete` | Pipeline works end-to-end; miss 0.72 → 0.55, hit 0.13 → 0.28 in 2 epochs on 1/16 data. Still descending at end. |
 
 ---
 

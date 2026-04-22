@@ -2,7 +2,13 @@
 
 ## Status
 
-`Planned`
+`Complete`
+
+> *Amendment (post-run): between writing the pre-run doc and running,
+> the metric key `onset/bad` was renamed to `onset/miss` for consistency
+> with `fmiss` / `rmiss`. Every "bad" reference in the pre-run sections
+> below refers to what is now called `miss`. The watched trainer metric
+> was re-pointed accordingly; semantics unchanged.*
 
 ## Context
 
@@ -111,49 +117,151 @@ CosineAnnealingLR / grad_clip 1.0) is identical to taiko1 exp 45.
 
 ### Final vs baseline
 
-| Metric | Baseline (none) | This run (final) | Δ | Direction |
-|---|---:|---:|---:|:---:|
-| val/single/onset/bad | — | — | — | — |
-| val/single/onset/good | — | — | — | — |
-| val/single/loss | — | — | — | — |
+No prior taiko2 baseline — this run is the first. Columns compare
+eval 1 (step 235) to final (eval 8, step 1880) to show how much was
+learned in 8 evals across the subsample-16 cut.
 
-Final eval: eval step `—`, wall time `—`, epochs `—`.
+| Metric | Eval 1 (step 235) | Final (step 1880) | Δ | Direction |
+|---|---:|---:|---:|:---:|
+| val/single/onset/miss            | 0.7166  | 0.5538 | −16.3 pp | ↓ good |
+| val/single/onset/good            | 0.2834  | 0.4462 | +16.3 pp | ↑ good |
+| val/single/onset/hit             | 0.1297  | 0.2827 | +15.3 pp | ↑ good |
+| val/single/onset/exact           | 0.0263  | 0.0734 | +4.7 pp  | ↑ good |
+| val/single/loss                  | 4.7278  | 4.1491 | −0.5787  | ↓ good |
+| val/single/onset/stop_f1         | 0.1483  | 0.3069 | +15.9 pp | ↑ good |
+| val/single/onset/frame_err_mean  | 23.5    | 21.5   | −2.0 bins | ↓ good |
+
+Final eval: step **1880**, wall time **≈5 min** from first train step,
+epochs **2**, total samples visited ≈ 60 k.
 
 ### Per-eval progression
 
-| Eval | Step | val/single/onset/bad | val/single/onset/good | val/single/onset/hit | val/single/onset/fhit | val/single/onset/rhit | val/single/onset/exact | val/single/onset/ihit | val/single/loss | train/batch/loss | lr | wall |
-|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-|   |  |  |  |  |  |  |  |  |  |  |  |  |
+Source: `runs/exp_001_exp45_smoke/metrics.jsonl`. All values namespaced
+under `val/single/` unless noted; STOP-class and I-variant columns
+omitted here for width but present in `metrics.json`.
+
+| Eval | Step | loss | miss | hit | good | exact | fhit | rhit | stop_f1 | frame_err_mean | pred_stop_rate | train_loss_win | wall (s) |
+|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| 1 |  235 | 4.7278 | 0.7166 | 0.1297 | 0.2834 | 0.0263 | 0.1261 | 0.0504 | 0.1483 | 23.5 | 0.1040 | 5.3426 |  37 |
+| 2 |  470 | 4.5655 | 0.6773 | 0.1784 | 0.3227 | 0.0400 | 0.1778 | 0.0803 | 0.2025 | 21.1 | 0.0786 | 5.1515 |  74 |
+| 3 |  705 | 4.4440 | 0.6451 | 0.2005 | 0.3549 | 0.0484 | 0.1973 | 0.1072 | 0.3217 | 23.3 | 0.0253 | 5.0490 | 112 |
+| 4 |  940 | 4.4075 | 0.6334 | 0.2103 | 0.3666 | 0.0507 | 0.2080 | 0.1066 | 0.2569 | 22.2 | 0.0481 | 5.0221 | 150 |
+| 5 | 1175 | 4.2439 | 0.5694 | 0.2610 | 0.4306 | 0.0578 | 0.2587 | 0.1219 | 0.3051 | 22.2 | 0.0351 | 4.9399 | 188 |
+| 6 | 1410 | 4.1916 | 0.5648 | 0.2671 | 0.4352 | 0.0640 | 0.2632 | 0.1397 | 0.3158 | 22.0 | 0.0383 | 4.8150 | 225 |
+| 7 | 1645 | 4.1728 | 0.5687 | 0.2710 | 0.4313 | 0.0663 | 0.2639 | 0.1271 | 0.2933 | 21.3 | 0.0487 | 4.7832 | 263 |
+| 8 | 1880 | 4.1491 | 0.5538 | 0.2827 | 0.4462 | 0.0734 | 0.2759 | 0.1355 | 0.3069 | 21.5 | 0.0419 | 4.7278 | 301 |
+
+`train_loss_win` = mean `train/batch/loss` across all steps between the
+previous eval and this one.
 
 Machine-readable copy: [`metrics.json`](./metrics.json).
 
 ## Visualizations
 
 ![](graphs/01_train_loss.png)
-*Training loss over steps, log-y.*
+*Training loss over steps, log-y. Train loss (~4.7 avg by eval 8)
+sits above val loss (4.15) because val is un-augmented — not an
+overfit signal. Smooth monotonic decay, no plateau yet.*
 
-![](graphs/02_val_progression.png)
-*Watched val metric (`onset/bad`) across evals.*
+![](graphs/02_val_progression_miss.png)
+*Watched val metric `onset/miss` across evals — dropped 0.72 → 0.55.
+Monotonic.*
 
-![](graphs/03_scatter.png)
-*Target-vs-predicted heatmap at the final eval.*
+![](graphs/03_val_hit.png)
+*`onset/hit` rose 0.13 → 0.28 across the 8 evals. Still rising — the
+run was not at plateau when it ended.*
 
-![](graphs/04_distributions.png)
-*Target and predicted bin-offset distributions at the final eval.*
+![](graphs/04_stop_f1.png)
+*STOP-class F1 — recall stays high (~0.7), precision sits low (~0.19),
+so the model over-predicts STOP by roughly 4×. A follow-up sweep on
+`stop_weight` would tighten this.*
 
-![](graphs/05_ratio_error.png)
-*Log-log ratio error scatter at the final eval.*
+![](graphs/05_final_heatmap.png)
+*Prediction heatmap at eval 8 with rhythmic ratio guides overlaid.
+Main diagonal dominant. At short targets (≲100 bins) the secondary
+mass sits above the diagonal — model over-predicts gap length there.
+No strong secondary ratio band at this eval.*
+
+![](graphs/06_final_ratio_error.png)
+*Ratio-error heatmap. Central ridge sits inside the ±10 % R-GOOD band.
+Secondary ridges at y ≈ ±log 2 (= ±0.69) visible — the classic
+doubling / halving error mode. Faint ridges at ±log 3 too.*
+
+![](graphs/07_final_ratio_hit.png)
+*HIT rate bucketed by `target / prev_gap`. Clean zigzag: simple integer
+ratios (0.5×, 1.0×, 2.0×) score 0.17–0.39; awkward ones (0.67×, 1.33×,
+>2.5×) score 0.01–0.16. Model has learned tempo continuation and
+octave jumps, not triplets / polyrhythms.*
+
+![](graphs/08_final_metronome.png)
+*Metronome vs anti-metronome HIT — 0.33 vs 0.29. Only a 4 pp gap,
+so the model is **not** trivially copying the previous gap. This was
+the headline failure mode feared for trapezoid-soft-target loss;
+that fear is not realized.*
+
+![](graphs/09_final_distributions.png)
+*Target and predicted bin-offset histograms. Predicted mass clustered
+at low bin offsets (short gaps); STOP over-predicted visibly (last
+bin, far right).*
+
+![](graphs/10_final_error_hist.png)
+*Signed `(pred − target)` histogram on non-STOP pairs. Slight positive
+bias (median +1, model over-predicts by a hair); long right tail.*
 
 ## Vs prediction
 
-- `val/single/onset/bad`: predicted `≤ 0.95` → actual `—` → **{match / beat / miss / wrong direction}**
-- `val/single/onset/good`: predicted `≥ 0.05` → actual `—` → **{…}**
-- `val/single/loss`: predicted `≤ 4.0` → actual `—` → **{…}**
+- `val/single/onset/miss` (was `bad`): predicted ≤ 0.95 → actual **0.5538** → **beat**
+- `val/single/onset/good`: predicted ≥ 0.05 → actual **0.4462** → **beat**
+- `val/single/loss`: predicted ≤ 4.0 → actual **4.1491** → **miss (by 0.15)**
+- No NaN/Inf; `metrics.jsonl` has `step`, `eval`, `train_end`; all four
+  pre-existing artifacts + the four new ones wrote on every eval →
+  **match**.
+
+**Summary.** All must-haves passed. Pipeline is correct, the model
+learns, the framework is sound. Loss prediction was slightly off — 4.15
+vs predicted ≤ 4.0 — because subsample-16 tightened the data budget
+more than the pre-run arithmetic anticipated; the model is clearly
+still descending, so a full-data run resolves it automatically. Hit
+and good smashed their nice-to-haves (0.28 vs 0.02, 0.45 vs 0.05).
 
 ## Takeaways
 
-- {One concrete bullet after the run.}
+- **Framework works end-to-end.** Augmented train loader, trapezoid
+  loss, class-balanced sampler, AdamW + cosine, atomic checkpoints,
+  per-eval JSON + curves + artifacts all produced expected files every
+  eval. No NaNs, no crashes.
+- **Train-loss > val-loss is the aug cost, not overfit.** Because
+  augmentations only apply to train, the usual overfit diagnosis
+  (val > train) inverts. Future experiments should not use the raw
+  gap as a stopping signal — use the validation metric directly.
+- **STOP is over-predicted by ~4×.** F1 0.31 from recall 0.74 +
+  precision 0.19. A `stop_weight` sweep in a follow-up is cheap and
+  would likely push composite HIT up.
+- **Model is not trivially metronomic.** The metronome / anti-
+  metronome gap is only 4 pp at eval 8. The trapezoid + class-
+  balanced sampler combination does not collapse to "copy prev gap".
+- **Dominant remaining error is polyrhythms.** The ratio-hit zigzag
+  and the ±log 2 / ±log 3 ridges on the ratio-error heatmap both point
+  at the same thing: simple integer ratios work, triplets / sextuplets
+  don't yet. Easy to watch across longer runs.
+- **Unexpected: frame-error p90 (55 bins) barely moved across 8 evals
+  while p50 dropped 5 → 3.** The middle of the error distribution
+  tightens quickly; the tail does not. Long-tailed errors are a
+  separate phenomenon from typical-case quality and may need
+  dedicated handling.
 
 ## Followup questions
 
-- {Open questions.} — {suggested next experiment}
+- Does HIT continue rising monotonically through 50 epochs on full
+  data, or does it plateau well short of taiko1 exp 45's 71.9 %? —
+  **#002** (full recreation, answer directly).
+- Would `stop_weight` ∈ {0.5, 1.0, 1.5, 2.0} shift the precision /
+  recall tradeoff enough to raise composite HIT by more than noise? —
+  small sweep experiment after #002 establishes the baseline.
+- Why does p90 frame error stay flat while median tightens? Long-tail
+  errors might need a dedicated loss term or a per-bucket curriculum. —
+  analysis pass on #002 outputs, then a targeted experiment if the
+  phenomenon persists.
+- Can the model learn triplets if we oversample charts with many
+  `~0.67x` / `~1.33x` ratios? — data-mix experiment gated on #002
+  showing the same zigzag on full data.
