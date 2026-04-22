@@ -77,6 +77,13 @@ class OnsetMetric(Metric):
         self._igood = 0
         self._pred_stop = 0            # pred==STOP while target!=STOP (pure failure)
         self._stop_target = 0          # target==STOP (excluded from main metrics)
+        self._stop_tp = 0              # pred==STOP and target==STOP
+        self._stop_pred_total = 0      # pred==STOP (over all targets)
+        # Frame-error histogram over non-STOP pairs for mean / median / p90.
+        # Size b_pred+1 covers the full abs-error range [0, b_pred].
+        self._frame_err_hist = [0] * (int(self.config.b_pred) + 1)
+        self._frame_err_count = 0
+        self._frame_err_sum = 0
 
     # ── update ────────────────────────────────────────────────────────
 
@@ -141,6 +148,8 @@ class OnsetMetric(Metric):
         self._n_nonstop += int(nonstop_target.sum().item())
         self._stop_target += int(target_stop.sum().item())
         self._pred_stop += int((nonstop_target & pred_stop).sum().item())
+        self._stop_tp += int((target_stop & pred_stop).sum().item())
+        self._stop_pred_total += int(pred_stop.sum().item())
         self._exact += int(exact.sum().item())
         self._fhit += int(fhit.sum().item())
         self._fgood += int(fgood.sum().item())
@@ -152,7 +161,52 @@ class OnsetMetric(Metric):
         self._ihit += int(ihit.sum().item())
         self._igood += int(igood.sum().item())
 
+        # Frame-error stats on non-STOP target & non-STOP pred pairs
+        # (otherwise the error is undefined in bin units).
+        if eval_mask.any():
+            abs_diff = diff[eval_mask].detach().cpu().numpy()
+            self._frame_err_count += int(abs_diff.size)
+            self._frame_err_sum += int(abs_diff.sum())
+            import numpy as _np
+            clipped = _np.clip(abs_diff, 0, len(self._frame_err_hist) - 1)
+            counts = _np.bincount(
+                clipped.astype(_np.int64),
+                minlength=len(self._frame_err_hist),
+            )
+            for i, c in enumerate(counts):
+                if c:
+                    self._frame_err_hist[i] += int(c)
+
     # ── compute ───────────────────────────────────────────────────────
+
+    def _frame_err_aggregates(self) -> tuple[float, float, float]:
+        """(mean, median, p90) of |pred - target| over accumulated non-STOP
+        pairs. Returns (0, 0, 0) when empty."""
+        n = self._frame_err_count
+        if n == 0:
+            return 0.0, 0.0, 0.0
+        mean = self._frame_err_sum / n
+        # Quantiles via the running histogram.
+        target_median = 0.5 * n
+        target_p90 = 0.9 * n
+        cum = 0
+        median = 0.0
+        p90 = 0.0
+        median_done = False
+        p90_done = False
+        for bin_val, count in enumerate(self._frame_err_hist):
+            if not count:
+                continue
+            cum += count
+            if not median_done and cum >= target_median:
+                median = float(bin_val)
+                median_done = True
+            if not p90_done and cum >= target_p90:
+                p90 = float(bin_val)
+                p90_done = True
+            if median_done and p90_done:
+                break
+        return mean, median, p90
 
     def compute(self) -> dict[str, float]:
         # Denominator for F/R/composite metrics: samples with non-STOP
@@ -162,6 +216,26 @@ class OnsetMetric(Metric):
         # pure misses.
         n = max(self._n_nonstop, 1)
         n_any = max(self._n_any_future, 1)
+
+        # STOP-class precision/recall/F1 (taiko1 parity: diagnoses whether
+        # the model is over- or under-predicting STOP).
+        stop_fp = self._stop_pred_total - self._stop_tp
+        stop_fn = self._stop_target - self._stop_tp
+        stop_prec = (
+            self._stop_tp / (self._stop_tp + stop_fp)
+            if (self._stop_tp + stop_fp) > 0 else 0.0
+        )
+        stop_rec = (
+            self._stop_tp / (self._stop_tp + stop_fn)
+            if (self._stop_tp + stop_fn) > 0 else 0.0
+        )
+        stop_f1 = (
+            2 * stop_prec * stop_rec / (stop_prec + stop_rec)
+            if (stop_prec + stop_rec) > 0 else 0.0
+        )
+
+        # Frame-error aggregates (non-STOP pairs only).
+        frame_mean, frame_median, frame_p90 = self._frame_err_aggregates()
 
         out: dict[str, float] = {
             "onset/exact":          self._exact / n,
@@ -175,6 +249,12 @@ class OnsetMetric(Metric):
             "onset/good":           self._good / n,
             "onset/miss":           1.0 - (self._good / n),
             "onset/pred_stop_rate": self._pred_stop / n,
+            "onset/stop_precision": stop_prec,
+            "onset/stop_recall":    stop_rec,
+            "onset/stop_f1":        stop_f1,
+            "onset/frame_err_mean":   frame_mean,
+            "onset/frame_err_median": frame_median,
+            "onset/frame_err_p90":    frame_p90,
             "onset/n_total":        float(self._n_total),
             "onset/n_nonstop":      float(self._n_nonstop),
             "onset/n_stop_target":  float(self._stop_target),

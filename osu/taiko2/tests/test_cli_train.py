@@ -120,7 +120,7 @@ def test_cli_train_runs_end_to_end(tmp_path: Path):
     eval_dirs = list(run_dir.glob("eval_*"))
     assert eval_dirs, "no eval_<step> directory was created"
     ed = eval_dirs[0]
-    for stem in ("scatter", "distributions", "ratio_error", "error_hist"):
+    for stem in ("heatmap", "distributions", "ratio_error", "error_hist"):
         assert (ed / f"{stem}.png").exists()
 
 

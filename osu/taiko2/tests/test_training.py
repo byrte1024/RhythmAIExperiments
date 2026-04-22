@@ -41,8 +41,8 @@ from osu.taiko2.training import (
     OnsetLossConfig,
     OnsetMetric,
     OnsetMetricConfig,
-    PredictionScatterArtifact,
-    RatioErrorScatterArtifact,
+    PredictionHeatmapArtifact,
+    RatioErrorHeatmapArtifact,
     train,
 )
 
@@ -205,14 +205,14 @@ class TestArtifacts:
             b_pred=b_pred,
         )
 
-    def test_scatter(self, tmp_path: Path):
-        art = PredictionScatterArtifact(b_pred=50)
+    def test_heatmap(self, tmp_path: Path):
+        art = PredictionHeatmapArtifact(b_pred=50)
         art.update(self._simple_batch())
         art.save(tmp_path, step=100)
-        assert (tmp_path / "scatter.png").exists()
-        assert (tmp_path / "scatter.npy").exists()
+        assert (tmp_path / "heatmap.png").exists()
+        assert (tmp_path / "heatmap.npy").exists()
         # Raw histogram totals match number of samples.
-        hist = np.load(tmp_path / "scatter.npy")
+        hist = np.load(tmp_path / "heatmap.npy")
         assert hist.sum() == 4
 
     def test_distribution(self, tmp_path: Path):
@@ -225,14 +225,14 @@ class TestArtifacts:
         assert data["preds"].sum() == 4
 
     def test_ratio_error(self, tmp_path: Path):
-        art = RatioErrorScatterArtifact(b_pred=50)
+        art = RatioErrorHeatmapArtifact(b_pred=50)
         art.update(self._simple_batch())
         art.save(tmp_path, step=100)
         assert (tmp_path / "ratio_error.png").exists()
         data = np.load(tmp_path / "ratio_error.npz")
-        # 3 non-STOP samples survive.
-        assert data["target"].size == 3
-        assert data["pred"].size == 3
+        # 3 non-STOP samples land in the 2-D histogram.
+        assert int(data["n_seen"]) == 3
+        assert data["hist"].sum() + int(data["n_oob"]) == 3
 
     def test_error_hist(self, tmp_path: Path):
         art = ErrorHistogramArtifact(b_pred=50)
@@ -245,8 +245,8 @@ class TestArtifacts:
         # Errors: 5→5 (0), 10→12 (+2), 20→22 (+2). STOP sample excluded.
         assert set(data["errors"].tolist()) == {0, 2}
 
-    def test_scatter_reset(self, tmp_path: Path):
-        art = PredictionScatterArtifact(b_pred=10)
+    def test_heatmap_reset(self, tmp_path: Path):
+        art = PredictionHeatmapArtifact(b_pred=10)
         art.update(_batch_for_metric(
             target_bins=[5], pred_bins=[5], b_pred=10,
         ))
@@ -353,9 +353,9 @@ class TestEndToEndLoop:
 
         val_metrics = MetricSet(OnsetMetric(OnsetMetricConfig(b_pred=b_pred)))
         artifacts = [
-            PredictionScatterArtifact(b_pred=b_pred),
+            PredictionHeatmapArtifact(b_pred=b_pred),
             DistributionArtifact(b_pred=b_pred),
-            RatioErrorScatterArtifact(b_pred=b_pred),
+            RatioErrorHeatmapArtifact(b_pred=b_pred),
             ErrorHistogramArtifact(b_pred=b_pred),
         ]
 
@@ -389,7 +389,7 @@ class TestEndToEndLoop:
         eval_dirs = list(spec.run_dir.glob("eval_*"))
         assert len(eval_dirs) >= 1
         ed = eval_dirs[0]
-        for stem in ("scatter", "distributions", "ratio_error", "error_hist"):
+        for stem in ("heatmap", "distributions", "ratio_error", "error_hist"):
             assert (ed / f"{stem}.png").exists(), f"missing {stem}.png"
 
     def test_resume_picks_up_step(self, tmp_path: Path):

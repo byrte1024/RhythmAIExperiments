@@ -278,6 +278,14 @@ DEFAULT_CURVES: tuple[CurveSpec, ...] = (
     CurveSpec(name="onset_imiss",    key="onset/imiss",        log_y=False),
     # Diagnostic: how often the model chooses STOP on non-STOP targets.
     CurveSpec(name="pred_stop_rate", key="onset/pred_stop_rate", log_y=False),
+    # STOP-class precision / recall / F1 — catches over- or under-STOPping.
+    CurveSpec(name="onset_stop_precision", key="onset/stop_precision", log_y=False),
+    CurveSpec(name="onset_stop_recall",    key="onset/stop_recall",    log_y=False),
+    CurveSpec(name="onset_stop_f1",        key="onset/stop_f1",        log_y=False),
+    # Frame-error aggregates on non-STOP pairs.
+    CurveSpec(name="onset_frame_err_mean",   key="onset/frame_err_mean",   log_y=False),
+    CurveSpec(name="onset_frame_err_median", key="onset/frame_err_median", log_y=False),
+    CurveSpec(name="onset_frame_err_p90",    key="onset/frame_err_p90",    log_y=False),
 )
 
 

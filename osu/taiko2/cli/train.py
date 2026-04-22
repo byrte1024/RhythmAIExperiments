@@ -41,12 +41,14 @@ from ..training import (
     DetectionSampleAdapterConfig,
     DistributionArtifact,
     ErrorHistogramArtifact,
+    MetronomeHitArtifact,
     OnsetLoss,
     OnsetLossConfig,
     OnsetMetric,
     OnsetMetricConfig,
-    PredictionScatterArtifact,
-    RatioErrorScatterArtifact,
+    PredictionHeatmapArtifact,
+    RatioErrorHeatmapArtifact,
+    RatioHitArtifact,
     build_exp45_post_augs,
     train,
 )
@@ -195,10 +197,12 @@ def main(argv: list[str] | None = None) -> int:
         OnsetMetric(OnsetMetricConfig(b_pred=model_cfg.b_pred)),
     )
     eval_artifacts = [
-        PredictionScatterArtifact(b_pred=model_cfg.b_pred),
+        PredictionHeatmapArtifact(b_pred=model_cfg.b_pred),
         DistributionArtifact(b_pred=model_cfg.b_pred),
-        RatioErrorScatterArtifact(b_pred=model_cfg.b_pred),
+        RatioErrorHeatmapArtifact(b_pred=model_cfg.b_pred),
         ErrorHistogramArtifact(b_pred=model_cfg.b_pred),
+        RatioHitArtifact(b_pred=model_cfg.b_pred),
+        MetronomeHitArtifact(b_pred=model_cfg.b_pred),
     ]
 
     # 4. Weighted sampling (exp 45 default).
