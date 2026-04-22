@@ -112,11 +112,18 @@ class ChartMetrics:
     # - `gap_metronome_distance`: TVD from delta-at-mode = 1 - mode_share.
     # - `gap_peaks`: per-peak detail `(bucket_center_ms, count)` sorted
     #                by count descending.
+    # - `gap_peak_mass_total`: sum of counts across all kept peaks —
+    #                          "how many gaps in this chart live inside
+    #                          a recognized peak" (the rest sit in
+    #                          noise / tail). Paired with
+    #                          `gap_peak_count` as the "raw vs mass"
+    #                          summary per chart.
     gap_peak_count: int = 0
     gap_peak_falloff: float = 0.0
     gap_random_distance: float = 0.0
     gap_metronome_distance: float = 0.0
     gap_peaks: tuple[tuple[float, int], ...] = ()
+    gap_peak_mass_total: int = 0
 
     # ── Ratio-distribution shape ──
     # 200-bucket dense histogram of `ratio = gap[i] / gap[i-1]` in log2
@@ -129,6 +136,7 @@ class ChartMetrics:
     ratio_random_distance: float = 0.0
     ratio_metronome_distance: float = 0.0
     ratio_peaks: tuple[tuple[float, int], ...] = ()
+    ratio_peak_mass_total: int = 0
 
 
 # ─────────────────────────── comparison payload ───────────────────────
@@ -313,11 +321,13 @@ class Chart:
             gap_random_distance=gap_rd,
             gap_metronome_distance=gap_md,
             gap_peaks=gap_peaks,
+            gap_peak_mass_total=sum(int(c) for _, c in gap_peaks),
             ratio_peak_count=ratio_pc,
             ratio_peak_falloff=ratio_pf,
             ratio_random_distance=ratio_rd,
             ratio_metronome_distance=ratio_md,
             ratio_peaks=ratio_peaks,
+            ratio_peak_mass_total=sum(int(c) for _, c in ratio_peaks),
         )
 
     # ── Comparison ────────────────────────────────────────────────────

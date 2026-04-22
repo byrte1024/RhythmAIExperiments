@@ -175,6 +175,20 @@ class TestChartMetrics:
         assert m.total_events == 0
         assert m.estimated_bpm is None
 
+    def test_peak_mass_totals_populated(self):
+        # Pure metronome → one gap peak of mass = n_gaps. Ratio peaks:
+        # all ratios land at 1.0x → one peak with mass ≈ n_gaps − 1.
+        n = 200
+        chart = Chart(track=_build_track(_metronome(120, n)))
+        m = chart.calculate_metrics()
+        # Gap: all gaps at 500 ms → one peak, its count = n−1 = 199.
+        assert m.gap_peak_count == 1
+        assert m.gap_peak_mass_total == n - 1
+        # Ratio: n−1 gaps yield n−2 ratios, all at 1.0x → one peak
+        # holding n−2 = 198.
+        assert m.ratio_peak_count == 1
+        assert m.ratio_peak_mass_total == n - 2
+
 
 # ─────────────────────────── gap-distribution shape ───────────────────
 
