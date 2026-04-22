@@ -47,5 +47,9 @@ osu/taiko2/secrets.json
 osu/taiko2/datasets/
 osu/taiko2/runs/
 
+# Agent instruction files (per-session, not for the repo)
+CLAUDE.md
+**/CLAUDE.md
+
 # taiko2 analysis — per-chart JSONs (10k+ files); keep summary/CSV/graphs tracked
 osu/taiko2/analysis/*/chart_metrics/
