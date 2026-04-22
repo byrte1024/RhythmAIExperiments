@@ -73,6 +73,10 @@ class TaikoDetectionSamplerConfig(DataSamplerConfig):
     # taiko1 behavior of one sample per event boundary).
     allowed_overlap_forward: int | None = None
     allowed_overlap_back: int | None = None
+    # Keep every Nth sample AFTER overlap filtering. Ported from taiko1's
+    # `subsample` flag — useful for smoke tests (`subsample=16` gives
+    # ~1/16th the data) or for cheap ablation runs.
+    subsample: int = 1
     # Split configuration. `split_ratios` is an ordered tuple of
     # `(name, ratio)` pairs; ratios are the fraction of songs (not charts)
     # that go to that bucket. Splitting is by `beatmapset_id` — all
@@ -218,7 +222,14 @@ class TaikoDetectionSampler(
 
     # ── Lifecycle ─────────────────────────────────────────────────────
 
-    def load_data(self) -> None:
+    def load_data(self, *, progress: bool = False) -> None:
+        """Read the dataset into memory and build the sample grid.
+
+        Pass ``progress=True`` to show a tqdm bar over manifest charts
+        and print a post-load summary (chart count, skipped, sample
+        count). Default is quiet because tests / notebooks / library
+        use don't want the noise; CLIs should set it True.
+        """
         if self._loaded:
             return
 
@@ -250,7 +261,19 @@ class TaikoDetectionSampler(
             manifest, cfg.split, cfg.split_ratios, cfg.split_seed,
         )
 
-        for entry in manifest.charts:
+        entries_iter = manifest.charts
+        if progress:
+            try:
+                from tqdm.auto import tqdm
+                entries_iter = tqdm(
+                    list(manifest.charts),
+                    desc=f"Loading {cfg.split!r} split",
+                    unit="chart",
+                )
+            except ImportError:
+                pass
+
+        for entry in entries_iter:
             if entry.chart_id not in allowed_ids:
                 continue
             feat_path = ds_root / entry.features_path
@@ -292,7 +315,28 @@ class TaikoDetectionSampler(
                 self._samples.append((chart_idx, ei))
                 last_cursor = cursor
 
+        pre_subsample = len(self._samples)
+        if cfg.subsample > 1:
+            self._samples = self._samples[::cfg.subsample]
+
         self._loaded = True
+
+        if progress:
+            kept = len(self._chart_ids)
+            total = len(manifest.charts)
+            skipped = total - kept
+            msg = (
+                f"[sampler] split={cfg.split!r}  "
+                f"charts={kept}/{total} ({skipped} skipped)  "
+                f"samples={len(self._samples):,}"
+            )
+            if cfg.subsample > 1:
+                msg += f"  (subsample={cfg.subsample}, pre-subsample={pre_subsample:,})"
+            try:
+                from tqdm.auto import tqdm as _tqdm
+                _tqdm.write(msg)
+            except ImportError:
+                print(msg)
 
     def count_samples(self) -> int:
         self._require_loaded()

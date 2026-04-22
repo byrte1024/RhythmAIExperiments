@@ -177,17 +177,20 @@ def main(argv: list[str] | None = None) -> int:
 
     train_sampler = TaikoDetectionSampler(data_cfg_train, pipeline=pipeline)
     val_sampler = TaikoDetectionSampler(data_cfg_val)
-    train_sampler.load_data()
-    val_sampler.load_data()
-
-    print(f"train samples: {train_sampler.count_samples():,}")
-    print(f"val   samples: {val_sampler.count_samples():,}")
+    train_sampler.load_data(progress=True)
+    val_sampler.load_data(progress=True)
 
     # 3. Model + loss + adapter + metrics + artifacts.
     model = EventEmbeddingDetector(model_cfg)
     loss = OnsetLoss(loss_cfg)
     adapter = DetectionSampleAdapter(adapter_cfg)
 
+    # Train metrics are per-epoch running means (reset each epoch) — the
+    # loop uses them for the tqdm postfix so "good_avg / bad_avg" show
+    # during training, not just at eval boundaries.
+    train_metrics = MetricSet(
+        OnsetMetric(OnsetMetricConfig(b_pred=model_cfg.b_pred)),
+    )
     val_metrics = MetricSet(
         OnsetMetric(OnsetMetricConfig(b_pred=model_cfg.b_pred)),
     )
@@ -216,6 +219,7 @@ def main(argv: list[str] | None = None) -> int:
         adapter=adapter,
         train_sampler=train_sampler,
         val_sampler=val_sampler,
+        train_metrics=train_metrics,
         val_metrics=val_metrics,
         eval_artifacts=eval_artifacts,
         train_weights=train_weights,

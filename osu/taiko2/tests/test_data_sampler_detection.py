@@ -231,6 +231,22 @@ class TestAllowedOverlap:
             )
 
 
+class TestSubsample:
+    def test_subsample_reduces_count_per_Nth(self, tiny_dataset: Path):
+        base_cfg = TaikoDetectionSamplerConfig(
+            batch_size=1, dataset_root=tiny_dataset,
+            a_bins=100, b_bins=100, min_cursor_bin=0,
+            allowed_overlap_forward=0, allowed_overlap_back=0,
+        )
+        full = TaikoDetectionSampler(base_cfg)
+        full.load_data()
+        sub = TaikoDetectionSampler(replace(base_cfg, subsample=4))
+        sub.load_data()
+        # Every 4th sample kept — count should match ceil(full / 4).
+        expected = (full.count_samples() + 3) // 4
+        assert sub.count_samples() == expected
+
+
 # ─────────────────────────── per-split overrides ──────────────────────
 
 class TestSplitOverrides:

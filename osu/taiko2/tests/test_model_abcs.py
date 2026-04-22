@@ -305,7 +305,10 @@ class TestTrainerConfig:
     def test_defaults(self):
         cfg = TrainerConfig()
         assert cfg.epochs == 50
-        assert cfg.metric_to_watch == "val/eval/loss"
+        # `metric_to_watch` is an unprefixed key (the `val/single/...`
+        # namespace is added by MetricLoggerHook, not consumed by
+        # CheckpointHook).
+        assert cfg.metric_to_watch == "loss"
         assert cfg.metric_lower_is_better is True
 
 

@@ -354,7 +354,7 @@ def main(argv: list[str] | None = None) -> int:
         allowed_overlap_back=0,
     )
     sampler = TaikoDetectionSampler(cfg)
-    sampler.load_data()
+    sampler.load_data(progress=True)
 
     dataset_name = sampler._manifest.name if sampler._manifest else ds_root.name
     out_root = (args.out_dir / dataset_name).resolve()

@@ -25,13 +25,19 @@ import numpy as np
 import torch
 
 from ..domain.adapter import SampleToModelAdapter
-from ..domain.loss import Loss
+from ..domain.loss import Loss, LossResult
 from ..domain.metrics import MetricInput, MetricSet
 from ..domain.model import Model
 from ..domain.sampling import DataSample, DataSampler
 from ..domain.training import RunSpec, TrainerConfig, TrainerHook, TrainingState
 from ..persistence.checkpoint import load_latest_if_any
-from .hooks import CheckpointHook, MetricLoggerHook
+from .hooks import (
+    CheckpointHook,
+    ConsoleLoggerHook,
+    MetricCurvesHook,
+    MetricLoggerHook,
+    PerEvalJsonHook,
+)
 
 
 # ─────────────────────────── helpers ──────────────────────────────────
@@ -60,6 +66,37 @@ def _batch_slices(n: int, batch_size: int):
         yield start, min(start + batch_size, n)
 
 
+def _batch_stats(
+    output: Any, target: Any, *, b_pred: int,
+) -> dict[str, float]:
+    """Per-batch onset stats — **full metric set**, delegating to
+    `OnsetMetric` on a scratch instance so every definition lives in
+    one place.
+
+    Returned flat dict matches ``OnsetMetric.compute()`` exactly:
+    ``onset/exact``, ``fhit``, ``fgood``, ``fmiss``, ``rhit``,
+    ``rgood``, ``rmiss``, ``hit``, ``good``, ``bad``, ``pred_stop_rate``,
+    ``n_total``, ``n_nonstop``, ``n_stop_target`` — plus ``ihit``,
+    ``igood``, ``ibad``, ``n_any_future`` when `target.all_future_bins`
+    is present.
+
+    ``b_pred`` = STOP class index (n_classes - 1).
+    """
+    # Local imports keep startup light; cached after first call.
+    from ..domain.metrics import MetricInput
+    from .metrics_onset import OnsetMetric, OnsetMetricConfig
+
+    scratch = OnsetMetric(OnsetMetricConfig(b_pred=b_pred))
+    scratch.update(MetricInput(output=output, target=target))
+    return scratch.compute()
+
+
+def _infer_b_pred(output: Any) -> int:
+    """Bin-offset-family models output `(B, n_classes)` where
+    ``n_classes = b_pred + 1``. Read it off the last axis."""
+    return int(output.logits.size(-1)) - 1
+
+
 # ─────────────────────────── eval pass ────────────────────────────────
 
 def _run_eval(
@@ -73,6 +110,7 @@ def _run_eval(
     artifacts: Sequence[Any],
     batch_size: int,
     device: torch.device,
+    progress: bool = False,
 ) -> dict[str, float]:
     """Full pass over `sampler`; returns flat `dict[str, float]`.
 
@@ -89,8 +127,24 @@ def _run_eval(
     total_loss = 0.0
     n_seen = 0
     loss_sub: dict[str, float] = {}
+    # Per-batch running sums for the eval postfix — independent of
+    # `metrics`, so the bar works even when no MetricSet was passed.
+    eval_hit_sum = 0.0
+    eval_bad_sum = 0.0
+    eval_batches = 0
+
+    raw_slices = list(_batch_slices(n, batch_size))
+    pbar = None
+    if progress:
+        try:
+            from tqdm.auto import tqdm
+            pbar = tqdm(raw_slices, desc="eval", unit="batch", leave=False)
+        except ImportError:
+            pass
+    slices = pbar if pbar is not None else raw_slices
+
     with torch.no_grad():
-        for lo, hi in _batch_slices(n, batch_size):
+        for lo, hi in slices:
             samples = [fetch(i) for i in range(lo, hi)]
             inp, tgt = adapter.make_batch(samples, device=device)
             out = model.predict(inp)
@@ -113,6 +167,23 @@ def _run_eval(
                     metrics.update(batch_in)
                 for a in artifacts:
                     a.update(batch_in)
+
+            # Postfix with per-batch + running-average onset stats.
+            if pbar is not None:
+                b_pred = _infer_b_pred(out)
+                bs = _batch_stats(out, tgt, b_pred=b_pred)
+                eval_hit_sum += bs["onset/hit"]
+                eval_bad_sum += bs["onset/bad"]
+                eval_batches += 1
+                batch_loss = float(result.loss.detach())
+                avg_loss = total_loss / max(n_seen, 1)
+                pbar.set_postfix({
+                    "loss": f"{batch_loss:.3f}/{avg_loss:.3f}",
+                    "hit":  f"{bs['onset/hit']:.3f}/"
+                            f"{eval_hit_sum / eval_batches:.3f}",
+                    "bad":  f"{bs['onset/bad']:.3f}/"
+                            f"{eval_bad_sum / eval_batches:.3f}",
+                })
     out_dict: dict[str, float] = {}
     denom = max(n_seen, 1)
     out_dict["loss"] = total_loss / denom
@@ -142,6 +213,7 @@ def train(
     train_weights: np.ndarray | None = None,
     extra_hooks: Sequence[TrainerHook] = (),
     device: torch.device | str = torch.device("cpu"),
+    progress: bool = True,
 ) -> TrainingState:
     """Run training to completion (or resume if a checkpoint exists)."""
     device = torch.device(device) if isinstance(device, str) else device
@@ -176,7 +248,9 @@ def train(
         )
 
     # Hooks: defaults + user-provided.
-    hooks: list[TrainerHook] = [
+    # Order matters — MetricLogger must fire BEFORE ConsoleLogger so
+    # everything the console surfaces is already persisted.
+    default_hooks: list[TrainerHook] = [
         MetricLoggerHook(spec),
         CheckpointHook(
             spec=spec,
@@ -186,7 +260,18 @@ def train(
             scheduler=scheduler,
             trainer_config=trainer_config,
         ),
-    ] + list(extra_hooks)
+    ]
+    if progress:
+        default_hooks.append(ConsoleLoggerHook())
+    # Always install MetricCurvesHook — cheap to maintain, writes on
+    # every eval and on train_end. Users who want to disable it can
+    # subclass the loop; for 99% of runs this is the right default.
+    default_hooks.append(MetricCurvesHook())
+    # PerEvalJsonHook: one tiny JSON per eval under eval_{step}/, makes
+    # it trivial to query one eval's metrics without parsing the full
+    # jsonl stream.
+    default_hooks.append(PerEvalJsonHook())
+    hooks: list[TrainerHook] = default_hooks + list(extra_hooks)
 
     evals_per_epoch = max(1, trainer_config.evals_per_epoch)
     eval_every = max(1, steps_per_epoch // evals_per_epoch)
@@ -200,11 +285,38 @@ def train(
             for h in hooks:
                 h.on_epoch_start(state)
 
+            # Reset per-epoch train running metrics so the postfix
+            # shows "mean so far this epoch", not since training start.
+            if train_metrics is not None:
+                train_metrics.reset()
+
             rng = np.random.default_rng(trainer_config.seed + state.epoch)
             indices = _draw_indices(n_train, weights=train_weights, rng=rng)
 
             model.train()
-            for lo, hi in _batch_slices(n_train, batch_size):
+            slices = list(_batch_slices(n_train, batch_size))
+            pbar = None
+            if progress:
+                try:
+                    from tqdm.auto import tqdm
+                    pbar = tqdm(
+                        slices,
+                        desc=f"epoch {state.epoch + 1}/{trainer_config.epochs}",
+                        unit="batch",
+                    )
+                    slices = pbar
+                except ImportError:
+                    pass
+
+            # Per-epoch running averages for the progress bar.
+            # Everything shown here is TRAIN-phase only — val numbers
+            # land via the eval bar on its own pass.
+            epoch_loss_sum = 0.0
+            epoch_hit_sum = 0.0
+            epoch_bad_sum = 0.0
+            epoch_n = 0
+
+            for lo, hi in slices:
                 batch_idx = indices[lo:hi]
                 samples = [train_fetch(int(i)) for i in batch_idx]
                 inp, tgt = adapter.make_batch(samples, device=device)
@@ -233,8 +345,44 @@ def train(
                         loss_metrics=dict(result.metrics),
                     ))
 
+                # Per-batch onset stats — computed inline so they can
+                # be both saved (into the step log alongside the loss
+                # sub-metrics) and shown in the tqdm postfix. Full set
+                # from OnsetMetric, not just hit/bad/exact.
+                b_pred = _infer_b_pred(out)
+                batch_onset = _batch_stats(out, tgt, b_pred=b_pred)
+
+                # Merge into a new LossResult so hooks see hit/bad/exact
+                # alongside loss when MetricLoggerHook writes the step.
+                step_result = LossResult(
+                    loss=result.loss,
+                    metrics={**result.metrics, **batch_onset},
+                )
                 for h in hooks:
-                    h.on_step_end(state, result)
+                    h.on_step_end(state, step_result)
+
+                batch_loss = float(result.loss.detach())
+                epoch_loss_sum += batch_loss
+                epoch_hit_sum += batch_onset["onset/hit"]
+                epoch_bad_sum += batch_onset["onset/bad"]
+                epoch_n += 1
+                if pbar is not None:
+                    denom = max(epoch_n, 1)
+                    post = {
+                        "loss": (
+                            f"{batch_loss:.3f}/"
+                            f"{epoch_loss_sum / denom:.3f}"
+                        ),
+                        "hit": (
+                            f"{batch_onset['onset/hit']:.3f}/"
+                            f"{epoch_hit_sum / denom:.3f}"
+                        ),
+                        "bad": (
+                            f"{batch_onset['onset/bad']:.3f}/"
+                            f"{epoch_bad_sum / denom:.3f}"
+                        ),
+                    }
+                    pbar.set_postfix(post)
 
                 if state.step % eval_every == 0:
                     val_out = _run_eval(
@@ -247,6 +395,7 @@ def train(
                         artifacts=eval_artifacts,
                         batch_size=batch_size,
                         device=device,
+                        progress=progress,
                     )
                     state.last_eval_metrics = val_out
                     # Persist artifacts under {run_dir}/eval_{step}/

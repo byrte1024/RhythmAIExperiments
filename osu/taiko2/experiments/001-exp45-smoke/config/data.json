@@ -1,0 +1,13 @@
+{
+    "__class__": "osu.taiko2.data_samplers.detection:TaikoDetectionSamplerConfig",
+    "batch_size": 32,
+    "a_bins": 500,
+    "b_bins": 500,
+    "c_events": 128,
+    "d_events": 1,
+    "min_cursor_bin": 0,
+    "subsample": 16,
+    "split_ratios": [["train", 0.9], ["val", 0.1]],
+    "split_seed": 42,
+    "_comment": "a/b/c must match model; d_events=1 is exp 45's next-onset target. min_cursor_bin=0 (not the 6000 default) because the smoke run needs every sample it can get at subsample=16."
+}

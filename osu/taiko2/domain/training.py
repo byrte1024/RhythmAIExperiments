@@ -98,7 +98,11 @@ class TrainerConfig:
     # `metric_to_watch` improves. No step-based checkpoint because the
     # model+optimizer payload is large — if you want finer resume
     # granularity, raise `evals_per_epoch`.
-    metric_to_watch: str = "val/eval/loss"
+    # Key into the dict returned by the eval pass — NOT the namespaced
+    # form that `metrics.jsonl` writes (the logger adds the
+    # `val/single/…` prefix separately). See `_run_eval` for the raw
+    # keys: `loss`, `hard_ce`, `onset/hit`, etc.
+    metric_to_watch: str = "loss"
     metric_lower_is_better: bool = True
 
 

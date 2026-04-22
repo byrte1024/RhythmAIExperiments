@@ -1,0 +1,25 @@
+{
+    "experiment_id": "001-exp45-smoke",
+    "run_name": "exp_001_exp45_smoke",
+    "baseline_experiment": null,
+
+    "final": {
+        "eval_step": null,
+        "wall_time_s": null,
+        "epoch": null,
+        "metrics": {
+            "val/single/onset/bad": null,
+            "val/single/onset/good": null,
+            "val/single/onset/hit": null,
+            "val/single/loss": null
+        },
+        "baseline": {},
+        "deltas": {}
+    },
+
+    "per_eval": [],
+
+    "hypothesis_outcome": null,
+
+    "_comment": "Populate `per_eval` from runs/exp_001_exp45_smoke/metrics.jsonl after the run."
+}

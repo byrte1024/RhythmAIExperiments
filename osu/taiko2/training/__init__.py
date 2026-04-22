@@ -22,7 +22,14 @@ from .augmentations import (
     SpecAugTime,
     build_exp45_post_augs,
 )
-from .hooks import CheckpointHook, MetricLoggerHook
+from .hooks import (
+    CheckpointHook,
+    ConsoleLoggerHook,
+    CurveSpec,
+    MetricCurvesHook,
+    MetricLoggerHook,
+    PerEvalJsonHook,
+)
 from .loop import train
 from .losses import OnsetLoss, OnsetLossConfig
 from .metrics_onset import OnsetMetric, OnsetMetricConfig
@@ -30,7 +37,10 @@ from .metrics_onset import OnsetMetric, OnsetMetricConfig
 __all__ = [
     "CheckpointHook",
     "ConditioningJitter",
+    "ConsoleLoggerHook",
     "ContextTruncation",
+    "CurveSpec",
+    "MetricCurvesHook",
     "DetectionSampleAdapter",
     "DetectionSampleAdapterConfig",
     "DistributionArtifact",
