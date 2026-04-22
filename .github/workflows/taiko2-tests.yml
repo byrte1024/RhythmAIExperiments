@@ -15,20 +15,27 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/setup-python@v5
+      - uses: astral-sh/setup-uv@v6
         with:
-          python-version: '3.13'
+          enable-cache: true
+          cache-dependency-glob: "osu/taiko2/uv.lock"
 
-      # Tests exercise only pure-Python / numpy code paths. MelSampler and
-      # librosa imports are lazy (inside methods), so the full torch-nightly
-      # stack isn't required — install just what pytest + the tested modules
-      # actually import.
-      - name: Install test deps
-        run: pip install numpy==2.4.2 pytest==8.4.2
+      - name: Install Python 3.13
+        run: uv python install 3.13
+        working-directory: osu/taiko2
+
+      # Install the full locked dependency set. The checkpoint round-trip
+      # tests need torch for `state_dict()` / `torch.save`; Chart tests use
+      # numpy; samplers lazy-import torchaudio + librosa. Matches the local
+      # development environment exactly — `uv.lock` is the source of truth.
+      - name: Install deps (full lock, including dev group)
+        run: uv sync --frozen --group dev
+        working-directory: osu/taiko2
 
       - name: Run pytest
-        run: python -m pytest osu/taiko2/tests -q
+        run: uv run pytest tests -q
+        working-directory: osu/taiko2
