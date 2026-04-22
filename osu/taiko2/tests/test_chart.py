@@ -14,6 +14,8 @@ from osu.taiko2.domain.beatmap import (
 )
 from osu.taiko2.domain.chart import (
     Chart,
+    _compute_gap_distribution,
+    _compute_ratio_distribution,
     _estimate_bpm_from_ioi,
     _events_to_binary,
     _find_streaks,
@@ -172,6 +174,201 @@ class TestChartMetrics:
         m = Chart(track=_build_track(tuple())).calculate_metrics()
         assert m.total_events == 0
         assert m.estimated_bpm is None
+
+
+# ─────────────────────────── gap-distribution shape ───────────────────
+
+class TestGapDistribution:
+    """Metrics over the 200-bucket gap histogram. Return shape is
+    ``(peaks, peak_count, peak_falloff, random_distance,
+    metronome_distance)`` — `peaks` is (bucket_center_ms, count) desc."""
+
+    def test_empty(self):
+        assert _compute_gap_distribution(np.zeros(0, dtype=np.float64)) == (
+            (), 0, 0.0, 0.0, 0.0,
+        )
+
+    def test_single_gap(self):
+        # One gap isn't enough to form a histogram — treated as empty.
+        assert _compute_gap_distribution(np.array([250.0])) == (
+            (), 0, 0.0, 0.0, 0.0,
+        )
+
+    def test_pure_metronome(self):
+        # All 200 gaps at 250 ms → one bucket holds everything.
+        gaps = np.full(200, 250.0)
+        peaks, pc, pf, rd, md = _compute_gap_distribution(gaps)
+        assert pc == 1
+        # Only one peak → no next peak to decay into → 0.0 by convention.
+        assert pf == 0.0
+        # One bucket holds all mass → TVD from uniform ≈ 1 − 1/200.
+        assert rd == pytest.approx(0.995, abs=1e-3)
+        # Mode IS the whole distribution → distance = 0.
+        assert md == pytest.approx(0.0, abs=1e-6)
+        # Peak detail: center of bucket 25 = 255 ms, count 200.
+        assert peaks == ((255.0, 200),)
+
+    def test_two_equal_peaks(self):
+        # 100 gaps at 125 ms, 100 gaps at 250 ms. Buckets 12 and 25.
+        # They're >= 30 ms apart so the min-separation filter keeps both.
+        gaps = np.concatenate([np.full(100, 125.0), np.full(100, 250.0)])
+        peaks, pc, pf, rd, md = _compute_gap_distribution(gaps)
+        assert pc == 2
+        assert pf == pytest.approx(1.0)
+        assert md == pytest.approx(0.5, abs=1e-6)
+        assert rd > 0.98
+        # Both peaks in the list; both have count 100.
+        assert sorted(peaks) == [(125.0, 100), (255.0, 100)]
+
+    def test_peak_falloff_400_200_100(self):
+        # Three peaks with counts 400 / 200 / 100.
+        gaps = np.concatenate([
+            np.full(400, 100.0),       # bucket 10 → center 105
+            np.full(200, 200.0),       # bucket 20 → center 205
+            np.full(100, 400.0),       # bucket 40 → center 405
+        ])
+        peaks, pc, pf, rd, md = _compute_gap_distribution(gaps)
+        assert pc == 3
+        # Ratios: 200/400=0.5, 100/200=0.5 → mean 0.5.
+        assert pf == pytest.approx(0.5)
+        assert md == pytest.approx(1.0 - 400 / 700, abs=1e-4)
+        # Peaks sorted by count desc.
+        assert peaks == ((105.0, 400), (205.0, 200), (405.0, 100))
+
+    def test_height_threshold_rejects_noise(self):
+        gaps = np.concatenate([
+            np.full(500, 250.0),
+            np.array([130.0, 310.0, 470.0, 670.0, 990.0]),
+        ])
+        _, pc, _, _, _ = _compute_gap_distribution(gaps)
+        assert pc == 1
+
+    def test_minimum_separation_merges_close_peaks(self):
+        gaps = np.concatenate([
+            np.full(300, 100.0),
+            np.full(200, 110.0),
+        ])
+        _, pc, _, _, _ = _compute_gap_distribution(gaps)
+        assert pc == 1
+
+    def test_gaps_above_cap_excluded(self):
+        mostly = np.full(100, 250.0)
+        mixed = np.concatenate([mostly, np.array([5000.0])])
+        assert _compute_gap_distribution(mostly) == _compute_gap_distribution(mixed)
+
+
+class TestRatioDistribution:
+    """Metrics over the log2-bucketed ratio histogram
+    (gap[i] / gap[i-1]). Metronome reference is anchored at the 1.0x
+    bucket: a run of identical gaps has every ratio = 1.0 regardless of
+    what the absolute gap value is."""
+
+    def test_empty(self):
+        assert _compute_ratio_distribution(np.zeros(0, dtype=np.float64)) == (
+            (), 0, 0.0, 0.0, 0.0,
+        )
+
+    def test_too_few_gaps(self):
+        # Two onsets → one gap → no ratios → empty.
+        assert _compute_ratio_distribution(np.array([250.0])) == (
+            (), 0, 0.0, 0.0, 0.0,
+        )
+
+    def test_pure_metronome_all_ratios_at_one(self):
+        # Constant-gap chart → every consecutive ratio = 1.0.
+        # Metronome distance must be 0 (all mass in the 1.0x bucket).
+        gaps = np.full(200, 250.0)
+        peaks, pc, pf, rd, md = _compute_ratio_distribution(gaps)
+        assert pc == 1
+        assert md == pytest.approx(0.0, abs=1e-6)
+        assert pf == 0.0
+        # One peak exactly at ratio=1.0 (center of the 0-log2 bucket).
+        assert len(peaks) == 1
+        center, count = peaks[0]
+        assert center == pytest.approx(1.0, rel=0.02)
+        assert count == 199    # 200 gaps → 199 ratios
+
+    def test_metronome_distance_anchored_at_one_not_mode(self):
+        # All ratios at 2.0x (each gap doubles the last). Mode is at
+        # 2.0x, NOT at 1.0x — so metronome distance should be 1.0
+        # (nothing in the 1.0x bucket) even though the histogram is
+        # "pure" in the peak-count sense.
+        # Construct gaps 10, 20, 40, 80, 160, 320, 640, 1280 → 7 ratios
+        # all equal to 2.0. Repeat the pattern to get enough data.
+        gaps = np.array(
+            [10.0 * (2 ** i) for i in range(8)]
+            + [10.0 * (2 ** i) for i in range(8)],
+            dtype=np.float64,
+        )
+        peaks, pc, pf, rd, md = _compute_ratio_distribution(gaps)
+        assert pc == 1
+        # Peak should be at ratio 2.0x (ratio bucket for log2=1).
+        assert peaks[0][0] == pytest.approx(2.0, rel=0.05)
+        # Metronome distance: NO ratios land in the 1.0x bucket → 1.0.
+        assert md == pytest.approx(1.0, abs=1e-6)
+
+    def test_falloff_two_equal_ratio_peaks(self):
+        # Alternating doubling/halving → ratios alternate 2.0x, 0.5x.
+        gaps = np.array([100.0, 200.0] * 100, dtype=np.float64)
+        peaks, pc, pf, rd, md = _compute_ratio_distribution(gaps)
+        assert pc == 2
+        # Peaks near-equal (within 1) → falloff ≈ 1.0 up to the
+        # alternating pattern's off-by-one.
+        assert pf == pytest.approx(1.0, abs=0.02)
+        centers = sorted(c for c, _ in peaks)
+        assert centers[0] == pytest.approx(0.5, rel=0.05)
+        assert centers[1] == pytest.approx(2.0, rel=0.05)
+        # No ratios at exactly 1.0x → metronome distance = 1.
+        assert md == pytest.approx(1.0, abs=1e-6)
+
+    def test_near_one_ratios_merge_to_single_peak(self):
+        # Ratios of 1.01 and 0.95 are musically "just a metronome with
+        # a bit of jitter" — the ratio histogram's wider smoothing /
+        # merge radius must fold them into one peak at ~1.0x.
+        # Construct gaps whose consecutive ratios alternate between
+        # 1.01 and 0.95 (and one 1.0 to seed the mode).
+        gaps_list: list[float] = [100.0]
+        for i in range(400):
+            r = 1.01 if i % 2 == 0 else 0.95
+            gaps_list.append(gaps_list[-1] * r)
+        gaps = np.array(gaps_list, dtype=np.float64)
+        peaks, pc, _, _, md = _compute_ratio_distribution(gaps)
+        assert pc == 1
+        # Single peak centered near 1.0x.
+        center, _ = peaks[0]
+        assert center == pytest.approx(1.0, rel=0.10)
+        # Metronome distance is low because the merged peak sits at
+        # ~1.0x — this is essentially metronome + jitter.
+        assert md < 0.6
+
+    def test_musically_distinct_ratios_stay_separate(self):
+        # Classic tempo-change ratios: 0.67x and 1.33x are ~33% apart
+        # and represent different rhythmic categories; they must NOT
+        # merge.
+        gaps_list: list[float] = [100.0]
+        for i in range(200):
+            r = 1.33 if i % 2 == 0 else 0.67
+            gaps_list.append(gaps_list[-1] * r)
+        gaps = np.array(gaps_list, dtype=np.float64)
+        _, pc, _, _, _ = _compute_ratio_distribution(gaps)
+        assert pc == 2
+
+    def test_ratios_out_of_range_dropped(self):
+        # Ratio of 100 is log2≈6.64 → outside the [-3, +3] support.
+        # Add such a pair; the result should match the same chart
+        # without that pair (modulo the two onsets it adds to gaps).
+        base = np.array([100.0] * 10, dtype=np.float64)
+        # Adding a pair where gap[i]=100, gap[i+1]=10000 gives a ratio
+        # of 100 which is outside range. Drop it, and the surviving
+        # ratios all equal 1.0.
+        mixed = np.concatenate([base, np.array([10000.0, 10.0])])
+        peaks_a, *_ = _compute_ratio_distribution(base)
+        peaks_b, *_ = _compute_ratio_distribution(mixed)
+        # Both should have a single peak at 1.0x; peak counts may
+        # differ by 1-2 from the extra in-range ratios the tail
+        # introduces. Just check shape.
+        assert len(peaks_a) == 1 and len(peaks_b) >= 1
+        assert peaks_a[0][0] == pytest.approx(1.0, rel=0.05)
 
 
 # ─────────────────────────── comparison ───────────────────────────────

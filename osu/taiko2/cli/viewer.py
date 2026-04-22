@@ -1145,6 +1145,28 @@ class Viewer:
             if m.dominant_ioi_ms is not None:
                 text("Dominant IOI:", f"{m.dominant_ioi_ms:.0f} ms")
             text("Over-pspace (self):", f"{m.over_pspace_self:.2f}")
+
+            section("Gap distribution")
+            text("Peak count:", f"{m.gap_peak_count}")
+            text("Peak falloff:", f"{m.gap_peak_falloff:.3f}")
+            text("Random distance:", f"{m.gap_random_distance:.3f}")
+            text("Metronome distance:", f"{m.gap_metronome_distance:.3f}")
+            if m.gap_peaks:
+                peaks_str = "  ".join(
+                    f"{c:g}ms x{n}" for c, n in m.gap_peaks[:5]
+                )
+                text("Peaks:", peaks_str)
+
+            section("Ratio distribution")
+            text("Peak count:", f"{m.ratio_peak_count}")
+            text("Peak falloff:", f"{m.ratio_peak_falloff:.3f}")
+            text("Random distance:", f"{m.ratio_random_distance:.3f}")
+            text("Metronome distance:", f"{m.ratio_metronome_distance:.3f}")
+            if m.ratio_peaks:
+                ratios_str = "  ".join(
+                    f"{c:.2f}x x{n}" for c, n in m.ratio_peaks[:5]
+                )
+                text("Peaks:", ratios_str)
             col_x = col_x_save
             y = max(y, y_save)
 

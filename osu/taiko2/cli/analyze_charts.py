@@ -68,6 +68,13 @@ _CSV_FIELDS: tuple[str, ...] = (
     "density_mean", "density_peak", "density_std", "density_min", "density_cv",
     "longest_streak", "mean_streak_len", "streak_event_fraction",
     "estimated_bpm", "dominant_ioi_ms", "over_pspace_self",
+    # Gap-distribution shape (scalars; `gap_peaks` tuple is written to
+    # the per-chart JSON only, and aggregated across charts for graphs).
+    "gap_peak_count", "gap_peak_falloff",
+    "gap_random_distance", "gap_metronome_distance",
+    # Ratio-distribution shape (gap[i] / gap[i-1], log2-bucketed).
+    "ratio_peak_count", "ratio_peak_falloff",
+    "ratio_random_distance", "ratio_metronome_distance",
 )
 
 
@@ -135,12 +142,29 @@ def _plot_graphs(
     rows: list[dict[str, Any]],
     aggregated_ioi: dict[int, int],
     graphs_dir: Path,
+    *,
+    top_gap_peak_ms: list[float] | None = None,
+    top_ratio_peak: list[float] | None = None,
+    gap_peak_histogram: np.ndarray | None = None,
+    ratio_peak_histogram: np.ndarray | None = None,
 ) -> None:
     """Draw distribution + correlation plots from the collected metrics.
 
     Focus is on fields that are unique to `Chart.calculate_metrics()`
-    (BPM, over_pspace_self, streak_fraction, density_cv) rather than the
-    basics already covered by `cli/analyze_dataset`.
+    (BPM, over_pspace_self, streak_fraction, density_cv, and the new
+    gap- / ratio-distribution shape metrics) rather than the basics
+    already covered by `cli/analyze_dataset`.
+
+    Extra inputs for the shape-metric plots:
+      - ``top_gap_peak_ms[c]`` = center of each chart's #1 gap peak
+        (ms); used to produce a distribution of "where real charts'
+        dominant IOI lands".
+      - ``top_ratio_peak[c]`` = center of each chart's #1 ratio peak
+        (linear ratio, not log2); same idea in ratio space.
+      - ``gap_peak_histogram`` / ``ratio_peak_histogram``: corpus-wide
+        counts over the fixed 200-bucket supports of (count of peaks
+        that landed in each bucket across all charts) — tells us what
+        the "average" chart's peak structure looks like.
     """
     import matplotlib
     matplotlib.use("Agg")
@@ -292,6 +316,265 @@ def _plot_graphs(
         "12_density_vs_bpm.png", color="#6bc46d",
     )
 
+    # ── Gap- / ratio-distribution shape metrics (reference graphs) ──
+    # These establish "what real charts look like" for the new four
+    # metrics in each of the two distributions.
+
+    # 13 — gap_peak_count histogram
+    _hist(_numeric("gap_peak_count"),
+          "Gap histogram — peak count per chart",
+          "gap_peak_count", "13_gap_peak_count.png",
+          color="#4a90d9", bins=range(0, 16))
+
+    # 14 — gap_peak_falloff
+    _hist(_numeric("gap_peak_falloff"),
+          "Gap histogram — peak falloff (mean c_{i+1} / c_i)",
+          "gap_peak_falloff", "14_gap_peak_falloff.png",
+          color="#6bc46d", range_=(0.0, 1.0), bins=40)
+
+    # 15 — gap_random_distance
+    _hist(_numeric("gap_random_distance"),
+          "Gap histogram — distance from uniform (TVD)",
+          "gap_random_distance", "15_gap_random_distance.png",
+          color="#fcb71e", range_=(0.0, 1.0), bins=40)
+
+    # 16 — gap_metronome_distance
+    _hist(_numeric("gap_metronome_distance"),
+          "Gap histogram — distance from delta-at-mode (TVD)",
+          "gap_metronome_distance", "16_gap_metronome_distance.png",
+          color="#e86850", range_=(0.0, 1.0), bins=40)
+
+    # 17 — ratio_peak_count
+    _hist(_numeric("ratio_peak_count"),
+          "Ratio histogram — peak count per chart",
+          "ratio_peak_count", "17_ratio_peak_count.png",
+          color="#4a90d9", bins=range(0, 16))
+
+    # 18 — ratio_peak_falloff
+    _hist(_numeric("ratio_peak_falloff"),
+          "Ratio histogram — peak falloff",
+          "ratio_peak_falloff", "18_ratio_peak_falloff.png",
+          color="#6bc46d", range_=(0.0, 1.0), bins=40)
+
+    # 19 — ratio_random_distance
+    _hist(_numeric("ratio_random_distance"),
+          "Ratio histogram — distance from uniform (TVD)",
+          "ratio_random_distance", "19_ratio_random_distance.png",
+          color="#fcb71e", range_=(0.0, 1.0), bins=40)
+
+    # 20 — ratio_metronome_distance (anchored at 1.0x)
+    _hist(_numeric("ratio_metronome_distance"),
+          "Ratio histogram — distance from all-ratios-at-1.0x (TVD)",
+          "ratio_metronome_distance", "20_ratio_metronome_distance.png",
+          color="#c76dba", range_=(0.0, 1.0), bins=40)
+
+    # 21 — #1 gap-peak location across charts (ms). Where does the
+    # typical chart's dominant IOI land?
+    if top_gap_peak_ms:
+        vals = np.asarray(top_gap_peak_ms, dtype=float)
+        fig, ax = plt.subplots(figsize=(12, 5))
+        ax.hist(vals, bins=100, range=(0, 2000),
+                color="#7bc0ea", edgecolor="black", linewidth=0.3)
+        med = float(np.median(vals))
+        ax.axvline(med, color="red", linestyle="--",
+                   label=f"Median: {med:.0f} ms")
+        ax.set_xlabel("#1 gap-peak center (ms, 10 ms buckets)")
+        ax.set_ylabel("Charts")
+        ax.set_title("Dominant IOI location across charts")
+        ax.legend()
+        _save(fig, "21_top_gap_peak_ms.png")
+
+    # 22 — #1 ratio-peak location across charts. Most charts peak at
+    # 1.0x (metronome sections); this graph shows the tail — how many
+    # charts' dominant ratio is at 2.0x or 0.5x or elsewhere.
+    if top_ratio_peak:
+        vals = np.asarray(top_ratio_peak, dtype=float)
+        # Log2 x-axis so halving and doubling are equidistant from 1.0.
+        fig, ax = plt.subplots(figsize=(12, 5))
+        ax.hist(np.log2(vals), bins=100, range=(-3.0, 3.0),
+                color="#9b6eff", edgecolor="black", linewidth=0.3)
+        med_lin = float(np.median(vals))
+        ax.axvline(np.log2(med_lin), color="red", linestyle="--",
+                   label=f"Median: {med_lin:.2f}x")
+        # Tick labels in linear ratios at integer log2 steps.
+        xticks = [-3, -2, -1, 0, 1, 2, 3]
+        ax.set_xticks(xticks)
+        ax.set_xticklabels([f"{2.0**t:g}x" for t in xticks])
+        ax.set_xlabel("#1 ratio-peak center (log2 axis)")
+        ax.set_ylabel("Charts")
+        ax.set_title("Dominant ratio location across charts")
+        ax.legend()
+        _save(fig, "22_top_ratio_peak.png")
+
+    # 23 — Corpus-wide gap-peak bucket histogram (how often does each
+    # 10 ms bucket appear as a peak across all charts' full peak lists).
+    if gap_peak_histogram is not None and gap_peak_histogram.any():
+        xs = np.arange(gap_peak_histogram.shape[0]) * 10 + 5
+        fig, ax = plt.subplots(figsize=(12, 5))
+        ax.bar(xs[:200], gap_peak_histogram[:200], width=10,
+               color="#4a90d9", edgecolor="black", linewidth=0.2)
+        ax.set_xlabel("Gap bucket center (ms, 10 ms buckets)")
+        ax.set_ylabel("Peak occurrences across charts")
+        ax.set_title("Gap-peak locations, corpus-wide (all kept peaks)")
+        _save(fig, "23_gap_peak_histogram.png")
+
+    # 24 — Corpus-wide ratio-peak bucket histogram (log2 axis).
+    if ratio_peak_histogram is not None and ratio_peak_histogram.any():
+        n_buckets = ratio_peak_histogram.shape[0]
+        log2_axis = np.linspace(-3.0, 3.0, n_buckets, endpoint=False)
+        log2_axis = log2_axis + (6.0 / n_buckets) / 2
+        fig, ax = plt.subplots(figsize=(12, 5))
+        ax.bar(log2_axis, ratio_peak_histogram, width=6.0 / n_buckets,
+               color="#c76dba", edgecolor="black", linewidth=0.2)
+        xticks = [-3, -2, -1, 0, 1, 2, 3]
+        ax.set_xticks(xticks)
+        ax.set_xticklabels([f"{2.0**t:g}x" for t in xticks])
+        ax.set_xlabel("Ratio bucket center (log2 axis)")
+        ax.set_ylabel("Peak occurrences across charts")
+        ax.set_title("Ratio-peak locations, corpus-wide (all kept peaks)")
+        _save(fig, "24_ratio_peak_histogram.png")
+
+    # ── Correlations: new shape metrics vs existing chart-level ones ──
+    # Which existing metric a given shape metric tracks tells us whether
+    # it's redundant (high correlation = it's already captured) or novel
+    # (low correlation = it's measuring something else).
+    def _corr(a: np.ndarray, b: np.ndarray) -> float | None:
+        if len(a) < 3 or np.std(a) == 0 or np.std(b) == 0:
+            return None
+        return float(np.corrcoef(a, b)[0, 1])
+
+    def _pair_scatter(
+        x_field: str, y_field: str, title: str, xlabel: str,
+        ylabel: str, fname: str, color: str = "#4a90d9",
+        log_x: bool = False,
+    ) -> None:
+        xs: list[float] = []
+        ys: list[float] = []
+        for r in rows:
+            xv, yv = r[x_field], r[y_field]
+            if xv in ("", None) or yv in ("", None):
+                continue
+            try:
+                xs.append(float(xv))
+                ys.append(float(yv))
+            except (TypeError, ValueError):
+                continue
+        if len(xs) < 3:
+            return
+        x_arr = np.asarray(xs)
+        y_arr = np.asarray(ys)
+        r = _corr(x_arr, y_arr)
+        fig, ax = plt.subplots(figsize=(10, 6))
+        ax.scatter(x_arr, y_arr, alpha=0.22, s=10, color=color)
+        if log_x and (x_arr > 0).all():
+            ax.set_xscale("log")
+        ax.set_xlabel(xlabel)
+        ax.set_ylabel(ylabel)
+        corr_tag = f"  r = {r:+.3f}" if r is not None else ""
+        ax.set_title(f"{title}  (n={len(xs)}{corr_tag})")
+        _save(fig, fname)
+
+    # Star rating is the best "complexity" proxy — harder charts
+    # should push every shape metric toward "less metronomic / more
+    # varied". Run all eight against it.
+    _pair_scatter(
+        "star_rating", "gap_peak_count",
+        "Star rating vs gap peak count",
+        "Star rating (★)", "gap_peak_count",
+        "25_star_vs_gap_peak_count.png", color="#4a90d9",
+    )
+    _pair_scatter(
+        "star_rating", "gap_peak_falloff",
+        "Star rating vs gap peak falloff",
+        "Star rating (★)", "gap_peak_falloff",
+        "26_star_vs_gap_peak_falloff.png", color="#6bc46d",
+    )
+    _pair_scatter(
+        "star_rating", "gap_random_distance",
+        "Star rating vs gap random-distance (TVD from uniform)",
+        "Star rating (★)", "gap_random_distance",
+        "27_star_vs_gap_random.png", color="#fcb71e",
+    )
+    _pair_scatter(
+        "star_rating", "gap_metronome_distance",
+        "Star rating vs gap metronome-distance",
+        "Star rating (★)", "gap_metronome_distance",
+        "28_star_vs_gap_metronome.png", color="#e86850",
+    )
+    _pair_scatter(
+        "star_rating", "ratio_peak_count",
+        "Star rating vs ratio peak count",
+        "Star rating (★)", "ratio_peak_count",
+        "29_star_vs_ratio_peak_count.png", color="#4a90d9",
+    )
+    _pair_scatter(
+        "star_rating", "ratio_peak_falloff",
+        "Star rating vs ratio peak falloff",
+        "Star rating (★)", "ratio_peak_falloff",
+        "30_star_vs_ratio_peak_falloff.png", color="#6bc46d",
+    )
+    _pair_scatter(
+        "star_rating", "ratio_random_distance",
+        "Star rating vs ratio random-distance",
+        "Star rating (★)", "ratio_random_distance",
+        "31_star_vs_ratio_random.png", color="#fcb71e",
+    )
+    _pair_scatter(
+        "star_rating", "ratio_metronome_distance",
+        "Star rating vs ratio metronome-distance (anchored at 1.0x)",
+        "Star rating (★)", "ratio_metronome_distance",
+        "32_star_vs_ratio_metronome.png", color="#c76dba",
+    )
+
+    # Against streak_event_fraction — a chart where most events sit in
+    # a same-gap streak is close to pure metronome; should correlate
+    # inversely with both metronome-distances.
+    _pair_scatter(
+        "streak_event_fraction", "gap_metronome_distance",
+        "Streak-event fraction vs gap metronome-distance",
+        "streak_event_fraction", "gap_metronome_distance",
+        "33_streak_vs_gap_metronome.png", color="#e86850",
+    )
+    _pair_scatter(
+        "streak_event_fraction", "ratio_metronome_distance",
+        "Streak-event fraction vs ratio metronome-distance",
+        "streak_event_fraction", "ratio_metronome_distance",
+        "34_streak_vs_ratio_metronome.png", color="#c76dba",
+    )
+
+    # Pspace-diversity captures "how many distinct 8-step patterns";
+    # ratio_peak_count captures "how many distinct rhythmic ratios".
+    # Related but not redundant.
+    _pair_scatter(
+        "over_pspace_self", "ratio_peak_count",
+        "Pattern-space diversity vs ratio peak count",
+        "over_pspace_self (%)", "ratio_peak_count",
+        "35_pspace_vs_ratio_peak_count.png", color="#9b6eff",
+    )
+
+    # Density mean vs gap peak falloff — denser charts concentrate
+    # more gaps into their primary peak? Or spread them more?
+    _pair_scatter(
+        "density_mean", "gap_peak_falloff",
+        "Density mean vs gap peak falloff",
+        "Density (events/s)", "gap_peak_falloff",
+        "36_density_vs_gap_falloff.png", color="#7bc0ea",
+    )
+
+    # Cross-distribution: are the two peak-counts correlated?
+    _pair_scatter(
+        "gap_peak_count", "ratio_peak_count",
+        "Gap peak count vs ratio peak count",
+        "gap_peak_count", "ratio_peak_count",
+        "37_gap_vs_ratio_peak_count.png", color="#4a90d9",
+    )
+    _pair_scatter(
+        "gap_metronome_distance", "ratio_metronome_distance",
+        "Gap metronome-distance vs ratio metronome-distance",
+        "gap_metronome_distance", "ratio_metronome_distance",
+        "38_gap_vs_ratio_metronome.png", color="#e86850",
+    )
+
 
 # ─────────────────────────── CLI ──────────────────────────────────────
 
@@ -369,8 +652,22 @@ def main(argv: list[str] | None = None) -> int:
     print(f"Split:    {args.split}  ({n_charts} charts)")
     print(f"Output:   {out_root}")
 
+    # Import the ratio-histogram constants so the corpus aggregator
+    # uses the same bucket geometry `_compute_ratio_distribution` does.
+    from ..domain.chart import (                                  # noqa: E402
+        _GAP_HIST_N_BUCKETS,
+        _GAP_HIST_BUCKET_MS,
+        _RATIO_LOG2_MIN,
+        _RATIO_LOG2_WIDTH,
+        _RATIO_N_BUCKETS,
+    )
+
     rows: list[dict[str, Any]] = []
     aggregated_ioi: Counter[int] = Counter()
+    top_gap_peak_ms: list[float] = []
+    top_ratio_peak: list[float] = []
+    gap_peak_hist = np.zeros(_GAP_HIST_N_BUCKETS, dtype=np.int64)
+    ratio_peak_hist = np.zeros(_RATIO_N_BUCKETS, dtype=np.int64)
 
     it = range(n_charts)
     if not args.no_progress:
@@ -383,6 +680,27 @@ def main(argv: list[str] | None = None) -> int:
         # Fold this chart's IOI histogram into the corpus aggregate.
         for bucket, count in metrics.ioi_histogram_10ms.items():
             aggregated_ioi[int(bucket)] += int(count)
+
+        # #1 peak per chart (for "typical dominant IOI / ratio" graphs)
+        # and the full peak list folded into corpus-wide bucket counts.
+        if metrics.gap_peaks:
+            top_gap_peak_ms.append(float(metrics.gap_peaks[0][0]))
+            for center_ms, _count in metrics.gap_peaks:
+                b = int(center_ms) // _GAP_HIST_BUCKET_MS
+                if 0 <= b < _GAP_HIST_N_BUCKETS:
+                    gap_peak_hist[b] += 1
+        if metrics.ratio_peaks:
+            top_ratio_peak.append(float(metrics.ratio_peaks[0][0]))
+            for center_ratio, _count in metrics.ratio_peaks:
+                if center_ratio <= 0:
+                    continue
+                import math
+                b = int(
+                    (math.log2(center_ratio) - _RATIO_LOG2_MIN)
+                    / _RATIO_LOG2_WIDTH
+                )
+                if 0 <= b < _RATIO_N_BUCKETS:
+                    ratio_peak_hist[b] += 1
 
         stem = _safe_filename(chart.track.beatmap_id or chart.track.artist + "_" + chart.track.title + "_" + chart.track.difficulty.version)
         json_path = charts_dir / f"{stem}.json"
@@ -435,7 +753,13 @@ def main(argv: list[str] | None = None) -> int:
 
     graphs_dir = out_root / "chart_metrics_graphs"
     try:
-        _plot_graphs(rows, dict(aggregated_ioi), graphs_dir)
+        _plot_graphs(
+            rows, dict(aggregated_ioi), graphs_dir,
+            top_gap_peak_ms=top_gap_peak_ms,
+            top_ratio_peak=top_ratio_peak,
+            gap_peak_histogram=gap_peak_hist,
+            ratio_peak_histogram=ratio_peak_hist,
+        )
         n_graphs = len(list(graphs_dir.glob("*.png")))
     except Exception as e:
         print(f"  WARN: graph rendering failed: {e}", file=sys.stderr)

@@ -99,6 +99,37 @@ class ChartMetrics:
     # 8-step patterns observed in the 23-ms quantized onset train.
     over_pspace_self: float = 0.0
 
+    # ── Gap-distribution shape ──
+    # 200-bucket dense histogram over [0, 2000) ms at 10-ms resolution;
+    # gaps above the 2 s cap are excluded (they're already counted in
+    # `long_gap_count`).
+    #
+    # - `gap_peak_count`: peaks (local max ±20 ms, height >= max(5%% of
+    #                     global max, 3), 30 ms min separation).
+    # - `gap_peak_falloff`: mean `c_{i+1} / c_i` of sorted-desc peak
+    #                       counts. 0.0 when <2 peaks.
+    # - `gap_random_distance`:    TVD from uniform over the 200 buckets.
+    # - `gap_metronome_distance`: TVD from delta-at-mode = 1 - mode_share.
+    # - `gap_peaks`: per-peak detail `(bucket_center_ms, count)` sorted
+    #                by count descending.
+    gap_peak_count: int = 0
+    gap_peak_falloff: float = 0.0
+    gap_random_distance: float = 0.0
+    gap_metronome_distance: float = 0.0
+    gap_peaks: tuple[tuple[float, int], ...] = ()
+
+    # ── Ratio-distribution shape ──
+    # 200-bucket dense histogram of `ratio = gap[i] / gap[i-1]` in log2
+    # space over [log2(1/8), log2(8)] = [-3, +3]. Same peak-detection
+    # rules as the gap histogram. `ratio_metronome_distance` uses the
+    # same formula; a chart whose peak ratio is 2.0 has distance from
+    # "all ratios are 2.0". Values outside the log2 range are dropped.
+    ratio_peak_count: int = 0
+    ratio_peak_falloff: float = 0.0
+    ratio_random_distance: float = 0.0
+    ratio_metronome_distance: float = 0.0
+    ratio_peaks: tuple[tuple[float, int], ...] = ()
+
 
 # ─────────────────────────── comparison payload ───────────────────────
 
@@ -231,6 +262,15 @@ class Chart:
         # BPM from mode IOI
         bpm, dominant_ioi = _estimate_bpm_from_ioi(gaps_pos)
 
+        # Gap-distribution + ratio-distribution shape (peak list + counts
+        # + TVDs from uniform and delta-at-mode).
+        (
+            gap_peaks, gap_pc, gap_pf, gap_rd, gap_md,
+        ) = _compute_gap_distribution(gaps_pos)
+        (
+            ratio_peaks, ratio_pc, ratio_pf, ratio_rd, ratio_md,
+        ) = _compute_ratio_distribution(gaps_pos)
+
         # Self pattern-space
         bin_self = _events_to_binary(times_ms, step_ms=TN_STEP_MS)
         over_self = _over_pspace(bin_self, scale=TN_SCALE)
@@ -268,6 +308,16 @@ class Chart:
             estimated_bpm=bpm,
             dominant_ioi_ms=dominant_ioi,
             over_pspace_self=round(over_self, 3),
+            gap_peak_count=gap_pc,
+            gap_peak_falloff=gap_pf,
+            gap_random_distance=gap_rd,
+            gap_metronome_distance=gap_md,
+            gap_peaks=gap_peaks,
+            ratio_peak_count=ratio_pc,
+            ratio_peak_falloff=ratio_pf,
+            ratio_random_distance=ratio_rd,
+            ratio_metronome_distance=ratio_md,
+            ratio_peaks=ratio_peaks,
         )
 
     # ── Comparison ────────────────────────────────────────────────────
@@ -510,6 +560,195 @@ def _estimate_bpm_from_ioi(
     while bpm > max_bpm:
         bpm /= 2
     return round(float(bpm), 2), float(dominant_ioi_ms)
+
+
+# ─────────────────────────── histogram shape ─────────────────────────
+
+_GAP_HIST_CAP_MS = 2000
+_GAP_HIST_BUCKET_MS = 10
+_GAP_HIST_N_BUCKETS = _GAP_HIST_CAP_MS // _GAP_HIST_BUCKET_MS     # 200
+
+# Ratio (gap[i] / gap[i-1]) in log2 space. [-3, +3] covers ratios in
+# [0.125x, 8x]. 200 buckets at width 0.03 log2 ≈ 2.1% per bucket.
+_RATIO_LOG2_MIN = -3.0
+_RATIO_LOG2_MAX = +3.0
+_RATIO_N_BUCKETS = 200
+_RATIO_LOG2_WIDTH = (
+    (_RATIO_LOG2_MAX - _RATIO_LOG2_MIN) / _RATIO_N_BUCKETS          # 0.03
+)
+
+
+def _histogram_shape(
+    h: np.ndarray,
+    *,
+    bucket_center_fn,
+    height_frac: float = 0.05,
+    height_abs: float = 3.0,
+    smooth_radius: int = 2,
+    min_separation: int = 3,
+    metronome_ref_bucket: int | None = None,
+) -> "tuple[tuple[tuple[float, int], ...], int, float, float, float]":
+    """Peak + distribution-distance analysis on a dense count array.
+
+    Shared by `_compute_gap_distribution` and `_compute_ratio_distribution`
+    — same peak-detection rules, same distance formulas, parameterized
+    only on how a bucket index maps back to a physical value and which
+    bucket "pure metronome" points at.
+
+    ``metronome_ref_bucket``:
+      - ``None`` (default, for gaps): use the observed mode → distance
+        is ``1 - mode_share``. "Distance from all gaps being [whatever
+        the dominant gap is]."
+      - fixed int (for ratios): use the bucket at that index → distance
+        is ``1 - h[ref]/total``. For ratios this is the ``1.0x`` bucket,
+        so "pure metronome" means every ratio is exactly 1.0 regardless
+        of what the chart's observed peak is.
+
+    Returns ``(peaks, peak_count, peak_falloff, random_distance,
+    metronome_distance)`` where ``peaks`` is a tuple of
+    ``(bucket_center, count)`` entries sorted by count descending.
+    """
+    n = int(h.shape[0])
+    total = float(h.sum())
+    if total < 2 or n == 0:
+        return (), 0, 0.0, 0.0, 0.0
+
+    # Peak detection.
+    height_threshold = max(float(h.max()) * height_frac, height_abs)
+    candidates: list[int] = []
+    for i in range(n):
+        if h[i] < height_threshold:
+            continue
+        lo = max(0, i - smooth_radius)
+        hi = min(n, i + smooth_radius + 1)
+        window_max = float(h[lo:hi].max())
+        if h[i] < window_max:
+            continue
+        # Plateau: only keep the leftmost bucket in a run of equal max.
+        if i > 0 and h[i - 1] == h[i] and h[i - 1] >= window_max:
+            continue
+        candidates.append(i)
+
+    kept_peaks: list[int] = []
+    for i in sorted(candidates, key=lambda k: float(h[k]), reverse=True):
+        if any(abs(i - j) < min_separation for j in kept_peaks):
+            continue
+        kept_peaks.append(i)
+
+    peak_count = len(kept_peaks)
+
+    # Peak detail: (center, count) sorted by count desc.
+    peaks_detail = tuple(
+        (float(bucket_center_fn(i)), int(h[i]))
+        for i in sorted(kept_peaks, key=lambda k: float(h[k]), reverse=True)
+    )
+
+    # Falloff: 0 when < 2 peaks (no next peak to decay into).
+    if peak_count < 2:
+        peak_falloff = 0.0
+    else:
+        counts_desc = [float(h[i]) for i in kept_peaks]
+        counts_desc.sort(reverse=True)
+        ratios = [counts_desc[i + 1] / counts_desc[i]
+                  for i in range(len(counts_desc) - 1)
+                  if counts_desc[i] > 0]
+        peak_falloff = float(np.mean(ratios)) if ratios else 0.0
+
+    # TVD from uniform over the full bucket support.
+    p = h / total
+    q = 1.0 / n
+    random_distance = 0.5 * float(np.sum(np.abs(p - q)))
+
+    # TVD from a delta distribution. By default the delta sits at the
+    # observed mode (gap convention → "distance from all gaps at the
+    # dominant value"). For ratios we pass a fixed reference bucket so
+    # "pure metronome" is anchored at the 1.0x bucket instead.
+    if metronome_ref_bucket is None:
+        metronome_distance = 1.0 - float(h.max()) / total
+    else:
+        ref = max(0, min(n - 1, int(metronome_ref_bucket)))
+        metronome_distance = 1.0 - float(h[ref]) / total
+
+    return (
+        peaks_detail,
+        peak_count,
+        round(peak_falloff, 4),
+        round(random_distance, 4),
+        round(metronome_distance, 4),
+    )
+
+
+def _compute_gap_distribution(
+    gaps_pos: np.ndarray,
+) -> "tuple[tuple[tuple[float, int], ...], int, float, float, float]":
+    """``(peaks, peak_count, falloff, random_distance, metronome_distance)``
+    over a fixed ``[0, 2000) ms`` histogram at 10-ms resolution. Peaks
+    are ``(bucket_center_ms, count)`` sorted by count desc."""
+    if len(gaps_pos) < 2:
+        return (), 0, 0.0, 0.0, 0.0
+    kept = gaps_pos[(gaps_pos >= 0) & (gaps_pos < _GAP_HIST_CAP_MS)]
+    if len(kept) < 2:
+        return (), 0, 0.0, 0.0, 0.0
+    bucket_idx = (kept.astype(np.int64) // _GAP_HIST_BUCKET_MS)
+    h = np.bincount(bucket_idx, minlength=_GAP_HIST_N_BUCKETS).astype(np.float64)
+    return _histogram_shape(
+        h,
+        bucket_center_fn=lambda i: i * _GAP_HIST_BUCKET_MS + _GAP_HIST_BUCKET_MS / 2,
+    )
+
+
+def _compute_ratio_distribution(
+    gaps_pos: np.ndarray,
+) -> "tuple[tuple[tuple[float, int], ...], int, float, float, float]":
+    """Same analysis applied to the log2 ratio distribution
+    ``ratio[i] = gaps_pos[i] / gaps_pos[i-1]``. Bucketing is log2 so
+    doubling (2x) and halving (0.5x) are equidistant from 1x.
+
+    Returns peaks as ``(bucket_center_ratio, count)`` in LINEAR ratio
+    units (already exponentiated from log2), sorted by count desc.
+    """
+    if len(gaps_pos) < 2:
+        return (), 0, 0.0, 0.0, 0.0
+    # Pairwise ratios. Need 2 consecutive positive gaps → 3+ onsets.
+    denom = gaps_pos[:-1]
+    numer = gaps_pos[1:]
+    valid = (denom > 0) & (numer > 0)
+    if not valid.any():
+        return (), 0, 0.0, 0.0, 0.0
+    ratios = (numer[valid] / denom[valid]).astype(np.float64)
+    ratios = ratios[np.isfinite(ratios) & (ratios > 0)]
+    if len(ratios) < 2:
+        return (), 0, 0.0, 0.0, 0.0
+
+    log2r = np.log2(ratios)
+    in_range = (log2r >= _RATIO_LOG2_MIN) & (log2r < _RATIO_LOG2_MAX)
+    log2r = log2r[in_range]
+    if len(log2r) < 2:
+        return (), 0, 0.0, 0.0, 0.0
+    bucket_idx = ((log2r - _RATIO_LOG2_MIN) / _RATIO_LOG2_WIDTH).astype(np.int64)
+    bucket_idx = np.clip(bucket_idx, 0, _RATIO_N_BUCKETS - 1)
+    h = np.bincount(bucket_idx, minlength=_RATIO_N_BUCKETS).astype(np.float64)
+
+    def _center(i: int) -> float:
+        # Center of bucket i in log2 space → linear ratio.
+        log2_center = _RATIO_LOG2_MIN + (i + 0.5) * _RATIO_LOG2_WIDTH
+        return float(2.0 ** log2_center)
+
+    # Anchor "pure metronome" at the 1.0x bucket (log2 ratio = 0) —
+    # i.e. "all consecutive gaps are the same, so every ratio = 1".
+    one_bucket = int((0.0 - _RATIO_LOG2_MIN) / _RATIO_LOG2_WIDTH)
+    # Smoothing + merge radii are wider than the gap histogram. Ratios
+    # 1.01 and 0.95 are musically indistinguishable from a metronomic
+    # 1.0, so the smoothing window has to cover ±10% ratio; separate
+    # rhythmic categories (0.67x, 1.0x, 1.33x) are ~33% apart so the
+    # merge radius sits at ~23% to keep them distinct.
+    return _histogram_shape(
+        h,
+        bucket_center_fn=_center,
+        metronome_ref_bucket=one_bucket,
+        smooth_radius=5,
+        min_separation=10,
+    )
 
 
 def _events_to_binary(
