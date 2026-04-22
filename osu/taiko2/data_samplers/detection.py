@@ -19,6 +19,7 @@ from typing import Any
 
 import numpy as np
 
+from ..domain.augmentation import AugmentationPipeline
 from ..domain.beatmap import OnsetKind, RelativeOnset
 from ..domain.sampling import DataSample, DataSampler, DataSamplerConfig
 from ..persistence.manifest import load_manifest
@@ -47,16 +48,96 @@ class TaikoDetectionSamplerConfig(DataSamplerConfig):
     c_events: int = 128
     d_events: int = 1
     min_cursor_bin: int = 6000
-    # Train/val split. `split ∈ {"all", "train", "val"}`. Splitting is by
-    # beatmapset_id — all difficulties of a song land in the same split —
-    # and seeded so identical (val_ratio, seed) pairs reproduce identically
-    # across runs.
+    # Minimum cursor-to-cursor distance between samples of the same chart.
+    # A candidate cursor is dropped if it falls within this many bins of an
+    # already-accepted cursor. Two knobs so the allowed overlap can be
+    # asymmetric (e.g. require a longer forward gap than backward). The
+    # effective minimum distance between kept cursors is
+    # `max(allowed_overlap_forward, allowed_overlap_back)`.
+    # Defaults — None here — are resolved in `__post_init__` to match
+    # `b_bins` (forward) and `a_bins` (backward): keeps consecutive samples
+    # from having their directional audio windows overlap each other.
+    # Set both to 0 to disable filtering entirely (recovers the old
+    # taiko1 behavior of one sample per event boundary).
+    allowed_overlap_forward: int | None = None
+    allowed_overlap_back: int | None = None
+    # Split configuration. `split_ratios` is an ordered tuple of
+    # `(name, ratio)` pairs; ratios are the fraction of songs (not charts)
+    # that go to that bucket. Splitting is by `beatmapset_id` — all
+    # difficulties of a song land in the same split. `split` picks which
+    # bucket this sampler serves, or `"all"` to use every chart regardless.
+    # `split_seed` pins the shuffle so two samplers sharing the same spec
+    # produce disjoint, reproducible buckets.
     split: str = "all"
-    val_ratio: float = 0.1
+    split_ratios: tuple[tuple[str, float], ...] = (
+        ("train", 0.9),
+        ("val", 0.1),
+    )
     split_seed: int = 42
+    # Per-split field overrides: `{split_name: {field: value, ...}}`.
+    # When the sampler loads and `split` matches a key here, the config is
+    # replaced with those field overrides for that sampler's lifetime.
+    # Lets a single "base" config express e.g. "train uses overlap=500,
+    # val uses overlap=50" without building two configs from scratch.
+    # Cannot override `split`, `split_ratios`, `split_seed`, or
+    # `split_overrides` itself (those define the split mechanism).
+    split_overrides: dict[str, dict[str, object]] = field(default_factory=dict)
+
+    def __post_init__(self):
+        if self.allowed_overlap_forward is None:
+            object.__setattr__(self, "allowed_overlap_forward", self.b_bins)
+        if self.allowed_overlap_back is None:
+            object.__setattr__(self, "allowed_overlap_back", self.a_bins)
+        if self.allowed_overlap_forward < 0 or self.allowed_overlap_back < 0:
+            raise ValueError(
+                "allowed_overlap_forward / allowed_overlap_back must be >= 0"
+            )
+        reserved = {"split", "split_ratios", "split_seed", "split_overrides"}
+        for split_name, overrides in self.split_overrides.items():
+            for key in overrides:
+                if key in reserved:
+                    raise ValueError(
+                        f"split_overrides[{split_name!r}] cannot override "
+                        f"{key!r} (reserved for split mechanism)"
+                    )
+
+    def resolve(self, split: str | None = None) -> "TaikoDetectionSamplerConfig":
+        """Return a new config with `split_overrides[split]` applied.
+
+        `split=None` uses `self.split`. If no overrides exist for that
+        split, returns `self` unchanged. `split_overrides` on the returned
+        config is cleared so a re-resolve is a no-op.
+        """
+        target = split if split is not None else self.split
+        overrides = self.split_overrides.get(target, {})
+        if split is None and not overrides:
+            return self
+        from dataclasses import replace as _replace
+        return _replace(
+            self, split=target, split_overrides={}, **overrides,
+        )
 
 
 # ─────────────────────────── sample payload ───────────────────────────
+
+@dataclass(frozen=True, slots=True)
+class TaikoDetectionPreContext:
+    """Input to a pre-sample augmentation.
+
+    Carries everything an augmentation might need to decide a new cursor
+    or a different event-index slice without reading from disk: the full
+    per-chart event arrays are read-only views into sampler state.
+
+    `cursor_bin` is mutable via `dataclasses.replace`; augmentations
+    typically return a new context with a shifted cursor.
+    """
+    chart_idx: int
+    event_idx: int
+    cursor_bin: int
+    event_bins: np.ndarray       # (N,) int64 — chart's full event bins
+    event_times_ms: np.ndarray   # (N,) int64
+    event_kind_ids: np.ndarray   # (N,) uint8
+
 
 @dataclass(frozen=True, slots=True)
 class TaikoDetectionSample(DataSample):
@@ -94,10 +175,17 @@ class TaikoDetectionSampler(
     filtering out early-song cursors.
     """
 
-    def __init__(self, config: TaikoDetectionSamplerConfig):
+    def __init__(
+        self,
+        config: TaikoDetectionSamplerConfig,
+        pipeline: "AugmentationPipeline[TaikoDetectionPreContext, TaikoDetectionSample] | None" = None,
+    ):
         super().__init__(config)
         self._loaded = False
         self._manifest = None
+        self._pipeline: AugmentationPipeline = (
+            pipeline if pipeline is not None else AugmentationPipeline()
+        )
         # Parallel arrays per chart, indexed by chart_idx
         self._chart_ids: list[str] = []
         self._features: list[np.ndarray] = []          # mmap'd (F, T)
@@ -110,9 +198,17 @@ class TaikoDetectionSampler(
     # ── Lifecycle ─────────────────────────────────────────────────────
 
     def load_data(self) -> None:
-        cfg = self.config
         if self._loaded:
             return
+
+        # Resolve per-split overrides once. After this point the sampler's
+        # `self.config` reflects the effective config for its chosen split,
+        # so every downstream read (including `count_batches` via
+        # `self.config.batch_size`) sees consistent values.
+        resolved = self.config.resolve()
+        if resolved is not self.config:
+            object.__setattr__(self, "config", resolved)
+        cfg = self.config
 
         ds_root = Path(cfg.dataset_root).resolve()
         manifest = load_manifest(ds_root / "manifest.json")
@@ -128,7 +224,7 @@ class TaikoDetectionSampler(
         self._samples.clear()
 
         allowed_ids = chart_ids_for_split(
-            manifest, cfg.split, cfg.val_ratio, cfg.split_seed,
+            manifest, cfg.split, cfg.split_ratios, cfg.split_seed,
         )
 
         for entry in manifest.charts:
@@ -154,10 +250,22 @@ class TaikoDetectionSampler(
             self._event_times_ms.append(times)
             self._event_kind_ids.append(kinds)
 
+            # Per-chart overlap filter: cursors within this chart iterate
+            # monotonically (ei → cursor is non-decreasing), so we only need
+            # the last accepted cursor and the max of the two overlaps as
+            # the minimum allowed gap.
+            min_gap = max(cfg.allowed_overlap_forward, cfg.allowed_overlap_back)
+            last_cursor: int | None = None
+
             for ei in self._iter_event_indices(bins):
                 cursor = self._cursor_for(bins, ei)
-                if cursor >= cfg.min_cursor_bin:
-                    self._samples.append((chart_idx, ei))
+                if cursor < cfg.min_cursor_bin:
+                    continue
+                if last_cursor is not None and min_gap > 0:
+                    if cursor - last_cursor < min_gap:
+                        continue
+                self._samples.append((chart_idx, ei))
+                last_cursor = cursor
 
         self._loaded = True
 
@@ -168,20 +276,28 @@ class TaikoDetectionSampler(
     # ── Public sampling API ───────────────────────────────────────────
 
     def raw_sample(self, n: int) -> TaikoDetectionSample:
-        """Deterministic, unaugmented sample."""
+        """Deterministic, unaugmented sample. Pipeline is bypassed entirely."""
         self._require_loaded()
         if n < 0 or n >= len(self._samples):
             raise IndexError(f"sample index {n} out of range ({len(self._samples)})")
         chart_idx, ei = self._samples[n]
-        return self._build_sample(sample_id=n, chart_idx=chart_idx, ei=ei)
+        ctx = self._build_context(chart_idx, ei)
+        return self._build_sample(sample_id=n, ctx=ctx)
 
     def augment_sample(self, n: int) -> TaikoDetectionSample:
-        """Same sample as `raw_sample`, passed through the augmentation
-        pipeline. Currently a no-op stub — augmentation is a separate
-        design decision that depends on model architecture.
+        """Run the pipeline: pre-augs mutate the extraction context, then
+        the sample is built, then post-augs mutate the sample. Empty
+        pipeline is equivalent to `raw_sample(n)`.
         """
-        sample = self.raw_sample(n)
-        return self._augment(sample)
+        self._require_loaded()
+        if n < 0 or n >= len(self._samples):
+            raise IndexError(f"sample index {n} out of range ({len(self._samples)})")
+        chart_idx, ei = self._samples[n]
+        ctx = self._build_context(chart_idx, ei)
+        ctx = self._pipeline.apply_pre(ctx)
+        sample = self._build_sample(sample_id=n, ctx=ctx)
+        sample = self._pipeline.apply_post(sample)
+        return sample
 
     def raw_batch(self, n: int) -> list[TaikoDetectionSample]:
         return self._batch(n, augmented=False)
@@ -238,16 +354,30 @@ class TaikoDetectionSampler(
             return int(bins[-1])
         return int(bins[ei - 1])
 
-    def _build_sample(
-        self, *, sample_id: int, chart_idx: int, ei: int,
-    ) -> TaikoDetectionSample:
-        cfg = self.config
-        chart_id = self._chart_ids[chart_idx]
+    def _build_context(self, chart_idx: int, ei: int) -> TaikoDetectionPreContext:
+        """Assemble the pre-sample context for augmentation + extraction."""
         bins = self._event_bins[chart_idx]
-        times_ms = self._event_times_ms[chart_idx]
-        kind_ids = self._event_kind_ids[chart_idx]
-        features = self._features[chart_idx]
-        cursor = self._cursor_for(bins, ei)
+        return TaikoDetectionPreContext(
+            chart_idx=chart_idx,
+            event_idx=ei,
+            cursor_bin=self._cursor_for(bins, ei),
+            event_bins=bins,
+            event_times_ms=self._event_times_ms[chart_idx],
+            event_kind_ids=self._event_kind_ids[chart_idx],
+        )
+
+    def _build_sample(
+        self, *, sample_id: int, ctx: TaikoDetectionPreContext,
+    ) -> TaikoDetectionSample:
+        """Materialize a sample from a (possibly-augmented) context."""
+        cfg = self.config
+        chart_id = self._chart_ids[ctx.chart_idx]
+        bins = ctx.event_bins
+        times_ms = ctx.event_times_ms
+        kind_ids = ctx.event_kind_ids
+        features = self._features[ctx.chart_idx]
+        cursor = ctx.cursor_bin
+        ei = ctx.event_idx
 
         audio_past = self._extract_audio(features, cursor - cfg.a_bins, cursor)
         audio_future = self._extract_audio(features, cursor, cursor + cfg.b_bins)
@@ -340,16 +470,6 @@ class TaikoDetectionSampler(
             mask[n:] = True
 
         return tuple(padded), mask
-
-    def _augment(self, sample: TaikoDetectionSample) -> TaikoDetectionSample:
-        """No-op placeholder. Swap in an augmentation strategy here.
-
-        Intentionally a stub — augmentation design (event jitter, SpecAug,
-        metronome corruption, etc.) depends on the target architecture and
-        hasn't been decided for taiko2 yet.
-        """
-        return sample
-
 
 def _padding_onset() -> RelativeOnset:
     return RelativeOnset(

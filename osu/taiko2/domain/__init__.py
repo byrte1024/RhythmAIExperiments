@@ -19,6 +19,11 @@ from .dataset import (
     EventSamplerConfig,
     MelSamplerConfig,
 )
+from .augmentation import (
+    AugmentationPipeline,
+    PostSampleAugmentation,
+    PreSampleAugmentation,
+)
 from .sampling import DataSample, DataSampler, DataSamplerConfig
 
 __all__ = [
@@ -35,10 +40,13 @@ __all__ = [
     "EventSampler",
     "EventSamplerConfig",
     "MelSamplerConfig",
+    "AugmentationPipeline",
     "Onset",
     "OnsetBinned",
     "OnsetKind",
     "Pack",
+    "PostSampleAugmentation",
+    "PreSampleAugmentation",
     "RelativeOnset",
     "Track",
 ]
