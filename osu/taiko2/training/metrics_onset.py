@@ -15,14 +15,14 @@ unless stated otherwise):
 
   HIT:    FHIT or RHIT
   GOOD:   FGOOD or RGOOD
-  BAD:    not GOOD
+  MISS:   not GOOD
 
   I* variants — same comparisons against ANY onset in
   `target.all_future_bins` (not just the next one). Denominator is
   the number of samples that have at least one real future bin.
 
 A prediction of STOP for a non-STOP target counts as FMISS / RMISS /
-BAD / IBAD (total fail); a STOP target is excluded from all of the
+MISS / IMISS (total fail); a STOP target is excluded from all of the
 above denominators.
 
 Ratio thresholds are expressed as percent offsets (``rhit_pct=3``
@@ -173,7 +173,7 @@ class OnsetMetric(Metric):
             "onset/rmiss":          1.0 - (self._rgood / n),
             "onset/hit":            self._hit / n,
             "onset/good":           self._good / n,
-            "onset/bad":            1.0 - (self._good / n),
+            "onset/miss":           1.0 - (self._good / n),
             "onset/pred_stop_rate": self._pred_stop / n,
             "onset/n_total":        float(self._n_total),
             "onset/n_nonstop":      float(self._n_nonstop),
@@ -182,6 +182,6 @@ class OnsetMetric(Metric):
         if self._n_any_future > 0:
             out["onset/ihit"] = self._ihit / n_any
             out["onset/igood"] = self._igood / n_any
-            out["onset/ibad"] = 1.0 - (self._igood / n_any)
+            out["onset/imiss"] = 1.0 - (self._igood / n_any)
             out["onset/n_any_future"] = float(self._n_any_future)
         return out

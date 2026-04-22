@@ -75,9 +75,9 @@ def _batch_stats(
 
     Returned flat dict matches ``OnsetMetric.compute()`` exactly:
     ``onset/exact``, ``fhit``, ``fgood``, ``fmiss``, ``rhit``,
-    ``rgood``, ``rmiss``, ``hit``, ``good``, ``bad``, ``pred_stop_rate``,
+    ``rgood``, ``rmiss``, ``hit``, ``good``, ``miss``, ``pred_stop_rate``,
     ``n_total``, ``n_nonstop``, ``n_stop_target`` — plus ``ihit``,
-    ``igood``, ``ibad``, ``n_any_future`` when `target.all_future_bins`
+    ``igood``, ``imiss``, ``n_any_future`` when `target.all_future_bins`
     is present.
 
     ``b_pred`` = STOP class index (n_classes - 1).
@@ -130,7 +130,7 @@ def _run_eval(
     # Per-batch running sums for the eval postfix — independent of
     # `metrics`, so the bar works even when no MetricSet was passed.
     eval_hit_sum = 0.0
-    eval_bad_sum = 0.0
+    eval_miss_sum = 0.0
     eval_batches = 0
 
     raw_slices = list(_batch_slices(n, batch_size))
@@ -173,7 +173,7 @@ def _run_eval(
                 b_pred = _infer_b_pred(out)
                 bs = _batch_stats(out, tgt, b_pred=b_pred)
                 eval_hit_sum += bs["onset/hit"]
-                eval_bad_sum += bs["onset/bad"]
+                eval_miss_sum += bs["onset/miss"]
                 eval_batches += 1
                 batch_loss = float(result.loss.detach())
                 avg_loss = total_loss / max(n_seen, 1)
@@ -181,8 +181,8 @@ def _run_eval(
                     "loss": f"{batch_loss:.3f}/{avg_loss:.3f}",
                     "hit":  f"{bs['onset/hit']:.3f}/"
                             f"{eval_hit_sum / eval_batches:.3f}",
-                    "bad":  f"{bs['onset/bad']:.3f}/"
-                            f"{eval_bad_sum / eval_batches:.3f}",
+                    "miss":  f"{bs['onset/miss']:.3f}/"
+                            f"{eval_miss_sum / eval_batches:.3f}",
                 })
     out_dict: dict[str, float] = {}
     denom = max(n_seen, 1)
@@ -313,7 +313,7 @@ def train(
             # land via the eval bar on its own pass.
             epoch_loss_sum = 0.0
             epoch_hit_sum = 0.0
-            epoch_bad_sum = 0.0
+            epoch_miss_sum = 0.0
             epoch_n = 0
 
             for lo, hi in slices:
@@ -348,11 +348,11 @@ def train(
                 # Per-batch onset stats — computed inline so they can
                 # be both saved (into the step log alongside the loss
                 # sub-metrics) and shown in the tqdm postfix. Full set
-                # from OnsetMetric, not just hit/bad/exact.
+                # from OnsetMetric, not just hit/miss/exact.
                 b_pred = _infer_b_pred(out)
                 batch_onset = _batch_stats(out, tgt, b_pred=b_pred)
 
-                # Merge into a new LossResult so hooks see hit/bad/exact
+                # Merge into a new LossResult so hooks see hit/miss/exact
                 # alongside loss when MetricLoggerHook writes the step.
                 step_result = LossResult(
                     loss=result.loss,
@@ -364,7 +364,7 @@ def train(
                 batch_loss = float(result.loss.detach())
                 epoch_loss_sum += batch_loss
                 epoch_hit_sum += batch_onset["onset/hit"]
-                epoch_bad_sum += batch_onset["onset/bad"]
+                epoch_miss_sum += batch_onset["onset/miss"]
                 epoch_n += 1
                 if pbar is not None:
                     denom = max(epoch_n, 1)
@@ -377,9 +377,9 @@ def train(
                             f"{batch_onset['onset/hit']:.3f}/"
                             f"{epoch_hit_sum / denom:.3f}"
                         ),
-                        "bad": (
-                            f"{batch_onset['onset/bad']:.3f}/"
-                            f"{epoch_bad_sum / denom:.3f}"
+                        "miss": (
+                            f"{batch_onset['onset/miss']:.3f}/"
+                            f"{epoch_miss_sum / denom:.3f}"
                         ),
                     }
                     pbar.set_postfix(post)

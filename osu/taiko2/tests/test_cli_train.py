@@ -76,7 +76,7 @@ def _write_tiny_configs(cfg_dir: Path) -> None:
         "epochs": 1, "batch_size": 4, "learning_rate": 1e-3,
         "weight_decay": 0.0, "grad_clip": 1.0, "evals_per_epoch": 1,
         "amp": False, "num_workers": 0, "seed": 42,
-        "metric_to_watch": "onset/bad", "metric_lower_is_better": True,
+        "metric_to_watch": "onset/miss", "metric_lower_is_better": True,
     }))
     (cfg_dir / "data.json").write_text(json.dumps({
         "__class__": "osu.taiko2.data_samplers.detection:TaikoDetectionSamplerConfig",

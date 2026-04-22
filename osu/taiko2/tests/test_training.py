@@ -155,7 +155,7 @@ class TestOnsetMetric:
         assert out["onset/pred_stop_rate"] == 0.5
         # Only the second sample contributes to fhit/fgood.
         assert out["onset/fhit"] == 0.5
-        assert out["onset/bad"] == 0.5
+        assert out["onset/miss"] == 0.5
 
     def test_any_future_metrics(self):
         """IHIT counts a prediction that matches ANY upcoming onset."""
@@ -177,7 +177,7 @@ class TestOnsetMetric:
         # 180 is farther than 7 frames from 150 (diff 30) and ratio 181/151
         # gives |log| ≈ 0.18 > log(100/90) → not IGOOD either.
         assert out["onset/igood"] == pytest.approx(2 / 3)
-        assert out["onset/ibad"] == pytest.approx(1 / 3)
+        assert out["onset/imiss"] == pytest.approx(1 / 3)
 
     def test_reset(self):
         m = OnsetMetric(OnsetMetricConfig(b_pred=100))
@@ -342,7 +342,7 @@ class TestEndToEndLoop:
         )
 
         spec = RunSpec(root=tmp_path / "runs", name="r1")
-        metric_key = "onset/bad"
+        metric_key = "onset/miss"
         trainer_cfg = TrainerConfig(
             epochs=1, batch_size=4,
             learning_rate=1e-3, weight_decay=0.0,
@@ -403,7 +403,7 @@ class TestEndToEndLoop:
         cfg = TrainerConfig(
             epochs=1, batch_size=4, learning_rate=1e-3, weight_decay=0.0,
             grad_clip=1.0, evals_per_epoch=1,
-            metric_to_watch="onset/bad", metric_lower_is_better=True,
+            metric_to_watch="onset/miss", metric_lower_is_better=True,
         )
 
         # First run.

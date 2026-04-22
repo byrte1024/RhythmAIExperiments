@@ -194,7 +194,7 @@ class ConsoleLoggerHook(TrainerHook):
         self,
         *,
         keys: tuple[str, ...] = (
-            "loss", "onset/hit", "onset/bad", "onset/exact",
+            "loss", "onset/hit", "onset/miss", "onset/exact",
         ),
     ):
         self._keys = tuple(keys)
@@ -261,7 +261,7 @@ DEFAULT_CURVES: tuple[CurveSpec, ...] = (
     # Primary composites.
     CurveSpec(name="onset_hit",      key="onset/hit",          log_y=False),
     CurveSpec(name="onset_good",     key="onset/good",         log_y=False),
-    CurveSpec(name="onset_bad",      key="onset/bad",          log_y=False),
+    CurveSpec(name="onset_miss",     key="onset/miss",         log_y=False),
     CurveSpec(name="onset_exact",    key="onset/exact",        log_y=False),
     # Frame-based (±2 / ±7 bin windows).
     CurveSpec(name="onset_fhit",     key="onset/fhit",         log_y=False),
@@ -275,7 +275,7 @@ DEFAULT_CURVES: tuple[CurveSpec, ...] = (
     # real events (d_events ≥ 1).
     CurveSpec(name="onset_ihit",     key="onset/ihit",         log_y=False),
     CurveSpec(name="onset_igood",    key="onset/igood",        log_y=False),
-    CurveSpec(name="onset_ibad",     key="onset/ibad",         log_y=False),
+    CurveSpec(name="onset_imiss",    key="onset/imiss",        log_y=False),
     # Diagnostic: how often the model chooses STOP on non-STOP targets.
     CurveSpec(name="pred_stop_rate", key="onset/pred_stop_rate", log_y=False),
 )

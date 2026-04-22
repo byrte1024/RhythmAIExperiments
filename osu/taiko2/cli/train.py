@@ -186,7 +186,7 @@ def main(argv: list[str] | None = None) -> int:
     adapter = DetectionSampleAdapter(adapter_cfg)
 
     # Train metrics are per-epoch running means (reset each epoch) — the
-    # loop uses them for the tqdm postfix so "good_avg / bad_avg" show
+    # loop uses them for the tqdm postfix so "good_avg / miss_avg" show
     # during training, not just at eval boundaries.
     train_metrics = MetricSet(
         OnsetMetric(OnsetMetricConfig(b_pred=model_cfg.b_pred)),
