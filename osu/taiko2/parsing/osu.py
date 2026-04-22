@@ -169,6 +169,7 @@ def parse_osu_text(text: str) -> Track | None:
 
     return Track(
         beatmap_id=str(meta.get("beatmap_id", "")),
+        beatmapset_id=str(meta.get("beatmapset_id", "")),
         artist=str(meta.get("artist", "")),
         title=str(meta.get("title", "")),
         difficulty=difficulty,

@@ -25,7 +25,7 @@ class MelSampler(AudioSampler):
 
     @property
     def frame_ms(self) -> float:
-        return self.config.hop_length / self.config.sample_rate * 1000.0
+        return self.config.effective_hop_length / self.config.sample_rate * 1000.0
 
     def _ensure_modules(self) -> None:
         if self._mel_transform is not None:
@@ -35,7 +35,7 @@ class MelSampler(AudioSampler):
         self._mel_transform = torchaudio.transforms.MelSpectrogram(
             sample_rate=cfg.sample_rate,
             n_fft=cfg.n_fft,
-            hop_length=cfg.hop_length,
+            hop_length=cfg.effective_hop_length,
             n_mels=cfg.n_mels,
             f_min=cfg.f_min,
             f_max=cfg.f_max,

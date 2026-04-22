@@ -12,7 +12,7 @@ class FixedRateEventSampler(EventSampler):
 
     @property
     def bin_ms(self) -> float:
-        return 1000.0 / self.config.bins_per_second
+        return self.config.effective_bin_ms
 
     def bin_of(self, time_ms: float) -> int:
         return int(time_ms / self.bin_ms)

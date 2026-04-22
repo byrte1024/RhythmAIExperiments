@@ -62,6 +62,7 @@ class AudioRef:
 @dataclass(frozen=True, slots=True)
 class Track:
     beatmap_id: str
+    beatmapset_id: str
     artist: str
     title: str
     difficulty: Difficulty

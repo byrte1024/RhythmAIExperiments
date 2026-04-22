@@ -13,13 +13,16 @@ Output layout::
         features/{stem}.npy      # float16 (F, T)
         events/{chart_id}.npz    # bins + times_ms + kind_ids
 
-Usage::
+Usage (defaults give a clean 5 ms / 200 Hz grid on both axes)::
 
     python -m osu.taiko2.prepare_dataset \\
         --name taiko2_v1 \\
-        --charts-dir osu/taiko/charts \\
-        --audio-config '{"sample_rate": 22050}' \\
-        --event-config '{"bins_per_second": 200.454}'
+        --charts-dir osu/taiko/charts
+
+Equivalent explicit form::
+
+    --audio-config '{"sample_rate": 22000, "hop_divisor": 200}'
+    --event-config '{"divisor": 200}'
 """
 from __future__ import annotations
 

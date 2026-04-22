@@ -19,19 +19,59 @@ from .beatmap import Onset, OnsetBinned
 
 @dataclass(frozen=True, slots=True)
 class AudioSamplerConfig:
-    """Base: every sampler operates at a known sample rate."""
-    sample_rate: int
+    """Base: every sampler operates at a known sample rate.
+
+    Default 22000 Hz: divides evenly into common bin rates (200/400/500 bins
+    per second → exact integer hop_lengths), avoiding the sub-ms drift that
+    22050 Hz produced against a 5 ms event grid. See exp 14 for the bug
+    this default is designed to prevent.
+    """
+    sample_rate: int = 22000
 
 
 @dataclass(frozen=True, slots=True)
 class MelSamplerConfig(AudioSamplerConfig):
+    """Log-mel sampler config.
+
+    Hop can be specified as one of three equivalent fields:
+      - `hop_length`: samples (torchaudio's native parameter).
+      - `hop_ms`: target bin duration in ms (converted via sample_rate).
+      - `hop_divisor`: integer N for `hop_length = sample_rate // N`,
+         giving an exact-integer bin rate of N bins/s (lesson of exp 14 —
+         non-integer bin_ms like 4.9887ms accumulates drift).
+
+    At most one may be set. Default → `hop_length=110`, which at the
+    default `sample_rate=22000` yields exactly 5.000 ms / 200 fps.
+    """
     n_fft: int = 2048
-    hop_length: int = 110
+    hop_length: int | None = None
+    hop_ms: float | None = None
+    hop_divisor: int | None = None
     n_mels: int = 80
     f_min: float = 20.0
     f_max: float = 8000.0
     power: float = 2.0
     top_db: float = 80.0
+
+    def __post_init__(self):
+        given = [x for x in (self.hop_length, self.hop_ms, self.hop_divisor)
+                 if x is not None]
+        if len(given) > 1:
+            raise ValueError(
+                "MelSamplerConfig: specify at most one of hop_length, "
+                f"hop_ms, hop_divisor (got {len(given)})."
+            )
+        if not given:
+            object.__setattr__(self, "hop_length", 110)
+
+    @property
+    def effective_hop_length(self) -> int:
+        """Resolve hop_length regardless of which field the user set."""
+        if self.hop_length is not None:
+            return int(self.hop_length)
+        if self.hop_ms is not None:
+            return int(round(self.hop_ms * self.sample_rate / 1000.0))
+        return int(self.sample_rate // self.hop_divisor)
 
 
 class AudioSampler(ABC):
@@ -112,13 +152,40 @@ class AudioSampler(ABC):
 
 @dataclass(frozen=True, slots=True)
 class EventSamplerConfig:
-    """Time-quantization grid for onsets. Framerate in bins per second.
+    """Time-quantization grid for onsets.
 
-    May be set to match an AudioSampler's frame rate (e.g. sample_rate /
-    hop_length) or be independent — coarser for bar-level targets, finer
-    for sub-frame precision.
+    Specify at most one of:
+      - `bins_per_second`: float, direct rate.
+      - `bin_ms`: float, direct bin duration in ms.
+      - `divisor`: integer N for `bin_ms = 1000 / N` (i.e. N bins/s with
+         integer exactness — avoids the sub-ms drift that bit experiment
+         14's data alignment).
+
+    Default → `divisor=200` (5.000 ms per bin, matches the default audio
+    frame rate of 200 fps at sample_rate=22000, hop_length=110).
     """
-    bins_per_second: float
+    bins_per_second: float | None = None
+    bin_ms: float | None = None
+    divisor: int | None = None
+
+    def __post_init__(self):
+        given = [x for x in (self.bins_per_second, self.bin_ms, self.divisor)
+                 if x is not None]
+        if len(given) > 1:
+            raise ValueError(
+                "EventSamplerConfig: specify at most one of bins_per_second, "
+                f"bin_ms, divisor (got {len(given)})."
+            )
+        if not given:
+            object.__setattr__(self, "divisor", 200)
+
+    @property
+    def effective_bin_ms(self) -> float:
+        if self.bin_ms is not None:
+            return float(self.bin_ms)
+        if self.bins_per_second is not None:
+            return 1000.0 / self.bins_per_second
+        return 1000.0 / self.divisor
 
 
 class EventSampler(ABC):
