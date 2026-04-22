@@ -1,0 +1,22 @@
+{
+  "experiment_id": "NNN-slug",
+  "run_name": "exp_NNN_slug",
+  "baseline_experiment": "NNN-previous-slug",
+  "eval_step": null,
+  "final_metrics": {
+    "val/single/hit_e1": null,
+    "val/single/miss": null,
+    "train/overall/loss": null
+  },
+  "baseline_metrics": {
+    "val/single/hit_e1": null,
+    "val/single/miss": null,
+    "train/overall/loss": null
+  },
+  "deltas": {
+    "val/single/hit_e1": null,
+    "val/single/miss": null,
+    "train/overall/loss": null
+  },
+  "hypothesis_outcome": null
+}

@@ -1,0 +1,4 @@
+{
+  "__class__": "osu.taiko2.data_samplers.detection:TaikoDetectionSamplerConfig",
+  "_comment": "Snapshot of the DataSamplerConfig. Includes split, overlap, window sizes — anything that changes what the model sees."
+}

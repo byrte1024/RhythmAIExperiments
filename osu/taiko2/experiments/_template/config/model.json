@@ -1,0 +1,4 @@
+{
+  "__class__": "osu.taiko2.models.event_embedding:EventEmbeddingConfig",
+  "_comment": "Snapshot of the ModelConfig used. The __class__ string is the same format the checkpoint loader uses — lets a reader of this folder reproduce the architecture without grepping the run_dir."
+}

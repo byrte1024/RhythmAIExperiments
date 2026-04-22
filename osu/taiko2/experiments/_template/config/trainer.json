@@ -1,0 +1,4 @@
+{
+  "__class__": "osu.taiko2.domain.training:TrainerConfig",
+  "_comment": "Snapshot of the TrainerConfig. Orchestration knobs only (optimizer/scheduler/evals); model + loss fields live in their own files."
+}

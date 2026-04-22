@@ -1,0 +1,4 @@
+{
+  "__class__": "osu.taiko2.training.losses:OnsetLossConfig",
+  "_comment": "Snapshot of the LossConfig. Same __class__ format as model.json."
+}
