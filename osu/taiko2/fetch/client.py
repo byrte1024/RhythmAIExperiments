@@ -1,7 +1,7 @@
 """Minimal osu! API v2 client: OAuth client-credentials token + batch fetch.
 
-Credentials come from the `OSU_CLIENT_ID` and `OSU_CLIENT_SECRET` secrets
-via `osu.taiko2.secrets`. Never accept them as call arguments — keeps keys
+Credentials come from the `OSU_CLIENT_ID` and `OSU_CLIENT_SECRET` credentials
+via `osu.taiko2.credentials`. Never accept them as call arguments — keeps keys
 out of call sites, process lists, and logs.
 
 Referenced against osu/taiko/datasets/fetch_ranked_status.py (now removed):
@@ -12,7 +12,7 @@ from __future__ import annotations
 import time
 from typing import Any
 
-from .. import secrets
+from .. import credentials
 
 TOKEN_URL = "https://osu.ppy.sh/oauth/token"
 API_BASE = "https://osu.ppy.sh/api/v2"
@@ -28,8 +28,8 @@ class OsuV2Client:
 
     def _authenticate(self) -> str:
         import requests
-        client_id = secrets.require("OSU_CLIENT_ID")
-        client_secret = secrets.require("OSU_CLIENT_SECRET")
+        client_id = credentials.require("OSU_CLIENT_ID")
+        client_secret = credentials.require("OSU_CLIENT_SECRET")
         resp = requests.post(
             TOKEN_URL,
             json={

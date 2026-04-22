@@ -1,4 +1,10 @@
 """Domain types for taiko2."""
+from .adapter import SampleToModelAdapter
+from .augmentation import (
+    AugmentationPipeline,
+    PostSampleAugmentation,
+    PreSampleAugmentation,
+)
 from .beatmap import (
     AudioRef,
     Density,
@@ -10,6 +16,7 @@ from .beatmap import (
     RelativeOnset,
     Track,
 )
+from .chart import Chart, ChartComparison, ChartMetrics
 from .dataset import (
     AudioSampler,
     AudioSamplerConfig,
@@ -19,32 +26,58 @@ from .dataset import (
     EventSamplerConfig,
     MelSamplerConfig,
 )
-from .augmentation import (
-    AugmentationPipeline,
-    PostSampleAugmentation,
-    PreSampleAugmentation,
+from .loss import Loss, LossConfig, LossResult
+from .metrics import (
+    Metric,
+    MetricConfig,
+    MetricInput,
+    MetricSet,
+    MetricWindow,
+    MetricsReport,
 )
-from .chart import Chart, ChartComparison, ChartMetrics
+from .model import Model, ModelConfig, ModelInput, ModelOutput, ModelTarget
 from .sampling import DataSample, DataSampler, DataSamplerConfig
+from .training import (
+    CheckpointMeta,
+    RunSpec,
+    TrainerConfig,
+    TrainerHook,
+    TrainingState,
+)
 
 __all__ = [
     "AudioRef",
     "AudioSampler",
     "AudioSamplerConfig",
+    "AugmentationPipeline",
     "Chart",
     "ChartComparison",
     "ChartEntry",
     "ChartMetrics",
-    "DatasetManifest",
+    "CheckpointMeta",
     "DataSample",
     "DataSampler",
     "DataSamplerConfig",
+    "DatasetManifest",
     "Density",
     "Difficulty",
     "EventSampler",
     "EventSamplerConfig",
+    "Loss",
+    "LossConfig",
+    "LossResult",
     "MelSamplerConfig",
-    "AugmentationPipeline",
+    "Metric",
+    "MetricConfig",
+    "MetricInput",
+    "MetricSet",
+    "MetricWindow",
+    "MetricsReport",
+    "Model",
+    "ModelConfig",
+    "ModelInput",
+    "ModelOutput",
+    "ModelTarget",
     "Onset",
     "OnsetBinned",
     "OnsetKind",
@@ -52,5 +85,10 @@ __all__ = [
     "PostSampleAugmentation",
     "PreSampleAugmentation",
     "RelativeOnset",
+    "RunSpec",
+    "SampleToModelAdapter",
     "Track",
+    "TrainerConfig",
+    "TrainerHook",
+    "TrainingState",
 ]
