@@ -19,6 +19,7 @@ dependencies = [
     "matplotlib==3.10.8",
     "pygame==2.6.1",
     "triton-windows==3.6.0.post25 ; sys_platform == 'win32'",
+    "yt-dlp==2026.3.17",
 ]
 
 [dependency-groups]
