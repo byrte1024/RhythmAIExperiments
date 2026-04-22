@@ -86,8 +86,8 @@ Kind-code table in the on-disk `.npz`:
 | Cursor at `1 ≤ ei ≤ N-1` | `bins[ei - 1]` |
 | Cursor at trailing `ei = N` | `bins[N-1]` |
 | Min cursor bin filter | 6000 (taiko1 default) |
-| Allowed overlap forward | 500 bins |
-| Allowed overlap backward | 500 bins |
+| Allowed overlap forward | 0 bins (taiko1 parity — no overlap filtering) |
+| Allowed overlap backward | 0 bins (taiko1 parity — no overlap filtering) |
 | Past-event padding | Start (oldest-first, back-aligned) |
 | Future-event padding | End |
 | **Subsample** | **1 (full dataset)** |
@@ -371,11 +371,13 @@ AR loop (from `AutoregressivePredictor.predict`):
 - Total onsets: 6 934 185.
 - Train split (seed 42, 90 %): ≈ 9 090 charts.
 - Val split (seed 42, 10 %): ≈ 958 charts.
-- Raw training samples after overlap filter (500 / 500) and
-  `min_cursor_bin = 6000`: ≈ 360 k (the 6000-bin filter trims the
-  early-silence portion).
-- **No subsample: ≈ 360 k training samples**.
-- Val samples (same filter, full split): ≈ 36 k.
+- With `allowed_overlap_forward = allowed_overlap_back = 0`, the
+  sampler treats every event cursor as a valid sample (matching
+  taiko1, which had no overlap-filtering logic). The
+  `min_cursor_bin = 6000` filter drops early-silence cursors but the
+  per-event expansion leaves the total sample count in the millions
+  rather than the ≈ 360 k that overlap-filtering would have given.
+- **Subsample = 1 (full dataset).**
 
 ---
 

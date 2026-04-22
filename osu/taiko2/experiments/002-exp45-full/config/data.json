@@ -6,6 +6,8 @@
     "c_events": 128,
     "d_events": 1,
     "min_cursor_bin": 6000,
+    "allowed_overlap_forward": 0,
+    "allowed_overlap_back": 0,
     "subsample": 1,
     "split_ratios": [["train", 0.9], ["val", 0.1]],
     "split_seed": 42

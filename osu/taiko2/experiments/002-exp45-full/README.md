@@ -108,6 +108,12 @@ Differences from #001 (smoke-test → full reference):
 - `config/data.json — min_cursor_bin: 0 → 6000` (taiko1 default; not
   needed at subsample-16, but standard at full data because early-
   song samples are mostly silent).
+- `config/data.json — allowed_overlap_forward: <default 500> → 0`
+  and `allowed_overlap_back: <default 500> → 0`. The taiko1 sampler
+  had no overlap-filtering logic at all — every event cursor was a
+  training sample. Setting both to 0 reproduces that behavior. Sample
+  count rises by roughly an order of magnitude vs the overlap-filtered
+  regime #001 used, which is intentional for a full recreation.
 - `config/trainer.json — batch_size: 32 → 64`.
 - `config/trainer.json — epochs: 2 → 50`.
 - `config/adapter.json`, `config/model.json`, `config/loss.json`
