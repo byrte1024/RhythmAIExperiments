@@ -9,8 +9,7 @@ cross-repo links, not duplicated here.
 | # | Name | Status | Key result |
 |---|------|--------|------------|
 | [001](001-exp45-smoke/) | exp 45 port, subsample-16 smoke | `Complete` | Pipeline works end-to-end; miss 0.72 → 0.55, hit 0.13 → 0.28 in 2 epochs on 1/16 data. Still descending at end. |
-| [002](002-exp45-full/)  | exp 45 full recreation       | `Running`  | Eval 3 / 20: HIT 0.710, MISS 0.279. Near taiko1 exp 45's 71.9 % already at 3/4 of epoch 1. |
-| [003](003-corpus-shape-reference/) | corpus gap / ratio shape reference | `Planned` | Data-gathering pass for the new shape metrics over `taiko2_v1`. |
+| [002](002-exp45-full/)  | exp 45 full recreation       | `Planned`  | — |
 
 ---
 
