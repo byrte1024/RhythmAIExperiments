@@ -93,17 +93,38 @@ class DetectionSampleAdapter(
     def make_target(
         self, samples: list[TaikoDetectionSample], *, device: torch.device,
     ) -> EventEmbeddingTarget:
-        stop_idx = self.config.b_pred
-        targets = np.empty(len(samples), dtype=np.int64)
+        B = len(samples)
+        b_pred = self.config.b_pred
+        stop_idx = b_pred
+
+        # Primary target: next onset or STOP.
+        targets = np.empty(B, dtype=np.int64)
         for i, s in enumerate(samples):
             if bool(s.future_events_mask[0]):
                 targets[i] = stop_idx
                 continue
             offset = s.future_events[0].cursor_offset
-            if offset < 0 or offset >= self.config.b_pred:
+            if offset < 0 or offset >= b_pred:
                 targets[i] = stop_idx
             else:
                 targets[i] = offset
+
+        # Optional all-future target (for I* metrics). Populate whenever
+        # the sampler's d_events ≥ 1 — unused slots stay masked.
+        K = len(samples[0].future_events)
+        all_bins = np.zeros((B, K), dtype=np.int64)
+        all_mask = np.ones((B, K), dtype=bool)
+        for i, s in enumerate(samples):
+            for j in range(K):
+                if bool(s.future_events_mask[j]):
+                    continue
+                off = s.future_events[j].cursor_offset
+                if 0 <= off < b_pred:
+                    all_bins[i, j] = off
+                    all_mask[i, j] = False
+
         return EventEmbeddingTarget(
             target_bin=torch.from_numpy(targets).to(device=device),
+            all_future_bins=torch.from_numpy(all_bins).to(device=device),
+            all_future_mask=torch.from_numpy(all_mask).to(device=device),
         )

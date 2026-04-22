@@ -119,8 +119,17 @@ class EventEmbeddingTarget(ModelTarget):
     Class `n_classes - 1` is STOP (no onset within `b_pred`). The loss
     derives `is_stop = (target_bin == n_classes - 1)` rather than
     carrying a redundant bool.
+
+    `all_future_bins` / `all_future_mask` are OPTIONAL metric-side
+    state: the full list of cursor-relative offsets for any future
+    onset falling inside [0, b_pred) (not just the next one). Required
+    for I-variant metrics (IHIT / IGOOD / IBAD) that count a
+    prediction correct if it matches ANY upcoming onset. The loss
+    ignores these fields entirely.
     """
-    target_bin: torch.Tensor        # (B,) int64 in [0, n_classes-1]
+    target_bin: torch.Tensor                # (B,) int64 in [0, n_classes-1]
+    all_future_bins: torch.Tensor | None = None  # (B, K) int64 — cursor offsets
+    all_future_mask: torch.Tensor | None = None  # (B, K) bool, True = padded
 
 
 # ─────────────────────────── model ────────────────────────────────────
