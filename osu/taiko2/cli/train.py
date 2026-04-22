@@ -126,6 +126,17 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "--no-augmentation", action="store_true",
         help="Skip the exp 45 augmentation set (bare training).",
     )
+    p.add_argument(
+        "--resume", action="store_true",
+        help=(
+            "Resume the SAME run from the last finished eval. Loads "
+            "`{run_dir}/eval_{step}/checkpoint.pt` with the largest step, "
+            "restores model / optimizer / scheduler / training-state, and "
+            "truncates metrics.jsonl + later eval_{N}/ dirs so stats "
+            "match the checkpoint exactly. Without this flag, the loop "
+            "auto-resumes from latest.pt if present (legacy behavior)."
+        ),
+    )
     return p.parse_args(argv)
 
 
@@ -228,6 +239,7 @@ def main(argv: list[str] | None = None) -> int:
         eval_artifacts=eval_artifacts,
         train_weights=train_weights,
         device=args.device,
+        resume=args.resume,
     )
     print(
         f"done. final step={state.step:,} epoch={state.epoch} "

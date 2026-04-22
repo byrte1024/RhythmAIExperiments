@@ -265,3 +265,83 @@ def load_latest_if_any(spec: RunSpec) -> Checkpoint | None:
     if spec.latest_checkpoint.exists():
         return Checkpoint.load(spec.latest_checkpoint)
     return None
+
+
+# ─────────────────────────── per-eval resume ─────────────────────────
+
+def find_last_eval_checkpoint(spec: RunSpec) -> "tuple[Path, int] | None":
+    """Scan ``{run_dir}/eval_{step}/checkpoint.pt`` snapshots and return
+    the (path, step) with the largest `step`.
+
+    Differs from ``load_latest_if_any`` (which reads ``latest.pt``) in
+    that it ignores any mid-epoch snapshot the trainer may have written
+    on crash/shutdown — only eval boundaries count. Returns None if no
+    eval checkpoint exists.
+    """
+    run_dir = spec.run_dir
+    if not run_dir.exists():
+        return None
+    best: tuple[Path, int] | None = None
+    for child in run_dir.iterdir():
+        if not child.is_dir() or not child.name.startswith("eval_"):
+            continue
+        try:
+            step = int(child.name[len("eval_"):])
+        except ValueError:
+            continue
+        ckpt = child / "checkpoint.pt"
+        if not ckpt.exists():
+            continue
+        if best is None or step > best[1]:
+            best = (ckpt, step)
+    return best
+
+
+def truncate_stats_after_step(spec: RunSpec, step: int) -> None:
+    """Drop everything the trainer produced after ``step`` so an eval-
+    boundary resume starts with clean stats. Specifically:
+
+      - Rewrite ``metrics.jsonl`` keeping only rows with ``row["step"]
+        <= step`` (JSON-decode failures are dropped conservatively).
+      - Delete any ``eval_{N}/`` directories with ``N > step``.
+      - Refresh ``latest.pt`` from the resumed eval's checkpoint.
+
+    Curves live under ``{run_dir}/curves/`` and are regenerated from the
+    truncated JSONL at train-start by ``MetricCurvesHook``, so they do
+    not need explicit cleanup.
+    """
+    path = spec.metrics_path
+    if path.exists():
+        import json
+        kept: list[str] = []
+        with path.open("r", encoding="utf-8") as f:
+            for line in f:
+                if not line.strip():
+                    continue
+                try:
+                    row = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                row_step = row.get("step")
+                if isinstance(row_step, int) and row_step > step:
+                    continue
+                # Skip any `train_end` line from a prior crashed session.
+                if row.get("event") == "train_end":
+                    continue
+                kept.append(line if line.endswith("\n") else line + "\n")
+        tmp = path.with_suffix(path.suffix + ".tmp")
+        tmp.write_text("".join(kept), encoding="utf-8")
+        os.replace(tmp, path)
+
+    # Delete eval_{N}/ for N > step.
+    if spec.run_dir.exists():
+        import shutil
+        for child in spec.run_dir.iterdir():
+            if not child.is_dir() or not child.name.startswith("eval_"):
+                continue
+            try:
+                n = int(child.name[len("eval_"):])
+            except ValueError:
+                continue
+            if n > step:
+                shutil.rmtree(child, ignore_errors=True)

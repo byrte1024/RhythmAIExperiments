@@ -30,7 +30,12 @@ from ..domain.metrics import MetricInput, MetricSet
 from ..domain.model import Model
 from ..domain.sampling import DataSample, DataSampler
 from ..domain.training import RunSpec, TrainerConfig, TrainerHook, TrainingState
-from ..persistence.checkpoint import load_latest_if_any
+from ..persistence.checkpoint import (
+    Checkpoint,
+    find_last_eval_checkpoint,
+    load_latest_if_any,
+    truncate_stats_after_step,
+)
 from .hooks import (
     CheckpointHook,
     ConsoleLoggerHook,
@@ -214,8 +219,19 @@ def train(
     extra_hooks: Sequence[TrainerHook] = (),
     device: torch.device | str = torch.device("cpu"),
     progress: bool = True,
+    resume: bool = False,
 ) -> TrainingState:
-    """Run training to completion (or resume if a checkpoint exists)."""
+    """Run training to completion.
+
+    Resume behavior:
+      - ``resume=False`` (default): if ``latest.pt`` exists, auto-resume
+        from it — same behavior the loop has always had.
+      - ``resume=True``: resume from the last finished eval snapshot
+        (``eval_{step}/checkpoint.pt`` with the largest step). Any
+        metrics.jsonl rows and eval directories past that step are
+        truncated so the run picks up with clean stats matching the
+        checkpoint's TrainingState.
+    """
     device = torch.device(device) if isinstance(device, str) else device
     model.to(device)
     loss.to(device)
@@ -239,13 +255,35 @@ def train(
 
     spec.ensure()
 
-    # Resume if possible.
+    # Resume.
     state = TrainingState(started_at=time.strftime("%Y-%m-%d %H:%M:%S"))
-    resumed = load_latest_if_any(spec)
-    if resumed is not None:
-        state = resumed.restore_to(
+    if resume:
+        hit = find_last_eval_checkpoint(spec)
+        if hit is None:
+            raise FileNotFoundError(
+                f"--resume: no eval_{{step}}/checkpoint.pt under "
+                f"{spec.run_dir}. Nothing to resume from."
+            )
+        ckpt_path, last_step = hit
+        print(
+            f"[train] resuming from eval checkpoint @ step {last_step}: "
+            f"{ckpt_path}"
+        )
+        resumed_ckpt = Checkpoint.load(ckpt_path)
+        state = resumed_ckpt.restore_to(
             model=model, optimizer=optimizer, scheduler=scheduler,
         )
+        # Truncate metrics.jsonl + delete later eval_{N}/ dirs so stats
+        # start clean at the resumed step. Then refresh latest.pt so
+        # subsequent restarts see a coherent snapshot.
+        truncate_stats_after_step(spec, last_step)
+        resumed_ckpt.save(spec.latest_checkpoint)
+    else:
+        resumed = load_latest_if_any(spec)
+        if resumed is not None:
+            state = resumed.restore_to(
+                model=model, optimizer=optimizer, scheduler=scheduler,
+            )
 
     # Hooks: defaults + user-provided.
     # Order matters — MetricLogger must fire BEFORE ConsoleLogger so

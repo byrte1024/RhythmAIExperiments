@@ -427,3 +427,68 @@ class TestEndToEndLoop:
         )
         # Resumed at step_a, then no further steps (epochs=1 → already done).
         assert state_b.step == step_a
+
+    def test_resume_flag_drops_post_eval_stats(self, tmp_path: Path):
+        """`--resume` finds the last eval's checkpoint and truncates any
+        metrics.jsonl rows + eval_{N}/ directories past that step."""
+        import json, shutil  # noqa: E401
+
+        b_pred = 40
+        _, train_s, val_s, model, loss, adapter = self._make_all(
+            tmp_path, b_pred=b_pred,
+        )
+        spec = RunSpec(root=tmp_path / "runs", name="r_resume")
+        cfg = TrainerConfig(
+            epochs=1, batch_size=4, learning_rate=1e-3, weight_decay=0.0,
+            grad_clip=1.0, evals_per_epoch=1,
+            metric_to_watch="onset/miss", metric_lower_is_better=True,
+        )
+        state_a = train(
+            spec=spec, trainer_config=cfg,
+            model=model, loss=loss, adapter=adapter,
+            train_sampler=train_s, val_sampler=val_s,
+            val_metrics=MetricSet(OnsetMetric(OnsetMetricConfig(b_pred=b_pred))),
+        )
+        last_step = state_a.step
+        assert last_step > 0
+
+        # Simulate mid-epoch garbage past the eval: fake extra step rows
+        # in metrics.jsonl + a bogus eval_{step+1}/ directory. `--resume`
+        # should strip both.
+        with spec.metrics_path.open("a", encoding="utf-8") as f:
+            f.write(json.dumps({
+                "event": "step", "step": last_step + 7, "epoch": 1,
+                "wall_time": 0, "train/batch/loss": 99.0,
+            }) + "\n")
+        bogus_dir = spec.run_dir / f"eval_{last_step + 11}"
+        bogus_dir.mkdir()
+        # No checkpoint.pt inside — find_last_eval_checkpoint should not
+        # select this dir, but truncate_stats_after_step should still
+        # delete it as "past the resumed step".
+        (bogus_dir / "artifact.txt").write_text("leftover")
+
+        # Resume. Per-eval checkpoints are snapshotted inside the epoch
+        # (before `state.epoch += 1`) so resume restarts at epoch=0 and
+        # replays the rest of epoch 0 — that's the documented semantics
+        # of "state right after the last eval finished". We don't assert
+        # on final step count; we assert the truncation side effects.
+        fresh_model = EventEmbeddingDetector(model.config)
+        fresh_loss = OnsetLoss(loss.config)
+        train(
+            spec=spec, trainer_config=cfg,
+            model=fresh_model, loss=fresh_loss, adapter=adapter,
+            train_sampler=train_s, val_sampler=val_s,
+            val_metrics=MetricSet(OnsetMetric(OnsetMetricConfig(b_pred=b_pred))),
+            resume=True,
+        )
+
+        # Truncation evidence:
+        with spec.metrics_path.open("r", encoding="utf-8") as f:
+            rows = [json.loads(l) for l in f if l.strip()]
+        assert not any(
+            r.get("event") == "step" and r.get("step") == last_step + 7
+            for r in rows
+        ), "bogus mid-epoch step row survived --resume truncation"
+        assert not bogus_dir.exists(), (
+            "bogus future eval_{N}/ dir survived --resume truncation"
+        )

@@ -159,67 +159,95 @@ class AutoregressivePredictor(ChartPredictor[AutoregressivePredictorConfig]):
         step = 0
         bin_ms = self._event_sampler.bin_ms
 
-        while cursor_bin < max_bin and step < self.config.max_events:
-            ctx = ARContext(
-                cursor_bin=cursor_bin,
-                step=step,
-                max_bin=max_bin,
-                past_onsets=tuple(past_onsets),
+        pbar: Any = None
+        try:
+            from tqdm.auto import tqdm
+            pbar = tqdm(
+                total=int(max_bin), unit="bin",
+                desc="AR infer", leave=False,
             )
-            inp = self._input_builder.build(
-                cursor_bin=cursor_bin,
-                past_onsets=ctx.past_onsets,
-                audio_features=features,
-                conditioning=conditioning,
-                device=self._device,
-            )
-            out = self._model.predict(inp)
-            decision = self._decoder.decode(out, ctx)
+        except ImportError:
+            pbar = None
 
-            cursor_before = cursor_bin
-            placed: list[int] = []
+        try:
+            while cursor_bin < max_bin and step < self.config.max_events:
+                ctx = ARContext(
+                    cursor_bin=cursor_bin,
+                    step=step,
+                    max_bin=max_bin,
+                    past_onsets=tuple(past_onsets),
+                )
+                inp = self._input_builder.build(
+                    cursor_bin=cursor_bin,
+                    past_onsets=ctx.past_onsets,
+                    audio_features=features,
+                    conditioning=conditioning,
+                    device=self._device,
+                )
+                out = self._model.predict(inp)
+                decision = self._decoder.decode(out, ctx)
 
-            if decision.is_stop:
-                cursor_bin += self.config.hop_bins_on_stop
-            else:
-                # Emit every onset in order. Each offset is cursor-
-                # relative against the *original* cursor (decoder's
-                # contract), so we compute absolute bins from
-                # cursor_before — not from the running cursor_bin.
-                for offset in decision.bin_offsets:
-                    if offset < self.config.min_onset_gap_bins:
-                        continue
-                    new_bin = cursor_before + offset
-                    if new_bin <= cursor_bin:
-                        # Out of order or duplicate — drop it.
-                        continue
-                    past_onsets.append(OnsetBinned(
-                        time_ms=int(round(new_bin * bin_ms)),
-                        kind=self.config.default_kind,
-                        bin=new_bin,
-                    ))
-                    cursor_bin = new_bin
-                    placed.append(new_bin)
-                if not placed:
-                    # Decoder returned offsets but none survived the
-                    # gap/monotonic filter. Advance like STOP so we
-                    # don't loop forever.
-                    cursor_bin = cursor_before + self.config.hop_bins_on_stop
+                cursor_before = cursor_bin
+                placed: list[int] = []
 
-            if log_fh is not None:
-                log_fh.write(json.dumps({
-                    "step": step,
-                    "cursor_bin": cursor_before,
-                    "cursor_bin_after": cursor_bin,
-                    "is_stop": decision.is_stop,
-                    "bin_offsets": list(decision.bin_offsets),
-                    "confidences": list(decision.confidences),
-                    "n_placed": len(placed),
-                    **decision.extras,
-                }) + "\n")
-                log_fh.flush()
+                if decision.is_stop:
+                    cursor_bin += self.config.hop_bins_on_stop
+                else:
+                    # Emit every onset in order. Each offset is cursor-
+                    # relative against the *original* cursor (decoder's
+                    # contract), so we compute absolute bins from
+                    # cursor_before — not from the running cursor_bin.
+                    for offset in decision.bin_offsets:
+                        if offset < self.config.min_onset_gap_bins:
+                            continue
+                        new_bin = cursor_before + offset
+                        if new_bin <= cursor_bin:
+                            # Out of order or duplicate — drop it.
+                            continue
+                        past_onsets.append(OnsetBinned(
+                            time_ms=int(round(new_bin * bin_ms)),
+                            kind=self.config.default_kind,
+                            bin=new_bin,
+                        ))
+                        cursor_bin = new_bin
+                        placed.append(new_bin)
+                    if not placed:
+                        # Decoder returned offsets but none survived the
+                        # gap/monotonic filter. Advance like STOP so we
+                        # don't loop forever.
+                        cursor_bin = (
+                            cursor_before + self.config.hop_bins_on_stop
+                        )
 
-            step += 1
+                if log_fh is not None:
+                    log_fh.write(json.dumps({
+                        "step": step,
+                        "cursor_bin": cursor_before,
+                        "cursor_bin_after": cursor_bin,
+                        "is_stop": decision.is_stop,
+                        "bin_offsets": list(decision.bin_offsets),
+                        "confidences": list(decision.confidences),
+                        "n_placed": len(placed),
+                        **decision.extras,
+                    }) + "\n")
+                    log_fh.flush()
+
+                if pbar is not None:
+                    # Clamp the update so a decision past `max_bin`
+                    # doesn't overshoot the progress bar total.
+                    delta = min(cursor_bin, max_bin) - cursor_before
+                    if delta > 0:
+                        pbar.update(delta)
+                    pbar.set_postfix(
+                        onsets=len(past_onsets),
+                        step=step,
+                        refresh=False,
+                    )
+
+                step += 1
+        finally:
+            if pbar is not None:
+                pbar.close()
 
         return past_onsets
 
