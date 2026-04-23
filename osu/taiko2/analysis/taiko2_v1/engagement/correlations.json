@@ -1,0 +1,2018 @@
+[
+  {
+    "engagement_field": "pass_rate",
+    "chart_field": "ioi_mean_ms",
+    "n": 10027,
+    "r": 0.6559,
+    "abs_r": 0.6559
+  },
+  {
+    "engagement_field": "pass_rate",
+    "chart_field": "ioi_median_ms",
+    "n": 10027,
+    "r": 0.6215,
+    "abs_r": 0.6215
+  },
+  {
+    "engagement_field": "pass_rate",
+    "chart_field": "gap_peak_mass_total",
+    "n": 10027,
+    "r": -0.6118,
+    "abs_r": 0.6118
+  },
+  {
+    "engagement_field": "pass_rate",
+    "chart_field": "density_mean",
+    "n": 10027,
+    "r": -0.6067,
+    "abs_r": 0.6067
+  },
+  {
+    "engagement_field": "pass_rate",
+    "chart_field": "ioi_p95_ms",
+    "n": 10027,
+    "r": 0.6059,
+    "abs_r": 0.6059
+  },
+  {
+    "engagement_field": "pass_rate",
+    "chart_field": "events_per_sec",
+    "n": 10027,
+    "r": -0.6042,
+    "abs_r": 0.6042
+  },
+  {
+    "engagement_field": "pass_rate",
+    "chart_field": "star_rating",
+    "n": 10027,
+    "r": -0.6011,
+    "abs_r": 0.6011
+  },
+  {
+    "engagement_field": "pass_rate",
+    "chart_field": "ratio_peak_mass_total",
+    "n": 10027,
+    "r": -0.5909,
+    "abs_r": 0.5909
+  },
+  {
+    "engagement_field": "pass_rate",
+    "chart_field": "total_events",
+    "n": 10027,
+    "r": -0.5895,
+    "abs_r": 0.5895
+  },
+  {
+    "engagement_field": "pass_rate",
+    "chart_field": "density_peak",
+    "n": 10027,
+    "r": -0.588,
+    "abs_r": 0.588
+  },
+  {
+    "engagement_field": "pass_rate",
+    "chart_field": "dominant_ioi_ms",
+    "n": 10027,
+    "r": 0.5577,
+    "abs_r": 0.5577
+  },
+  {
+    "engagement_field": "pass_rate",
+    "chart_field": "density_std",
+    "n": 10027,
+    "r": -0.527,
+    "abs_r": 0.527
+  },
+  {
+    "engagement_field": "pass_rate",
+    "chart_field": "duration_s",
+    "n": 10027,
+    "r": -0.4724,
+    "abs_r": 0.4724
+  },
+  {
+    "engagement_field": "pass_rate",
+    "chart_field": "ioi_p99_ms",
+    "n": 10027,
+    "r": 0.4647,
+    "abs_r": 0.4647
+  },
+  {
+    "engagement_field": "pass_rate",
+    "chart_field": "over_pspace_self",
+    "n": 10027,
+    "r": -0.4591,
+    "abs_r": 0.4591
+  },
+  {
+    "engagement_field": "playcount",
+    "chart_field": "events_per_sec",
+    "n": 10027,
+    "r": 0.378,
+    "abs_r": 0.378
+  },
+  {
+    "engagement_field": "playcount",
+    "chart_field": "density_mean",
+    "n": 10027,
+    "r": 0.3757,
+    "abs_r": 0.3757
+  },
+  {
+    "engagement_field": "pass_rate",
+    "chart_field": "ratio_metronome_distance",
+    "n": 10027,
+    "r": 0.3515,
+    "abs_r": 0.3515
+  },
+  {
+    "engagement_field": "playcount",
+    "chart_field": "star_rating",
+    "n": 10027,
+    "r": 0.3433,
+    "abs_r": 0.3433
+  },
+  {
+    "engagement_field": "bpm_set",
+    "chart_field": "density_mean",
+    "n": 10027,
+    "r": 0.3347,
+    "abs_r": 0.3347
+  },
+  {
+    "engagement_field": "bpm_set",
+    "chart_field": "events_per_sec",
+    "n": 10027,
+    "r": 0.3294,
+    "abs_r": 0.3294
+  },
+  {
+    "engagement_field": "playcount",
+    "chart_field": "density_peak",
+    "n": 10027,
+    "r": 0.3269,
+    "abs_r": 0.3269
+  },
+  {
+    "engagement_field": "bpm_set",
+    "chart_field": "density_peak",
+    "n": 10027,
+    "r": 0.3205,
+    "abs_r": 0.3205
+  },
+  {
+    "engagement_field": "bpm_set",
+    "chart_field": "star_rating",
+    "n": 10027,
+    "r": 0.3174,
+    "abs_r": 0.3174
+  },
+  {
+    "engagement_field": "playcount",
+    "chart_field": "density_std",
+    "n": 10027,
+    "r": 0.303,
+    "abs_r": 0.303
+  },
+  {
+    "engagement_field": "pass_rate",
+    "chart_field": "estimated_bpm",
+    "n": 10027,
+    "r": -0.2944,
+    "abs_r": 0.2944
+  },
+  {
+    "engagement_field": "bpm_set",
+    "chart_field": "density_std",
+    "n": 10027,
+    "r": 0.2852,
+    "abs_r": 0.2852
+  },
+  {
+    "engagement_field": "pass_rate",
+    "chart_field": "ioi_std_ms",
+    "n": 10027,
+    "r": 0.2755,
+    "abs_r": 0.2755
+  },
+  {
+    "engagement_field": "bpm_set",
+    "chart_field": "ioi_mean_ms",
+    "n": 10027,
+    "r": -0.2704,
+    "abs_r": 0.2704
+  },
+  {
+    "engagement_field": "playcount",
+    "chart_field": "ratio_metronome_distance",
+    "n": 10027,
+    "r": -0.2691,
+    "abs_r": 0.2691
+  },
+  {
+    "engagement_field": "pass_rate",
+    "chart_field": "gap_peak_falloff",
+    "n": 10027,
+    "r": 0.269,
+    "abs_r": 0.269
+  },
+  {
+    "engagement_field": "bpm_set",
+    "chart_field": "over_pspace_self",
+    "n": 10027,
+    "r": 0.2635,
+    "abs_r": 0.2635
+  },
+  {
+    "engagement_field": "bpm_set",
+    "chart_field": "estimated_bpm",
+    "n": 10027,
+    "r": 0.2616,
+    "abs_r": 0.2616
+  },
+  {
+    "engagement_field": "bpm_set",
+    "chart_field": "ioi_median_ms",
+    "n": 10027,
+    "r": -0.2539,
+    "abs_r": 0.2539
+  },
+  {
+    "engagement_field": "bpm_set",
+    "chart_field": "ioi_p95_ms",
+    "n": 10027,
+    "r": -0.2522,
+    "abs_r": 0.2522
+  },
+  {
+    "engagement_field": "bpm_set",
+    "chart_field": "dominant_ioi_ms",
+    "n": 10027,
+    "r": -0.245,
+    "abs_r": 0.245
+  },
+  {
+    "engagement_field": "pass_rate",
+    "chart_field": "streak_event_fraction",
+    "n": 10027,
+    "r": -0.2435,
+    "abs_r": 0.2435
+  },
+  {
+    "engagement_field": "passcount",
+    "chart_field": "events_per_sec",
+    "n": 10027,
+    "r": 0.2413,
+    "abs_r": 0.2413
+  },
+  {
+    "engagement_field": "pass_rate",
+    "chart_field": "ratio_peak_count",
+    "n": 10027,
+    "r": 0.241,
+    "abs_r": 0.241
+  },
+  {
+    "engagement_field": "pass_rate",
+    "chart_field": "ratio_peak_falloff",
+    "n": 10027,
+    "r": 0.24,
+    "abs_r": 0.24
+  },
+  {
+    "engagement_field": "playcount",
+    "chart_field": "over_pspace_self",
+    "n": 10027,
+    "r": 0.239,
+    "abs_r": 0.239
+  },
+  {
+    "engagement_field": "playcount",
+    "chart_field": "mean_streak_len",
+    "n": 10027,
+    "r": 0.2383,
+    "abs_r": 0.2383
+  },
+  {
+    "engagement_field": "passcount",
+    "chart_field": "density_mean",
+    "n": 10027,
+    "r": 0.2356,
+    "abs_r": 0.2356
+  },
+  {
+    "engagement_field": "playcount",
+    "chart_field": "ioi_mean_ms",
+    "n": 10027,
+    "r": -0.2332,
+    "abs_r": 0.2332
+  },
+  {
+    "engagement_field": "pass_rate",
+    "chart_field": "longest_streak",
+    "n": 10027,
+    "r": -0.226,
+    "abs_r": 0.226
+  },
+  {
+    "engagement_field": "playcount",
+    "chart_field": "ioi_median_ms",
+    "n": 10027,
+    "r": -0.223,
+    "abs_r": 0.223
+  },
+  {
+    "engagement_field": "playcount",
+    "chart_field": "ioi_p95_ms",
+    "n": 10027,
+    "r": -0.2199,
+    "abs_r": 0.2199
+  },
+  {
+    "engagement_field": "bpm_set",
+    "chart_field": "gap_peak_mass_total",
+    "n": 10027,
+    "r": 0.217,
+    "abs_r": 0.217
+  },
+  {
+    "engagement_field": "playcount",
+    "chart_field": "ratio_peak_count",
+    "n": 10027,
+    "r": -0.2164,
+    "abs_r": 0.2164
+  },
+  {
+    "engagement_field": "pass_rate",
+    "chart_field": "density_cv",
+    "n": 10027,
+    "r": 0.2044,
+    "abs_r": 0.2044
+  },
+  {
+    "engagement_field": "pass_rate",
+    "chart_field": "mean_streak_len",
+    "n": 10027,
+    "r": -0.2026,
+    "abs_r": 0.2026
+  },
+  {
+    "engagement_field": "passcount",
+    "chart_field": "star_rating",
+    "n": 10027,
+    "r": 0.2019,
+    "abs_r": 0.2019
+  },
+  {
+    "engagement_field": "bpm_set",
+    "chart_field": "total_events",
+    "n": 10027,
+    "r": 0.1999,
+    "abs_r": 0.1999
+  },
+  {
+    "engagement_field": "playcount",
+    "chart_field": "gap_peak_mass_total",
+    "n": 10027,
+    "r": 0.1987,
+    "abs_r": 0.1987
+  },
+  {
+    "engagement_field": "playcount",
+    "chart_field": "ioi_p99_ms",
+    "n": 10027,
+    "r": -0.197,
+    "abs_r": 0.197
+  },
+  {
+    "engagement_field": "passcount",
+    "chart_field": "density_peak",
+    "n": 10027,
+    "r": 0.1963,
+    "abs_r": 0.1963
+  },
+  {
+    "engagement_field": "playcount",
+    "chart_field": "ratio_peak_falloff",
+    "n": 10027,
+    "r": -0.1962,
+    "abs_r": 0.1962
+  },
+  {
+    "engagement_field": "playcount",
+    "chart_field": "streak_event_fraction",
+    "n": 10027,
+    "r": 0.1948,
+    "abs_r": 0.1948
+  },
+  {
+    "engagement_field": "bpm_set",
+    "chart_field": "ratio_peak_mass_total",
+    "n": 10027,
+    "r": 0.1933,
+    "abs_r": 0.1933
+  },
+  {
+    "engagement_field": "bpm_set",
+    "chart_field": "ioi_p99_ms",
+    "n": 10027,
+    "r": -0.1931,
+    "abs_r": 0.1931
+  },
+  {
+    "engagement_field": "pass_rate",
+    "chart_field": "gap_metronome_distance",
+    "n": 10027,
+    "r": 0.1923,
+    "abs_r": 0.1923
+  },
+  {
+    "engagement_field": "rating_mean",
+    "chart_field": "gap_random_distance",
+    "n": 10027,
+    "r": 0.1919,
+    "abs_r": 0.1919
+  },
+  {
+    "engagement_field": "passcount",
+    "chart_field": "duration_s",
+    "n": 10027,
+    "r": -0.189,
+    "abs_r": 0.189
+  },
+  {
+    "engagement_field": "passcount",
+    "chart_field": "ratio_metronome_distance",
+    "n": 10027,
+    "r": -0.1876,
+    "abs_r": 0.1876
+  },
+  {
+    "engagement_field": "rating_mean",
+    "chart_field": "over_pspace_self",
+    "n": 10027,
+    "r": -0.1858,
+    "abs_r": 0.1858
+  },
+  {
+    "engagement_field": "passcount",
+    "chart_field": "ratio_peak_count",
+    "n": 10027,
+    "r": -0.1855,
+    "abs_r": 0.1855
+  },
+  {
+    "engagement_field": "playcount",
+    "chart_field": "gap_peak_count",
+    "n": 10027,
+    "r": -0.1841,
+    "abs_r": 0.1841
+  },
+  {
+    "engagement_field": "playcount",
+    "chart_field": "total_events",
+    "n": 10027,
+    "r": 0.1823,
+    "abs_r": 0.1823
+  },
+  {
+    "engagement_field": "playcount",
+    "chart_field": "gap_peak_falloff",
+    "n": 10027,
+    "r": -0.1817,
+    "abs_r": 0.1817
+  },
+  {
+    "engagement_field": "pass_rate",
+    "chart_field": "gap_peak_count",
+    "n": 10027,
+    "r": 0.1817,
+    "abs_r": 0.1817
+  },
+  {
+    "engagement_field": "rating_mean",
+    "chart_field": "ratio_random_distance",
+    "n": 10027,
+    "r": 0.1796,
+    "abs_r": 0.1796
+  },
+  {
+    "engagement_field": "passcount",
+    "chart_field": "streak_event_fraction",
+    "n": 10027,
+    "r": 0.1773,
+    "abs_r": 0.1773
+  },
+  {
+    "engagement_field": "playcount",
+    "chart_field": "longest_streak",
+    "n": 10027,
+    "r": 0.1741,
+    "abs_r": 0.1741
+  },
+  {
+    "engagement_field": "passcount",
+    "chart_field": "density_std",
+    "n": 10027,
+    "r": 0.1741,
+    "abs_r": 0.1741
+  },
+  {
+    "engagement_field": "playcount",
+    "chart_field": "ratio_peak_mass_total",
+    "n": 10027,
+    "r": 0.1739,
+    "abs_r": 0.1739
+  },
+  {
+    "engagement_field": "playcount",
+    "chart_field": "dominant_ioi_ms",
+    "n": 10027,
+    "r": -0.1726,
+    "abs_r": 0.1726
+  },
+  {
+    "engagement_field": "playcount",
+    "chart_field": "ioi_std_ms",
+    "n": 10027,
+    "r": -0.1703,
+    "abs_r": 0.1703
+  },
+  {
+    "engagement_field": "playcount",
+    "chart_field": "gap_metronome_distance",
+    "n": 10027,
+    "r": -0.1695,
+    "abs_r": 0.1695
+  },
+  {
+    "engagement_field": "bpm_set",
+    "chart_field": "ratio_metronome_distance",
+    "n": 10027,
+    "r": -0.1551,
+    "abs_r": 0.1551
+  },
+  {
+    "engagement_field": "passcount",
+    "chart_field": "gap_peak_count",
+    "n": 10027,
+    "r": -0.1523,
+    "abs_r": 0.1523
+  },
+  {
+    "engagement_field": "rating_mean",
+    "chart_field": "density_std",
+    "n": 10027,
+    "r": -0.1512,
+    "abs_r": 0.1512
+  },
+  {
+    "engagement_field": "bpm_set",
+    "chart_field": "streak_event_fraction",
+    "n": 10027,
+    "r": 0.1442,
+    "abs_r": 0.1442
+  },
+  {
+    "engagement_field": "rating_mean",
+    "chart_field": "density_cv",
+    "n": 10027,
+    "r": -0.1379,
+    "abs_r": 0.1379
+  },
+  {
+    "engagement_field": "bpm_set",
+    "chart_field": "ratio_peak_count",
+    "n": 10027,
+    "r": -0.1363,
+    "abs_r": 0.1363
+  },
+  {
+    "engagement_field": "passcount",
+    "chart_field": "ioi_std_ms",
+    "n": 10027,
+    "r": -0.1346,
+    "abs_r": 0.1346
+  },
+  {
+    "engagement_field": "passcount",
+    "chart_field": "over_pspace_self",
+    "n": 10027,
+    "r": 0.1327,
+    "abs_r": 0.1327
+  },
+  {
+    "engagement_field": "passcount",
+    "chart_field": "ratio_peak_falloff",
+    "n": 10027,
+    "r": -0.1323,
+    "abs_r": 0.1323
+  },
+  {
+    "engagement_field": "rating_mean",
+    "chart_field": "star_rating",
+    "n": 10027,
+    "r": -0.128,
+    "abs_r": 0.128
+  },
+  {
+    "engagement_field": "passcount",
+    "chart_field": "long_gap_count",
+    "n": 10027,
+    "r": -0.1239,
+    "abs_r": 0.1239
+  },
+  {
+    "engagement_field": "passcount",
+    "chart_field": "ioi_p99_ms",
+    "n": 10027,
+    "r": -0.1223,
+    "abs_r": 0.1223
+  },
+  {
+    "engagement_field": "rating_mean",
+    "chart_field": "density_peak",
+    "n": 10027,
+    "r": -0.121,
+    "abs_r": 0.121
+  },
+  {
+    "engagement_field": "passcount",
+    "chart_field": "ioi_p95_ms",
+    "n": 10027,
+    "r": -0.1201,
+    "abs_r": 0.1201
+  },
+  {
+    "engagement_field": "passcount",
+    "chart_field": "ratio_random_distance",
+    "n": 10027,
+    "r": 0.12,
+    "abs_r": 0.12
+  },
+  {
+    "engagement_field": "passcount",
+    "chart_field": "ioi_mean_ms",
+    "n": 10027,
+    "r": -0.1198,
+    "abs_r": 0.1198
+  },
+  {
+    "engagement_field": "bpm_set",
+    "chart_field": "ioi_std_ms",
+    "n": 10027,
+    "r": -0.1162,
+    "abs_r": 0.1162
+  },
+  {
+    "engagement_field": "passcount",
+    "chart_field": "ioi_median_ms",
+    "n": 10027,
+    "r": -0.1142,
+    "abs_r": 0.1142
+  },
+  {
+    "engagement_field": "rating_mean",
+    "chart_field": "ratio_peak_falloff",
+    "n": 10027,
+    "r": 0.1122,
+    "abs_r": 0.1122
+  },
+  {
+    "engagement_field": "bpm_set",
+    "chart_field": "ratio_peak_falloff",
+    "n": 10027,
+    "r": -0.1105,
+    "abs_r": 0.1105
+  },
+  {
+    "engagement_field": "passcount",
+    "chart_field": "mean_streak_len",
+    "n": 10027,
+    "r": 0.1073,
+    "abs_r": 0.1073
+  },
+  {
+    "engagement_field": "rating_count",
+    "chart_field": "duration_s",
+    "n": 10027,
+    "r": -0.1052,
+    "abs_r": 0.1052
+  },
+  {
+    "engagement_field": "passcount",
+    "chart_field": "gap_metronome_distance",
+    "n": 10027,
+    "r": -0.1028,
+    "abs_r": 0.1028
+  },
+  {
+    "engagement_field": "rating_mean",
+    "chart_field": "total_events",
+    "n": 10027,
+    "r": -0.0972,
+    "abs_r": 0.0972
+  },
+  {
+    "engagement_field": "playcount",
+    "chart_field": "ratio_random_distance",
+    "n": 10027,
+    "r": 0.0948,
+    "abs_r": 0.0948
+  },
+  {
+    "engagement_field": "passcount",
+    "chart_field": "gap_peak_falloff",
+    "n": 10027,
+    "r": -0.0938,
+    "abs_r": 0.0938
+  },
+  {
+    "engagement_field": "rating_mean",
+    "chart_field": "events_per_sec",
+    "n": 10027,
+    "r": -0.0912,
+    "abs_r": 0.0912
+  },
+  {
+    "engagement_field": "bpm_set",
+    "chart_field": "duration_s",
+    "n": 10027,
+    "r": 0.0907,
+    "abs_r": 0.0907
+  },
+  {
+    "engagement_field": "bpm_set",
+    "chart_field": "density_cv",
+    "n": 10027,
+    "r": -0.0883,
+    "abs_r": 0.0883
+  },
+  {
+    "engagement_field": "playcount",
+    "chart_field": "density_cv",
+    "n": 10027,
+    "r": -0.0847,
+    "abs_r": 0.0847
+  },
+  {
+    "engagement_field": "rating_mean",
+    "chart_field": "long_gap_count",
+    "n": 10027,
+    "r": -0.0838,
+    "abs_r": 0.0838
+  },
+  {
+    "engagement_field": "passcount",
+    "chart_field": "dominant_ioi_ms",
+    "n": 10027,
+    "r": -0.083,
+    "abs_r": 0.083
+  },
+  {
+    "engagement_field": "rating_mean",
+    "chart_field": "density_mean",
+    "n": 10027,
+    "r": -0.0808,
+    "abs_r": 0.0808
+  },
+  {
+    "engagement_field": "playcount",
+    "chart_field": "long_gap_count",
+    "n": 10027,
+    "r": -0.0804,
+    "abs_r": 0.0804
+  },
+  {
+    "engagement_field": "rating_mean",
+    "chart_field": "mean_streak_len",
+    "n": 10027,
+    "r": -0.0787,
+    "abs_r": 0.0787
+  },
+  {
+    "engagement_field": "pass_rate",
+    "chart_field": "gap_random_distance",
+    "n": 10027,
+    "r": 0.077,
+    "abs_r": 0.077
+  },
+  {
+    "engagement_field": "rating_mean",
+    "chart_field": "ratio_peak_mass_total",
+    "n": 10027,
+    "r": -0.0765,
+    "abs_r": 0.0765
+  },
+  {
+    "engagement_field": "rating_mean",
+    "chart_field": "gap_peak_count",
+    "n": 10027,
+    "r": -0.0762,
+    "abs_r": 0.0762
+  },
+  {
+    "engagement_field": "nominations_current",
+    "chart_field": "duration_s",
+    "n": 10027,
+    "r": -0.0729,
+    "abs_r": 0.0729
+  },
+  {
+    "engagement_field": "rating_mean",
+    "chart_field": "longest_streak",
+    "n": 10027,
+    "r": -0.0719,
+    "abs_r": 0.0719
+  },
+  {
+    "engagement_field": "playcount",
+    "chart_field": "estimated_bpm",
+    "n": 10027,
+    "r": 0.0702,
+    "abs_r": 0.0702
+  },
+  {
+    "engagement_field": "passcount",
+    "chart_field": "gap_random_distance",
+    "n": 10027,
+    "r": 0.0681,
+    "abs_r": 0.0681
+  },
+  {
+    "engagement_field": "rating_mean",
+    "chart_field": "gap_peak_mass_total",
+    "n": 10027,
+    "r": -0.068,
+    "abs_r": 0.068
+  },
+  {
+    "engagement_field": "nominations_current",
+    "chart_field": "ratio_peak_mass_total",
+    "n": 10027,
+    "r": -0.0679,
+    "abs_r": 0.0679
+  },
+  {
+    "engagement_field": "pass_rate",
+    "chart_field": "don_ratio",
+    "n": 10027,
+    "r": -0.0666,
+    "abs_r": 0.0666
+  },
+  {
+    "engagement_field": "nominations_current",
+    "chart_field": "gap_peak_mass_total",
+    "n": 10027,
+    "r": -0.0666,
+    "abs_r": 0.0666
+  },
+  {
+    "engagement_field": "rating_mean",
+    "chart_field": "ioi_median_ms",
+    "n": 10027,
+    "r": 0.0665,
+    "abs_r": 0.0665
+  },
+  {
+    "engagement_field": "nominations_current",
+    "chart_field": "total_events",
+    "n": 10027,
+    "r": -0.0653,
+    "abs_r": 0.0653
+  },
+  {
+    "engagement_field": "play_count_set",
+    "chart_field": "duration_s",
+    "n": 10027,
+    "r": -0.0618,
+    "abs_r": 0.0618
+  },
+  {
+    "engagement_field": "rating_mean",
+    "chart_field": "gap_metronome_distance",
+    "n": 10027,
+    "r": -0.0607,
+    "abs_r": 0.0607
+  },
+  {
+    "engagement_field": "passcount",
+    "chart_field": "density_cv",
+    "n": 10027,
+    "r": -0.0598,
+    "abs_r": 0.0598
+  },
+  {
+    "engagement_field": "rating_mean",
+    "chart_field": "ratio_metronome_distance",
+    "n": 10027,
+    "r": 0.0597,
+    "abs_r": 0.0597
+  },
+  {
+    "engagement_field": "bpm_set",
+    "chart_field": "gap_peak_falloff",
+    "n": 10027,
+    "r": -0.0597,
+    "abs_r": 0.0597
+  },
+  {
+    "engagement_field": "rating_count",
+    "chart_field": "events_per_sec",
+    "n": 10027,
+    "r": 0.0559,
+    "abs_r": 0.0559
+  },
+  {
+    "engagement_field": "bpm_set",
+    "chart_field": "gap_peak_count",
+    "n": 10027,
+    "r": -0.0555,
+    "abs_r": 0.0555
+  },
+  {
+    "engagement_field": "rating_count",
+    "chart_field": "ratio_peak_mass_total",
+    "n": 10027,
+    "r": -0.0549,
+    "abs_r": 0.0549
+  },
+  {
+    "engagement_field": "rating_count",
+    "chart_field": "ratio_peak_count",
+    "n": 10027,
+    "r": -0.0543,
+    "abs_r": 0.0543
+  },
+  {
+    "engagement_field": "nominations_current",
+    "chart_field": "star_rating",
+    "n": 10027,
+    "r": -0.0538,
+    "abs_r": 0.0538
+  },
+  {
+    "engagement_field": "rating_mean",
+    "chart_field": "streak_event_fraction",
+    "n": 10027,
+    "r": 0.0537,
+    "abs_r": 0.0537
+  },
+  {
+    "engagement_field": "rating_count",
+    "chart_field": "ioi_std_ms",
+    "n": 10027,
+    "r": -0.0527,
+    "abs_r": 0.0527
+  },
+  {
+    "engagement_field": "rating_count",
+    "chart_field": "total_events",
+    "n": 10027,
+    "r": -0.0515,
+    "abs_r": 0.0515
+  },
+  {
+    "engagement_field": "nominations_current",
+    "chart_field": "density_mean",
+    "n": 10027,
+    "r": -0.0515,
+    "abs_r": 0.0515
+  },
+  {
+    "engagement_field": "nominations_current",
+    "chart_field": "events_per_sec",
+    "n": 10027,
+    "r": -0.0503,
+    "abs_r": 0.0503
+  },
+  {
+    "engagement_field": "rating_count",
+    "chart_field": "long_gap_count",
+    "n": 10027,
+    "r": -0.0502,
+    "abs_r": 0.0502
+  },
+  {
+    "engagement_field": "nominations_current",
+    "chart_field": "density_peak",
+    "n": 10027,
+    "r": -0.05,
+    "abs_r": 0.05
+  },
+  {
+    "engagement_field": "rating_count",
+    "chart_field": "density_mean",
+    "n": 10027,
+    "r": 0.0497,
+    "abs_r": 0.0497
+  },
+  {
+    "engagement_field": "nominations_current",
+    "chart_field": "over_pspace_self",
+    "n": 10027,
+    "r": -0.0495,
+    "abs_r": 0.0495
+  },
+  {
+    "engagement_field": "pass_rate",
+    "chart_field": "long_gap_count",
+    "n": 10027,
+    "r": -0.0491,
+    "abs_r": 0.0491
+  },
+  {
+    "engagement_field": "rating_mean",
+    "chart_field": "duration_s",
+    "n": 10027,
+    "r": -0.049,
+    "abs_r": 0.049
+  },
+  {
+    "engagement_field": "rating_count",
+    "chart_field": "gap_peak_mass_total",
+    "n": 10027,
+    "r": -0.0487,
+    "abs_r": 0.0487
+  },
+  {
+    "engagement_field": "bpm_set",
+    "chart_field": "longest_streak",
+    "n": 10027,
+    "r": 0.0483,
+    "abs_r": 0.0483
+  },
+  {
+    "engagement_field": "playcount",
+    "chart_field": "gap_random_distance",
+    "n": 10027,
+    "r": 0.0474,
+    "abs_r": 0.0474
+  },
+  {
+    "engagement_field": "passcount",
+    "chart_field": "longest_streak",
+    "n": 10027,
+    "r": 0.0462,
+    "abs_r": 0.0462
+  },
+  {
+    "engagement_field": "bpm_set",
+    "chart_field": "ratio_random_distance",
+    "n": 10027,
+    "r": -0.0455,
+    "abs_r": 0.0455
+  },
+  {
+    "engagement_field": "favourite_count",
+    "chart_field": "ratio_peak_mass_total",
+    "n": 10027,
+    "r": -0.0445,
+    "abs_r": 0.0445
+  },
+  {
+    "engagement_field": "favourite_count",
+    "chart_field": "total_events",
+    "n": 10027,
+    "r": -0.0433,
+    "abs_r": 0.0433
+  },
+  {
+    "engagement_field": "nominations_current",
+    "chart_field": "density_std",
+    "n": 10027,
+    "r": -0.0429,
+    "abs_r": 0.0429
+  },
+  {
+    "engagement_field": "nominations_current",
+    "chart_field": "ratio_metronome_distance",
+    "n": 10027,
+    "r": 0.0427,
+    "abs_r": 0.0427
+  },
+  {
+    "engagement_field": "nominations_current",
+    "chart_field": "ioi_mean_ms",
+    "n": 10027,
+    "r": 0.0426,
+    "abs_r": 0.0426
+  },
+  {
+    "engagement_field": "rating_mean",
+    "chart_field": "ioi_mean_ms",
+    "n": 10027,
+    "r": 0.0425,
+    "abs_r": 0.0425
+  },
+  {
+    "engagement_field": "nominations_current",
+    "chart_field": "ioi_p99_ms",
+    "n": 10027,
+    "r": 0.0422,
+    "abs_r": 0.0422
+  },
+  {
+    "engagement_field": "favourite_count",
+    "chart_field": "gap_peak_mass_total",
+    "n": 10027,
+    "r": -0.0419,
+    "abs_r": 0.0419
+  },
+  {
+    "engagement_field": "rating_count",
+    "chart_field": "ioi_p95_ms",
+    "n": 10027,
+    "r": -0.0401,
+    "abs_r": 0.0401
+  },
+  {
+    "engagement_field": "nominations_current",
+    "chart_field": "ioi_p95_ms",
+    "n": 10027,
+    "r": 0.0401,
+    "abs_r": 0.0401
+  },
+  {
+    "engagement_field": "rating_count",
+    "chart_field": "streak_event_fraction",
+    "n": 10027,
+    "r": 0.04,
+    "abs_r": 0.04
+  },
+  {
+    "engagement_field": "rating_mean",
+    "chart_field": "dominant_ioi_ms",
+    "n": 10027,
+    "r": 0.0396,
+    "abs_r": 0.0396
+  },
+  {
+    "engagement_field": "rating_count",
+    "chart_field": "gap_peak_count",
+    "n": 10027,
+    "r": -0.0392,
+    "abs_r": 0.0392
+  },
+  {
+    "engagement_field": "rating_mean",
+    "chart_field": "don_ratio",
+    "n": 10027,
+    "r": -0.0386,
+    "abs_r": 0.0386
+  },
+  {
+    "engagement_field": "bpm_set",
+    "chart_field": "mean_streak_len",
+    "n": 10027,
+    "r": 0.0386,
+    "abs_r": 0.0386
+  },
+  {
+    "engagement_field": "rating_count",
+    "chart_field": "ratio_peak_falloff",
+    "n": 10027,
+    "r": -0.0383,
+    "abs_r": 0.0383
+  },
+  {
+    "engagement_field": "rating_count",
+    "chart_field": "ratio_metronome_distance",
+    "n": 10027,
+    "r": -0.0383,
+    "abs_r": 0.0383
+  },
+  {
+    "engagement_field": "favourite_count",
+    "chart_field": "duration_s",
+    "n": 10027,
+    "r": -0.0375,
+    "abs_r": 0.0375
+  },
+  {
+    "engagement_field": "nominations_current",
+    "chart_field": "ioi_median_ms",
+    "n": 10027,
+    "r": 0.0369,
+    "abs_r": 0.0369
+  },
+  {
+    "engagement_field": "rating_count",
+    "chart_field": "ioi_mean_ms",
+    "n": 10027,
+    "r": -0.0367,
+    "abs_r": 0.0367
+  },
+  {
+    "engagement_field": "rating_count",
+    "chart_field": "ioi_p99_ms",
+    "n": 10027,
+    "r": -0.036,
+    "abs_r": 0.036
+  },
+  {
+    "engagement_field": "play_count_set",
+    "chart_field": "ioi_std_ms",
+    "n": 10027,
+    "r": -0.0351,
+    "abs_r": 0.0351
+  },
+  {
+    "engagement_field": "play_count_set",
+    "chart_field": "ratio_peak_mass_total",
+    "n": 10027,
+    "r": -0.0347,
+    "abs_r": 0.0347
+  },
+  {
+    "engagement_field": "bpm_set",
+    "chart_field": "don_ratio",
+    "n": 10027,
+    "r": 0.0339,
+    "abs_r": 0.0339
+  },
+  {
+    "engagement_field": "play_count_set",
+    "chart_field": "total_events",
+    "n": 10027,
+    "r": -0.0333,
+    "abs_r": 0.0333
+  },
+  {
+    "engagement_field": "play_count_set",
+    "chart_field": "gap_peak_mass_total",
+    "n": 10027,
+    "r": -0.0329,
+    "abs_r": 0.0329
+  },
+  {
+    "engagement_field": "rating_count",
+    "chart_field": "gap_metronome_distance",
+    "n": 10027,
+    "r": -0.0329,
+    "abs_r": 0.0329
+  },
+  {
+    "engagement_field": "play_count_set",
+    "chart_field": "ratio_peak_count",
+    "n": 10027,
+    "r": -0.0327,
+    "abs_r": 0.0327
+  },
+  {
+    "engagement_field": "rating_count",
+    "chart_field": "density_peak",
+    "n": 10027,
+    "r": 0.0322,
+    "abs_r": 0.0322
+  },
+  {
+    "engagement_field": "play_count_set",
+    "chart_field": "ratio_random_distance",
+    "n": 10027,
+    "r": 0.0321,
+    "abs_r": 0.0321
+  },
+  {
+    "engagement_field": "rating_count",
+    "chart_field": "ratio_random_distance",
+    "n": 10027,
+    "r": 0.0318,
+    "abs_r": 0.0318
+  },
+  {
+    "engagement_field": "nominations_current",
+    "chart_field": "dominant_ioi_ms",
+    "n": 10027,
+    "r": 0.0318,
+    "abs_r": 0.0318
+  },
+  {
+    "engagement_field": "play_count_set",
+    "chart_field": "gap_peak_count",
+    "n": 10027,
+    "r": -0.0316,
+    "abs_r": 0.0316
+  },
+  {
+    "engagement_field": "rating_count",
+    "chart_field": "density_std",
+    "n": 10027,
+    "r": 0.0315,
+    "abs_r": 0.0315
+  },
+  {
+    "engagement_field": "nominations_current",
+    "chart_field": "estimated_bpm",
+    "n": 10027,
+    "r": -0.031,
+    "abs_r": 0.031
+  },
+  {
+    "engagement_field": "rating_count",
+    "chart_field": "ioi_median_ms",
+    "n": 10027,
+    "r": -0.0306,
+    "abs_r": 0.0306
+  },
+  {
+    "engagement_field": "rating_count",
+    "chart_field": "star_rating",
+    "n": 10027,
+    "r": 0.03,
+    "abs_r": 0.03
+  },
+  {
+    "engagement_field": "favourite_count",
+    "chart_field": "star_rating",
+    "n": 10027,
+    "r": -0.0296,
+    "abs_r": 0.0296
+  },
+  {
+    "engagement_field": "rating_count",
+    "chart_field": "gap_peak_falloff",
+    "n": 10027,
+    "r": -0.0296,
+    "abs_r": 0.0296
+  },
+  {
+    "engagement_field": "favourite_count",
+    "chart_field": "over_pspace_self",
+    "n": 10027,
+    "r": -0.0292,
+    "abs_r": 0.0292
+  },
+  {
+    "engagement_field": "play_count_set",
+    "chart_field": "gap_random_distance",
+    "n": 10027,
+    "r": 0.0281,
+    "abs_r": 0.0281
+  },
+  {
+    "engagement_field": "rating_count",
+    "chart_field": "dominant_ioi_ms",
+    "n": 10027,
+    "r": -0.028,
+    "abs_r": 0.028
+  },
+  {
+    "engagement_field": "play_count_set",
+    "chart_field": "long_gap_count",
+    "n": 10027,
+    "r": -0.0277,
+    "abs_r": 0.0277
+  },
+  {
+    "engagement_field": "playcount",
+    "chart_field": "don_ratio",
+    "n": 10027,
+    "r": 0.0275,
+    "abs_r": 0.0275
+  },
+  {
+    "engagement_field": "rating_mean",
+    "chart_field": "short_ioi_pct",
+    "n": 10027,
+    "r": -0.0272,
+    "abs_r": 0.0272
+  },
+  {
+    "engagement_field": "favourite_count",
+    "chart_field": "density_peak",
+    "n": 10027,
+    "r": -0.0268,
+    "abs_r": 0.0268
+  },
+  {
+    "engagement_field": "pass_rate",
+    "chart_field": "short_ioi_pct",
+    "n": 10027,
+    "r": -0.0266,
+    "abs_r": 0.0266
+  },
+  {
+    "engagement_field": "play_count_set",
+    "chart_field": "gap_metronome_distance",
+    "n": 10027,
+    "r": -0.0254,
+    "abs_r": 0.0254
+  },
+  {
+    "engagement_field": "passcount",
+    "chart_field": "ratio_peak_mass_total",
+    "n": 10027,
+    "r": -0.0252,
+    "abs_r": 0.0252
+  },
+  {
+    "engagement_field": "play_count_set",
+    "chart_field": "ioi_p95_ms",
+    "n": 10027,
+    "r": -0.0251,
+    "abs_r": 0.0251
+  },
+  {
+    "engagement_field": "rating_count",
+    "chart_field": "gap_random_distance",
+    "n": 10027,
+    "r": 0.025,
+    "abs_r": 0.025
+  },
+  {
+    "engagement_field": "rating_count",
+    "chart_field": "estimated_bpm",
+    "n": 10027,
+    "r": 0.0249,
+    "abs_r": 0.0249
+  },
+  {
+    "engagement_field": "favourite_count",
+    "chart_field": "density_mean",
+    "n": 10027,
+    "r": -0.0241,
+    "abs_r": 0.0241
+  },
+  {
+    "engagement_field": "favourite_count",
+    "chart_field": "gap_metronome_distance",
+    "n": 10027,
+    "r": -0.0237,
+    "abs_r": 0.0237
+  },
+  {
+    "engagement_field": "nominations_current",
+    "chart_field": "density_cv",
+    "n": 10027,
+    "r": 0.0228,
+    "abs_r": 0.0228
+  },
+  {
+    "engagement_field": "play_count_set",
+    "chart_field": "gap_peak_falloff",
+    "n": 10027,
+    "r": -0.0224,
+    "abs_r": 0.0224
+  },
+  {
+    "engagement_field": "play_count_set",
+    "chart_field": "events_per_sec",
+    "n": 10027,
+    "r": 0.0221,
+    "abs_r": 0.0221
+  },
+  {
+    "engagement_field": "nominations_current",
+    "chart_field": "longest_streak",
+    "n": 10027,
+    "r": -0.0219,
+    "abs_r": 0.0219
+  },
+  {
+    "engagement_field": "pass_rate",
+    "chart_field": "ratio_random_distance",
+    "n": 10027,
+    "r": 0.0216,
+    "abs_r": 0.0216
+  },
+  {
+    "engagement_field": "favourite_count",
+    "chart_field": "don_ratio",
+    "n": 10027,
+    "r": -0.0216,
+    "abs_r": 0.0216
+  },
+  {
+    "engagement_field": "rating_mean",
+    "chart_field": "ioi_p95_ms",
+    "n": 10027,
+    "r": 0.0216,
+    "abs_r": 0.0216
+  },
+  {
+    "engagement_field": "nominations_current",
+    "chart_field": "streak_event_fraction",
+    "n": 10027,
+    "r": -0.0215,
+    "abs_r": 0.0215
+  },
+  {
+    "engagement_field": "rating_count",
+    "chart_field": "density_cv",
+    "n": 10027,
+    "r": -0.0214,
+    "abs_r": 0.0214
+  },
+  {
+    "engagement_field": "rating_mean",
+    "chart_field": "ioi_std_ms",
+    "n": 10027,
+    "r": -0.0208,
+    "abs_r": 0.0208
+  },
+  {
+    "engagement_field": "play_count_set",
+    "chart_field": "ioi_p99_ms",
+    "n": 10027,
+    "r": -0.0206,
+    "abs_r": 0.0206
+  },
+  {
+    "engagement_field": "favourite_count",
+    "chart_field": "estimated_bpm",
+    "n": 10027,
+    "r": -0.0205,
+    "abs_r": 0.0205
+  },
+  {
+    "engagement_field": "rating_mean",
+    "chart_field": "ioi_p99_ms",
+    "n": 10027,
+    "r": -0.0204,
+    "abs_r": 0.0204
+  },
+  {
+    "engagement_field": "play_count_set",
+    "chart_field": "don_ratio",
+    "n": 10027,
+    "r": -0.0202,
+    "abs_r": 0.0202
+  },
+  {
+    "engagement_field": "favourite_count",
+    "chart_field": "longest_streak",
+    "n": 10027,
+    "r": -0.0202,
+    "abs_r": 0.0202
+  },
+  {
+    "engagement_field": "nominations_current",
+    "chart_field": "ratio_peak_falloff",
+    "n": 10027,
+    "r": 0.0201,
+    "abs_r": 0.0201
+  },
+  {
+    "engagement_field": "passcount",
+    "chart_field": "estimated_bpm",
+    "n": 10027,
+    "r": 0.0192,
+    "abs_r": 0.0192
+  },
+  {
+    "engagement_field": "favourite_count",
+    "chart_field": "events_per_sec",
+    "n": 10027,
+    "r": -0.0191,
+    "abs_r": 0.0191
+  },
+  {
+    "engagement_field": "bpm_set",
+    "chart_field": "gap_random_distance",
+    "n": 10027,
+    "r": -0.0191,
+    "abs_r": 0.0191
+  },
+  {
+    "engagement_field": "nominations_current",
+    "chart_field": "ioi_std_ms",
+    "n": 10027,
+    "r": 0.0191,
+    "abs_r": 0.0191
+  },
+  {
+    "engagement_field": "play_count_set",
+    "chart_field": "ioi_mean_ms",
+    "n": 10027,
+    "r": -0.0188,
+    "abs_r": 0.0188
+  },
+  {
+    "engagement_field": "favourite_count",
+    "chart_field": "gap_random_distance",
+    "n": 10027,
+    "r": 0.0185,
+    "abs_r": 0.0185
+  },
+  {
+    "engagement_field": "passcount",
+    "chart_field": "total_events",
+    "n": 10027,
+    "r": -0.0177,
+    "abs_r": 0.0177
+  },
+  {
+    "engagement_field": "favourite_count",
+    "chart_field": "gap_peak_count",
+    "n": 10027,
+    "r": -0.0177,
+    "abs_r": 0.0177
+  },
+  {
+    "engagement_field": "favourite_count",
+    "chart_field": "density_std",
+    "n": 10027,
+    "r": -0.0174,
+    "abs_r": 0.0174
+  },
+  {
+    "engagement_field": "favourite_count",
+    "chart_field": "ratio_random_distance",
+    "n": 10027,
+    "r": 0.0174,
+    "abs_r": 0.0174
+  },
+  {
+    "engagement_field": "favourite_count",
+    "chart_field": "density_cv",
+    "n": 10027,
+    "r": 0.0171,
+    "abs_r": 0.0171
+  },
+  {
+    "engagement_field": "favourite_count",
+    "chart_field": "ioi_p99_ms",
+    "n": 10027,
+    "r": 0.0167,
+    "abs_r": 0.0167
+  },
+  {
+    "engagement_field": "favourite_count",
+    "chart_field": "ioi_std_ms",
+    "n": 10027,
+    "r": 0.016,
+    "abs_r": 0.016
+  },
+  {
+    "engagement_field": "nominations_current",
+    "chart_field": "long_gap_count",
+    "n": 10027,
+    "r": -0.0154,
+    "abs_r": 0.0154
+  },
+  {
+    "engagement_field": "rating_count",
+    "chart_field": "don_ratio",
+    "n": 10027,
+    "r": -0.0152,
+    "abs_r": 0.0152
+  },
+  {
+    "engagement_field": "favourite_count",
+    "chart_field": "ratio_peak_falloff",
+    "n": 10027,
+    "r": -0.0151,
+    "abs_r": 0.0151
+  },
+  {
+    "engagement_field": "rating_count",
+    "chart_field": "over_pspace_self",
+    "n": 10027,
+    "r": 0.0144,
+    "abs_r": 0.0144
+  },
+  {
+    "engagement_field": "favourite_count",
+    "chart_field": "ioi_median_ms",
+    "n": 10027,
+    "r": 0.0141,
+    "abs_r": 0.0141
+  },
+  {
+    "engagement_field": "bpm_set",
+    "chart_field": "long_gap_count",
+    "n": 10027,
+    "r": 0.0139,
+    "abs_r": 0.0139
+  },
+  {
+    "engagement_field": "favourite_count",
+    "chart_field": "ratio_metronome_distance",
+    "n": 10027,
+    "r": -0.0136,
+    "abs_r": 0.0136
+  },
+  {
+    "engagement_field": "nominations_current",
+    "chart_field": "mean_streak_len",
+    "n": 10027,
+    "r": -0.0134,
+    "abs_r": 0.0134
+  },
+  {
+    "engagement_field": "favourite_count",
+    "chart_field": "ioi_mean_ms",
+    "n": 10027,
+    "r": 0.0126,
+    "abs_r": 0.0126
+  },
+  {
+    "engagement_field": "favourite_count",
+    "chart_field": "ratio_peak_count",
+    "n": 10027,
+    "r": -0.0126,
+    "abs_r": 0.0126
+  },
+  {
+    "engagement_field": "play_count_set",
+    "chart_field": "ioi_median_ms",
+    "n": 10027,
+    "r": -0.012,
+    "abs_r": 0.012
+  },
+  {
+    "engagement_field": "play_count_set",
+    "chart_field": "estimated_bpm",
+    "n": 10027,
+    "r": 0.012,
+    "abs_r": 0.012
+  },
+  {
+    "engagement_field": "play_count_set",
+    "chart_field": "density_mean",
+    "n": 10027,
+    "r": 0.0119,
+    "abs_r": 0.0119
+  },
+  {
+    "engagement_field": "passcount",
+    "chart_field": "gap_peak_mass_total",
+    "n": 10027,
+    "r": -0.0118,
+    "abs_r": 0.0118
+  },
+  {
+    "engagement_field": "favourite_count",
+    "chart_field": "long_gap_count",
+    "n": 10027,
+    "r": -0.0115,
+    "abs_r": 0.0115
+  },
+  {
+    "engagement_field": "play_count_set",
+    "chart_field": "density_std",
+    "n": 10027,
+    "r": 0.0112,
+    "abs_r": 0.0112
+  },
+  {
+    "engagement_field": "play_count_set",
+    "chart_field": "dominant_ioi_ms",
+    "n": 10027,
+    "r": -0.0102,
+    "abs_r": 0.0102
+  },
+  {
+    "engagement_field": "favourite_count",
+    "chart_field": "dominant_ioi_ms",
+    "n": 10027,
+    "r": 0.0102,
+    "abs_r": 0.0102
+  },
+  {
+    "engagement_field": "play_count_set",
+    "chart_field": "ratio_metronome_distance",
+    "n": 10027,
+    "r": -0.0095,
+    "abs_r": 0.0095
+  },
+  {
+    "engagement_field": "rating_count",
+    "chart_field": "longest_streak",
+    "n": 10027,
+    "r": -0.0089,
+    "abs_r": 0.0089
+  },
+  {
+    "engagement_field": "playcount",
+    "chart_field": "duration_s",
+    "n": 10027,
+    "r": -0.0085,
+    "abs_r": 0.0085
+  },
+  {
+    "engagement_field": "rating_count",
+    "chart_field": "mean_streak_len",
+    "n": 10027,
+    "r": 0.0084,
+    "abs_r": 0.0084
+  },
+  {
+    "engagement_field": "favourite_count",
+    "chart_field": "streak_event_fraction",
+    "n": 10027,
+    "r": 0.0083,
+    "abs_r": 0.0083
+  },
+  {
+    "engagement_field": "favourite_count",
+    "chart_field": "gap_peak_falloff",
+    "n": 10027,
+    "r": -0.0078,
+    "abs_r": 0.0078
+  },
+  {
+    "engagement_field": "favourite_count",
+    "chart_field": "mean_streak_len",
+    "n": 10027,
+    "r": -0.0077,
+    "abs_r": 0.0077
+  },
+  {
+    "engagement_field": "nominations_current",
+    "chart_field": "don_ratio",
+    "n": 10027,
+    "r": 0.0077,
+    "abs_r": 0.0077
+  },
+  {
+    "engagement_field": "nominations_current",
+    "chart_field": "ratio_random_distance",
+    "n": 10027,
+    "r": 0.0074,
+    "abs_r": 0.0074
+  },
+  {
+    "engagement_field": "nominations_current",
+    "chart_field": "gap_peak_count",
+    "n": 10027,
+    "r": -0.0073,
+    "abs_r": 0.0073
+  },
+  {
+    "engagement_field": "play_count_set",
+    "chart_field": "streak_event_fraction",
+    "n": 10027,
+    "r": 0.0068,
+    "abs_r": 0.0068
+  },
+  {
+    "engagement_field": "playcount",
+    "chart_field": "short_ioi_pct",
+    "n": 10027,
+    "r": 0.0064,
+    "abs_r": 0.0064
+  },
+  {
+    "engagement_field": "play_count_set",
+    "chart_field": "longest_streak",
+    "n": 10027,
+    "r": -0.0064,
+    "abs_r": 0.0064
+  },
+  {
+    "engagement_field": "play_count_set",
+    "chart_field": "over_pspace_self",
+    "n": 10027,
+    "r": -0.0061,
+    "abs_r": 0.0061
+  },
+  {
+    "engagement_field": "bpm_set",
+    "chart_field": "short_ioi_pct",
+    "n": 10027,
+    "r": 0.0057,
+    "abs_r": 0.0057
+  },
+  {
+    "engagement_field": "passcount",
+    "chart_field": "don_ratio",
+    "n": 10027,
+    "r": 0.0056,
+    "abs_r": 0.0056
+  },
+  {
+    "engagement_field": "rating_count",
+    "chart_field": "short_ioi_pct",
+    "n": 10027,
+    "r": -0.0054,
+    "abs_r": 0.0054
+  },
+  {
+    "engagement_field": "play_count_set",
+    "chart_field": "density_peak",
+    "n": 10027,
+    "r": 0.005,
+    "abs_r": 0.005
+  },
+  {
+    "engagement_field": "rating_mean",
+    "chart_field": "gap_peak_falloff",
+    "n": 10027,
+    "r": 0.005,
+    "abs_r": 0.005
+  },
+  {
+    "engagement_field": "nominations_current",
+    "chart_field": "short_ioi_pct",
+    "n": 10027,
+    "r": -0.0048,
+    "abs_r": 0.0048
+  },
+  {
+    "engagement_field": "play_count_set",
+    "chart_field": "density_cv",
+    "n": 10027,
+    "r": 0.0045,
+    "abs_r": 0.0045
+  },
+  {
+    "engagement_field": "rating_mean",
+    "chart_field": "estimated_bpm",
+    "n": 10027,
+    "r": -0.0041,
+    "abs_r": 0.0041
+  },
+  {
+    "engagement_field": "bpm_set",
+    "chart_field": "gap_metronome_distance",
+    "n": 10027,
+    "r": 0.0041,
+    "abs_r": 0.0041
+  },
+  {
+    "engagement_field": "favourite_count",
+    "chart_field": "short_ioi_pct",
+    "n": 10027,
+    "r": -0.004,
+    "abs_r": 0.004
+  },
+  {
+    "engagement_field": "play_count_set",
+    "chart_field": "star_rating",
+    "n": 10027,
+    "r": 0.0029,
+    "abs_r": 0.0029
+  },
+  {
+    "engagement_field": "play_count_set",
+    "chart_field": "ratio_peak_falloff",
+    "n": 10027,
+    "r": -0.0028,
+    "abs_r": 0.0028
+  },
+  {
+    "engagement_field": "play_count_set",
+    "chart_field": "mean_streak_len",
+    "n": 10027,
+    "r": 0.0024,
+    "abs_r": 0.0024
+  },
+  {
+    "engagement_field": "nominations_current",
+    "chart_field": "ratio_peak_count",
+    "n": 10027,
+    "r": -0.0024,
+    "abs_r": 0.0024
+  },
+  {
+    "engagement_field": "play_count_set",
+    "chart_field": "short_ioi_pct",
+    "n": 10027,
+    "r": -0.0021,
+    "abs_r": 0.0021
+  },
+  {
+    "engagement_field": "nominations_current",
+    "chart_field": "gap_metronome_distance",
+    "n": 10027,
+    "r": -0.0015,
+    "abs_r": 0.0015
+  },
+  {
+    "engagement_field": "passcount",
+    "chart_field": "short_ioi_pct",
+    "n": 10027,
+    "r": 0.0013,
+    "abs_r": 0.0013
+  },
+  {
+    "engagement_field": "nominations_current",
+    "chart_field": "gap_random_distance",
+    "n": 10027,
+    "r": -0.0013,
+    "abs_r": 0.0013
+  },
+  {
+    "engagement_field": "rating_mean",
+    "chart_field": "ratio_peak_count",
+    "n": 10027,
+    "r": -0.0009,
+    "abs_r": 0.0009
+  },
+  {
+    "engagement_field": "favourite_count",
+    "chart_field": "ioi_p95_ms",
+    "n": 10027,
+    "r": 0.0004,
+    "abs_r": 0.0004
+  },
+  {
+    "engagement_field": "nominations_current",
+    "chart_field": "gap_peak_falloff",
+    "n": 10027,
+    "r": -0.0002,
+    "abs_r": 0.0002
+  }
+]

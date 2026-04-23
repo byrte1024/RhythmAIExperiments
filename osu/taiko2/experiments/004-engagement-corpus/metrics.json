@@ -1,0 +1,74 @@
+{
+    "run": {
+        "experiment": "004-engagement-corpus",
+        "dataset": "taiko2_v1",
+        "n_joined": 10027,
+        "status_breakdown": {"ranked": 10027},
+        "categoricals_missing": ["genre", "language"]
+    },
+    "predictions": {
+        "P1_star_x_pass_rate":                   {"expected": "-0.35 to -0.60", "actual": -0.601, "status": "match"},
+        "P2_star_x_playcount":                   {"expected": "+0.15 to +0.35", "actual": 0.343,  "status": "match"},
+        "P3_fav_x_ratio_metronome_distance":     {"expected": "+0.10 to +0.30", "actual": -0.014, "status": "no_signal"},
+        "P4_fav_x_ratio_peak_count":             {"expected": "+0.05 to +0.25", "actual": -0.013, "status": "no_signal"},
+        "P5_fav_x_gap_peak_count":               {"expected": "+0.05 to +0.25", "actual": -0.018, "status": "no_signal"},
+        "P6_rating_mean_max_abs_r":              {"expected": "<= 0.25",        "actual": 0.192,  "status": "match"},
+        "P7_play_count_set_x_favourite_count":   {"expected": "+0.55 to +0.85", "actual": 0.012,  "status": "no_signal"},
+        "P8_top5_includes_pass_rate_difficulty": {"expected": "yes",            "actual": "yes",  "status": "match"},
+        "P9_shape_metric_with_abs_r_ge_0_15":    {"expected": "yes",            "actual": "yes (3 metrics)", "status": "match"}
+    },
+    "engagement_summary": {
+        "playcount":           {"min": 51,   "p25": 551,   "median": 1009,  "p75": 1918,  "p95": 5249,  "max": 60544,   "mean": 1699},
+        "passcount":           {"min": 12,   "p25": 163,   "median": 286,   "p75": 512,   "p95": 1299,  "max": 12327,   "mean": 442},
+        "pass_rate":           {"min": 0.04, "p25": 0.23,  "median": 0.29,  "p75": 0.36,  "p95": 0.50,  "max": 0.84,    "mean": 0.30},
+        "play_count_set":      {"min": 117,  "p25": 3102,  "median": 5925,  "p75": 11552, "p95": 41504, "max": 3496571, "mean": 17491},
+        "favourite_count":     {"min": 2,    "p25": 17,    "median": 31,    "p75": 56,    "p95": 168,   "max": 1932,    "mean": 55},
+        "rating_mean":         {"min": 4.17, "p25": 8.88,  "median": 9.29,  "p75": 9.61,  "p95": 9.91,  "max": 10.00,   "mean": 9.17},
+        "rating_count":        {"min": 1,    "p25": 16,    "median": 24,    "p75": 38,    "p95": 89,    "max": 1415,    "mean": 36},
+        "bpm_set":             {"min": 2,    "p25": 142,   "median": 173,   "p75": 195,   "p95": 248,   "max": 336,     "mean": 171},
+        "nominations_current": {"min": 2,    "p25": 2,     "median": 2,     "p75": 2,     "p95": 3,     "max": 5,       "mean": 2.07}
+    },
+    "top_20_correlations": [
+        {"rank":  1, "eng": "pass_rate",        "chart": "ioi_mean_ms",              "r":  0.656},
+        {"rank":  2, "eng": "pass_rate",        "chart": "ioi_median_ms",            "r":  0.622},
+        {"rank":  3, "eng": "pass_rate",        "chart": "gap_peak_mass_total",      "r": -0.612},
+        {"rank":  4, "eng": "pass_rate",        "chart": "density_mean",             "r": -0.607},
+        {"rank":  5, "eng": "pass_rate",        "chart": "ioi_p95_ms",               "r":  0.606},
+        {"rank":  6, "eng": "pass_rate",        "chart": "events_per_sec",           "r": -0.604},
+        {"rank":  7, "eng": "pass_rate",        "chart": "star_rating",              "r": -0.601},
+        {"rank":  8, "eng": "pass_rate",        "chart": "ratio_peak_mass_total",    "r": -0.591},
+        {"rank":  9, "eng": "pass_rate",        "chart": "total_events",             "r": -0.590},
+        {"rank": 10, "eng": "pass_rate",        "chart": "density_peak",             "r": -0.588},
+        {"rank": 11, "eng": "pass_rate",        "chart": "dominant_ioi_ms",          "r":  0.558},
+        {"rank": 12, "eng": "pass_rate",        "chart": "density_std",              "r": -0.527},
+        {"rank": 13, "eng": "pass_rate",        "chart": "duration_s",               "r": -0.472},
+        {"rank": 14, "eng": "pass_rate",        "chart": "ioi_p99_ms",               "r":  0.465},
+        {"rank": 15, "eng": "pass_rate",        "chart": "over_pspace_self",         "r": -0.459},
+        {"rank": 16, "eng": "playcount",        "chart": "events_per_sec",           "r":  0.378},
+        {"rank": 17, "eng": "playcount",        "chart": "density_mean",             "r":  0.376},
+        {"rank": 18, "eng": "pass_rate",        "chart": "ratio_metronome_distance", "r":  0.351},
+        {"rank": 19, "eng": "playcount",        "chart": "star_rating",              "r":  0.343},
+        {"rank": 20, "eng": "bpm_set",          "chart": "density_mean",             "r":  0.335}
+    ],
+    "per_engagement_best": {
+        "pass_rate":           {"best_chart": "ioi_mean_ms",           "r":  0.656},
+        "playcount":           {"best_chart": "events_per_sec",        "r":  0.378},
+        "bpm_set":             {"best_chart": "density_mean",          "r":  0.335},
+        "passcount":           {"best_chart": "events_per_sec",        "r":  0.241},
+        "rating_mean":         {"best_chart": "gap_random_distance",   "r":  0.192},
+        "rating_count":        {"best_chart": "duration_s",            "r": -0.105},
+        "nominations_current": {"best_chart": "duration_s",            "r": -0.073},
+        "play_count_set":      {"best_chart": "duration_s",            "r": -0.062},
+        "favourite_count":     {"best_chart": "ratio_peak_mass_total", "r": -0.044}
+    },
+    "rating_mean_correlations_top8": [
+        {"chart": "gap_random_distance",   "r":  0.192},
+        {"chart": "over_pspace_self",      "r": -0.186},
+        {"chart": "ratio_random_distance", "r":  0.180},
+        {"chart": "density_std",           "r": -0.151},
+        {"chart": "density_cv",            "r": -0.138},
+        {"chart": "star_rating",           "r": -0.128},
+        {"chart": "density_peak",          "r": -0.121},
+        {"chart": "ratio_peak_falloff",    "r":  0.112}
+    ]
+}

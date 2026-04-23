@@ -11,6 +11,7 @@ cross-repo links, not duplicated here.
 | [001](001-exp45-smoke/) | exp 45 port, subsample-16 smoke | `Complete` | Pipeline works end-to-end; miss 0.72 → 0.55, hit 0.13 → 0.28 in 2 epochs on 1/16 data. Still descending at end. |
 | [002](002-exp45-full/)  | exp 45 full recreation       | `Planned`  | — |
 | [003](003-gap-ratio-corpus/) | Gap / ratio shape corpus reference | `Complete` | Ratio mass: 1.0x = 54.8 %, 0.5x = 20.1 %, 2.0x = 20.0 %. Three canonical ratios hold 94.85 % of corpus mass. Triplets beat quarters by mass (unexpected). Median gap + ratio peak count both = 4. |
+| [004](004-engagement-corpus/) | Engagement × chart-metric corpus | `Complete` | Pass_rate strongly predictable (top 15 pairs all pass_rate × difficulty, max \|r\| = 0.656). `favourite_count` has NO correlate (max \|r\| = 0.044). Playcount ≠ favourites (r = +0.012). Higher-rated charts are **less** chaotic, not more. |
 
 ---
 
