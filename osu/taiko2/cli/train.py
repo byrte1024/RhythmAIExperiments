@@ -137,6 +137,25 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
             "auto-resumes from latest.pt if present (legacy behavior)."
         ),
     )
+    p.add_argument(
+        "--infer-corpus-spec", type=Path, default=None,
+        help=(
+            "Predictor spec JSON for per-eval corpus inference (same "
+            "shape as cli.infer). When both --infer-corpus-spec AND "
+            "--infer-corpus-config are provided, `InferCorpusHook` is "
+            "installed and runs after every eval, merging its "
+            "averaged summary into val_metrics so the corpus scalars "
+            "are tracked + auto-graphed alongside onset metrics."
+        ),
+    )
+    p.add_argument(
+        "--infer-corpus-config", type=Path, default=None,
+        help="InferCorpusConfig JSON (fraction / seed / conditioning_modes / etc).",
+    )
+    p.add_argument(
+        "--infer-corpus-every", type=int, default=1,
+        help="Run the corpus hook every N evals (default 1 = every eval).",
+    )
     return p.parse_args(argv)
 
 
@@ -226,6 +245,45 @@ def main(argv: list[str] | None = None) -> int:
     # 5. Run.
     spec = RunSpec(root=args.runs_dir, name=args.run_name)
     print(f"run dir: {spec.run_dir}")
+
+    # Optional per-eval corpus inference hook.
+    pre_hooks: list = []
+    if args.infer_corpus_spec is not None and args.infer_corpus_config is not None:
+        import json as _json
+        from ..inference.spec import build_config, load_spec
+        from ..inference.corpus import InferCorpusConfig
+        from ..training.hooks import InferCorpusHook
+
+        predictor_spec = load_spec(
+            config=args.infer_corpus_spec, config_json=None,
+        )
+        corpus_node = _json.loads(
+            args.infer_corpus_config.read_text(encoding="utf-8"),
+        )
+        if "__class__" not in corpus_node:
+            corpus_node = {
+                "__class__": "osu.taiko2.inference.corpus:InferCorpusConfig",
+                **corpus_node,
+            }
+        corpus_cfg = build_config(corpus_node)
+        if not isinstance(corpus_cfg, InferCorpusConfig):
+            raise TypeError("--infer-corpus-config must resolve to InferCorpusConfig")
+        pre_hooks.append(InferCorpusHook(
+            spec=spec,
+            model=model,
+            corpus_config=corpus_cfg,
+            predictor_spec=predictor_spec,
+            val_sampler=val_sampler,
+            ds_root=ds_root,
+            device=args.device,
+            every_n_evals=args.infer_corpus_every,
+        ))
+        print(
+            f"[infer-corpus] hook enabled — every {args.infer_corpus_every} "
+            f"eval(s), fraction={corpus_cfg.fraction}, "
+            f"modes={corpus_cfg.conditioning_modes}"
+        )
+
     state = train(
         spec=spec,
         trainer_config=trainer_cfg,
@@ -238,6 +296,7 @@ def main(argv: list[str] | None = None) -> int:
         val_metrics=val_metrics,
         eval_artifacts=eval_artifacts,
         train_weights=train_weights,
+        pre_hooks=pre_hooks,
         device=args.device,
         resume=args.resume,
     )

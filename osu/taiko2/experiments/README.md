@@ -9,7 +9,7 @@ cross-repo links, not duplicated here.
 | # | Name | Status | Key result |
 |---|------|--------|------------|
 | [001](001-exp45-smoke/) | exp 45 port, subsample-16 smoke | `Complete` | Pipeline works end-to-end; miss 0.72 → 0.55, hit 0.13 → 0.28 in 2 epochs on 1/16 data. Still descending at end. |
-| [002](002-exp45-full/)  | exp 45 full recreation       | `Planned`  | — |
+| [002](002-exp45-full/)  | exp 45 full recreation       | `Complete` | Port confirmed: HIT 72.96 % @ E8 (+1.06 pp over taiko1 exp 45's 71.9 %), MISS 26.08 % (−1.42 pp). All 6 pre-run predictions passed. AR corpus: `dc_human` 91.7 %, median error 12 ms, ratio-error banding at ±log 2 / ±log 3 flagged for followup. |
 | [003](003-gap-ratio-corpus/) | Gap / ratio shape corpus reference | `Complete` | Ratio mass: 1.0x = 54.8 %, 0.5x = 20.1 %, 2.0x = 20.0 %. Three canonical ratios hold 94.85 % of corpus mass. Triplets beat quarters by mass (unexpected). Median gap + ratio peak count both = 4. |
 | [004](004-engagement-corpus/) | Engagement × chart-metric corpus | `Complete` | Pass_rate strongly predictable (top 15 pairs all pass_rate × difficulty, max \|r\| = 0.656). `favourite_count` has NO correlate (max \|r\| = 0.044). Playcount ≠ favourites (r = +0.012). Higher-rated charts are **less** chaotic, not more. |
 

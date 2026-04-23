@@ -217,6 +217,7 @@ def train(
     eval_artifacts: Sequence[Any] = (),
     train_weights: np.ndarray | None = None,
     extra_hooks: Sequence[TrainerHook] = (),
+    pre_hooks: Sequence[TrainerHook] = (),
     device: torch.device | str = torch.device("cpu"),
     progress: bool = True,
     resume: bool = False,
@@ -309,7 +310,13 @@ def train(
     # it trivial to query one eval's metrics without parsing the full
     # jsonl stream.
     default_hooks.append(PerEvalJsonHook())
-    hooks: list[TrainerHook] = default_hooks + list(extra_hooks)
+    # `pre_hooks` run BEFORE the defaults — used by contributors that
+    # need to mutate `val_metrics` (e.g. `InferCorpusHook`) before the
+    # default MetricLoggerHook / PerEvalJsonHook / MetricCurvesHook
+    # capture it. `extra_hooks` still run AFTER the defaults.
+    hooks: list[TrainerHook] = (
+        list(pre_hooks) + default_hooks + list(extra_hooks)
+    )
 
     evals_per_epoch = max(1, trainer_config.evals_per_epoch)
     eval_every = max(1, steps_per_epoch // evals_per_epoch)

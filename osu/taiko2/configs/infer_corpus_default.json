@@ -1,0 +1,13 @@
+{
+    "_comment": "Default InferCorpusConfig — 10% of the split, both conditioning modes, bundles saved. Used by cli.infer_corpus and wired into the training loop's InferCorpusHook when --infer-corpus-config points here.",
+    "__class__": "osu.taiko2.inference.corpus:InferCorpusConfig",
+    "fraction": 0.1,
+    "seed": 42,
+    "max_charts": null,
+    "conditioning_modes": ["gt", "fixed"],
+    "fixed_density_mean": 5.0,
+    "fixed_density_peak": 10,
+    "fixed_density_std": 2.2,
+    "save_bundles": true,
+    "save_per_chart_jsons": true
+}

@@ -523,3 +523,99 @@ class PerEvalJsonHook(TrainerHook):
                     tmp.unlink()
             except OSError:
                 pass
+
+
+class InferCorpusHook(TrainerHook):
+    """Run `inference.corpus.run_infer_corpus` after every eval,
+    using the LIVE model (no checkpoint reload), and merge the
+    averaged per-mode summary into `val_metrics` so every scalar the
+    corpus produces becomes a tracked training metric.
+
+    Ordering: this hook mutates the `val_metrics` dict, so it must
+    run BEFORE `MetricLoggerHook`, `PerEvalJsonHook`, and
+    `MetricCurvesHook`. The training loop threads a separate
+    `pre_hooks` list for that purpose; see `training.loop.train`.
+
+    Outputs
+    -------
+
+    Per-eval output lands at
+    ``{run_dir}/infer_corpus/eval_{step}/`` — same layout the CLI
+    produces, so the two paths are interchangeable. The flat summary
+    of averaged scalars also gets written to
+    ``{run_dir}/infer_corpus/eval_{step}/summary.json`` and merged
+    into `val_metrics` with keys of the form
+    ``corpus/{mode}_cond/{name}_mean`` / ``corpus/{mode}_cond_cmp/{name}_mean``
+    so `MetricCurvesHook` auto-graphs each one as its own curve.
+    """
+
+    def __init__(
+        self,
+        *,
+        spec: RunSpec,
+        model: Model,
+        corpus_config: "Any",
+        predictor_spec: dict[str, Any],
+        val_sampler: "Any",
+        ds_root: Path,
+        device: torch.device | str = torch.device("cpu"),
+        every_n_evals: int = 1,
+    ):
+        self._spec = spec
+        self._model = model
+        self._corpus_config = corpus_config
+        self._predictor_spec = predictor_spec
+        self._val_sampler = val_sampler
+        self._ds_root = Path(ds_root)
+        self._device = (
+            torch.device(device) if isinstance(device, str) else device
+        )
+        self._every_n_evals = max(1, int(every_n_evals))
+        self._eval_count = 0
+
+    def on_train_start(self, state: TrainingState, spec: RunSpec) -> None:
+        spec.ensure()
+
+    def on_eval_end(
+        self, state: TrainingState, val_metrics: dict[str, float],
+    ) -> None:
+        self._eval_count += 1
+        if self._eval_count % self._every_n_evals != 0:
+            return
+
+        # Imports here keep the hook module cheap to import when the
+        # training loop doesn't use it.
+        from ..inference.corpus import run_infer_corpus
+        from ..inference.spec import assemble_predictor_with_model
+
+        out_dir = (
+            self._spec.run_dir / "infer_corpus" / f"eval_{state.step}"
+        )
+        out_dir.mkdir(parents=True, exist_ok=True)
+
+        # Build a predictor around the live model — no checkpoint disk
+        # round-trip. The model was just trained, eval just finished,
+        # so its weights are already where we want them.
+        self._model.eval()
+        predictor = assemble_predictor_with_model(
+            spec=self._predictor_spec,
+            model=self._model,
+            device=self._device,
+        )
+        try:
+            summary = run_infer_corpus(
+                predictor=predictor,
+                val_sampler=self._val_sampler,
+                ds_root=self._ds_root,
+                out_dir=out_dir,
+                config=self._corpus_config,
+                step=state.step,
+                progress=True,
+            )
+        finally:
+            self._model.train()  # restore training mode for the next epoch
+
+        # Merge the averaged scalars back into val_metrics so the
+        # downstream hooks (MetricLoggerHook, CurvesHook,
+        # PerEvalJsonHook) pick them up as regular eval metrics.
+        val_metrics.update(summary)

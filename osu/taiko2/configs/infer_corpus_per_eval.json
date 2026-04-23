@@ -1,0 +1,13 @@
+{
+    "_comment": "Per-eval InferCorpusHook config — 10% of the val split, both conditioning modes, DISK-LIGHT (no bundles, no per-chart JSONs). Still writes metrics.csv + comparisons.csv + summary.json per mode so the per-eval trace is queryable, but avoids thousands of small files across many evals.",
+    "__class__": "osu.taiko2.inference.corpus:InferCorpusConfig",
+    "fraction": 0.1,
+    "seed": 42,
+    "max_charts": null,
+    "conditioning_modes": ["gt", "fixed"],
+    "fixed_density_mean": 5.0,
+    "fixed_density_peak": 10,
+    "fixed_density_std": 2.2,
+    "save_bundles": false,
+    "save_per_chart_jsons": false
+}

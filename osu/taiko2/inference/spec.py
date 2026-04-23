@@ -17,6 +17,8 @@ from typing import Any
 import torch
 
 from ..domain.inference import ChartPredictor
+from ..domain.model import Model
+from ..domain.training import CheckpointMeta
 from ..inference.loader import load_model_from_checkpoint
 
 
@@ -145,14 +147,60 @@ def assemble_predictor(
     spec: dict[str, Any],
     device: torch.device,
     per_step_log_path: Path | None = None,
-) -> ChartPredictor:
-    """Build a ready-to-run predictor from a spec dict. If
-    `per_step_log_path` is supplied and the predictor's config carries
-    `per_step_log_path`, it's attached. Otherwise the path is ignored."""
+) -> tuple[ChartPredictor, CheckpointMeta]:
+    """Build a ready-to-run predictor from a spec dict. Returns the
+    predictor along with the checkpoint's `CheckpointMeta` so callers
+    can read `training_state.step`, the model / loss class strings,
+    etc. without reloading the checkpoint.
+
+    If `per_step_log_path` is supplied and the predictor's config
+    carries a `per_step_log_path` field, the path is attached.
+    """
     ckpt_path = Path(spec["checkpoint"])
-    model, _loss, _meta = load_model_from_checkpoint(ckpt_path, device=device)
+    model, _loss, meta = load_model_from_checkpoint(ckpt_path, device=device)
     model.eval()
 
+    decoder = build_component(spec["decoder"])
+    input_builder = build_component(spec["input_builder"])
+    audio_sampler = build_component(spec["audio_sampler"])
+    event_sampler = build_component(spec["event_sampler"])
+
+    predictor_cls = resolve_class(spec["predictor"]["__class__"])
+    pred_cfg = build_config(spec["predictor"]["config"])
+    if per_step_log_path is not None and hasattr(pred_cfg, "per_step_log_path"):
+        pred_cfg = dataclasses.replace(
+            pred_cfg, per_step_log_path=per_step_log_path,
+        )
+
+    predictor = predictor_cls(
+        pred_cfg,
+        model=model,
+        decoder=decoder,
+        input_builder=input_builder,
+        audio_sampler=audio_sampler,
+        event_sampler=event_sampler,
+        device=device,
+    )
+    return predictor, meta
+
+
+def assemble_predictor_with_model(
+    *,
+    spec: dict[str, Any],
+    model: Model,
+    device: torch.device,
+    per_step_log_path: Path | None = None,
+) -> ChartPredictor:
+    """Like `assemble_predictor`, but takes an already-live Model
+    instance instead of loading from the spec's checkpoint. Used by
+    the training-loop `InferCorpusHook` to reuse the model that's
+    currently in memory rather than paying a disk round-trip every
+    eval.
+
+    The spec's `checkpoint` field is read but NOT used to load weights
+    — only the other components (decoder / input_builder / samplers /
+    predictor config) are built from the spec.
+    """
     decoder = build_component(spec["decoder"])
     input_builder = build_component(spec["input_builder"])
     audio_sampler = build_component(spec["audio_sampler"])

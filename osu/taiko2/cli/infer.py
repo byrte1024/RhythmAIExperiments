@@ -54,7 +54,7 @@ from typing import Any
 
 import torch
 
-from ._infer_common import assemble_predictor, load_spec
+from ..inference.spec import assemble_predictor, load_spec
 
 # Sentinel for `--audio` passed without a value → run file picker.
 _PICK_SENTINEL = "__pick__"
@@ -271,7 +271,7 @@ def main(argv: list[str] | None = None) -> int:
             args.out_dir / f"{name}.metrics.json" if args.debug else None
         )
 
-        predictor = assemble_predictor(
+        predictor, _meta = assemble_predictor(
             spec=spec, device=device,
             per_step_log_path=steps_path if args.debug else None,
         )
