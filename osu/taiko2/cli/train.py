@@ -89,6 +89,21 @@ def _build_from_json(path: Path) -> Any:
 
 # ─────────────────────────── CLI ─────────────────────────────────────
 
+def _resolve_benchmarks(names_csv: str) -> "list[Any]":
+    """`--benchmarks` CSV → list of BenchmarkMode. Empty string → []."""
+    names_csv = (names_csv or "").strip()
+    if not names_csv:
+        return []
+    from ..training.benchmarks import (
+        DEFAULT_BENCHMARKS, benchmarks_by_name,
+    )
+    if names_csv == "all":
+        return list(DEFAULT_BENCHMARKS)
+    return benchmarks_by_name(
+        [n.strip() for n in names_csv.split(",") if n.strip()]
+    )
+
+
 def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     p = argparse.ArgumentParser(
         description="Train a taiko2 model from config JSONs.",
@@ -155,6 +170,32 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     p.add_argument(
         "--infer-corpus-every", type=int, default=1,
         help="Run the corpus hook every N evals (default 1 = every eval).",
+    )
+    p.add_argument(
+        "--train-noaug-fraction", type=float, default=0.0,
+        help=(
+            "Fraction of train split to evaluate WITHOUT augmentations "
+            "after each eval. Metrics land under `train_noaug/*` in the "
+            "val_metrics stream. Set to 0 (default) to disable. "
+            "Distinguishes overfitting from data-ceiling."
+        ),
+    )
+    p.add_argument(
+        "--benchmarks", default="",
+        help=(
+            "Comma-separated list of benchmark mode names (or 'all'). "
+            "See training/benchmarks.py for available modes. Each mode "
+            "runs over `--benchmark-fraction` of the val split per eval "
+            "and lands metrics under `bench/{mode}/*`."
+        ),
+    )
+    p.add_argument(
+        "--benchmark-fraction", type=float, default=0.05,
+        help="Fraction of val split per benchmark pass (default 0.05 = 5%).",
+    )
+    p.add_argument(
+        "--benchmark-seed", type=int, default=42,
+        help="Seed for benchmark sample selection + per-mode rng.",
     )
     return p.parse_args(argv)
 
@@ -299,6 +340,10 @@ def main(argv: list[str] | None = None) -> int:
         pre_hooks=pre_hooks,
         device=args.device,
         resume=args.resume,
+        train_noaug_fraction=args.train_noaug_fraction,
+        benchmarks=_resolve_benchmarks(args.benchmarks),
+        benchmark_fraction=args.benchmark_fraction,
+        benchmark_seed=args.benchmark_seed,
     )
     print(
         f"done. final step={state.step:,} epoch={state.epoch} "

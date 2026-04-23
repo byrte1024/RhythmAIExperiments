@@ -244,20 +244,29 @@ class ConsoleLoggerHook(TrainerHook):
 class CurveSpec:
     """One time-series plot that `MetricCurvesHook` will render.
 
-    `key` is the **un-namespaced** metric name — the same string that
-    appears in `LossResult.metrics` / the eval metrics dict. The hook
-    translates to `train/batch/{key}` and `val/single/{key}` when
+    `key` is the primary (un-namespaced) metric name — the same string
+    that appears in `LossResult.metrics` / the eval metrics dict. The
+    hook translates to `train/batch/{key}` and `val/single/{key}` when
     reading `metrics.jsonl` on resume.
+
+    `companion_keys` adds more series to the same plot. Each companion
+    renders as a lighter/dashed line alongside the primary — useful for
+    multi-component metrics like "total loss + hard_ce + soft_ce" where
+    the individual components are meaningful but live on similar scales.
     """
     name: str
     key: str
     log_y: bool = False
     title: str | None = None
+    companion_keys: tuple[str, ...] = ()
 
 
 DEFAULT_CURVES: tuple[CurveSpec, ...] = (
-    # Loss — log-y because it spans multiple orders of magnitude.
-    CurveSpec(name="loss",           key="loss",               log_y=True),
+    # Loss — total + components on the same plot (log-y).
+    CurveSpec(
+        name="loss", key="loss", log_y=True,
+        companion_keys=("hard_ce", "soft_ce"),
+    ),
     # Primary composites.
     CurveSpec(name="onset_hit",      key="onset/hit",          log_y=False),
     CurveSpec(name="onset_good",     key="onset/good",         log_y=False),
@@ -328,24 +337,29 @@ class MetricCurvesHook(TrainerHook):
         self._spec = spec
         self._seed_from_jsonl(spec.metrics_path)
 
+    def _all_keys(self, curve: CurveSpec) -> tuple[str, ...]:
+        return (curve.key, *curve.companion_keys)
+
     def on_step_end(self, state: TrainingState, train_loss: LossResult) -> None:
         step = int(state.step)
         metrics = train_loss.metrics
         for curve in self._curves:
-            if curve.key in metrics:
-                self._train.setdefault(curve.key, []).append(
-                    (step, float(metrics[curve.key])),
-                )
+            for k in self._all_keys(curve):
+                if k in metrics:
+                    self._train.setdefault(k, []).append(
+                        (step, float(metrics[k])),
+                    )
 
     def on_eval_end(
         self, state: TrainingState, val_metrics: dict[str, float],
     ) -> None:
         step = int(state.step)
         for curve in self._curves:
-            if curve.key in val_metrics:
-                self._eval.setdefault(curve.key, []).append(
-                    (step, float(val_metrics[curve.key])),
-                )
+            for k in self._all_keys(curve):
+                if k in val_metrics:
+                    self._eval.setdefault(k, []).append(
+                        (step, float(val_metrics[k])),
+                    )
         self._render_atomic()
 
     def on_train_end(
@@ -374,18 +388,20 @@ class MetricCurvesHook(TrainerHook):
                         continue
                     if event == "step":
                         for curve in self._curves:
-                            k = f"train/batch/{curve.key}"
-                            if k in d:
-                                self._train.setdefault(curve.key, []).append(
-                                    (int(step), float(d[k])),
-                                )
+                            for key in self._all_keys(curve):
+                                namespaced = f"train/batch/{key}"
+                                if namespaced in d:
+                                    self._train.setdefault(key, []).append(
+                                        (int(step), float(d[namespaced])),
+                                    )
                     elif event == "eval":
                         for curve in self._curves:
-                            k = f"val/single/{curve.key}"
-                            if k in d:
-                                self._eval.setdefault(curve.key, []).append(
-                                    (int(step), float(d[k])),
-                                )
+                            for key in self._all_keys(curve):
+                                namespaced = f"val/single/{key}"
+                                if namespaced in d:
+                                    self._eval.setdefault(key, []).append(
+                                        (int(step), float(d[namespaced])),
+                                    )
         except OSError:
             pass
 
@@ -397,10 +413,21 @@ class MetricCurvesHook(TrainerHook):
         for curve in self._curves:
             self._render_one(curve, out_dir)
 
+    # Palette cycled through companion series.
+    _COMPANION_PALETTE: tuple[tuple[str, str], ...] = (
+        # (train_color, eval_color) for each companion key.
+        ("#6bc46d", "#3a9d3d"),
+        ("#fcb71e", "#b07800"),
+        ("#c76dba", "#8e4a85"),
+        ("#9b6eff", "#5e40b3"),
+    )
+
     def _render_one(self, curve: CurveSpec, out_dir: Path) -> None:
-        train_pts = self._train.get(curve.key, [])
-        eval_pts = self._eval.get(curve.key, [])
-        if not train_pts and not eval_pts:
+        all_keys = self._all_keys(curve)
+        any_data = any(
+            self._train.get(k) or self._eval.get(k) for k in all_keys
+        )
+        if not any_data:
             return
 
         import matplotlib
@@ -410,53 +437,88 @@ class MetricCurvesHook(TrainerHook):
 
         path = out_dir / f"{curve.name}.png"
         tmp = path.with_suffix(path.suffix + ".tmp")
-
         fig, ax = plt.subplots(figsize=(11, 5))
 
-        if train_pts:
-            xs = [p[0] for p in train_pts]
-            ys = [p[1] for p in train_pts]
-            ax.plot(
-                xs, ys,
-                color="#4a90d9", alpha=0.25, linewidth=0.6,
-                label="train/batch (raw)",
-            )
-            if len(ys) >= self._smoothing:
-                arr = np.asarray(ys, dtype=np.float64)
-                w = self._smoothing
-                kernel = np.ones(w, dtype=np.float64) / w
-                smoothed = np.convolve(arr, kernel, mode="valid")
-                smoothed_x = xs[w - 1:]
+        def _plot_series(
+            key: str, train_color: str, eval_color: str,
+            marker: str, alpha_raw: float, is_primary: bool,
+        ) -> None:
+            train_pts = self._train.get(key, [])
+            eval_pts = self._eval.get(key, [])
+            if train_pts:
+                xs = [p[0] for p in train_pts]
+                ys = [p[1] for p in train_pts]
                 ax.plot(
-                    smoothed_x, smoothed,
-                    color="#1f4fa3", linewidth=1.6,
-                    label=f"train/batch (avg {w})",
+                    xs, ys,
+                    color=train_color, alpha=alpha_raw,
+                    linewidth=0.6,
+                    label=None,
+                )
+                if len(ys) >= self._smoothing:
+                    arr = np.asarray(ys, dtype=np.float64)
+                    w = self._smoothing
+                    kernel = np.ones(w, dtype=np.float64) / w
+                    smoothed = np.convolve(arr, kernel, mode="valid")
+                    smoothed_x = xs[w - 1:]
+                    ax.plot(
+                        smoothed_x, smoothed,
+                        color=train_color,
+                        linewidth=1.6 if is_primary else 1.1,
+                        linestyle="-" if is_primary else "--",
+                        label=f"train/batch {key} (avg {w})",
+                    )
+            if eval_pts:
+                xs = [p[0] for p in eval_pts]
+                ys = [p[1] for p in eval_pts]
+                ax.plot(
+                    xs, ys,
+                    color=eval_color,
+                    marker=marker,
+                    linewidth=1.8 if is_primary else 1.2,
+                    linestyle="-" if is_primary else "--",
+                    markersize=5 if is_primary else 4,
+                    label=f"val/single {key}",
                 )
 
-        if eval_pts:
-            xs = [p[0] for p in eval_pts]
-            ys = [p[1] for p in eval_pts]
-            ax.plot(
-                xs, ys,
-                color="#e86850", marker="o", linewidth=1.8,
-                markersize=5, label="val/single",
+        # Primary series — blue / red (matches pre-companion defaults).
+        _plot_series(
+            curve.key,
+            train_color="#4a90d9", eval_color="#e86850",
+            marker="o", alpha_raw=0.25, is_primary=True,
+        )
+        # Companion series — cycle through the palette.
+        for i, ck in enumerate(curve.companion_keys):
+            train_color, eval_color = self._COMPANION_PALETTE[
+                i % len(self._COMPANION_PALETTE)
+            ]
+            _plot_series(
+                ck, train_color=train_color, eval_color=eval_color,
+                marker="x", alpha_raw=0.15, is_primary=False,
             )
 
         if curve.log_y:
-            # log scale requires strictly positive values; fall back
-            # to linear if any non-positive crept in.
-            vals = [v for _, v in train_pts] + [v for _, v in eval_pts]
+            vals: list[float] = []
+            for k in all_keys:
+                vals.extend(v for _, v in self._train.get(k, ()))
+                vals.extend(v for _, v in self._eval.get(k, ()))
             if vals and min(vals) > 0:
                 ax.set_yscale("log")
 
         title = curve.title or curve.key
+        n_train = sum(len(self._train.get(k, ())) for k in all_keys)
+        n_eval = sum(len(self._eval.get(k, ())) for k in all_keys)
+        keys_desc = (
+            curve.key
+            + (f" + {', '.join(curve.companion_keys)}"
+               if curve.companion_keys else "")
+        )
         ax.set_xlabel("Step")
-        ax.set_ylabel(curve.key)
+        ax.set_ylabel(keys_desc)
         ax.set_title(
-            f"{title} — {len(train_pts):,} train pts, {len(eval_pts):,} eval pts"
+            f"{title} — {n_train:,} train pts, {n_eval:,} eval pts"
         )
         ax.grid(True, which="both", alpha=0.15)
-        ax.legend(loc="best")
+        ax.legend(loc="best", fontsize=8)
         fig.tight_layout()
         try:
             fig.savefig(tmp, dpi=120, format="png")

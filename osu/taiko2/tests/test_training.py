@@ -492,3 +492,89 @@ class TestEndToEndLoop:
         assert not bogus_dir.exists(), (
             "bogus future eval_{N}/ dir survived --resume truncation"
         )
+
+    def test_resume_midepoch_continues_not_restarts(self, tmp_path: Path):
+        """With evals_per_epoch=4, eval 1 fires at 25% through the epoch.
+        Resuming from that eval must skip the first 25% of the next
+        epoch-iteration's slices — i.e. the resumed run's final step
+        should equal `step_at_eval1 + 75% of steps_per_epoch`, NOT
+        `step_at_eval1 + 100%` (which would indicate a full-epoch
+        replay starting from slice 0).
+        """
+        b_pred = 40
+        _, train_s, val_s, model, loss, adapter = self._make_all(
+            tmp_path, b_pred=b_pred,
+        )
+        spec = RunSpec(root=tmp_path / "runs", name="r_midepoch")
+        # batch_size=2, evals_per_epoch=4. We only need at least
+        # 2 evals with the first firing mid-epoch (not at step 0
+        # or at the epoch boundary). The exact count depends on
+        # the tiny-dataset helper's sample count.
+        cfg = TrainerConfig(
+            epochs=1, batch_size=2, learning_rate=1e-3, weight_decay=0.0,
+            grad_clip=1.0, evals_per_epoch=4,
+            metric_to_watch="onset/miss", metric_lower_is_better=True,
+        )
+
+        state_a = train(
+            spec=spec, trainer_config=cfg,
+            model=model, loss=loss, adapter=adapter,
+            train_sampler=train_s, val_sampler=val_s,
+            val_metrics=MetricSet(OnsetMetric(OnsetMetricConfig(b_pred=b_pred))),
+        )
+        total_steps_a = state_a.step
+        steps_per_epoch = total_steps_a  # 1-epoch run
+        assert steps_per_epoch >= 4, (
+            "need steps_per_epoch >= 4 for this test's 4-eval cadence"
+        )
+
+        # Wipe every eval_{N}/ except the first so `find_last_eval_
+        # checkpoint` resolves to eval 1 specifically — the 25% point.
+        import re
+        eval_dirs = sorted(
+            (int(re.match(r"eval_(\d+)", d.name).group(1)), d)
+            for d in spec.run_dir.iterdir()
+            if d.is_dir() and d.name.startswith("eval_")
+        )
+        assert len(eval_dirs) >= 2, (
+            f"need >=2 evals to test mid-epoch resume, found {len(eval_dirs)}"
+        )
+        step_at_eval1, eval1_dir = eval_dirs[0]
+        for _, d in eval_dirs[1:]:
+            import shutil
+            shutil.rmtree(d)
+        # eval_1 must be strictly mid-epoch (not at step 0, not at
+        # the epoch boundary).
+        assert 0 < step_at_eval1 < steps_per_epoch, (
+            f"eval 1 step {step_at_eval1} not mid-epoch "
+            f"(steps_per_epoch={steps_per_epoch})"
+        )
+
+        # Resume from eval 1. Fresh model so training state is the
+        # only resume input.
+        fresh_model = EventEmbeddingDetector(model.config)
+        fresh_loss = OnsetLoss(loss.config)
+        state_b = train(
+            spec=spec, trainer_config=cfg,
+            model=fresh_model, loss=fresh_loss, adapter=adapter,
+            train_sampler=train_s, val_sampler=val_s,
+            val_metrics=MetricSet(OnsetMetric(OnsetMetricConfig(b_pred=b_pred))),
+            resume=True,
+        )
+
+        # If mid-epoch resume works: resumed run skips the first 25%
+        # of slices and processes the remaining 75%, ending at
+        # steps_per_epoch total (one full epoch's worth of steps).
+        #
+        # If resume just replays the epoch: resumed run would do a
+        # full steps_per_epoch MORE steps, ending at
+        # step_at_eval1 + steps_per_epoch, which is 25% BEYOND
+        # steps_per_epoch. That would be the bug we're guarding
+        # against.
+        assert state_b.step == steps_per_epoch, (
+            f"state_b.step={state_b.step} should equal "
+            f"steps_per_epoch={steps_per_epoch} "
+            f"(eval1 step={step_at_eval1}); a value of "
+            f"{step_at_eval1 + steps_per_epoch} would indicate a "
+            f"full-epoch replay (the bug)."
+        )

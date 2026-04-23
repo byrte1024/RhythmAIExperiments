@@ -116,8 +116,15 @@ def _run_eval(
     batch_size: int,
     device: torch.device,
     progress: bool = False,
+    indices: Sequence[int] | None = None,
+    sample_mutation: "Callable[[DataSample], DataSample | None] | None" = None,
+    desc: str = "eval",
 ) -> dict[str, float]:
-    """Full pass over `sampler`; returns flat `dict[str, float]`.
+    """Eval pass. Defaults to the full sampler; can be scoped to a
+    subset via `indices`, and every sample can be mutated before the
+    adapter via `sample_mutation` (return `None` from the mutation to
+    skip that sample entirely — used by `advanced_metronome` benchmark
+    to exclude uninformative cases).
 
     Artifacts (if any) are reset here and updated per batch; the loop
     saves them after this returns.
@@ -127,30 +134,44 @@ def _run_eval(
         metrics.reset()
     for a in artifacts:
         a.reset()
-    n = sampler.count_samples()
+
+    if indices is None:
+        n = sampler.count_samples()
+        sample_indices = list(range(n))
+    else:
+        sample_indices = list(indices)
 
     total_loss = 0.0
     n_seen = 0
     loss_sub: dict[str, float] = {}
-    # Per-batch running sums for the eval postfix — independent of
-    # `metrics`, so the bar works even when no MetricSet was passed.
     eval_hit_sum = 0.0
     eval_miss_sum = 0.0
     eval_batches = 0
 
-    raw_slices = list(_batch_slices(n, batch_size))
+    # Batches are contiguous slices of `sample_indices`; mutation-
+    # skipped samples drop out of each batch but the batch's remaining
+    # samples are still evaluated together.
+    idx_chunks: list[list[int]] = [
+        sample_indices[i: i + batch_size]
+        for i in range(0, len(sample_indices), batch_size)
+    ]
     pbar = None
     if progress:
         try:
             from tqdm.auto import tqdm
-            pbar = tqdm(raw_slices, desc="eval", unit="batch", leave=False)
+            pbar = tqdm(idx_chunks, desc=desc, unit="batch", leave=False)
         except ImportError:
             pass
-    slices = pbar if pbar is not None else raw_slices
+    chunk_iter = pbar if pbar is not None else idx_chunks
 
     with torch.no_grad():
-        for lo, hi in slices:
-            samples = [fetch(i) for i in range(lo, hi)]
+        for chunk in chunk_iter:
+            raw = [fetch(i) for i in chunk]
+            if sample_mutation is not None:
+                raw = [sample_mutation(s) for s in raw]
+            samples = [s for s in raw if s is not None]
+            if not samples:
+                continue
             inp, tgt = adapter.make_batch(samples, device=device)
             out = model.predict(inp)
             result = loss_fn(out, tgt)
@@ -218,6 +239,10 @@ def train(
     train_weights: np.ndarray | None = None,
     extra_hooks: Sequence[TrainerHook] = (),
     pre_hooks: Sequence[TrainerHook] = (),
+    train_noaug_fraction: float = 0.0,
+    benchmarks: "Sequence[Any]" = (),
+    benchmark_fraction: float = 0.05,
+    benchmark_seed: int = 42,
     device: torch.device | str = torch.device("cpu"),
     progress: bool = True,
     resume: bool = False,
@@ -257,7 +282,12 @@ def train(
     spec.ensure()
 
     # Resume.
+    # `_resume_skip_slices` is the number of inner-loop steps to skip
+    # on the first epoch iteration when we restart mid-epoch (i.e.
+    # `state.step % steps_per_epoch != 0` on the resumed checkpoint).
+    # One-shot: reset to 0 after the first epoch iteration consumes it.
     state = TrainingState(started_at=time.strftime("%Y-%m-%d %H:%M:%S"))
+    _resume_skip_slices = 0
     if resume:
         hit = find_last_eval_checkpoint(spec)
         if hit is None:
@@ -279,6 +309,15 @@ def train(
         # subsequent restarts see a coherent snapshot.
         truncate_stats_after_step(spec, last_step)
         resumed_ckpt.save(spec.latest_checkpoint)
+        # Mid-epoch resume: if the checkpoint was taken inside an epoch
+        # (evals_per_epoch > 1), skip the slices we've already trained
+        # on rather than re-running them.
+        _resume_skip_slices = int(state.step) % max(steps_per_epoch, 1)
+        if _resume_skip_slices:
+            print(
+                f"[train] mid-epoch resume: skipping first "
+                f"{_resume_skip_slices} slice(s) of epoch {state.epoch}"
+            )
     else:
         resumed = load_latest_if_any(spec)
         if resumed is not None:
@@ -340,6 +379,9 @@ def train(
 
             model.train()
             slices = list(_batch_slices(n_train, batch_size))
+            if _resume_skip_slices:
+                slices = slices[_resume_skip_slices:]
+                _resume_skip_slices = 0  # one-shot — only first epoch
             pbar = None
             if progress:
                 try:
@@ -443,6 +485,90 @@ def train(
                         progress=progress,
                     )
                     state.last_eval_metrics = val_out
+
+                    # train_noaug diagnostic: fresh deterministic
+                    # subset of the TRAIN split, augmentations OFF.
+                    # Distinguishes overfitting from data-ceiling —
+                    # see #002 Followup questions.
+                    #
+                    # We reuse `val_metrics` across the extra passes;
+                    # `_run_eval` resets it at the start of each call,
+                    # and the full computed dict for the primary val
+                    # pass is already copied into `val_out` above.
+                    if train_noaug_fraction > 0:
+                        noaug_n = max(
+                            1,
+                            int(round(n_train * train_noaug_fraction)),
+                        )
+                        noaug_rng = np.random.default_rng(
+                            benchmark_seed + state.step,
+                        )
+                        noaug_indices = sorted(
+                            noaug_rng.choice(
+                                n_train, size=noaug_n, replace=False,
+                            ).tolist()
+                        )
+                        train_noaug_raw = _pick_fetch(
+                            train_sampler, augmented=False,
+                        )
+                        train_noaug_out = _run_eval(
+                            model=model, loss_fn=loss, adapter=adapter,
+                            sampler=train_sampler,
+                            fetch=train_noaug_raw,
+                            metrics=val_metrics,
+                            artifacts=(),
+                            batch_size=batch_size,
+                            device=device,
+                            progress=progress,
+                            indices=noaug_indices,
+                            desc="train_noaug",
+                        )
+                        for k, v in train_noaug_out.items():
+                            val_out[f"train_noaug/{k}"] = v
+
+                    # Benchmark suite: a fraction of the val split,
+                    # run once per mode with the mode's transform
+                    # applied. Metrics per mode land under
+                    # `bench/{mode_name}/*`.
+                    if benchmarks and benchmark_fraction > 0:
+                        bench_n = max(
+                            1,
+                            int(round(
+                                val_sampler.count_samples() * benchmark_fraction,
+                            )),
+                        )
+                        bench_rng = np.random.default_rng(benchmark_seed)
+                        bench_indices = sorted(
+                            bench_rng.choice(
+                                val_sampler.count_samples(),
+                                size=bench_n, replace=False,
+                            ).tolist()
+                        )
+                        import random as _random
+                        for mode in benchmarks:
+                            py_rng = _random.Random(
+                                benchmark_seed ^ (hash(mode.name) & 0xFFFFFFFF),
+                            )
+                            def _mut(
+                                s, _py_rng=py_rng, _t=mode.transform,
+                            ):
+                                return _t(s, _py_rng)
+                            bench_out = _run_eval(
+                                model=model, loss_fn=loss, adapter=adapter,
+                                sampler=val_sampler,
+                                fetch=val_fetch,
+                                metrics=val_metrics,
+                                artifacts=(),
+                                batch_size=batch_size,
+                                device=device,
+                                progress=progress,
+                                indices=bench_indices,
+                                sample_mutation=_mut,
+                                desc=f"bench[{mode.name}]",
+                            )
+                            for k, v in bench_out.items():
+                                val_out[f"bench/{mode.name}/{k}"] = v
+
                     # Persist artifacts under {run_dir}/eval_{step}/
                     # before any hook sees the metrics — keeps the
                     # "save before print" invariant.
