@@ -177,3 +177,91 @@ class OnsetLoss(Loss[OnsetLossConfig, EventEmbeddingOutput, EventEmbeddingTarget
                 "stop_rate": float(is_stop.float().mean().detach()),
             },
         )
+
+
+@dataclass(frozen=True, slots=True)
+class GaussianCELossConfig(LossConfig):
+    """Gaussian soft CE with STOP treated as a separate binary task.
+
+    The model head is unchanged — still a single ``(B, n_classes)``
+    logit tensor. The loss routes those logits two ways:
+      1. ``stop_bce`` — binary cross-entropy over the STOP logit as a
+         sigmoid, target = 1 iff the sample's target is STOP.
+      2. ``bin_ce`` — softmax CE over the non-STOP bin logits with a
+         Gaussian soft target of width ``sigma_bins``, computed only
+         on non-STOP samples.
+
+    Splitting the loss (not the head) means partial-credit smearing
+    happens only between adjacent bins — STOP is a hard binary
+    decision that cannot steal or donate soft mass to/from any bin.
+    """
+    sigma_bins: float = 2.0
+
+
+class GaussianCELoss(Loss[GaussianCELossConfig, EventEmbeddingOutput, EventEmbeddingTarget]):
+    """Binary-STOP BCE + bin-only Gaussian softmax CE.
+
+    ``loss = stop_bce_mean + bin_ce_mean``. ``bin_ce_mean`` is the mean
+    over non-STOP samples; empty-bin-set batches contribute 0 so the
+    STOP signal keeps flowing. Sub-components are emitted via
+    ``LossResult.metrics`` for logging.
+    """
+
+    def __init__(self, config: GaussianCELossConfig):
+        super().__init__(config)
+        if config.sigma_bins <= 0:
+            raise ValueError(
+                f"sigma_bins must be > 0, got {config.sigma_bins}"
+            )
+
+    def _gaussian_bin_targets(
+        self, bin_targets: torch.Tensor, n_bins: int,
+    ) -> torch.Tensor:
+        device = bin_targets.device
+        bins = torch.arange(n_bins, device=device, dtype=torch.float32)
+        d = bins.unsqueeze(0) - bin_targets.float().unsqueeze(1)        # (M, n_bins)
+        w = torch.exp(-0.5 * (d / self.config.sigma_bins) ** 2)
+        w = w / w.sum(dim=1, keepdim=True).clamp(min=1e-8)
+        return w
+
+    def forward(
+        self,
+        output: EventEmbeddingOutput,
+        target: EventEmbeddingTarget,
+    ) -> LossResult:
+        logits = output.logits                                          # (B, n_classes)
+        targets = target.target_bin                                     # (B,)
+        n_classes = logits.size(1)
+        stop_idx = n_classes - 1
+        n_bins = stop_idx
+
+        stop_logit = logits[:, stop_idx]                                # (B,)
+        bin_logits = logits[:, :n_bins]                                 # (B, n_bins)
+
+        is_stop = targets == stop_idx
+        stop_target = is_stop.float()
+        stop_bce = F.binary_cross_entropy_with_logits(
+            stop_logit, stop_target, reduction="mean",
+        )
+
+        is_bin = ~is_stop
+        if is_bin.any():
+            bin_logits_sel = bin_logits[is_bin]                         # (M, n_bins)
+            bin_targets_sel = targets[is_bin]                           # (M,)
+            log_probs = F.log_softmax(bin_logits_sel, dim=-1).clamp(min=-100)
+            soft = self._gaussian_bin_targets(bin_targets_sel, n_bins)
+            bin_ce = -(soft * log_probs).sum(dim=-1).mean()
+        else:
+            bin_ce = torch.zeros((), device=logits.device, dtype=logits.dtype)
+
+        loss = stop_bce + bin_ce
+
+        return LossResult(
+            loss=loss,
+            metrics={
+                "loss": float(loss.detach()),
+                "stop_bce": float(stop_bce.detach()),
+                "bin_ce": float(bin_ce.detach()),
+                "stop_rate": float(is_stop.float().mean().detach()),
+            },
+        )

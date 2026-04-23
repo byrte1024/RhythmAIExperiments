@@ -33,7 +33,12 @@ from .hooks import (
     PerEvalJsonHook,
 )
 from .loop import train
-from .losses import OnsetLoss, OnsetLossConfig
+from .losses import (
+    GaussianCELoss,
+    GaussianCELossConfig,
+    OnsetLoss,
+    OnsetLossConfig,
+)
 from .metrics_onset import OnsetMetric, OnsetMetricConfig
 
 __all__ = [
@@ -56,6 +61,8 @@ __all__ = [
     "MelGaussianNoise",
     "MetricLoggerHook",
     "MetronomeHitArtifact",
+    "GaussianCELoss",
+    "GaussianCELossConfig",
     "OnsetLoss",
     "OnsetLossConfig",
     "OnsetMetric",

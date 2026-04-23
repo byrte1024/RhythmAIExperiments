@@ -15,7 +15,12 @@ from osu.taiko2.models.event_embedding import (
     EventEmbeddingOutput,
     EventEmbeddingTarget,
 )
-from osu.taiko2.training.losses import OnsetLoss, OnsetLossConfig
+from osu.taiko2.training.losses import (
+    GaussianCELoss,
+    GaussianCELossConfig,
+    OnsetLoss,
+    OnsetLossConfig,
+)
 
 
 # ─────────────────────────── helpers ──────────────────────────────────
@@ -223,5 +228,129 @@ class TestLossResult:
         logits = torch.randn(4, 501, requires_grad=True)
         targets = torch.tensor([10, 100, 250, 500])
         r = _call(loss, logits, targets)
+        for k, v in r.metrics.items():
+            assert isinstance(v, float), f"{k} is {type(v)}"
+
+
+# ─────────────────────────── GaussianCELoss ───────────────────────────
+
+def _gcall(
+    loss: GaussianCELoss, logits: torch.Tensor, target_bin: torch.Tensor,
+) -> LossResult:
+    return loss(
+        EventEmbeddingOutput(logits=logits),
+        EventEmbeddingTarget(target_bin=target_bin),
+    )
+
+
+class TestGaussianCELossConfig:
+    def test_default_sigma(self):
+        assert GaussianCELossConfig().sigma_bins == 2.0
+
+    def test_sigma_must_be_positive(self):
+        with pytest.raises(ValueError, match="sigma_bins"):
+            GaussianCELoss(GaussianCELossConfig(sigma_bins=0.0))
+        with pytest.raises(ValueError, match="sigma_bins"):
+            GaussianCELoss(GaussianCELossConfig(sigma_bins=-1.0))
+
+
+class TestGaussianCESoftTargets:
+    def test_gaussian_is_unimodal_around_target(self):
+        loss = GaussianCELoss(GaussianCELossConfig(sigma_bins=2.0))
+        t = torch.tensor([50])
+        w = loss._gaussian_bin_targets(t, n_bins=500)[0]
+        # Peaked at the target and monotonically non-increasing as we
+        # walk away on either side.
+        assert int(w.argmax()) == 50
+        assert (w[:50].diff() >= -1e-6).all()
+        assert (w[50:].diff() <= 1e-6).all()
+
+    def test_gaussian_sums_to_one(self):
+        loss = GaussianCELoss(GaussianCELossConfig(sigma_bins=3.0))
+        t = torch.tensor([5, 250, 499])
+        w = loss._gaussian_bin_targets(t, n_bins=500)
+        for row in w:
+            assert math.isclose(float(row.sum()), 1.0, rel_tol=1e-5)
+
+    def test_smaller_sigma_is_sharper(self):
+        t = torch.tensor([100])
+        w_narrow = GaussianCELoss(
+            GaussianCELossConfig(sigma_bins=1.0),
+        )._gaussian_bin_targets(t, n_bins=500)[0]
+        w_wide = GaussianCELoss(
+            GaussianCELossConfig(sigma_bins=5.0),
+        )._gaussian_bin_targets(t, n_bins=500)[0]
+        assert float(w_narrow[100]) > float(w_wide[100])
+
+
+class TestGaussianCEForward:
+    def test_stop_routes_to_bce_only(self):
+        loss = GaussianCELoss(GaussianCELossConfig())
+        logits = torch.randn(3, 501)
+        # All STOP targets → bin_ce must be exactly 0.
+        r = _gcall(loss, logits, torch.tensor([500, 500, 500]))
+        assert r.metrics["bin_ce"] == 0.0
+        assert r.metrics["stop_bce"] > 0.0
+        assert r.metrics["stop_rate"] == 1.0
+
+    def test_bin_only_batch_has_nonzero_bin_ce(self):
+        loss = GaussianCELoss(GaussianCELossConfig())
+        logits = torch.randn(3, 501)
+        r = _gcall(loss, logits, torch.tensor([50, 100, 250]))
+        assert r.metrics["bin_ce"] > 0.0
+        assert r.metrics["stop_rate"] == 0.0
+
+    def test_loss_is_sum_of_components(self):
+        loss = GaussianCELoss(GaussianCELossConfig())
+        logits = torch.randn(4, 501)
+        r = _gcall(loss, logits, torch.tensor([10, 100, 500, 250]))
+        assert math.isclose(
+            r.metrics["loss"],
+            r.metrics["stop_bce"] + r.metrics["bin_ce"],
+            rel_tol=1e-5, abs_tol=1e-6,
+        )
+
+    def test_stop_bce_ignores_bin_logits(self):
+        """Perturbing bin logits must not change `stop_bce` — the
+        STOP head is a pure binary readout of logit[-1]."""
+        loss = GaussianCELoss(GaussianCELossConfig())
+        torch.manual_seed(0)
+        logits_a = torch.randn(4, 501)
+        logits_b = logits_a.clone()
+        logits_b[:, :500] += 5.0
+        t = torch.tensor([10, 100, 500, 250])
+        r_a = _gcall(loss, logits_a, t)
+        r_b = _gcall(loss, logits_b, t)
+        assert math.isclose(
+            r_a.metrics["stop_bce"], r_b.metrics["stop_bce"], rel_tol=1e-5,
+        )
+
+    def test_bin_ce_ignores_stop_logit(self):
+        """Perturbing the STOP logit must not change `bin_ce` — bin
+        CE runs softmax over only the first 500 logits."""
+        loss = GaussianCELoss(GaussianCELossConfig())
+        torch.manual_seed(0)
+        logits_a = torch.randn(4, 501)
+        logits_b = logits_a.clone()
+        logits_b[:, 500] += 10.0
+        t = torch.tensor([10, 100, 250, 400])
+        r_a = _gcall(loss, logits_a, t)
+        r_b = _gcall(loss, logits_b, t)
+        assert math.isclose(
+            r_a.metrics["bin_ce"], r_b.metrics["bin_ce"], rel_tol=1e-5,
+        )
+
+    def test_grad_flows(self):
+        loss = GaussianCELoss(GaussianCELossConfig())
+        logits = torch.randn(4, 501, requires_grad=True)
+        r = _gcall(loss, logits, torch.tensor([10, 100, 500, 250]))
+        r.loss.backward()
+        assert logits.grad is not None
+        assert torch.isfinite(logits.grad).all()
+
+    def test_metrics_are_floats(self):
+        loss = GaussianCELoss(GaussianCELossConfig())
+        logits = torch.randn(3, 501, requires_grad=True)
+        r = _gcall(loss, logits, torch.tensor([10, 100, 500]))
         for k, v in r.metrics.items():
             assert isinstance(v, float), f"{k} is {type(v)}"

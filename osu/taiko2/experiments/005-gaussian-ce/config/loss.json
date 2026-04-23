@@ -1,0 +1,4 @@
+{
+    "__class__": "osu.taiko2.training.losses:GaussianCELossConfig",
+    "sigma_bins": 2.0
+}

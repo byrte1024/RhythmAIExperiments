@@ -42,6 +42,8 @@ from ..training import (
     DistributionArtifact,
     ErrorHistogramArtifact,
     MetronomeHitArtifact,
+    GaussianCELoss,
+    GaussianCELossConfig,
     OnsetLoss,
     OnsetLossConfig,
     OnsetMetric,
@@ -212,7 +214,7 @@ def main(argv: list[str] | None = None) -> int:
 
     # 1. Load configs.
     model_cfg: EventEmbeddingConfig = _build_from_json(cfg_dir / "model.json")
-    loss_cfg: OnsetLossConfig = _build_from_json(cfg_dir / "loss.json")
+    loss_cfg = _build_from_json(cfg_dir / "loss.json")
     trainer_cfg: TrainerConfig = _build_from_json(cfg_dir / "trainer.json")
     data_cfg: TaikoDetectionSamplerConfig = _build_from_json(cfg_dir / "data.json")
     adapter_cfg: DetectionSampleAdapterConfig = _build_from_json(
@@ -255,7 +257,12 @@ def main(argv: list[str] | None = None) -> int:
 
     # 3. Model + loss + adapter + metrics + artifacts.
     model = EventEmbeddingDetector(model_cfg)
-    loss = OnsetLoss(loss_cfg)
+    if isinstance(loss_cfg, GaussianCELossConfig):
+        loss = GaussianCELoss(loss_cfg)
+    elif isinstance(loss_cfg, OnsetLossConfig):
+        loss = OnsetLoss(loss_cfg)
+    else:
+        raise TypeError(f"unsupported loss config: {type(loss_cfg).__name__}")
     adapter = DetectionSampleAdapter(adapter_cfg)
 
     # Train metrics are per-epoch running means (reset each epoch) — the
