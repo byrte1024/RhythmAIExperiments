@@ -27,7 +27,13 @@ Controls:
   W          - Toggle mel spectrogram
   G          - Toggle ghost candidates   (requires --steps-log)
   N          - Toggle mute
+  E          - Export to video (.mp4, file-picker dialog)
   Esc / Q    - Quit
+
+CLI-only:
+  --gif PATH [--gif-cycles N]          beat-synced GIF overlay
+  --render out.mp4 [--render-fps N]    headless render, skips the window
+                                        (requires ffmpeg)
 """
 from __future__ import annotations
 
@@ -108,6 +114,20 @@ TICK_VOICE: dict[OnsetKind, tuple[int, float]] = {
 
 
 # ─────────────────────────── helpers ──────────────────────────────────
+
+def _safe_chart_stem(chart: Chart) -> str:
+    """Sanitized filename stem for export defaults — `"artist - title [diff]"`
+    with filesystem-unfriendly characters stripped."""
+    t = chart.track
+    raw = f"{t.artist} - {t.title} [{t.difficulty.version}]"
+    allowed = []
+    for ch in raw:
+        if ch.isalnum() or ch in " _-.[](),":
+            allowed.append(ch)
+        else:
+            allowed.append("_")
+    return "".join(allowed).strip() or "chart"
+
 
 def _format_time(ms: int) -> str:
     s = max(0, ms) / 1000.0
@@ -388,6 +408,94 @@ def _parse_steps_log(
     return out or None
 
 
+# ─────────────────────────── ffmpeg + gif support ────────────────────
+
+def _ffmpeg_available() -> bool:
+    """Probe whether `ffmpeg` is on PATH. Cached per-process after
+    the first call."""
+    import subprocess
+    try:
+        subprocess.run(
+            ["ffmpeg", "-version"], capture_output=True, timeout=5,
+        )
+        return True
+    except Exception:
+        return False
+
+
+class GifPlayer:
+    """Beat-synced GIF overlay — faithful port of taiko1's version
+    adapted to taiko2's ``Onset`` sequences.
+
+    Frame index advances proportionally to how far the playhead has
+    progressed between the last-passed onset and the next-upcoming
+    onset. One full GIF cycle spans ``cycles`` onset crossings, so
+    `cycles=4` produces a loop that completes every 4 beats.
+    """
+
+    def __init__(self, gif_path: Path, cycles: int = 1):
+        import pygame
+        from PIL import Image
+        self.cycles = max(1, int(cycles))
+        self.frames: list = []
+        img = Image.open(gif_path)
+        try:
+            while True:
+                frame = img.convert("RGBA")
+                surf = pygame.image.fromstring(
+                    frame.tobytes(), frame.size, "RGBA",
+                )
+                self.frames.append(surf)
+                img.seek(img.tell() + 1)
+        except EOFError:
+            pass
+        if not self.frames:
+            raise ValueError(f"No frames found in {gif_path}")
+        self.n_frames = len(self.frames)
+        self.current_frame = 0
+        # Pre-scale once to a reasonable overlay height.
+        fw, fh = self.frames[0].get_size()
+        self.display_h = 440
+        self.display_w = max(1, int(fw * self.display_h / max(fh, 1)))
+        self.scaled_frames = [
+            pygame.transform.smoothscale(
+                f, (self.display_w, self.display_h),
+            )
+            for f in self.frames
+        ]
+        print(
+            f"[viewer] GIF loaded: {self.n_frames} frames, "
+            f"display {self.display_w}x{self.display_h}, "
+            f"{self.cycles} onsets/cycle"
+        )
+
+    def update(self, now_ms: int, onsets) -> None:
+        """Advance the current frame based on playhead progress between
+        the flanking onsets. ``onsets`` is the sorted-by-time list."""
+        passed = 0
+        prev_ms = 0
+        next_ms = 0
+        for o in onsets:
+            t = int(o.time_ms)
+            if t <= now_ms:
+                passed += 1
+                prev_ms = t
+            else:
+                next_ms = t
+                break
+        cycle_event = passed % self.cycles
+        if next_ms > prev_ms:
+            inter = (now_ms - prev_ms) / (next_ms - prev_ms)
+        else:
+            inter = 0.0
+        inter = max(0.0, min(1.0, inter))
+        progress = (cycle_event + inter) / self.cycles
+        self.current_frame = int(progress * self.n_frames) % self.n_frames
+
+    def draw(self, screen, x: int, y: int) -> None:
+        screen.blit(self.scaled_frames[self.current_frame], (x, y))
+
+
 # ─────────────────────────── main viewer ──────────────────────────────
 
 class Viewer:
@@ -398,6 +506,8 @@ class Viewer:
         *,
         steps_log_path: Path | None = None,
         compute_mel: bool = True,
+        gif_path: Path | None = None,
+        gif_cycles: int = 1,
     ):
         import pygame
         self.pygame = pygame
@@ -504,6 +614,14 @@ class Viewer:
 
         # ── density surface ───────────────────────────────────────────
         self._density_surface = self._precompute_density_surface()
+
+        # ── gif overlay (beat-synced) ─────────────────────────────────
+        self.gif_player: "GifPlayer | None" = None
+        if gif_path is not None:
+            try:
+                self.gif_player = GifPlayer(gif_path, cycles=gif_cycles)
+            except Exception as exc:
+                print(f"[viewer] gif load failed: {exc}", file=sys.stderr)
 
         # ── start playback ────────────────────────────────────────────
         self._start_playback(0)
@@ -655,6 +773,12 @@ class Viewer:
         if self.show_help:
             self._draw_help_overlay()
 
+        if self.gif_player is not None:
+            self.gif_player.update(self.now_ms, self._sorted_onsets)
+            gx = self.w - self.gif_player.display_w - 20
+            gy = self.h - self.gif_player.display_h - 60
+            self.gif_player.draw(self.screen, gx, gy)
+
         self.pygame.display.flip()
 
     # ── header ────────────────────────────────────────────────────────
@@ -706,7 +830,7 @@ class Viewer:
 
         # Help hint
         hint = self.font_small.render(
-            "H=Help  I=Stats  M=Map  D=Density  W=Mel  G=Ghosts  T=Ticks  N=Mute",
+            "H=Help  I=Stats  M=Map  D=Density  W=Mel  G=Ghosts  T=Ticks  N=Mute  E=Export",
             True, DIM_TEXT,
         )
         self.screen.blit(hint, (self.w - hint.get_width() - 10, 36))
@@ -1196,6 +1320,7 @@ class Viewer:
             ("I",                "Toggle stats panel"),
             ("G",                "Toggle ghost candidates"),
             ("H",                "Toggle this help"),
+            ("E",                "Export to video (.mp4)"),
             ("Esc / Q",          "Quit"),
         ]
         y = 80
@@ -1276,7 +1401,319 @@ class Viewer:
                         self.show_ghosts = not self.show_ghosts
                 elif ev.key == pygame.K_h:
                     self.show_help = not self.show_help
+                elif ev.key == pygame.K_e:
+                    self._export_video()
         return True
+
+    # ── video export ──────────────────────────────────────────────────
+
+    def _export_video(self) -> None:
+        """Pop a save-as dialog then render the chart playback to mp4.
+        Pauses interactive playback during the render; resumes after."""
+        import tkinter as tk
+        from tkinter import filedialog
+
+        was_playing = self.playing
+        if was_playing:
+            self._pause()
+
+        root = tk.Tk()
+        root.withdraw()
+        root.attributes("-topmost", True)
+        stem = _safe_chart_stem(self.chart)
+        output_path = filedialog.asksaveasfilename(
+            title="Export video",
+            initialfile=f"{stem}.mp4",
+            defaultextension=".mp4",
+            filetypes=[("MP4 video", "*.mp4"), ("All files", "*.*")],
+        )
+        root.destroy()
+
+        if not output_path:
+            print("[viewer] export cancelled")
+            if was_playing:
+                self._resume()
+            return
+
+        # Show a "rendering…" splash on the current frame.
+        msg = self.font_big.render(
+            f"Exporting to {Path(output_path).name} …",
+            True, (255, 255, 100),
+        )
+        rect = msg.get_rect(center=(self.w // 2, self.h // 2))
+        self.screen.blit(msg, rect)
+        self.pygame.display.flip()
+
+        try:
+            self.render_video(Path(output_path))
+        except Exception as exc:
+            print(f"[viewer] export failed: {exc}", file=sys.stderr)
+
+        if was_playing:
+            self._resume()
+
+    def render_video(self, output_path: Path, fps: int = 60) -> None:
+        """Render a simplified 1200×300 chart-playback video to
+        ``output_path`` via ffmpeg. Faithful to taiko1's `render_video`
+        behavior — offscreen RGB pipe + mixed-audio track, not a
+        capture of the full interactive UI. Requires ``ffmpeg`` on
+        PATH; raises FileNotFoundError with a clear message otherwise.
+        """
+        import subprocess
+        import tempfile
+        import wave
+        import numpy as np
+        import pygame
+
+        if not _ffmpeg_available():
+            raise FileNotFoundError(
+                "ffmpeg not found on PATH. Install it and retry — "
+                "Windows: `winget install ffmpeg`."
+            )
+
+        # Stop any running mixer playback so ffmpeg owns the audio path.
+        self.pygame.mixer.music.stop()
+
+        print(f"[viewer] rendering to {output_path} at {fps}fps …")
+
+        # ── mixed audio (song + tick sounds at each onset) ────────────
+        sr = 44100
+        tick_dur_s = 0.04
+        n_tick = int(sr * tick_dur_s)
+
+        def _noise_tick(vol: float) -> np.ndarray:
+            noise = np.random.uniform(-1.0, 1.0, n_tick)
+            fade = 1.0 - (np.arange(n_tick) / n_tick) ** 0.5
+            return (noise * fade * vol * 32767).astype(np.int16)
+
+        don_tick = _noise_tick(1.4)
+        ka_tick = _noise_tick(1.0)
+
+        audio_data: np.ndarray | None = None
+        if self.audio_path is not None and self.audio_path.exists():
+            try:
+                pcm = subprocess.run(
+                    [
+                        "ffmpeg", "-i", str(self.audio_path),
+                        "-f", "s16le", "-acodec", "pcm_s16le",
+                        "-ac", "1", "-ar", str(sr), "-",
+                    ],
+                    capture_output=True, timeout=120,
+                )
+                if pcm.returncode == 0:
+                    audio_data = np.frombuffer(
+                        pcm.stdout, dtype=np.int16,
+                    ).astype(np.float64)
+                    print(
+                        f"[viewer]   source audio: "
+                        f"{len(audio_data) / sr:.1f}s"
+                    )
+            except Exception as exc:
+                print(
+                    f"[viewer]   could not decode source audio: {exc}",
+                    file=sys.stderr,
+                )
+
+        duration_ms = self.song_end_ms + 2000
+        n_frames = int(duration_ms / 1000 * fps)
+        ms_per_frame = 1000.0 / fps
+
+        mixed_pcm: bytes | None = None
+        if audio_data is not None:
+            total = max(len(audio_data), int(duration_ms / 1000 * sr))
+            mixed = np.zeros(total, dtype=np.float64)
+            mixed[: len(audio_data)] = audio_data
+            for o in self._sorted_onsets:
+                pos = int(o.time_ms / 1000 * sr)
+                tick = ka_tick if o.kind in (
+                    OnsetKind.KA, OnsetKind.BIG_KA,
+                ) else don_tick
+                end = min(pos + len(tick), total)
+                if 0 <= pos < total:
+                    mixed[pos:end] += tick[: end - pos]
+            peak = np.abs(mixed).max()
+            if peak > 32767:
+                mixed = mixed * (32767 / peak)
+            mixed_pcm = mixed.astype(np.int16).tobytes()
+
+        # ── offscreen surface + ffmpeg pipe ───────────────────────────
+        render_w, render_h = 1200, 300
+        surface = pygame.Surface((render_w, render_h))
+
+        tmp_wav: tempfile._TemporaryFileWrapper | None = None
+        ffmpeg_cmd = [
+            "ffmpeg", "-y",
+            "-f", "rawvideo", "-pix_fmt", "rgb24",
+            "-s", f"{render_w}x{render_h}",
+            "-r", str(fps),
+            "-i", "-",
+        ]
+        if mixed_pcm is not None:
+            tmp_wav = tempfile.NamedTemporaryFile(suffix=".wav", delete=False)
+            with wave.open(tmp_wav.name, "w") as wf:
+                wf.setnchannels(1)
+                wf.setsampwidth(2)
+                wf.setframerate(sr)
+                wf.writeframes(mixed_pcm)
+            ffmpeg_cmd += ["-i", tmp_wav.name]
+            ffmpeg_cmd += [
+                "-c:v", "libx264", "-preset", "fast", "-crf", "20",
+                "-pix_fmt", "yuv420p", "-vsync", "cfr",
+                "-c:a", "aac", "-b:a", "192k",
+                "-shortest", str(output_path),
+            ]
+        else:
+            ffmpeg_cmd += [
+                "-c:v", "libx264", "-preset", "fast", "-crf", "20",
+                "-pix_fmt", "yuv420p", "-vsync", "cfr",
+                str(output_path),
+            ]
+
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        proc = subprocess.Popen(ffmpeg_cmd, stdin=subprocess.PIPE)
+
+        # ── per-frame render ──────────────────────────────────────────
+        HIT_X_R = 120
+        SCROLL_R = 0.5
+        font = pygame.font.SysFont("consolas", 16)
+        recent: list[tuple[int, OnsetKind]] = []
+        next_hit = 0
+
+        try:
+            from tqdm import tqdm
+            frame_iter = tqdm(range(n_frames), desc="Rendering", unit="frame")
+        except ImportError:
+            frame_iter = range(n_frames)
+
+        try:
+            for frame_i in frame_iter:
+                now_ms = frame_i * ms_per_frame
+                while (
+                    next_hit < len(self._sorted_onsets)
+                    and self._sorted_onsets[next_hit].time_ms <= now_ms
+                ):
+                    o = self._sorted_onsets[next_hit]
+                    recent.append((int(o.time_ms), o.kind))
+                    next_hit += 1
+                recent = [(t, k) for t, k in recent if now_ms - t < 200]
+
+                surface.fill(BG_COLOR)
+
+                # header
+                t_str = f"{int(now_ms) // 60000:02d}:{int(now_ms) // 1000 % 60:02d}"
+                d_str = f"{duration_ms // 60000:02d}:{duration_ms // 1000 % 60:02d}"
+                title = (
+                    f"{self.chart.track.artist} — {self.chart.track.title} "
+                    f"[{self.chart.track.difficulty.version}]"
+                )
+                header = font.render(
+                    f"{title[:80]}   {t_str}/{d_str}   "
+                    f"notes: {len(self._sorted_onsets)}",
+                    True, TEXT_COLOR,
+                )
+                surface.blit(header, (10, 8))
+
+                # playfield
+                pf_top = 40
+                pf_h = 120
+                pf_center = pf_top + pf_h // 2
+                pygame.draw.rect(
+                    surface, PLAYFIELD_BG, (0, pf_top, render_w, pf_h),
+                )
+                pygame.draw.line(
+                    surface, HIT_LINE_COLOR,
+                    (HIT_X_R, pf_top), (HIT_X_R, pf_top + pf_h), 2,
+                )
+
+                for o in self._sorted_onsets:
+                    dx = (int(o.time_ms) - now_ms) * SCROLL_R
+                    x = HIT_X_R + dx
+                    if x < -40 or x > render_w + 40:
+                        continue
+                    color = COLORS.get(o.kind, (200, 200, 200))
+                    radius = SIZES.get(o.kind, 18)
+                    pygame.draw.circle(
+                        surface, color, (int(x), pf_center), radius,
+                    )
+                    if o.kind in (OnsetKind.DON, OnsetKind.BIG_DON):
+                        inner = tuple(min(255, c + 40) for c in color)
+                        pygame.draw.circle(
+                            surface, inner, (int(x), pf_center), radius // 3,
+                        )
+
+                # hit flashes
+                for t, k in recent:
+                    age = now_ms - t
+                    alpha = max(0, 1.0 - age / 200)
+                    flash_r = int(40 * (1 + age / 100))
+                    fs = pygame.Surface(
+                        (flash_r * 2, flash_r * 2), pygame.SRCALPHA,
+                    )
+                    fc = COLORS.get(k, (255, 255, 255))
+                    pygame.draw.circle(
+                        fs, (*fc, int(alpha * 150)),
+                        (flash_r, flash_r), flash_r,
+                    )
+                    surface.blit(
+                        fs, (HIT_X_R - flash_r, pf_center - flash_r),
+                    )
+
+                # progress bar
+                bar_y = pf_top + pf_h + 10
+                bar_h = 6
+                pygame.draw.rect(
+                    surface, PROGRESS_BG,
+                    (10, bar_y, render_w - 20, bar_h),
+                )
+                if duration_ms > 0:
+                    prog = min(now_ms / duration_ms, 1.0)
+                    pygame.draw.rect(
+                        surface, PROGRESS_FILL,
+                        (10, bar_y, int((render_w - 20) * prog), bar_h),
+                    )
+
+                # passed count
+                info_y = bar_y + 14
+                passed = sum(
+                    1 for o in self._sorted_onsets if o.time_ms <= now_ms
+                )
+                info = font.render(
+                    f"passed {passed}/{len(self._sorted_onsets)}",
+                    True, DIM_TEXT,
+                )
+                surface.blit(info, (10, info_y))
+
+                # beat-synced gif (right-aligned, full render height)
+                if self.gif_player is not None:
+                    self.gif_player.update(int(now_ms), self._sorted_onsets)
+                    gh = render_h
+                    gw = int(
+                        self.gif_player.display_w
+                        * gh / max(self.gif_player.display_h, 1)
+                    )
+                    src = self.gif_player.scaled_frames[
+                        self.gif_player.current_frame
+                    ]
+                    scaled = pygame.transform.smoothscale(src, (gw, gh))
+                    surface.blit(scaled, (render_w - gw, 0))
+
+                frame_bytes = pygame.image.tobytes(surface, "RGB")
+                try:
+                    proc.stdin.write(frame_bytes)
+                except BrokenPipeError:
+                    print("[viewer] ffmpeg pipe broken", file=sys.stderr)
+                    break
+        finally:
+            if proc.stdin is not None:
+                proc.stdin.close()
+            proc.wait()
+            if tmp_wav is not None:
+                try:
+                    os.unlink(tmp_wav.name)
+                except OSError:
+                    pass
+
+        print(f"[viewer] wrote {output_path}")
 
     def run(self) -> None:
         pygame = self.pygame
@@ -1315,6 +1752,29 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "--no-mel", action="store_true",
         help="Skip mel computation entirely (avoid ~1-3s startup cost).",
     )
+    p.add_argument(
+        "--gif", type=Path, default=None,
+        help=(
+            "Path to a .gif to overlay in the viewer, beat-synced to "
+            "onset crossings. Same format as taiko1's --gif flag."
+        ),
+    )
+    p.add_argument(
+        "--gif-cycles", type=int, default=1,
+        help="Onsets per full GIF animation cycle (default 1).",
+    )
+    p.add_argument(
+        "--render", type=Path, default=None,
+        help=(
+            "Headless render mode — skip the interactive window, write "
+            "a simplified 1200x300 chart-playback video to this path "
+            "(e.g. `out.mp4`). Requires ffmpeg on PATH."
+        ),
+    )
+    p.add_argument(
+        "--render-fps", type=int, default=60,
+        help="Video FPS for --render (default 60).",
+    )
     return p.parse_args(argv)
 
 
@@ -1350,11 +1810,23 @@ def main(argv: list[str] | None = None) -> int:
 
         tmp_audio = _write_audio_tmp(chart)
         steps_log = args.steps_log or _auto_steps_log(path)
-        Viewer(
+        viewer = Viewer(
             chart, tmp_audio,
             steps_log_path=steps_log,
             compute_mel=not args.no_mel,
-        ).run()
+            gif_path=args.gif,
+            gif_cycles=args.gif_cycles,
+        )
+        if args.render is not None:
+            # Headless render: skip the interactive window entirely.
+            # Stop the music that __init__ started and render to video.
+            try:
+                viewer.render_video(args.render, fps=args.render_fps)
+            finally:
+                import pygame
+                pygame.quit()
+        else:
+            viewer.run()
         return 0
     finally:
         if tmp_audio is not None:
