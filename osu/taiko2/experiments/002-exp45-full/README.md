@@ -207,7 +207,7 @@ Ran `cli.infer_corpus` on the best checkpoint over **96 charts** (10 %
 of the val split), in two conditioning modes: (a) GT — each chart
 gets its own density trio copied from `track.density`, and (b) fixed
 — every chart gets `Conditioning(5.0, 10, 2.2)`. Total wall time
-~10.3 min (620 s) on CPU inference. Full artifacts under
+~10.3 min (620 s) on CUDA. Full artifacts under
 `runs/exp_002_exp45_full/infer_corpus/eval_227414/`.
 
 **Generated chart shape** (per-chart means, 96 charts):
