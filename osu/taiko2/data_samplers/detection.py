@@ -631,15 +631,23 @@ class TaikoDetectionSampler(
     ) -> np.ndarray:
         """Slice the feature array with zero-padding outside bounds.
 
-        Matches taiko1's window extractor: float32 return, left/right pad
-        with zeros when `start < 0` or `end > T`.
+        Returns ``(F, max(0, end - start))`` always — including the
+        pathological cases where the requested window is entirely
+        before the feature array (``end <= 0``), entirely after it
+        (``start >= total``), or crosses it completely.
         """
         n_feat, total = features.shape
-        pad_left = max(0, -start)
-        pad_right = max(0, end - total)
-        s = max(0, start)
-        e = min(total, end)
-        core = features[:, s:e].astype(np.float32, copy=False)
+        width = max(0, end - start)
+        if width == 0:
+            return np.zeros((n_feat, 0), dtype=np.float32)
+        core_start = max(0, start)
+        core_end = min(total, end)
+        if core_start >= core_end:
+            # Window doesn't intersect [0, total).
+            return np.zeros((n_feat, width), dtype=np.float32)
+        core = features[:, core_start:core_end].astype(np.float32, copy=False)
+        pad_left = core_start - start        # >= 0
+        pad_right = end - core_end           # >= 0
         if pad_left == 0 and pad_right == 0:
             return np.ascontiguousarray(core)
         return np.pad(core, ((0, 0), (pad_left, pad_right)), mode="constant")

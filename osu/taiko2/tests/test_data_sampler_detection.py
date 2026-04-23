@@ -83,6 +83,63 @@ def tiny_dataset(tmp_path: Path) -> Path:
     return ds
 
 
+# ─────────────────────────── _extract_audio edge cases ───────────────
+
+class TestExtractAudio:
+    """`_extract_audio` must always return exactly `(F, end - start)`,
+    no matter how pathological the window — a late-song event cursor
+    whose forward window runs past the feature-array end used to trip
+    batch collation because the offending sample came back narrower
+    than the rest.
+    """
+
+    def _feats(self, total: int = 1000) -> np.ndarray:
+        rng = np.random.default_rng(0)
+        return rng.standard_normal((8, total), dtype=np.float32)
+
+    def test_entirely_inside(self):
+        f = self._feats()
+        out = TaikoDetectionSampler._extract_audio(f, 100, 250)
+        assert out.shape == (8, 150)
+        assert np.array_equal(out, f[:, 100:250])
+
+    def test_left_overflow(self):
+        f = self._feats()
+        out = TaikoDetectionSampler._extract_audio(f, -50, 100)
+        assert out.shape == (8, 150)
+        assert np.allclose(out[:, :50], 0)
+        assert np.array_equal(out[:, 50:], f[:, :100])
+
+    def test_right_overflow(self):
+        f = self._feats(total=500)
+        out = TaikoDetectionSampler._extract_audio(f, 400, 700)
+        assert out.shape == (8, 300)
+        assert np.array_equal(out[:, :100], f[:, 400:500])
+        assert np.allclose(out[:, 100:], 0)
+
+    def test_entirely_before(self):
+        f = self._feats()
+        out = TaikoDetectionSampler._extract_audio(f, -500, -100)
+        assert out.shape == (8, 400)
+        assert np.allclose(out, 0)
+
+    def test_entirely_after(self):
+        # The regression: cursor past the feature end used to return
+        # a narrower-than-expected array.
+        f = self._feats(total=500)
+        out = TaikoDetectionSampler._extract_audio(f, 600, 1100)
+        assert out.shape == (8, 500)
+        assert np.allclose(out, 0)
+
+    def test_straddles_entire_array(self):
+        f = self._feats(total=300)
+        out = TaikoDetectionSampler._extract_audio(f, -100, 500)
+        assert out.shape == (8, 600)
+        assert np.allclose(out[:, :100], 0)
+        assert np.array_equal(out[:, 100:400], f)
+        assert np.allclose(out[:, 400:], 0)
+
+
 # ─────────────────────────── shape / cursor tests ─────────────────────
 
 class TestSampleShapes:
