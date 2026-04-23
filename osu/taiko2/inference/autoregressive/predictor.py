@@ -118,6 +118,40 @@ class AutoregressivePredictor(ChartPredictor[AutoregressivePredictorConfig]):
 
         return self._build_output_chart(chart, past_onsets)
 
+    @torch.no_grad()
+    def predict_from_features(
+        self,
+        chart: Chart,
+        *,
+        conditioning: Conditioning,
+        features: np.ndarray,
+    ) -> Chart:
+        """Run the AR loop on pre-computed audio features — skips the
+        `_extract_features` audio-decode pass.
+
+        Exists for corpus-scale analysis (``cli.infer_corpus``) where
+        the dataset already has per-chart mel features on disk and we
+        want to avoid paying audio-decode cost per chart. Same contract
+        as `predict` otherwise.
+
+        ``chart.audio`` is ignored (may be None). ``features`` must be a
+        ``(n_mels, T)`` float32 array matching the training-time mel
+        sampler config — this is not validated at runtime.
+        """
+        max_bin = int(round(features.shape[1] * self._frames_to_bins_ratio()))
+        log_fh = self._open_step_log()
+        try:
+            past_onsets = self._run_ar_loop(
+                features=features,
+                max_bin=max_bin,
+                conditioning=conditioning,
+                log_fh=log_fh,
+            )
+        finally:
+            if log_fh is not None:
+                log_fh.close()
+        return self._build_output_chart(chart, past_onsets)
+
     # ── audio decode + feature extraction (one-shot per chart) ────────
 
     def _extract_features(self, chart: Chart) -> np.ndarray:

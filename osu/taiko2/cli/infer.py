@@ -44,17 +44,17 @@ from __future__ import annotations
 import argparse
 import contextlib
 import dataclasses
-import importlib
 import json
 import shlex
 import subprocess
 import sys
 import tempfile
-from dataclasses import fields, is_dataclass
 from pathlib import Path
 from typing import Any
 
 import torch
+
+from ._infer_common import assemble_predictor, load_spec
 
 # Sentinel for `--audio` passed without a value → run file picker.
 _PICK_SENTINEL = "__pick__"
@@ -66,78 +66,6 @@ from ..domain.beatmap import AudioRef, Density, Difficulty, Track
 from ..domain.chart import Chart
 from ..domain.inference import ChartPredictor, Conditioning
 from ..inference.loader import load_model_from_checkpoint
-
-
-# ─────────────────────────── class / config resolution ────────────────
-
-def _resolve_class(spec: str) -> type:
-    """``module:Class`` → class object. Same convention the checkpoint
-    loader uses."""
-    module_name, _, attr = spec.partition(":")
-    if not module_name or not attr:
-        raise ValueError(f"bad class spec: {spec!r}")
-    return getattr(importlib.import_module(module_name), attr)
-
-
-def _build_config(node: dict[str, Any]) -> Any:
-    """``{__class__, ...fields}`` → instance of that dataclass.
-
-    Nested dataclass fields are recursed into when their value is a
-    dict that itself carries ``__class__``. Enum-valued fields (e.g.
-    `OnsetKind`) are decoded from string names.
-    """
-    cls_spec = node.get("__class__")
-    if cls_spec is None:
-        raise ValueError(
-            f"config node missing __class__: keys={sorted(node)!r}"
-        )
-    cls = _resolve_class(cls_spec)
-    if not is_dataclass(cls):
-        raise TypeError(f"{cls_spec!r} is not a dataclass")
-
-    fieldmap = {f.name: f for f in fields(cls)}
-    kwargs: dict[str, Any] = {}
-    for key, value in node.items():
-        if key == "__class__" or key.startswith("_"):
-            continue
-        if key not in fieldmap:
-            raise ValueError(
-                f"{cls_spec}: unknown field {key!r} "
-                f"(known: {sorted(fieldmap)!r})"
-            )
-        kwargs[key] = _coerce_field_value(fieldmap[key].type, value)
-    return cls(**kwargs)
-
-
-def _coerce_field_value(type_hint: Any, value: Any) -> Any:
-    """Tuples and enums only — the two coercions config JSON routinely
-    needs. Everything else is passed through."""
-    if isinstance(value, dict) and "__class__" in value:
-        return _build_config(value)
-    # str-named enum → instance.
-    if isinstance(value, str) and isinstance(type_hint, type):
-        try:
-            import enum
-            if issubclass(type_hint, enum.Enum):
-                return type_hint[value]
-        except TypeError:
-            pass
-    # List-of-pairs → tuple-of-tuples (matches trainer config convention).
-    if isinstance(value, list) and value and isinstance(value[0], list):
-        return tuple(tuple(inner) for inner in value)
-    return value
-
-
-def _build_component(node: dict[str, Any]) -> Any:
-    """``{__class__: "m:Cls", config: {...}}`` → ``Cls(config=cfg)``.
-
-    The class constructor is invoked with a single positional config
-    argument — every concrete ABC in taiko2 follows this convention
-    (AudioSampler, EventSampler, ARDecoder, ARInputBuilder).
-    """
-    cls = _resolve_class(node["__class__"])
-    cfg = _build_config(node["config"])
-    return cls(cfg)
 
 
 # ─────────────────────────── stub chart from audio ────────────────────
@@ -258,67 +186,7 @@ def _stub_chart(audio_path: Path, *, title: str | None = None) -> Chart:
     return Chart(track=track, audio=audio_bytes)
 
 
-# ─────────────────────────── predictor assembly ───────────────────────
-
-def _assemble_predictor(
-    *,
-    spec: dict[str, Any],
-    device: torch.device,
-    debug: bool,
-    debug_steps_path: Path | None,
-) -> ChartPredictor:
-    ckpt_path = Path(spec["checkpoint"])
-    model, _loss, _meta = load_model_from_checkpoint(ckpt_path, device=device)
-    model.eval()
-
-    decoder = _build_component(spec["decoder"])
-    input_builder = _build_component(spec["input_builder"])
-    audio_sampler = _build_component(spec["audio_sampler"])
-    event_sampler = _build_component(spec["event_sampler"])
-
-    predictor_cls = _resolve_class(spec["predictor"]["__class__"])
-    pred_cfg = _build_config(spec["predictor"]["config"])
-    if debug and debug_steps_path is not None and hasattr(
-        pred_cfg, "per_step_log_path",
-    ):
-        # Drop the user's step-log path in; only set when the config
-        # has the field (AR predictor has it; a framewise one may not).
-        pred_cfg = dataclasses.replace(
-            pred_cfg, per_step_log_path=debug_steps_path,
-        )
-
-    return predictor_cls(
-        pred_cfg,
-        model=model,
-        decoder=decoder,
-        input_builder=input_builder,
-        audio_sampler=audio_sampler,
-        event_sampler=event_sampler,
-        device=device,
-    )
-
-
 # ─────────────────────────── CLI ──────────────────────────────────────
-
-def _load_spec(args: argparse.Namespace) -> dict[str, Any]:
-    if args.config and args.config_json:
-        raise SystemExit("pass one of --config / --config-json, not both")
-    if args.config:
-        text = Path(args.config).read_text(encoding="utf-8")
-    elif args.config_json:
-        text = args.config_json
-    else:
-        raise SystemExit("one of --config / --config-json is required")
-    spec = json.loads(text)
-    required = {
-        "checkpoint", "predictor", "decoder", "input_builder",
-        "audio_sampler", "event_sampler",
-    }
-    missing = required - set(spec)
-    if missing:
-        raise SystemExit(f"spec missing keys: {sorted(missing)!r}")
-    return spec
-
 
 def _dump_metrics(chart: Chart, path: Path) -> None:
     metrics = chart.calculate_metrics()
@@ -389,7 +257,7 @@ def main(argv: list[str] | None = None) -> int:
             raise SystemExit(f"audio file not found: {audio_path}")
 
         device = torch.device(args.device)
-        spec = _load_spec(args)
+        spec = load_spec(config=args.config, config_json=args.config_json)
         if args.checkpoint is not None:
             spec["checkpoint"] = str(args.checkpoint)
 
@@ -403,9 +271,9 @@ def main(argv: list[str] | None = None) -> int:
             args.out_dir / f"{name}.metrics.json" if args.debug else None
         )
 
-        predictor = _assemble_predictor(
+        predictor = assemble_predictor(
             spec=spec, device=device,
-            debug=args.debug, debug_steps_path=steps_path,
+            per_step_log_path=steps_path if args.debug else None,
         )
         chart = _stub_chart(audio_path, title=name)
         conditioning = Conditioning(
