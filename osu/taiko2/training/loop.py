@@ -357,8 +357,8 @@ def train(
         list(pre_hooks) + default_hooks + list(extra_hooks)
     )
 
-    evals_per_epoch = max(1, trainer_config.evals_per_epoch)
-    eval_every = max(1, steps_per_epoch // evals_per_epoch)
+    evals_per_epoch = max(1e-9, float(trainer_config.evals_per_epoch))
+    eval_every = max(1, int(steps_per_epoch / evals_per_epoch))
 
     for h in hooks:
         h.on_train_start(state, spec)

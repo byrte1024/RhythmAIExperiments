@@ -87,7 +87,9 @@ class TrainerConfig:
     learning_rate: float = 3e-4
     weight_decay: float = 0.01
     grad_clip: float = 1.0
-    evals_per_epoch: int = 4
+    # Fractional values (e.g. 0.25) mean "one eval every 1/value epochs" —
+    # 0.25 → one eval per 4 epochs. Clamped at >0 by the training loop.
+    evals_per_epoch: float = 4
     amp: bool = False
     num_workers: int = 0
     seed: int = 42
