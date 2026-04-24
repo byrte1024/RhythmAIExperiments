@@ -51,6 +51,7 @@ from ..training import (
     PredictionHeatmapArtifact,
     RatioErrorHeatmapArtifact,
     RatioHitArtifact,
+    TimeStretch,
     build_exp45_post_augs,
     train,
 )
@@ -199,6 +200,23 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "--benchmark-seed", type=int, default=42,
         help="Seed for benchmark sample selection + per-mode rng.",
     )
+    p.add_argument(
+        "--time-stretch-prob", type=float, default=0.0,
+        help=(
+            "Probability of applying the TimeStretch augmentation per "
+            "sample. 0.0 (default) disables it. When > 0, the aug is "
+            "prepended to the post-augmentation list so downstream augs "
+            "operate on the already-stretched sample."
+        ),
+    )
+    p.add_argument(
+        "--time-stretch-max-scale", type=float, default=1.4,
+        help=(
+            "Maximum stretch factor; per-call draw is log-uniform in "
+            "[1/max_scale, max_scale]. Default 1.4 corresponds to "
+            "about +/-40%% around normal speed."
+        ),
+    )
     return p.parse_args(argv)
 
 
@@ -245,10 +263,20 @@ def main(argv: list[str] | None = None) -> int:
 
     pipeline: AugmentationPipeline | None = None
     if not args.no_augmentation:
-        pipeline = AugmentationPipeline(
-            pre=(),
-            post=tuple(build_exp45_post_augs(seed=trainer_cfg.seed)),
-        )
+        post_augs = build_exp45_post_augs(seed=trainer_cfg.seed)
+        if args.time_stretch_prob > 0.0:
+            # Prepend — all subsequent augs (event jitter, specaug, etc)
+            # operate on the already-stretched sample, which is the
+            # correct order (stretch defines "real content", then
+            # perturb).
+            post_augs = [
+                TimeStretch(
+                    prob=args.time_stretch_prob,
+                    max_scale=args.time_stretch_max_scale,
+                    seed=trainer_cfg.seed,
+                ),
+            ] + post_augs
+        pipeline = AugmentationPipeline(pre=(), post=tuple(post_augs))
 
     train_sampler = TaikoDetectionSampler(data_cfg_train, pipeline=pipeline)
     val_sampler = TaikoDetectionSampler(data_cfg_val)
