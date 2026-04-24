@@ -1,0 +1,14 @@
+{
+    "__class__": "osu.taiko2.data_samplers.detection:TaikoDetectionSamplerConfig",
+    "batch_size": 64,
+    "a_bins": 500,
+    "b_bins": 500,
+    "c_events": 128,
+    "d_events": 1,
+    "min_cursor_bin": 6000,
+    "allowed_overlap_forward": 500,
+    "allowed_overlap_back": 500,
+    "subsample": 1,
+    "split_ratios": [["train", 0.9], ["val", 0.1]],
+    "split_seed": 42
+}

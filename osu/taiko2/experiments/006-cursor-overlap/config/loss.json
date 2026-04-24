@@ -1,0 +1,8 @@
+{
+    "__class__": "osu.taiko2.training.losses:OnsetLossConfig",
+    "hard_alpha": 0.5,
+    "good_pct": 0.03,
+    "fail_pct": 0.20,
+    "frame_tolerance": 2,
+    "stop_weight": 1.5
+}

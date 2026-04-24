@@ -153,9 +153,27 @@ class TestOnsetMetric:
         m.update(batch)
         out = m.compute()
         assert out["onset/pred_stop_rate"] == 0.5
+        assert out["onset/pred_stop_fp_rate"] == 0.5
         # Only the second sample contributes to fhit/fgood.
         assert out["onset/fhit"] == 0.5
         assert out["onset/miss"] == 0.5
+
+    def test_pred_stop_rate_counts_all_stop_preds(self):
+        """`pred_stop_rate` is total STOP predictions per total sample,
+        NOT just false-positives. `pred_stop_fp_rate` is the FP-only
+        variant (FP per non-STOP sample; legacy semantics)."""
+        m = OnsetMetric(OnsetMetricConfig(b_pred=100))
+        batch = _batch_for_metric(
+            target_bins=[100, 50],   # first target IS STOP
+            pred_bins=[100, 100],    # both predict STOP (1 TP, 1 FP)
+            b_pred=100,
+        )
+        m.update(batch)
+        out = m.compute()
+        # 2 STOP predictions / 2 total samples = 1.0.
+        assert out["onset/pred_stop_rate"] == 1.0
+        # 1 FP / 1 non-STOP sample = 1.0.
+        assert out["onset/pred_stop_fp_rate"] == 1.0
 
     def test_any_future_metrics(self):
         """IHIT counts a prediction that matches ANY upcoming onset."""
