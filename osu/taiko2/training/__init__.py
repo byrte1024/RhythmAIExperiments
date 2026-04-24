@@ -22,6 +22,7 @@ from .augmentations import (
     PartialMetronome,
     SpecAugFreq,
     SpecAugTime,
+    TimeStretch,
     build_exp45_post_augs,
 )
 from .hooks import (
@@ -74,6 +75,7 @@ __all__ = [
     "RatioHitArtifact",
     "SpecAugFreq",
     "SpecAugTime",
+    "TimeStretch",
     "build_exp45_post_augs",
     "train",
 ]

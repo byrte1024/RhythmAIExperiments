@@ -486,15 +486,27 @@ def train(
                     )
                     state.last_eval_metrics = val_out
 
+                    # Save val artifacts BEFORE any extra pass can reset
+                    # them. Train-noaug also gets artifacts (below) so
+                    # the ratio-error heatmap / metronome / etc. can be
+                    # directly compared against val to distinguish
+                    # "model can solve this on memorized data" from
+                    # "architecture can't solve this at all".
+                    eval_dir = spec.run_dir / f"eval_{state.step}"
+                    if eval_artifacts:
+                        for a in eval_artifacts:
+                            try:
+                                a.save(eval_dir, step=state.step)
+                            except Exception:
+                                pass
+
                     # train_noaug diagnostic: fresh deterministic
                     # subset of the TRAIN split, augmentations OFF.
                     # Distinguishes overfitting from data-ceiling —
-                    # see #002 Followup questions.
-                    #
-                    # We reuse `val_metrics` across the extra passes;
-                    # `_run_eval` resets it at the start of each call,
-                    # and the full computed dict for the primary val
-                    # pass is already copied into `val_out` above.
+                    # see #002 Followup questions. Artifacts from the
+                    # val pass have just been persisted; now we reset
+                    # them via `_run_eval` and accumulate train_noaug
+                    # state for a second save below.
                     if train_noaug_fraction > 0:
                         noaug_n = max(
                             1,
@@ -516,7 +528,7 @@ def train(
                             sampler=train_sampler,
                             fetch=train_noaug_raw,
                             metrics=val_metrics,
-                            artifacts=(),
+                            artifacts=eval_artifacts,
                             batch_size=batch_size,
                             device=device,
                             progress=progress,
@@ -525,6 +537,13 @@ def train(
                         )
                         for k, v in train_noaug_out.items():
                             val_out[f"train_noaug/{k}"] = v
+                        if eval_artifacts:
+                            noaug_dir = eval_dir / "train_noaug"
+                            for a in eval_artifacts:
+                                try:
+                                    a.save(noaug_dir, step=state.step)
+                                except Exception:
+                                    pass
 
                     # Benchmark suite: a fraction of the val split,
                     # run once per mode with the mode's transform
@@ -569,16 +588,9 @@ def train(
                             for k, v in bench_out.items():
                                 val_out[f"bench/{mode.name}/{k}"] = v
 
-                    # Persist artifacts under {run_dir}/eval_{step}/
-                    # before any hook sees the metrics — keeps the
-                    # "save before print" invariant.
-                    if eval_artifacts:
-                        eval_dir = spec.run_dir / f"eval_{state.step}"
-                        for a in eval_artifacts:
-                            try:
-                                a.save(eval_dir, step=state.step)
-                            except Exception:
-                                pass
+                    # (Val + train_noaug artifacts were already saved
+                    # above, before their respective passes could reset
+                    # or overwrite each other.)
                     for h in hooks:
                         h.on_eval_end(state, val_out)
                     model.train()

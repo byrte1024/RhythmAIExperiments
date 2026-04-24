@@ -34,10 +34,11 @@ Modes
 - `advanced_metronome`  — same, using the dominant gap from the
                           current past events, skipping samples where
                           target is the dominant gap.
-- `time_shifted`        — multiply every past event's cursor offset
+- `context_time_shifted` — multiply every past event's cursor offset
                           by a factor drawn from the set
                           `{1/2, 1/3, 1/4, 1/6, 1/8, 2/1, 3/1, 4/1,
-                          6/1, 8/1}`. Audio + target untouched.
+                          6/1, 8/1}`. Audio + target untouched — only
+                          the past-event context is rescaled.
 """
 from __future__ import annotations
 
@@ -221,7 +222,7 @@ TIME_SHIFT_FACTORS: tuple[float, ...] = (
 )
 
 
-def _xform_time_shifted(
+def _xform_context_time_shifted(
     s: TaikoDetectionSample, rng: random.Random,
 ) -> TaikoDetectionSample | None:
     factor = rng.choice(TIME_SHIFT_FACTORS)
@@ -279,12 +280,13 @@ BENCH_ADVANCED_METRONOME = BenchmarkMode(
         "break-from-metronome cases are evaluated)."
     ),
 )
-BENCH_TIME_SHIFTED = BenchmarkMode(
-    name="time_shifted", transform=_xform_time_shifted,
+BENCH_CONTEXT_TIME_SHIFTED = BenchmarkMode(
+    name="context_time_shifted", transform=_xform_context_time_shifted,
     description=(
         "Multiply every past event's cursor offset by a random factor "
         "from {1/2, 1/3, 1/4, 1/6, 1/8, 2/1, 3/1, 4/1, 6/1, 8/1}. "
-        "Audio and target untouched."
+        "Audio and target untouched — only the past-event context is "
+        "rescaled."
     ),
 )
 
@@ -299,7 +301,7 @@ DEFAULT_BENCHMARKS: tuple[BenchmarkMode, ...] = (
     BENCH_RANDOM_CONTEXT,
     BENCH_METRONOME,
     BENCH_ADVANCED_METRONOME,
-    BENCH_TIME_SHIFTED,
+    BENCH_CONTEXT_TIME_SHIFTED,
 )
 
 

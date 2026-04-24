@@ -426,6 +426,192 @@ class ConditioningJitter(_RngAug):
         )
 
 
+# ─────────────────────────── time stretch ────────────────────────────
+
+@dataclass
+class TimeStretch(_RngAug):
+    """Rescale audio + past/future events along the time axis by a
+    per-call factor ``s`` drawn log-uniformly from ``[1/max_scale,
+    max_scale]``.
+
+    Semantics: the cursor stays pinned at its original frame index.
+    Every other frame / event is pulled towards or pushed away from the
+    cursor by factor ``s``. ``s > 1`` expands (slow down content);
+    ``s < 1`` compresses (speed up content).
+
+    Audio stretch is mel-frame resampling only — we linearly interpolate
+    along the time axis of the already-computed log-mel. This is a valid
+    proxy for real audio time-stretch at small factors (the MIR
+    literature uses ~±40% mel-frame stretch for data augmentation); it
+    stops being realistic at extreme factors because real slowdown /
+    speedup shifts frequency content in ways mel-frame resampling does
+    not capture. Default ``max_scale = 1.4`` caps us in the realistic
+    regime.
+
+    When ``s < 1`` the new window requires source frames outside the
+    original ``[0, a_bins + b_bins)`` range — those positions get
+    zero-padded, matching the chart-edge padding the model already
+    sees at song boundaries.
+
+    Events are rescaled in cursor-relative space (``cursor_offset`` is
+    multiplied by ``s``, then rounded). ``time_ms`` and ``bin`` on each
+    ``RelativeOnset`` are reset to be consistent with the new offset
+    treating the cursor as t=0 — absolute chart positions are not
+    meaningful after stretching. Past events whose new offset falls
+    outside ``[-a_bins, 0]`` are masked as padding. Future-event target
+    derivation (including STOP flips when an in-range onset stretches
+    past ``b_pred`` or vice versa) happens downstream in the adapter
+    from the updated ``cursor_offset`` — we do not need to change
+    ``future_events_mask`` to make STOP derivation work.
+
+    Collisions: when ``s < 1`` can round two originally-distinct events
+    onto the same cursor offset, we dedupe by keeping the older event
+    (earliest in the oldest-first sequence). The past-event list is
+    then re-packed with padding at the start so its length stays
+    ``c_events``.
+    """
+    max_scale: float = 1.4
+
+    def __post_init__(self) -> None:
+        super().__post_init__()
+        if self.max_scale <= 1.0:
+            raise ValueError(
+                f"max_scale must be > 1.0, got {self.max_scale}"
+            )
+
+    def _apply(self, sample: TaikoDetectionSample) -> TaikoDetectionSample:
+        log_max = math.log(self.max_scale)
+        s = math.exp(self._rng.uniform(-log_max, log_max))
+
+        new_past_audio, new_future_audio = self._stretch_audio(
+            sample.audio_past, sample.audio_future, s,
+        )
+        new_past_events, new_past_mask = self._stretch_past_events(
+            sample.past_events, sample.past_events_mask,
+            s, a_bins=sample.audio_past.shape[1],
+        )
+        new_future_events, new_future_mask = self._stretch_future_events(
+            sample.future_events, sample.future_events_mask, s,
+        )
+        return replace(
+            sample,
+            audio_past=new_past_audio,
+            audio_future=new_future_audio,
+            past_events=new_past_events,
+            past_events_mask=new_past_mask,
+            future_events=new_future_events,
+            future_events_mask=new_future_mask,
+        )
+
+    # ── helpers ─────────────────────────────────────────────────────────
+
+    @staticmethod
+    def _stretch_audio(
+        audio_past: np.ndarray, audio_future: np.ndarray, s: float,
+    ) -> tuple[np.ndarray, np.ndarray]:
+        a_bins = audio_past.shape[1]
+        b_bins = audio_future.shape[1]
+        total = a_bins + b_bins
+        if s == 1.0:
+            return audio_past.copy(), audio_future.copy()
+        full = np.concatenate([audio_past, audio_future], axis=1)       # (F, total)
+        F = full.shape[0]
+        out_idx = np.arange(total, dtype=np.float32)
+        src_idx = a_bins + (out_idx - a_bins) / s                        # cursor pinned at a_bins
+        in_range = (src_idx >= 0.0) & (src_idx <= total - 1)
+        clipped = np.clip(src_idx, 0.0, total - 1).astype(np.float32)
+        lo = np.floor(clipped).astype(np.int64)
+        hi = np.minimum(lo + 1, total - 1)
+        frac = (clipped - lo).astype(np.float32)
+        out = full[:, lo] * (1.0 - frac) + full[:, hi] * frac            # (F, total)
+        if not in_range.all():
+            out[:, ~in_range] = 0.0
+        return (
+            np.ascontiguousarray(out[:, :a_bins]),
+            np.ascontiguousarray(out[:, a_bins:]),
+        )
+
+    @staticmethod
+    def _scale_offset(offset: int, s: float) -> int:
+        return int(round(offset * s))
+
+    @staticmethod
+    def _rebuild_onset(
+        old: RelativeOnset, new_offset: int,
+    ) -> RelativeOnset:
+        # time_ms + bin are set to be self-consistent with the new offset
+        # (cursor treated as t=0). Absolute chart positions are lost on
+        # stretch; the adapter only reads cursor_offset anyway.
+        return replace(
+            old,
+            cursor_offset=new_offset,
+            bin=new_offset,
+            time_ms=int(round(new_offset * 5.0)),
+        )
+
+    @classmethod
+    def _stretch_past_events(
+        cls,
+        events: tuple[RelativeOnset, ...],
+        mask: np.ndarray,
+        s: float,
+        a_bins: int,
+    ) -> tuple[tuple[RelativeOnset, ...], np.ndarray]:
+        # Collect real (non-padded) events with their new offsets.
+        real: list[RelativeOnset] = []
+        for e, m in zip(events, mask):
+            if bool(m):
+                continue
+            new_off = cls._scale_offset(e.cursor_offset, s)
+            if new_off > 0 or new_off <= -a_bins:
+                # Fell outside the past window after scaling → drop.
+                continue
+            real.append(cls._rebuild_onset(e, new_off))
+        # Dedupe: events with identical new offsets collapse to one;
+        # keep the OLDER (earlier in the oldest-first sequence) because
+        # its kind is the "first to be heard" in real-time order.
+        deduped: list[RelativeOnset] = []
+        seen: set[int] = set()
+        for e in real:
+            if e.cursor_offset in seen:
+                continue
+            seen.add(e.cursor_offset)
+            deduped.append(e)
+        # Pad at start (oldest-first convention).
+        c_events = len(events)
+        pad_n = c_events - len(deduped)
+        if pad_n < 0:
+            # More surviving events than slots — keep the newest c_events.
+            deduped = deduped[-c_events:]
+            pad_n = 0
+        padding = [cls._rebuild_onset(events[0], 0)] * pad_n
+        new_events = tuple(padding + deduped)
+        new_mask = np.array(
+            [True] * pad_n + [False] * len(deduped),
+            dtype=bool,
+        )
+        return new_events, new_mask
+
+    @classmethod
+    def _stretch_future_events(
+        cls,
+        events: tuple[RelativeOnset, ...],
+        mask: np.ndarray,
+        s: float,
+    ) -> tuple[tuple[RelativeOnset, ...], np.ndarray]:
+        # We do NOT change the mask here — the adapter derives STOP
+        # from the combination of mask AND offset-vs-b_pred, so a
+        # pre-stretch in-range onset that stretches past b_pred will
+        # correctly flip to STOP in the target without us touching the
+        # mask. Out-of-order events (new_offset < 0, can't happen for
+        # s > 0) are the only case we'd need to handle and we don't.
+        new_events = tuple(
+            cls._rebuild_onset(e, cls._scale_offset(e.cursor_offset, s))
+            for e in events
+        )
+        return new_events, np.array(mask, dtype=bool, copy=True)
+
+
 # ─────────────────────────── exp 45 bundle ────────────────────────────
 
 def build_exp45_post_augs(*, seed: int | None = None) -> list[PostSampleAugmentation]:
