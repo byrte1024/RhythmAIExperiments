@@ -44,6 +44,8 @@ from ..training import (
     MetronomeHitArtifact,
     GaussianCELoss,
     GaussianCELossConfig,
+    LogEmdLoss,
+    LogEmdLossConfig,
     OnsetLoss,
     OnsetLossConfig,
     OnsetMetric,
@@ -287,6 +289,8 @@ def main(argv: list[str] | None = None) -> int:
     model = EventEmbeddingDetector(model_cfg)
     if isinstance(loss_cfg, GaussianCELossConfig):
         loss = GaussianCELoss(loss_cfg)
+    elif isinstance(loss_cfg, LogEmdLossConfig):
+        loss = LogEmdLoss(loss_cfg)
     elif isinstance(loss_cfg, OnsetLossConfig):
         loss = OnsetLoss(loss_cfg)
     else:

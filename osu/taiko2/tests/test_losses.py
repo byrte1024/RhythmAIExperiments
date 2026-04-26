@@ -18,6 +18,8 @@ from osu.taiko2.models.event_embedding import (
 from osu.taiko2.training.losses import (
     GaussianCELoss,
     GaussianCELossConfig,
+    LogEmdLoss,
+    LogEmdLossConfig,
     OnsetLoss,
     OnsetLossConfig,
 )
@@ -352,5 +354,232 @@ class TestGaussianCEForward:
         loss = GaussianCELoss(GaussianCELossConfig())
         logits = torch.randn(3, 501, requires_grad=True)
         r = _gcall(loss, logits, torch.tensor([10, 100, 500]))
+        for k, v in r.metrics.items():
+            assert isinstance(v, float), f"{k} is {type(v)}"
+
+
+# ─────────────────────────── LogEmdLoss ───────────────────────────────
+
+def _ecall(
+    loss: LogEmdLoss, logits: torch.Tensor, target_bin: torch.Tensor,
+) -> LossResult:
+    return loss(
+        EventEmbeddingOutput(logits=logits),
+        EventEmbeddingTarget(target_bin=target_bin),
+    )
+
+
+def _spike_logits(B: int, n_classes: int, spike_idx: int | list[int],
+                  height: float = 50.0) -> torch.Tensor:
+    """Logits whose softmax is essentially a delta at `spike_idx` per row."""
+    logits = torch.full((B, n_classes), -height, dtype=torch.float32)
+    if isinstance(spike_idx, int):
+        spike_idx = [spike_idx] * B
+    for b, j in enumerate(spike_idx):
+        logits[b, j] = height
+    return logits
+
+
+def _bimodal_logits(B: int, n_classes: int, idxs: list[tuple[int, int]],
+                    height: float = 5.0) -> torch.Tensor:
+    """Logits whose softmax has roughly equal mass on two indices per row.
+    Lower height than `_spike_logits` so two-mode mass-split is real."""
+    logits = torch.full((B, n_classes), -height, dtype=torch.float32)
+    for b, (i, j) in enumerate(idxs):
+        logits[b, i] = height
+        logits[b, j] = height
+    return logits
+
+
+class TestLogEmdLossConfig:
+    def test_defaults(self):
+        c = LogEmdLossConfig()
+        assert c.hard_alpha == 0.5
+        assert c.exponent == 1
+        assert c.stop_weight == 1.5
+
+    def test_hard_alpha_range(self):
+        with pytest.raises(ValueError, match="hard_alpha"):
+            LogEmdLoss(LogEmdLossConfig(hard_alpha=-0.1))
+        with pytest.raises(ValueError, match="hard_alpha"):
+            LogEmdLoss(LogEmdLossConfig(hard_alpha=1.1))
+
+    def test_exponent_must_be_1_or_2(self):
+        for bad in (0, 3, -1):
+            with pytest.raises(ValueError, match="exponent"):
+                LogEmdLoss(LogEmdLossConfig(exponent=bad))
+
+    def test_stop_weight_positive(self):
+        with pytest.raises(ValueError, match="stop_weight"):
+            LogEmdLoss(LogEmdLossConfig(stop_weight=0.0))
+        with pytest.raises(ValueError, match="stop_weight"):
+            LogEmdLoss(LogEmdLossConfig(stop_weight=-1.0))
+
+
+class TestLogEmdValueProperties:
+    """Properties of the log_emd term that the loss landscape analysis
+    promised, computed exactly here."""
+
+    def test_log_emd_zero_on_perfect_spike(self):
+        """Sharp prediction at p=t ⇒ log_emd ≈ 0."""
+        loss = LogEmdLoss(LogEmdLossConfig(hard_alpha=0.0))
+        logits = _spike_logits(1, 501, spike_idx=100, height=80.0)
+        r = _ecall(loss, logits, torch.tensor([100]))
+        # log_emd is the only contribution at hard_alpha=0; should be tiny.
+        assert r.metrics["log_emd"] < 1e-3
+
+    def test_log_emd_octave_costs_log2(self):
+        """Sharp prediction at p=2t (delta at 200, target 100) costs
+        approximately log(2) ≈ 0.693."""
+        loss = LogEmdLoss(LogEmdLossConfig(hard_alpha=0.0))
+        logits = _spike_logits(1, 501, spike_idx=200, height=80.0)
+        r = _ecall(loss, logits, torch.tensor([100]))
+        expected = math.log((200 + 1) / (100 + 1))  # ≈ 0.689
+        assert math.isclose(r.metrics["log_emd"], expected, abs_tol=1e-2)
+
+    def test_log_emd_symmetric_log_space(self):
+        """p=2t and p=t/2 cost equal in log-EMD (octave-symmetric)."""
+        loss = LogEmdLoss(LogEmdLossConfig(hard_alpha=0.0))
+        # target 100; predictions at 200 (doubling) and 50 (halving).
+        # |log(201/101)| ≈ 0.689; |log(51/101)| ≈ 0.683 (off by 1 from
+        # exact symmetry because of the +1 offset on tiny indices).
+        l_double = _ecall(
+            loss, _spike_logits(1, 501, 200, 80.0), torch.tensor([100]),
+        ).metrics["log_emd"]
+        l_halve = _ecall(
+            loss, _spike_logits(1, 501, 50, 80.0), torch.tensor([100]),
+        ).metrics["log_emd"]
+        # They should be close — exactly equal up to the +1 in (i+1)/(t+1).
+        assert math.isclose(l_double, l_halve, rel_tol=0.02)
+
+    def test_log_emd_punishes_bimodal_octave_hedging(self):
+        """A 50/50 mass split between t/2 and 2t scores ≈ log(2),
+        which is HIGHER than a sharp 1.5×t prediction's penalty."""
+        loss = LogEmdLoss(LogEmdLossConfig(hard_alpha=0.0))
+        # Bimodal at 50 and 200 for target 100.
+        bimodal = _bimodal_logits(1, 501, [(50, 200)], height=15.0)
+        r_bimodal = _ecall(loss, bimodal, torch.tensor([100])).metrics["log_emd"]
+        # Sharp at 150 for target 100 — a moderate single-bin miss.
+        sharp_close = _spike_logits(1, 501, 150, 80.0)
+        r_close = _ecall(loss, sharp_close, torch.tensor([100])).metrics["log_emd"]
+        # bimodal-octave penalty dominates the moderate-miss penalty.
+        assert r_bimodal > r_close * 1.5, (
+            f"bimodal {r_bimodal:.3f} should be >> close-miss {r_close:.3f}"
+        )
+
+    def test_exponent_2_amplifies_far_errors(self):
+        """exponent=2 makes far-off mass cost much more than linear."""
+        # Sharp prediction at 200 for target 100.
+        logits = _spike_logits(1, 501, 200, 80.0)
+        l1 = _ecall(
+            LogEmdLoss(LogEmdLossConfig(hard_alpha=0.0, exponent=1)),
+            logits, torch.tensor([100]),
+        ).metrics["log_emd"]
+        l2 = _ecall(
+            LogEmdLoss(LogEmdLossConfig(hard_alpha=0.0, exponent=2)),
+            logits, torch.tensor([100]),
+        ).metrics["log_emd"]
+        # log(2)^2 ≈ 0.481 < log(2) ≈ 0.689 — the squared variant is
+        # smaller for octave but larger for very-far errors. Verify
+        # that l2 ≈ l1^2 here:
+        assert math.isclose(l2, l1 ** 2, rel_tol=0.05)
+
+
+class TestLogEmdStopBehaviour:
+    def test_stop_target_skips_log_emd(self):
+        """log_emd is 0 on STOP-target samples regardless of where
+        prediction mass sits."""
+        loss = LogEmdLoss(LogEmdLossConfig(hard_alpha=0.0, stop_weight=1.0))
+        logits = _spike_logits(1, 501, 100, 80.0)  # mass on bin 100
+        r = _ecall(loss, logits, torch.tensor([500]))             # STOP target
+        # log_emd is a per-batch mean over all samples; for this single
+        # STOP sample it should be exactly 0.
+        assert r.metrics["log_emd"] == 0.0
+
+    def test_stop_weight_multiplies_stop_loss(self):
+        """STOP samples pay stop_weight * (their per-sample loss).
+        Compare two losses identical except stop_weight."""
+        logits = _spike_logits(1, 501, 100, 5.0)  # mass on bin 100
+        # Use hard_alpha=1.0 (pure hard CE) so STOP behaviour mirrors
+        # OnsetLoss exactly when target is STOP.
+        l_a = _ecall(
+            LogEmdLoss(LogEmdLossConfig(hard_alpha=1.0, stop_weight=1.0)),
+            logits, torch.tensor([500]),
+        ).loss
+        l_b = _ecall(
+            LogEmdLoss(LogEmdLossConfig(hard_alpha=1.0, stop_weight=2.0)),
+            logits, torch.tensor([500]),
+        ).loss
+        # stop_weight=2 should double the per-sample loss vs stop_weight=1.
+        assert math.isclose(float(l_b), 2.0 * float(l_a), rel_tol=1e-5)
+
+    def test_mixed_batch_with_stop_runs_cleanly(self):
+        loss = LogEmdLoss(LogEmdLossConfig())
+        logits = torch.randn(4, 501)
+        targets = torch.tensor([10, 100, 500, 250])
+        r = _ecall(loss, logits, targets)
+        assert math.isfinite(r.metrics["loss"])
+        assert math.isfinite(r.metrics["log_emd"])
+        assert math.isfinite(r.metrics["hard_ce"])
+
+
+class TestLogEmdMixing:
+    def test_hard_alpha_zero_pure_log_emd(self):
+        """At hard_alpha=0 the loss equals log_emd (over batch mean) for
+        a bin-only batch."""
+        loss = LogEmdLoss(LogEmdLossConfig(hard_alpha=0.0, stop_weight=1.0))
+        logits = torch.randn(3, 501)
+        r = _ecall(loss, logits, torch.tensor([10, 100, 250]))
+        assert math.isclose(r.metrics["loss"], r.metrics["log_emd"], rel_tol=1e-5)
+
+    def test_hard_alpha_one_pure_hard_ce(self):
+        """At hard_alpha=1 the loss equals hard_CE (over batch mean) for
+        a bin-only batch."""
+        loss = LogEmdLoss(LogEmdLossConfig(hard_alpha=1.0, stop_weight=1.0))
+        logits = torch.randn(3, 501)
+        r = _ecall(loss, logits, torch.tensor([10, 100, 250]))
+        assert math.isclose(r.metrics["loss"], r.metrics["hard_ce"], rel_tol=1e-5)
+
+    def test_total_is_alpha_blend(self):
+        """For a bin-only batch with stop_weight=1, the total per-sample
+        loss equals α·hard_ce + (1−α)·log_emd up to numerical precision."""
+        loss = LogEmdLoss(LogEmdLossConfig(hard_alpha=0.3, stop_weight=1.0))
+        logits = torch.randn(4, 501)
+        r = _ecall(loss, logits, torch.tensor([10, 100, 250, 400]))
+        expected = 0.3 * r.metrics["hard_ce"] + 0.7 * r.metrics["log_emd"]
+        assert math.isclose(r.metrics["loss"], expected, rel_tol=1e-5)
+
+
+class TestLogEmdGradient:
+    def test_grad_flows_through_logits(self):
+        loss = LogEmdLoss(LogEmdLossConfig())
+        logits = torch.randn(4, 501, requires_grad=True)
+        r = _ecall(loss, logits, torch.tensor([10, 100, 500, 250]))
+        r.loss.backward()
+        assert logits.grad is not None
+        assert torch.isfinite(logits.grad).all()
+        assert logits.grad.abs().sum() > 0
+
+    def test_grad_pushes_mass_toward_target(self):
+        """One step of gradient descent on the logits should push the
+        log-EMD term DOWN — i.e. probability mass moves toward `t`."""
+        loss = LogEmdLoss(LogEmdLossConfig(hard_alpha=0.0, stop_weight=1.0))
+        torch.manual_seed(0)
+        logits = torch.randn(1, 501, requires_grad=True)
+        target = torch.tensor([100])
+        before = _ecall(loss, logits, target).metrics["log_emd"]
+        # one SGD step
+        r = _ecall(loss, logits, target)
+        r.loss.backward()
+        with torch.no_grad():
+            logits = logits - 0.5 * logits.grad
+        logits.requires_grad_(True)
+        after = _ecall(loss, logits, target).metrics["log_emd"]
+        assert after < before, f"log_emd did not decrease: {before:.4f} -> {after:.4f}"
+
+    def test_metrics_are_floats(self):
+        loss = LogEmdLoss(LogEmdLossConfig())
+        logits = torch.randn(3, 501, requires_grad=True)
+        r = _ecall(loss, logits, torch.tensor([10, 100, 500]))
         for k, v in r.metrics.items():
             assert isinstance(v, float), f"{k} is {type(v)}"

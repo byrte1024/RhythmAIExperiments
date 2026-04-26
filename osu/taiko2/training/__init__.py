@@ -37,6 +37,8 @@ from .loop import train
 from .losses import (
     GaussianCELoss,
     GaussianCELossConfig,
+    LogEmdLoss,
+    LogEmdLossConfig,
     OnsetLoss,
     OnsetLossConfig,
 )
@@ -64,6 +66,8 @@ __all__ = [
     "MetronomeHitArtifact",
     "GaussianCELoss",
     "GaussianCELossConfig",
+    "LogEmdLoss",
+    "LogEmdLossConfig",
     "OnsetLoss",
     "OnsetLossConfig",
     "OnsetMetric",

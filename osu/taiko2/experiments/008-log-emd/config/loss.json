@@ -1,0 +1,6 @@
+{
+    "__class__": "osu.taiko2.training.losses:LogEmdLossConfig",
+    "hard_alpha": 0.5,
+    "exponent": 1,
+    "stop_weight": 1.5
+}

@@ -265,3 +265,124 @@ class GaussianCELoss(Loss[GaussianCELossConfig, EventEmbeddingOutput, EventEmbed
                 "stop_rate": float(is_stop.float().mean().detach()),
             },
         )
+
+
+@dataclass(frozen=True, slots=True)
+class LogEmdLossConfig(LossConfig):
+    """Hard CE + log-ratio Earth-Mover Distance over bin probabilities.
+
+    Designed for #008: the loss-shape attack on the ratio-banding
+    ridges that #002 / #005 / #007 all left intact. Combines #002's
+    hard-CE peak signal with a log-ratio EMD term that has NO entropy
+    floor and is symmetric in log-space (perception-correct: a
+    halving and a doubling of the target both cost ``log 2`` in the
+    EMD term, regardless of absolute target magnitude).
+
+    Total loss per sample:
+
+        l = hard_alpha * hard_CE + (1 - hard_alpha) * log_emd
+
+    where:
+
+        hard_CE = F.cross_entropy(logits, target)
+        log_emd = sum_{i in bins} P_i · |log((i+1)/(t+1))|^exponent
+                 (set to 0 on STOP-target samples — log-EMD is
+                  defined only for bin targets)
+
+    P is softmax over the full (n_classes,) logits including STOP, so
+    mass on STOP for a bin-target sample is punished implicitly via
+    hard_CE (does not contribute to log_emd directly).
+
+    STOP samples get the same ``stop_weight`` multiplier as #002's
+    OnsetLoss to keep the unified-softmax STOP-vs-bins balance that
+    #002 / #007 had — #005 showed splitting STOP off broke the decode-
+    time scale linkage.
+    """
+    hard_alpha: float = 0.5         # mix weight on hard CE
+    exponent: int = 1               # 1 = linear log-EMD, 2 = squared
+    stop_weight: float = 1.5        # per-sample multiplier on STOP samples
+
+
+class LogEmdLoss(Loss[LogEmdLossConfig, EventEmbeddingOutput, EventEmbeddingTarget]):
+    """Hard CE + log-ratio EMD loss.
+
+    Implements the #008 hypothesis: the trapezoid soft CE in #002
+    has an entropy floor that prevents the model from receiving any
+    gradient outside its support, which is why the ratio-banding
+    ridges never compress. log-ratio EMD has no such floor — the
+    minimum is delta-at-target, and mass anywhere else costs
+    proportionally to its log-ratio distance from the target.
+    """
+
+    def __init__(self, config: LogEmdLossConfig):
+        super().__init__(config)
+        if not 0.0 <= config.hard_alpha <= 1.0:
+            raise ValueError(
+                f"hard_alpha must be in [0, 1], got {config.hard_alpha}"
+            )
+        if config.exponent not in (1, 2):
+            raise ValueError(
+                f"exponent must be 1 or 2, got {config.exponent}"
+            )
+        if config.stop_weight <= 0:
+            raise ValueError(
+                f"stop_weight must be > 0, got {config.stop_weight}"
+            )
+
+    def forward(
+        self,
+        output: EventEmbeddingOutput,
+        target: EventEmbeddingTarget,
+    ) -> LossResult:
+        logits = output.logits                                          # (B, n_classes)
+        targets = target.target_bin                                     # (B,)
+        n_classes = logits.size(1)
+        stop_idx = n_classes - 1
+
+        # Hard CE over the full (n_classes) softmax including STOP —
+        # punishes mass on STOP for bin targets and mass on bins for
+        # STOP targets without us touching the bin/STOP partition.
+        hard_ce = F.cross_entropy(logits, targets, reduction="none")    # (B,)
+
+        # log-EMD over bin probabilities only. Defined as 0 for
+        # STOP-target samples (no bin target ⇒ no log-ratio distance).
+        log_emd = torch.zeros_like(hard_ce)
+        is_bin = targets != stop_idx
+        if is_bin.any():
+            bin_logits_sel = logits[is_bin, :stop_idx]                  # (M, stop_idx)
+            bin_targets_sel = targets[is_bin].float()                   # (M,)
+            P = F.softmax(logits[is_bin], dim=-1)[:, :stop_idx]         # (M, stop_idx)
+            bins = torch.arange(
+                stop_idx, device=logits.device, dtype=torch.float32,
+            )
+            log_dist = torch.abs(
+                torch.log((bins.unsqueeze(0) + 1.0)
+                          / (bin_targets_sel.unsqueeze(1) + 1.0))
+            )                                                           # (M, stop_idx)
+            if self.config.exponent == 2:
+                log_dist = log_dist * log_dist
+            log_emd[is_bin] = (P * log_dist).sum(dim=-1)                # (M,)
+
+        cfg = self.config
+        per_sample = cfg.hard_alpha * hard_ce + (1.0 - cfg.hard_alpha) * log_emd
+
+        is_stop = targets == stop_idx
+        if cfg.stop_weight != 1.0:
+            multiplier = torch.where(
+                is_stop,
+                torch.tensor(cfg.stop_weight, device=per_sample.device, dtype=per_sample.dtype),
+                torch.tensor(1.0, device=per_sample.device, dtype=per_sample.dtype),
+            )
+            per_sample = per_sample * multiplier
+
+        loss = per_sample.mean()
+
+        return LossResult(
+            loss=loss,
+            metrics={
+                "loss": float(loss.detach()),
+                "hard_ce": float(hard_ce.mean().detach()),
+                "log_emd": float(log_emd.mean().detach()),
+                "stop_rate": float(is_stop.float().mean().detach()),
+            },
+        )
