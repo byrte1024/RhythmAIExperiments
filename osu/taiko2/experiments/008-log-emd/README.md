@@ -2,7 +2,14 @@
 
 ## Status
 
-`Planned`
+`Complete` — hypothesis **rejected**. Stopped at eval 11 (step
+227,414, matched #007's stopping step) after the headline metric
+trajectory locked at "1.5 pp behind #007" and the ratio-banding
+ridges remained essentially identical to #007's. Mathematical
+prediction confirmed (entropy-floor escape: log_EMD dropped 17 % vs
+trapezoid soft_CE's 4.5 %), but the gradient signal did not move
+mass off the octave bands. **Loss-side approaches to the ridges are
+exhausted; the ridges are an architectural / capability ceiling.**
 
 ## Context
 
