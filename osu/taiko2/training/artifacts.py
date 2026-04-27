@@ -36,7 +36,29 @@ from pathlib import Path
 
 import numpy as np
 
+import torch
+
 from ..domain.metrics import MetricInput
+
+
+def decode_pred_bins(batch: MetricInput, b_pred: int) -> np.ndarray:
+    """Extract predicted bins from output — works for both softmax
+    (argmax on logits) and MDN (highest-pi component's mu) output
+    shapes. Returns int32 numpy array of shape (B,)."""
+    logits = batch.output.logits
+    expected_softmax = b_pred + 1
+    if logits.size(-1) == expected_softmax:
+        return logits.argmax(dim=-1).detach().cpu().numpy()
+    # MDN mode: (B, K*3+1).
+    from .losses import parse_mdn_params
+    K = (logits.size(-1) - 1) // 3
+    stop_logit, mu, sigma, pi = parse_mdn_params(logits, K, b_pred)
+    best_k = pi.argmax(dim=-1)
+    pred_mu = mu.gather(1, best_k.unsqueeze(-1)).squeeze(-1)
+    pred_bin = pred_mu.round().long().clamp(0, b_pred - 1)
+    is_stop_pred = torch.sigmoid(stop_logit) > 0.5
+    pred_bin[is_stop_pred] = b_pred
+    return pred_bin.detach().cpu().numpy()
 
 
 # Rhythmic ratio guides drawn on both heatmaps. Each entry is
@@ -80,7 +102,7 @@ class PredictionHeatmapArtifact:
         self._hist = np.zeros((self._size, self._size), dtype=np.int64)
 
     def update(self, batch: MetricInput) -> None:
-        pred = batch.output.logits.argmax(dim=-1).detach().cpu().numpy()
+        pred = decode_pred_bins(batch, self._size - 1 if hasattr(self, '_size') else self._stop_idx)
         target = batch.target.target_bin.detach().cpu().numpy()
         t = np.clip(target, 0, self._size - 1).astype(np.int64)
         p = np.clip(pred, 0, self._size - 1).astype(np.int64)
@@ -158,7 +180,7 @@ class DistributionArtifact:
         self._preds = np.zeros(self._size, dtype=np.int64)
 
     def update(self, batch: MetricInput) -> None:
-        pred = batch.output.logits.argmax(dim=-1).detach().cpu().numpy()
+        pred = decode_pred_bins(batch, self._size - 1 if hasattr(self, '_size') else self._stop_idx)
         target = batch.target.target_bin.detach().cpu().numpy()
         t = np.clip(target, 0, self._size - 1).astype(np.int64)
         p = np.clip(pred, 0, self._size - 1).astype(np.int64)
@@ -247,7 +269,7 @@ class RatioErrorHeatmapArtifact:
         self._n_oob = 0   # samples whose log-ratio fell outside y range
 
     def update(self, batch: MetricInput) -> None:
-        pred = batch.output.logits.argmax(dim=-1).detach().cpu().numpy()
+        pred = decode_pred_bins(batch, self._size - 1 if hasattr(self, '_size') else self._stop_idx)
         target = batch.target.target_bin.detach().cpu().numpy()
         mask = (target != self._stop_idx) & (pred != self._stop_idx)
         if not mask.any():
@@ -353,7 +375,7 @@ class ErrorHistogramArtifact:
         self._errors = np.empty(0, dtype=np.int64)
 
     def update(self, batch: MetricInput) -> None:
-        pred = batch.output.logits.argmax(dim=-1).detach().cpu().numpy()
+        pred = decode_pred_bins(batch, self._size - 1 if hasattr(self, '_size') else self._stop_idx)
         target = batch.target.target_bin.detach().cpu().numpy()
         mask = (target != self._stop_idx) & (pred != self._stop_idx)
         if not mask.any():
@@ -506,7 +528,7 @@ class RatioHitArtifact:
         self._hits = np.zeros(len(self._BUCKETS), dtype=np.int64)
 
     def update(self, batch: MetricInput) -> None:
-        pred = batch.output.logits.argmax(dim=-1).detach().cpu().numpy()
+        pred = decode_pred_bins(batch, self._size - 1 if hasattr(self, '_size') else self._stop_idx)
         target = batch.target.target_bin.detach().cpu().numpy()
         prev_gap = _prev_gap(batch)
         valid = (
@@ -608,7 +630,7 @@ class MetronomeHitArtifact:
         self._hits = np.zeros(2, dtype=np.int64)
 
     def update(self, batch: MetricInput) -> None:
-        pred = batch.output.logits.argmax(dim=-1).detach().cpu().numpy()
+        pred = decode_pred_bins(batch, self._size - 1 if hasattr(self, '_size') else self._stop_idx)
         target = batch.target.target_bin.detach().cpu().numpy()
         prev_gap = _prev_gap(batch)
         valid = (
@@ -672,4 +694,185 @@ class MetronomeHitArtifact:
         np.savez(
             eval_dir / f"{self.name}.npz",
             bucket_totals=self._totals, bucket_hits=self._hits,
+        )
+
+
+
+# ─────────────────────────── MDN component artifacts ─────────────────
+
+class MdnComponentArtifact:
+    """Per-component prediction heatmaps + ratio-error heatmaps.
+
+    For each of K components: accumulates (target, mu_k, pi_k) across
+    the eval pass. On save, renders:
+      - K target-vs-mu heatmaps weighted by pi.
+      - K ratio-error heatmaps weighted by pi.
+      - 1 combined heatmap (argmax-pi component).
+      - 1 combined ratio-error heatmap.
+    All saved under ``{eval_dir}/mdn/``.
+    """
+    name: str = "mdn_components"
+
+    def __init__(self, *, b_pred: int = 500, n_components: int = 3):
+        self._b_pred = b_pred
+        self._K = n_components
+        self.reset()
+
+    def reset(self) -> None:
+        self._targets: list[np.ndarray] = []
+        self._mus: list[np.ndarray] = []
+        self._sigmas: list[np.ndarray] = []
+        self._pis: list[np.ndarray] = []
+
+    def update(self, batch: MetricInput) -> None:
+        logits = batch.output.logits
+        expected_softmax = self._b_pred + 1
+        if logits.size(-1) == expected_softmax:
+            return  # not MDN output, skip silently
+        from .losses import parse_mdn_params
+        target = batch.target.target_bin.detach().cpu().numpy()
+        stop_logit, mu, sigma, pi = parse_mdn_params(
+            logits.detach(), self._K, self._b_pred,
+        )
+        is_bin = target != self._b_pred
+        if not is_bin.any():
+            return
+        self._targets.append(target[is_bin])
+        self._mus.append(mu.cpu().numpy()[is_bin])
+        self._sigmas.append(sigma.cpu().numpy()[is_bin])
+        self._pis.append(pi.cpu().numpy()[is_bin])
+
+    def save(self, eval_dir: Path, *, step: int) -> None:
+        if not self._targets:
+            return
+        import matplotlib
+        matplotlib.use("Agg")
+        import matplotlib.pyplot as plt
+
+        targets = np.concatenate(self._targets)
+        mus = np.concatenate(self._mus)
+        sigmas = np.concatenate(self._sigmas)
+        pis = np.concatenate(self._pis)
+        K = mus.shape[1]
+
+        out_dir = eval_dir / "mdn"
+        out_dir.mkdir(parents=True, exist_ok=True)
+
+        b = self._b_pred + 1
+        bins_arr = np.arange(b)
+
+        for k in range(K):
+            mu_k = mus[:, k]
+            pi_k = pis[:, k]
+            sigma_k = sigmas[:, k]
+
+            # Target-vs-mu heatmap (pi-weighted).
+            heatmap = np.zeros((b, b), dtype=np.float64)
+            t_int = np.clip(targets.astype(int), 0, b - 1)
+            m_int = np.clip(np.round(mu_k).astype(int), 0, b - 1)
+            for i in range(len(targets)):
+                heatmap[m_int[i], t_int[i]] += pi_k[i]
+            fig, ax = plt.subplots(figsize=(7, 6))
+            im = ax.imshow(
+                np.log1p(heatmap), origin="lower", cmap="hot",
+                aspect="auto", extent=(0, b, 0, b),
+            )
+            ax.plot(bins_arr, bins_arr, "w--", alpha=0.3, lw=0.6)
+            ax.plot(bins_arr, 2 * bins_arr, "c:", alpha=0.3, lw=0.5)
+            ax.plot(bins_arr, bins_arr / 2, "c:", alpha=0.3, lw=0.5)
+            ax.set_xlim(0, b); ax.set_ylim(0, b)
+            ax.set_xlabel("target")
+            ax.set_ylabel(f"mu (comp {k})")
+            ax.set_title(
+                f"Component {k} heatmap (pi-weighted) step {step:,}"
+                f"  |  mean pi={pi_k.mean():.3f}, mean sigma={sigma_k.mean():.1f}"
+            )
+            plt.colorbar(im, ax=ax)
+            plt.tight_layout()
+            fig.savefig(out_dir / f"comp{k}_heatmap.png", dpi=100)
+            plt.close(fig)
+
+            # Ratio-error per component.
+            safe_t = np.maximum(targets, 1).astype(float)
+            safe_mu = np.maximum(mu_k, 1).astype(float)
+            log_target = np.log(safe_t + 1)
+            log_ratio = np.log((safe_mu + 1) / (safe_t + 1))
+            x_edges = np.linspace(0, np.log(b + 1), 80)
+            y_edges = np.linspace(-2.2, 2.2, 120)
+            H, _, _ = np.histogram2d(
+                log_target, log_ratio, bins=[x_edges, y_edges],
+                weights=pi_k,
+            )
+            fig, ax = plt.subplots(figsize=(8, 6))
+            im = ax.imshow(
+                np.log1p(H.T), origin="lower", cmap="inferno",
+                aspect="auto",
+                extent=(x_edges[0], x_edges[-1], y_edges[0], y_edges[-1]),
+            )
+            for label, ratio in _RATIO_GUIDES:
+                y_val = np.log(ratio)
+                ls = "-" if ratio == 1.0 else "--"
+                ax.axhline(y_val, color="white", ls=ls, alpha=0.3, lw=0.5)
+            ax.set_xlabel("log(target + 1)")
+            ax.set_ylabel("log((mu+1)/(target+1))")
+            ax.set_title(
+                f"Component {k} ratio-error (pi-weighted) step {step:,}"
+            )
+            plt.colorbar(im, ax=ax)
+            plt.tight_layout()
+            fig.savefig(out_dir / f"comp{k}_ratio_error.png", dpi=100)
+            plt.close(fig)
+
+        # Combined (argmax-pi).
+        best_k = pis.argmax(axis=1)
+        pred_mu = mus[np.arange(len(mus)), best_k]
+
+        heatmap_c = np.zeros((b, b), dtype=np.float64)
+        t_int = np.clip(targets.astype(int), 0, b - 1)
+        m_int = np.clip(np.round(pred_mu).astype(int), 0, b - 1)
+        for i in range(len(targets)):
+            heatmap_c[m_int[i], t_int[i]] += 1
+        fig, ax = plt.subplots(figsize=(7, 6))
+        im = ax.imshow(
+            np.log1p(heatmap_c), origin="lower", cmap="hot",
+            aspect="auto", extent=(0, b, 0, b),
+        )
+        ax.plot(bins_arr, bins_arr, "w--", alpha=0.3, lw=0.6)
+        ax.set_xlim(0, b); ax.set_ylim(0, b)
+        ax.set_xlabel("target")
+        ax.set_ylabel("predicted (argmax-pi mu)")
+        ax.set_title(f"Combined MDN heatmap step {step:,}")
+        plt.colorbar(im, ax=ax)
+        plt.tight_layout()
+        fig.savefig(out_dir / "combined_heatmap.png", dpi=100)
+        plt.close(fig)
+
+        safe_t = np.maximum(targets, 1).astype(float)
+        safe_pred = np.maximum(pred_mu, 1).astype(float)
+        log_target = np.log(safe_t + 1)
+        log_ratio = np.log((safe_pred + 1) / (safe_t + 1))
+        x_edges = np.linspace(0, np.log(b + 1), 80)
+        y_edges = np.linspace(-2.2, 2.2, 120)
+        H, _, _ = np.histogram2d(log_target, log_ratio, bins=[x_edges, y_edges])
+        fig, ax = plt.subplots(figsize=(8, 6))
+        im = ax.imshow(
+            np.log1p(H.T), origin="lower", cmap="inferno",
+            aspect="auto",
+            extent=(x_edges[0], x_edges[-1], y_edges[0], y_edges[-1]),
+        )
+        for label, ratio in _RATIO_GUIDES:
+            y_val = np.log(ratio)
+            ls = "-" if ratio == 1.0 else "--"
+            ax.axhline(y_val, color="white", ls=ls, alpha=0.3, lw=0.5)
+        ax.set_xlabel("log(target + 1)")
+        ax.set_ylabel("log((pred+1)/(target+1))")
+        ax.set_title(f"Combined MDN ratio-error step {step:,}")
+        plt.colorbar(im, ax=ax)
+        plt.tight_layout()
+        fig.savefig(out_dir / "combined_ratio_error.png", dpi=100)
+        plt.close(fig)
+
+        np.savez(
+            out_dir / "mdn_components.npz",
+            targets=targets, mus=mus, sigmas=sigmas, pis=pis,
         )

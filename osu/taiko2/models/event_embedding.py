@@ -62,6 +62,11 @@ class EventEmbeddingConfig(ModelConfig):
     b_bins: int = 500
     b_pred: int = 500
 
+    # MDN output mode. 0 = standard softmax head (b_pred+1 classes).
+    # >0 = Mixture Density Network with K Gaussian components + 1 STOP
+    # gate. Output tensor shape becomes (B, K*3 + 1).
+    n_mdn_components: int = 0
+
     def __post_init__(self):
         if self.b_pred > self.b_bins:
             raise ValueError(
@@ -95,6 +100,13 @@ class EventEmbeddingConfig(ModelConfig):
     def n_classes(self) -> int:
         """`b_pred` bin-offset classes + 1 STOP."""
         return self.b_pred + 1
+
+    @property
+    def n_output_dims(self) -> int:
+        """Output tensor width. Standard head = n_classes; MDN = K*3+1."""
+        if self.n_mdn_components > 0:
+            return self.n_mdn_components * 3 + 1
+        return self.n_classes
 
 
 # ─────────────────────────── IO types ─────────────────────────────────
@@ -208,12 +220,19 @@ class EventEmbeddingDetector(
 
         # 5. Output head
         self.head_norm = nn.LayerNorm(d)
-        self.head_proj = nn.Linear(d, c.n_classes)
-        self.head_smooth = nn.Sequential(
-            nn.Conv1d(1, 8, kernel_size=5, padding=2),
-            nn.GELU(),
-            nn.Conv1d(8, 1, kernel_size=5, padding=2),
-        )
+        self._mdn_mode = c.n_mdn_components > 0
+        if self._mdn_mode:
+            # MDN head: K components × (μ_raw, log_σ, log_π) + 1 STOP gate.
+            self.head_proj = nn.Linear(d, c.n_output_dims)
+            self.head_smooth = None  # smoothness is built into Gaussians
+        else:
+            # Standard softmax head.
+            self.head_proj = nn.Linear(d, c.n_classes)
+            self.head_smooth = nn.Sequential(
+                nn.Conv1d(1, 8, kernel_size=5, padding=2),
+                nn.GELU(),
+                nn.Conv1d(8, 1, kernel_size=5, padding=2),
+            )
 
     # ── forward / predict ────────────────────────────────────────────
 
@@ -275,9 +294,12 @@ class EventEmbeddingDetector(
 
         # 7. Output head on the cursor token.
         cursor = x[:, c.cursor_token, :]                      # (B, d)
-        logits = self.head_proj(self.head_norm(cursor))       # (B, n_classes)
-        logits = logits + self.head_smooth(
-            logits.unsqueeze(1)
+        raw = self.head_proj(self.head_norm(cursor))           # (B, n_output_dims)
+        if self._mdn_mode:
+            return raw
+        # Standard softmax: additive Conv1d smoothing.
+        logits = raw + self.head_smooth(
+            raw.unsqueeze(1)
         ).squeeze(1)
         return logits
 

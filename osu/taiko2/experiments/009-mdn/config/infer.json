@@ -1,0 +1,53 @@
+{
+    "_comment": "Inference spec for exp 009's MDN stack. Decoder uses MdnDecoder (highest-pi component). The per-eval InferCorpusHook uses the live model.",
+    "checkpoint": "osu/taiko2/runs/exp_009_mdn/checkpoints/best.pt",
+    "predictor": {
+        "__class__": "osu.taiko2.inference.autoregressive.predictor:AutoregressivePredictor",
+        "config": {
+            "__class__": "osu.taiko2.inference.autoregressive.predictor:AutoregressivePredictorConfig",
+            "hop_bins_on_stop": 20,
+            "max_events": 10000,
+            "min_onset_gap_bins": 1,
+            "default_kind": "DON"
+        }
+    },
+    "decoder": {
+        "__class__": "osu.taiko2.inference.autoregressive.decoders:MdnDecoder",
+        "config": {
+            "__class__": "osu.taiko2.inference.autoregressive.decoders:MdnDecoderConfig",
+            "b_pred": 500,
+            "n_components": 3,
+            "stop_threshold": 0.5
+        }
+    },
+    "input_builder": {
+        "__class__": "osu.taiko2.inference.autoregressive.builders:DetectionARInputBuilder",
+        "config": {
+            "__class__": "osu.taiko2.inference.autoregressive.builders:DetectionARBuilderConfig",
+            "a_bins": 500,
+            "b_bins": 500,
+            "c_events": 128
+        }
+    },
+    "audio_sampler": {
+        "__class__": "osu.taiko2.samplers.mel:MelSampler",
+        "config": {
+            "__class__": "osu.taiko2.domain.dataset:MelSamplerConfig",
+            "sample_rate": 22000,
+            "n_fft": 2048,
+            "hop_divisor": 200,
+            "n_mels": 80,
+            "f_min": 20.0,
+            "f_max": 8000.0,
+            "power": 2.0,
+            "top_db": 80.0
+        }
+    },
+    "event_sampler": {
+        "__class__": "osu.taiko2.samplers.event:FixedRateEventSampler",
+        "config": {
+            "__class__": "osu.taiko2.domain.dataset:EventSamplerConfig",
+            "divisor": 200
+        }
+    }
+}

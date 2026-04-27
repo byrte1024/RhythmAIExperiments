@@ -6,14 +6,11 @@ punished proportionally to the ratio between predicted and target bin,
 not to the absolute frame distance. A ±N-frame floor prevents
 near-zero targets (t=1, 2) from collapsing the plateau.
 
-Extensions left for future experiments:
-  - Focal modulation (exp 28, 37).
-  - Class weights (exp 7-ish).
-  - Distance ramp (exp 44e+).
-  - Ratio head (exp 55+).
-Each lands as its own `Loss` subclass (or a new config subclass here)
-rather than as optional flags on this one — keeps exp 45's loss honest
-about what it uses.
+Extensions:
+  - `GaussianCELoss` (exp 005): Gaussian soft CE + binary STOP head.
+  - `LogEmdLoss` (exp 008): hard CE + log-ratio EMD.
+  - `MdnLoss` (exp 009): Mixture Density Network with K Gaussian
+    components. Embraces multi-modality instead of fighting it.
 """
 from __future__ import annotations
 
@@ -25,6 +22,53 @@ import torch.nn.functional as F
 
 from ..domain.loss import Loss, LossConfig, LossResult
 from ..models.event_embedding import EventEmbeddingOutput, EventEmbeddingTarget
+
+
+# ─────────────────────────── MDN helpers ─────────────────────────────
+
+_LOG_2PI = math.log(2.0 * math.pi)
+
+
+def parse_mdn_params(
+    raw: torch.Tensor, n_components: int, b_pred: int,
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+    """Parse raw MDN output into stop_logit, mu, sigma, pi.
+
+    Args:
+        raw: (B, K*3 + 1) raw model output.
+        n_components: K.
+        b_pred: maximum bin index (exclusive); mu is scaled to [0, b_pred].
+
+    Returns:
+        stop_logit: (B,)
+        mu:         (B, K) in [0, b_pred]
+        sigma:      (B, K) >= 1.0
+        pi:         (B, K) sums to 1
+    """
+    B = raw.size(0)
+    K = n_components
+    stop_logit = raw[:, 0]                                              # (B,)
+    params = raw[:, 1:].reshape(B, K, 3)                                # (B, K, 3)
+    mu = torch.sigmoid(params[:, :, 0]) * b_pred                        # (B, K)
+    sigma = F.softplus(params[:, :, 1]) + 1.0                           # (B, K) >= 1.0
+    log_pi = params[:, :, 2]                                            # (B, K)
+    pi = F.softmax(log_pi, dim=-1)                                      # (B, K)
+    return stop_logit, mu, sigma, pi
+
+
+def gaussian_log_prob(
+    t: torch.Tensor, mu: torch.Tensor, sigma: torch.Tensor,
+) -> torch.Tensor:
+    """Log N(t | mu, sigma) for each component.
+
+    t: (M,) or (M, 1) — broadcast-ready against (M, K).
+    mu, sigma: (M, K).
+    Returns: (M, K).
+    """
+    if t.dim() == 1:
+        t = t.unsqueeze(-1)                                             # (M, 1)
+    var = sigma * sigma
+    return -0.5 * (_LOG_2PI + var.log() + (t - mu).pow(2) / var)
 
 
 @dataclass(frozen=True, slots=True)
@@ -384,5 +428,146 @@ class LogEmdLoss(Loss[LogEmdLossConfig, EventEmbeddingOutput, EventEmbeddingTarg
                 "hard_ce": float(hard_ce.mean().detach()),
                 "log_emd": float(log_emd.mean().detach()),
                 "stop_rate": float(is_stop.float().mean().detach()),
+            },
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class MdnLossConfig(LossConfig):
+    """Mixture Density Network loss.
+
+    The model outputs ``(B, K*3+1)`` raw params parsed into:
+      - ``stop_logit`` (1 scalar) → sigmoid-gated STOP.
+      - ``K`` Gaussian components (μ, σ, π) over bin space [0, b_pred).
+
+    Loss for bin targets:
+      ``-log((1-P_stop) · Σ_k π_k · N(t | μ_k, σ_k))``
+    Loss for STOP targets:
+      ``-log(P_stop) · stop_weight``
+
+    Embraces multi-modality: the model can output multiple smooth peaks
+    (one per component) without any peak being penalized for existing.
+    Only requirement: SOME component covers the target.
+    """
+    n_components: int = 3
+    b_pred: int = 500
+    stop_weight: float = 1.5
+    # Minimum sigma floor (bins); prevents component collapse to delta.
+    min_sigma: float = 1.0
+
+
+class MdnLoss(Loss[MdnLossConfig, EventEmbeddingOutput, EventEmbeddingTarget]):
+    """Mixture Density Network negative log-likelihood.
+
+    Multi-modal by design: the loss is low as long as ONE component
+    covers the target. Other components can sit at octave multiples
+    or anywhere else — they contribute to the mixture likelihood
+    only positively. No penalty for secondary peaks.
+    """
+
+    def __init__(self, config: MdnLossConfig):
+        super().__init__(config)
+        if config.n_components < 1:
+            raise ValueError(
+                f"n_components must be >= 1, got {config.n_components}"
+            )
+
+    def forward(
+        self,
+        output: EventEmbeddingOutput,
+        target: EventEmbeddingTarget,
+    ) -> LossResult:
+        raw = output.logits                                             # (B, K*3+1)
+        targets = target.target_bin                                     # (B,)
+        cfg = self.config
+        stop_idx = cfg.b_pred
+
+        stop_logit, mu, sigma, pi = parse_mdn_params(
+            raw, cfg.n_components, cfg.b_pred,
+        )
+        p_stop = torch.sigmoid(stop_logit)                              # (B,)
+
+        is_stop = targets == stop_idx
+        is_bin = ~is_stop
+
+        # ── STOP loss: -log(P_stop) ──────────────────────────────────
+        stop_bce = F.binary_cross_entropy_with_logits(
+            stop_logit,
+            is_stop.float(),
+            reduction="none",
+        )                                                               # (B,)
+
+        # ── Bin loss: -log((1-P_stop) · mixture(t)) ─────────────────
+        mixture_nll = torch.zeros_like(stop_bce)
+        # Diagnostic accumulators (detached).
+        coverage_2 = 0.0
+        coverage_5 = 0.0
+        dominant_w = 0.0
+        n_active = 0.0
+        mean_sigma_val = float(sigma.mean().detach())
+        correct_comp_w = 0.0
+
+        if is_bin.any():
+            mu_sel = mu[is_bin]                                         # (M, K)
+            sigma_sel = sigma[is_bin]                                   # (M, K)
+            pi_sel = pi[is_bin]                                         # (M, K)
+            t_sel = targets[is_bin].float()                             # (M,)
+            p_stop_sel = p_stop[is_bin]                                 # (M,)
+
+            # Log-likelihood of each component.
+            log_comp = gaussian_log_prob(t_sel, mu_sel, sigma_sel)       # (M, K)
+            # Log-sum-exp over components weighted by π.
+            log_mixture = torch.logsumexp(
+                log_comp + pi_sel.clamp(min=1e-10).log(), dim=-1,
+            )                                                           # (M,)
+            # Add log(1 - P_stop) for the bin branch.
+            log_p_bin = torch.log((1.0 - p_stop_sel).clamp(min=1e-10))
+            mixture_nll[is_bin] = -(log_p_bin + log_mixture)
+
+            # ── Diagnostics (detached) ───────────────────────────────
+            with torch.no_grad():
+                M = int(is_bin.sum().item())
+                # Distance of each component's μ from target.
+                dist = (mu_sel - t_sel.unsqueeze(-1)).abs()              # (M, K)
+                min_dist = dist.min(dim=-1).values                      # (M,)
+                coverage_2 = float((min_dist <= 2.0).float().mean())
+                coverage_5 = float((min_dist <= 5.0).float().mean())
+                # Dominant weight.
+                dominant_w = float(pi_sel.max(dim=-1).values.mean())
+                # Active components (π > 0.1).
+                n_active = float(
+                    (pi_sel > 0.1).float().sum(dim=-1).mean()
+                )
+                # Weight of the component closest to target.
+                closest_k = dist.argmin(dim=-1)                         # (M,)
+                correct_comp_w = float(
+                    pi_sel.gather(1, closest_k.unsqueeze(-1)).mean()
+                )
+
+        # ── Total loss ───────────────────────────────────────────────
+        per_sample = stop_bce + mixture_nll
+        if cfg.stop_weight != 1.0:
+            multiplier = torch.where(
+                is_stop,
+                torch.tensor(cfg.stop_weight, device=per_sample.device, dtype=per_sample.dtype),
+                torch.tensor(1.0, device=per_sample.device, dtype=per_sample.dtype),
+            )
+            per_sample = per_sample * multiplier
+
+        loss = per_sample.mean()
+
+        return LossResult(
+            loss=loss,
+            metrics={
+                "loss": float(loss.detach()),
+                "mixture_nll": float(mixture_nll.mean().detach()),
+                "stop_bce": float(stop_bce.mean().detach()),
+                "stop_rate": float(is_stop.float().mean().detach()),
+                "mdn/coverage_2bin": coverage_2,
+                "mdn/coverage_5bin": coverage_5,
+                "mdn/dominant_weight": dominant_w,
+                "mdn/n_active_components": n_active,
+                "mdn/mean_sigma": mean_sigma_val,
+                "mdn/correct_component_weight": correct_comp_w,
             },
         )

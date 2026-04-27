@@ -20,8 +20,11 @@ from osu.taiko2.training.losses import (
     GaussianCELossConfig,
     LogEmdLoss,
     LogEmdLossConfig,
+    MdnLoss,
+    MdnLossConfig,
     OnsetLoss,
     OnsetLossConfig,
+    parse_mdn_params,
 )
 
 
@@ -583,3 +586,157 @@ class TestLogEmdGradient:
         r = _ecall(loss, logits, torch.tensor([10, 100, 500]))
         for k, v in r.metrics.items():
             assert isinstance(v, float), f"{k} is {type(v)}"
+
+
+# ─────────────────────────── MdnLoss ──────────────────────────────────
+
+def _mdn_raw(B: int, K: int = 3) -> torch.Tensor:
+    """Random MDN output tensor of shape (B, K*3+1)."""
+    return torch.randn(B, K * 3 + 1)
+
+
+def _mcall(
+    loss: MdnLoss, raw: torch.Tensor, target_bin: torch.Tensor,
+) -> LossResult:
+    return loss(
+        EventEmbeddingOutput(logits=raw),
+        EventEmbeddingTarget(target_bin=target_bin),
+    )
+
+
+class TestMdnParsing:
+    def test_shapes(self):
+        raw = _mdn_raw(4, K=3)
+        stop_logit, mu, sigma, pi = parse_mdn_params(raw, 3, 500)
+        assert stop_logit.shape == (4,)
+        assert mu.shape == (4, 3)
+        assert sigma.shape == (4, 3)
+        assert pi.shape == (4, 3)
+
+    def test_mu_in_range(self):
+        raw = torch.randn(10, 10)
+        _, mu, _, _ = parse_mdn_params(raw, 3, 500)
+        assert (mu >= 0).all()
+        assert (mu <= 500).all()
+
+    def test_sigma_above_floor(self):
+        raw = torch.randn(10, 10)
+        _, _, sigma, _ = parse_mdn_params(raw, 3, 500)
+        assert (sigma >= 1.0).all()
+
+    def test_pi_sums_to_one(self):
+        raw = torch.randn(5, 10)
+        _, _, _, pi = parse_mdn_params(raw, 3, 500)
+        np_sums = pi.sum(dim=-1).detach().numpy()
+        for s in np_sums:
+            assert math.isclose(s, 1.0, rel_tol=1e-5)
+
+
+class TestMdnLossConfig:
+    def test_defaults(self):
+        c = MdnLossConfig()
+        assert c.n_components == 3
+        assert c.b_pred == 500
+        assert c.stop_weight == 1.5
+
+    def test_n_components_positive(self):
+        with pytest.raises(ValueError, match="n_components"):
+            MdnLoss(MdnLossConfig(n_components=0))
+
+
+class TestMdnLossForward:
+    def test_runs_on_mixed_batch(self):
+        loss = MdnLoss(MdnLossConfig())
+        raw = _mdn_raw(4)
+        r = _mcall(loss, raw, torch.tensor([10, 100, 500, 250]))
+        assert math.isfinite(r.metrics["loss"])
+        assert math.isfinite(r.metrics["mixture_nll"])
+        assert math.isfinite(r.metrics["stop_bce"])
+
+    def test_stop_only_batch(self):
+        loss = MdnLoss(MdnLossConfig())
+        raw = _mdn_raw(3)
+        r = _mcall(loss, raw, torch.tensor([500, 500, 500]))
+        # mixture_nll should be 0 — no bin samples.
+        assert r.metrics["mixture_nll"] == 0.0
+        assert r.metrics["stop_bce"] > 0.0
+        assert r.metrics["stop_rate"] == 1.0
+
+    def test_bin_only_batch(self):
+        loss = MdnLoss(MdnLossConfig())
+        raw = _mdn_raw(3)
+        r = _mcall(loss, raw, torch.tensor([10, 100, 250]))
+        assert r.metrics["mixture_nll"] > 0.0
+        assert r.metrics["stop_rate"] == 0.0
+
+    def test_stop_weight_multiplies(self):
+        raw = _mdn_raw(1)
+        t = torch.tensor([500])
+        l1 = _mcall(
+            MdnLoss(MdnLossConfig(stop_weight=1.0)), raw, t,
+        ).loss
+        l2 = _mcall(
+            MdnLoss(MdnLossConfig(stop_weight=2.0)), raw, t,
+        ).loss
+        assert math.isclose(float(l2), 2.0 * float(l1), rel_tol=1e-4)
+
+    def test_grad_flows(self):
+        loss = MdnLoss(MdnLossConfig())
+        raw = _mdn_raw(4).requires_grad_(True)
+        r = _mcall(loss, raw, torch.tensor([10, 100, 500, 250]))
+        r.loss.backward()
+        assert raw.grad is not None
+        assert torch.isfinite(raw.grad).all()
+        assert raw.grad.abs().sum() > 0
+
+    def test_loss_decreases_when_component_matches_target(self):
+        """Manually place a component's μ near the target — loss
+        should be lower than with random params."""
+        loss = MdnLoss(MdnLossConfig(n_components=1, b_pred=500))
+        # 1 component: raw = (B, 4) = [stop_logit, mu_raw, log_sigma, log_pi]
+        # Place mu at target 100: sigmoid(mu_raw)*500 = 100 → mu_raw = logit(0.2)
+        mu_raw = math.log(0.2 / 0.8)
+        raw_good = torch.tensor([[
+            -5.0,           # stop_logit (low → not STOP)
+            mu_raw,         # mu_raw → sigmoid → 0.2 → *500 = 100
+            -1.0,           # log_sigma → softplus(-1)+1 ≈ 1.31 (tight)
+            0.0,            # log_pi (only 1 component, doesn't matter)
+        ]])
+        raw_bad = torch.tensor([[
+            -5.0, 5.0, -1.0, 0.0,  # mu_raw=5 → sigmoid→0.993 → *500≈497
+        ]])
+        t = torch.tensor([100])
+        l_good = float(_mcall(loss, raw_good, t).loss)
+        l_bad = float(_mcall(loss, raw_bad, t).loss)
+        assert l_good < l_bad, f"matched {l_good:.2f} should be < mismatched {l_bad:.2f}"
+
+
+class TestMdnDiagnostics:
+    def test_coverage_metrics_present(self):
+        loss = MdnLoss(MdnLossConfig())
+        raw = _mdn_raw(4)
+        r = _mcall(loss, raw, torch.tensor([10, 100, 500, 250]))
+        assert "mdn/coverage_2bin" in r.metrics
+        assert "mdn/coverage_5bin" in r.metrics
+        assert "mdn/dominant_weight" in r.metrics
+        assert "mdn/n_active_components" in r.metrics
+        assert "mdn/mean_sigma" in r.metrics
+        assert "mdn/correct_component_weight" in r.metrics
+
+    def test_all_metrics_are_floats(self):
+        loss = MdnLoss(MdnLossConfig())
+        raw = _mdn_raw(4).requires_grad_(True)
+        r = _mcall(loss, raw, torch.tensor([10, 100, 500, 250]))
+        for k, v in r.metrics.items():
+            assert isinstance(v, float), f"{k} is {type(v)}"
+
+    def test_coverage_is_one_when_component_exact(self):
+        """Place K=1 component exactly at target → coverage = 1.0."""
+        loss = MdnLoss(MdnLossConfig(n_components=1, b_pred=500))
+        mu_raw = math.log(0.2 / 0.8)  # → mu ≈ 100
+        raw = torch.tensor([[
+            -5.0, mu_raw, -1.0, 0.0,
+        ]])
+        r = _mcall(loss, raw, torch.tensor([100]))
+        assert r.metrics["mdn/coverage_2bin"] == 1.0
+        assert r.metrics["mdn/coverage_5bin"] == 1.0

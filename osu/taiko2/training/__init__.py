@@ -39,6 +39,8 @@ from .losses import (
     GaussianCELossConfig,
     LogEmdLoss,
     LogEmdLossConfig,
+    MdnLoss,
+    MdnLossConfig,
     OnsetLoss,
     OnsetLossConfig,
 )
@@ -68,6 +70,8 @@ __all__ = [
     "GaussianCELossConfig",
     "LogEmdLoss",
     "LogEmdLossConfig",
+    "MdnLoss",
+    "MdnLossConfig",
     "OnsetLoss",
     "OnsetLossConfig",
     "OnsetMetric",

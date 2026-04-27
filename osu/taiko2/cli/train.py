@@ -46,6 +46,8 @@ from ..training import (
     GaussianCELossConfig,
     LogEmdLoss,
     LogEmdLossConfig,
+    MdnLoss,
+    MdnLossConfig,
     OnsetLoss,
     OnsetLossConfig,
     OnsetMetric,
@@ -291,6 +293,8 @@ def main(argv: list[str] | None = None) -> int:
         loss = GaussianCELoss(loss_cfg)
     elif isinstance(loss_cfg, LogEmdLossConfig):
         loss = LogEmdLoss(loss_cfg)
+    elif isinstance(loss_cfg, MdnLossConfig):
+        loss = MdnLoss(loss_cfg)
     elif isinstance(loss_cfg, OnsetLossConfig):
         loss = OnsetLoss(loss_cfg)
     else:
@@ -306,7 +310,7 @@ def main(argv: list[str] | None = None) -> int:
     val_metrics = MetricSet(
         OnsetMetric(OnsetMetricConfig(b_pred=model_cfg.b_pred)),
     )
-    eval_artifacts = [
+    eval_artifacts: list = [
         PredictionHeatmapArtifact(b_pred=model_cfg.b_pred),
         DistributionArtifact(b_pred=model_cfg.b_pred),
         RatioErrorHeatmapArtifact(b_pred=model_cfg.b_pred),
@@ -314,6 +318,14 @@ def main(argv: list[str] | None = None) -> int:
         RatioHitArtifact(b_pred=model_cfg.b_pred),
         MetronomeHitArtifact(b_pred=model_cfg.b_pred),
     ]
+    if model_cfg.n_mdn_components > 0:
+        from ..training.artifacts import MdnComponentArtifact
+        eval_artifacts.append(
+            MdnComponentArtifact(
+                b_pred=model_cfg.b_pred,
+                n_components=model_cfg.n_mdn_components,
+            ),
+        )
 
     # 4. Weighted sampling (exp 45 default).
     train_weights = None

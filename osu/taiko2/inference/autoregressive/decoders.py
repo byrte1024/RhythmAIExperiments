@@ -4,6 +4,8 @@
 - Concrete: `ArgmaxDecoder` — deterministic argmax over the bin-offset
   logits, STOP class at index `b_pred`. Attaches top-5 + entropy in
   `extras` so AR traces are diagnostic.
+- Concrete: `MdnDecoder` — pick highest-weight MDN component, round μ
+  to nearest bin. STOP via sigmoid gate.
 """
 from __future__ import annotations
 
@@ -17,6 +19,7 @@ import torch.nn.functional as F
 
 from ...domain.model import ModelOutput
 from ...models.event_embedding import EventEmbeddingOutput
+from ...training.losses import parse_mdn_params
 from .types import ARContext, ARDecision, ARDecoderConfig
 
 DCfg = TypeVar("DCfg", bound=ARDecoderConfig)
@@ -100,6 +103,65 @@ class ArgmaxDecoder(ARDecoder[ArgmaxDecoderConfig, EventEmbeddingOutput]):
             )
         return ARDecision(
             bin_offsets=(cls,),
+            confidences=(conf,),
+            extras=extras,
+        )
+
+
+# ─────────────────────────── MdnDecoder ─────────────────────────────
+
+@dataclass(frozen=True, slots=True)
+class MdnDecoderConfig(ARDecoderConfig):
+    """MDN decoder: pick highest-weight component, round μ to bin.
+    STOP if sigmoid(stop_logit) > stop_threshold."""
+    b_pred: int = 500
+    n_components: int = 3
+    stop_threshold: float = 0.5
+
+
+class MdnDecoder(ARDecoder[MdnDecoderConfig, EventEmbeddingOutput]):
+    """Pick highest-weight MDN component.
+
+    Decision rule:
+      - sigmoid(stop_logit) > threshold → STOP.
+      - else → round(μ of highest-π component) = bin offset.
+    """
+
+    def decode(self, output: EventEmbeddingOutput, context: ARContext) -> ARDecision:
+        raw = output.logits
+        if raw.dim() != 2 or raw.size(0) != 1:
+            raise ValueError(
+                f"MdnDecoder expects (1, K*3+1); got shape {tuple(raw.shape)}"
+            )
+
+        stop_logit, mu, sigma, pi = parse_mdn_params(
+            raw, self.config.n_components, self.config.b_pred,
+        )
+
+        p_stop = float(torch.sigmoid(stop_logit[0]).item())
+
+        extras: dict[str, float] = {"p_stop": p_stop}
+        # Per-component diagnostics.
+        for k in range(self.config.n_components):
+            extras[f"comp{k}_mu"] = float(mu[0, k].item())
+            extras[f"comp{k}_sigma"] = float(sigma[0, k].item())
+            extras[f"comp{k}_pi"] = float(pi[0, k].item())
+
+        if p_stop > self.config.stop_threshold:
+            return ARDecision(
+                bin_offsets=(),
+                confidences=(),
+                extras=extras,
+            )
+
+        # Pick highest-weight component.
+        best_k = int(pi[0].argmax().item())
+        bin_pred = int(round(float(mu[0, best_k].item())))
+        bin_pred = max(0, min(bin_pred, self.config.b_pred - 1))
+        conf = float(pi[0, best_k].item())
+
+        return ARDecision(
+            bin_offsets=(bin_pred,),
             confidences=(conf,),
             extras=extras,
         )

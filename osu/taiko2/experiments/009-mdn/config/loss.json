@@ -1,0 +1,6 @@
+{
+    "__class__": "osu.taiko2.training.losses:MdnLossConfig",
+    "n_components": 3,
+    "b_pred": 500,
+    "stop_weight": 1.5
+}
