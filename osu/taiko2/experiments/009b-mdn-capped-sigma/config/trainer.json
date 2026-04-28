@@ -1,0 +1,14 @@
+{
+    "__class__": "osu.taiko2.domain.training:TrainerConfig",
+    "epochs": 50,
+    "batch_size": 64,
+    "learning_rate": 3e-4,
+    "weight_decay": 0.01,
+    "grad_clip": 1.0,
+    "evals_per_epoch": 4,
+    "amp": false,
+    "num_workers": 0,
+    "seed": 42,
+    "metric_to_watch": "onset/miss",
+    "metric_lower_is_better": true
+}

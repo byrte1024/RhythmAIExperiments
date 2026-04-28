@@ -2,7 +2,10 @@
 
 ## Status
 
-`Planned`
+`Stopped early` — sigma inflation. Components did NOT collapse
+(n_active=2.2, the split is real) but learned sigma=18–27 bins,
+making predictions imprecise. Headline miss +11 pp worse than #007.
+Continued as [#009b](../009b-mdn-capped-sigma/) with capped sigma.
 
 ## Context
 
@@ -163,28 +166,116 @@ Baseline: [#007](../007-time-stretch/).
 
 ## Results summary
 
-_(To fill post-run.)_
+Run stopped at **eval 5 / step 103,370** after sigma inflation was
+identified at E1 and confirmed persistent through E5. Best val miss
+was **eval 3 (0.3450 @ step 62,022)**, +7.8 pp worse than #007 at
+the same step. The MDN DID express multi-modality (n_active=2.2,
+components 0 and 2 specialized) but component 1 inflated to sigma=48
+and degraded overall precision. Continued as
+[#009b](../009b-mdn-capped-sigma/) with `max_sigma=3.0`.
 
 ### Final vs baseline
 
-_(Table.)_
+At matched step (E5, step 103,370):
+
+| Metric | #007 @ E5 | #009 @ E5 | Δ |
+|---|---:|---:|---:|
+| val/single/onset/miss | 0.2665 | 0.3800 | **+11.4 pp** |
+| val/single/onset/hit  | 0.7243 | 0.5824 | −14.2 pp |
+| val/single/onset/exact | 0.5500 | 0.2495 | **−30.1 pp** |
+| val/single/onset/rhit | 0.6232 | 0.3658 | −25.7 pp |
+| val/single/onset/frame_err_p90 | 32 | 50 | +18 |
+| val/single/onset/stop_f1 | 0.5448 | 0.4088 | −13.6 pp |
 
 ### Per-eval progression
 
-_(Table.)_
+| E | Step | miss | hit | exact | coverage_2 | coverage_5 | n_active | dominant_w | correct_w | mean_sigma | mixture_nll | stop_f1 |
+|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| 1 | 20,674 | 0.3832 | 0.5055 | 0.1606 | 0.632 | 0.788 | 2.17 | 0.672 | 0.582 | **26.9** | 3.17 | 0.058 |
+| 2 | 41,348 | 0.3606 | 0.5694 | 0.1958 | 0.716 | 0.852 | 2.37 | 0.645 | 0.549 | **20.9** | 2.96 | 0.262 |
+| **3** | **62,022** | **0.3450** | 0.6155 | 0.2779 | 0.795 | 0.870 | 2.29 | 0.665 | 0.563 | **17.3** | 2.65 | 0.379 |
+| 4 | 82,696 | 0.3583 | 0.5966 | 0.2389 | 0.780 | 0.880 | 2.27 | 0.656 | 0.557 | **19.5** | 2.73 | 0.235 |
+| 5 | 103,370 | 0.3800 | 0.5824 | 0.2495 | 0.765 | 0.832 | 2.21 | 0.679 | 0.567 | **18.2** | 2.84 | 0.409 |
+
+Mean sigma stayed in the 17–27 bin range across all evals,
+fluctuating but never approaching the 1–3 bin range needed for
+bin-level precision. `coverage_2bin` peaked at 0.795 (E3) — below
+the 0.85 target. `n_active_components` stayed in the 2.2–2.4
+range, confirming the split IS real.
+
+### Per-component analysis (E3, step 62,022)
+
+| Component | mean pi | mean sigma | Specialization |
+|---|---:|---:|---|
+| **comp 2** | **0.546** | **2.0** | **Dominant predictor** — strong diagonal in heatmap, tight sigma, carries >50 % of mass. The model's primary answer. |
+| comp 0 | 0.283 | 1.7 | **Short-gap specialist** — mass at low targets (0–100 bins). Tight sigma. Genuine sub-task learning. |
+| comp 1 | 0.171 | **47.9** | **Junk drawer** — sigma inflated to ~48 bins. No diagonal structure, diffuse vertical streaks. Absorbs "I don't know" probability. Classic MDN pathology. |
+
+Components 0 and 2 learned useful, sharp specializations. Component
+1 exploited the uncapped sigma to become a catch-all wide Gaussian
+that covers the target cheaply without placing mu precisely.
 
 ## Visualizations
 
-_(Graphs post-run.)_
+Per-component heatmaps saved at `runs/exp_009_mdn/eval_62022/mdn/`:
+
+- `comp0_heatmap.png` — short-gap specialist. Mass concentrated at
+  targets 0–100, diagonal visible but limited to the low range.
+- `comp1_heatmap.png` — **the pathological component.** Diffuse
+  vertical streaks across all mu values, no diagonal structure.
+  sigma=48 bins means each Gaussian is a flat blob ~100 bins wide.
+  This is what "sigma inflation" looks like.
+- `comp2_heatmap.png` — dominant predictor. Strong diagonal
+  throughout the full target range. Octave bands (2x, 0.5x) faintly
+  visible alongside the diagonal, matching the ridge pattern from
+  #002/#007/#008.
+- `combined_heatmap.png`, `combined_ratio_error.png` — argmax-pi
+  prediction, dominated by comp 2 since it carries 55 % of the
+  weight.
 
 ## Vs prediction
 
-_(One line per predicted metric post-run.)_
+- val miss ≤ 0.27: actual **0.3450** → **MISS** by 7.5 pp.
+- val exact ≥ 0.45: actual **0.2779** → **MISS** by 17 pp.
+- `mdn/coverage_2bin` ≥ 0.85: actual **0.795** → **MISS**.
+- `mdn/n_active_components` ≥ 1.5: actual **2.29** → **MET**.
+- Per-component specialization: **partially met** — 2 of 3
+  components specialized, 1 inflated.
 
 ## Takeaways
 
-_(Post-run.)_
+- **The MDN split is real.** Components 0 and 2 genuinely
+  specialized into different sub-tasks with tight sigma (1.7 and
+  2.0). The model DOES have multi-modal internal state that the MDN
+  lets it express. This is the first time we've been able to SEE
+  the model's internal hypothesis structure — prior experiments only
+  saw the collapsed single-peak output.
+- **Sigma inflation is the dominant failure mode.** Component 1's
+  sigma=48 is 24× the useful range. The MDN loss rewards covering
+  the target with a wide Gaussian over precisely placing mu — a
+  known MDN pathology. This is NOT a fundamental problem with the
+  MDN approach; it's a hyperparameter problem. Capping sigma at
+  3 bins should force all components to be precise.
+- **Bin-precision metrics are not meaningful with uncapped sigma.**
+  The −30 pp on `exact` and −26 pp on `rhit` are artifacts of the
+  inflated component, not reflections of the model's actual
+  knowledge. Coverage_2bin at 0.80 says 80 % of samples have a
+  component within 2 bins — the model KNOWS the answer, the output
+  format just makes it imprecise.
+- **Train_noaug gap near zero (−0.16 pp).** The MDN is not
+  overfitting — the head has fewer params than the softmax head and
+  the diffuse predictions don't memorize the training distribution.
+  A secondary benefit of the MDN approach.
 
 ## Followup questions
 
-_(Post-run.)_
+- **Does capping sigma fix the precision without killing the split?**
+  → [#009b](../009b-mdn-capped-sigma/) with `max_sigma=3.0`.
+- **If 009b works: what does the per-component ratio_error show?**
+  With sigma=3 max, each component's heatmap should clearly show
+  whether it's on the diagonal (correct) or on an octave line
+  (alternative). This is the diagnostic goal of the MDN series.
+- **Could the K=3 MDN eventually match #007's headline metrics?**
+  Only if mu placement becomes as precise as softmax argmax, which
+  requires sigma in the 1–2 bin range. `max_sigma=3` is a step;
+  if precision is still low, try `max_sigma=2` or fixed sigma.

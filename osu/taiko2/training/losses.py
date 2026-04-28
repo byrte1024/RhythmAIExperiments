@@ -31,6 +31,7 @@ _LOG_2PI = math.log(2.0 * math.pi)
 
 def parse_mdn_params(
     raw: torch.Tensor, n_components: int, b_pred: int,
+    max_sigma: float = 0.0,
 ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
     """Parse raw MDN output into stop_logit, mu, sigma, pi.
 
@@ -38,6 +39,7 @@ def parse_mdn_params(
         raw: (B, K*3 + 1) raw model output.
         n_components: K.
         b_pred: maximum bin index (exclusive); mu is scaled to [0, b_pred].
+        max_sigma: if > 0, clamp sigma to [1.0, max_sigma]. 0 = no cap.
 
     Returns:
         stop_logit: (B,)
@@ -51,6 +53,8 @@ def parse_mdn_params(
     params = raw[:, 1:].reshape(B, K, 3)                                # (B, K, 3)
     mu = torch.sigmoid(params[:, :, 0]) * b_pred                        # (B, K)
     sigma = F.softplus(params[:, :, 1]) + 1.0                           # (B, K) >= 1.0
+    if max_sigma > 0:
+        sigma = sigma.clamp(max=max_sigma)
     log_pi = params[:, :, 2]                                            # (B, K)
     pi = F.softmax(log_pi, dim=-1)                                      # (B, K)
     return stop_logit, mu, sigma, pi
@@ -452,8 +456,10 @@ class MdnLossConfig(LossConfig):
     n_components: int = 3
     b_pred: int = 500
     stop_weight: float = 1.5
-    # Minimum sigma floor (bins); prevents component collapse to delta.
+    # Sigma range (bins). Floor prevents collapse; cap prevents inflation.
+    # max_sigma=0 means no cap (free sigma). max_sigma=3 forces sharp peaks.
     min_sigma: float = 1.0
+    max_sigma: float = 0.0
 
 
 class MdnLoss(Loss[MdnLossConfig, EventEmbeddingOutput, EventEmbeddingTarget]):
@@ -484,6 +490,7 @@ class MdnLoss(Loss[MdnLossConfig, EventEmbeddingOutput, EventEmbeddingTarget]):
 
         stop_logit, mu, sigma, pi = parse_mdn_params(
             raw, cfg.n_components, cfg.b_pred,
+            max_sigma=cfg.max_sigma,
         )
         p_stop = torch.sigmoid(stop_logit)                              # (B,)
 
