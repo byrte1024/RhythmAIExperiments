@@ -2,7 +2,11 @@
 
 ## Status
 
-`Planned`
+`Complete` — hypothesis **rejected**. Capping sigma at 3.0 from step
+0 made the model unable to learn mu placement. Coverage_2bin dropped
+from 0.77 (#009) to 0.29; hit dropped 28 pp; STOP broke entirely.
+The model needs wide sigma early as an exploration mechanism, then
+tightening — a hard cap from the start is too restrictive.
 
 ## Context
 
@@ -93,20 +97,96 @@ Baseline: [#009](../009-mdn/).
 
 ## Results summary
 
-_(To fill post-run.)_
+Run stopped at **eval 5 / step 103,370**. Best val miss was **E5
+(0.3757)** — comparable to #009's 0.380 at the same step, but all
+other metrics collapsed: hit −28 pp, exact −19 pp, coverage_2bin
+−47 pp vs #009. STOP completely broken (f1=0.004).
 
-## Visualizations
+### Final vs #009 at E5
 
-_(Post-run.)_
+| Metric | #009 @ E5 | #009b @ E5 | Δ |
+|---|---:|---:|---:|
+| miss | 0.3800 | 0.3757 | −0.4 pp |
+| hit | 0.5824 | **0.3016** | **−28.1 pp** |
+| exact | 0.2495 | **0.0641** | **−18.5 pp** |
+| coverage_2bin | 0.7652 | **0.2925** | **−47.3 pp** |
+| coverage_5bin | 0.8322 | 0.5901 | −24.2 pp |
+| n_active | 2.21 | 1.75 | −0.46 |
+| mean_sigma | 18.2 | **3.0** | capped |
+| mixture_nll | 2.84 | **7.78** | **2.7× higher** |
+| stop_f1 | 0.4088 | **0.0039** | broken |
+
+### Per-eval progression
+
+| E | Step | miss | hit | exact | cov_2 | cov_5 | n_active | dom_w | sigma | mix_nll | stop_f1 |
+|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| 1 | 20,674 | 0.4921 | 0.2088 | 0.0441 | 0.188 | 0.410 | 1.86 | 0.777 | 3.0 | 10.44 | 0.000 |
+| 2 | 41,348 | 0.4657 | 0.2316 | 0.0485 | 0.203 | 0.442 | 1.76 | 0.798 | 3.0 | 10.05 | 0.000 |
+| 3 | 62,022 | 0.4259 | 0.2613 | 0.0548 | 0.239 | 0.502 | 1.93 | 0.732 | 3.0 | 8.62 | 0.000 |
+| 4 | 82,696 | 0.4075 | 0.2734 | 0.0600 | 0.259 | 0.538 | 1.79 | 0.774 | 3.0 | 8.30 | 0.000 |
+| 5 | 103,370 | 0.3757 | 0.3016 | 0.0641 | 0.293 | 0.590 | 1.75 | 0.786 | 3.0 | 7.78 | 0.004 |
+
+Miss is slowly improving (0.49 → 0.38) and coverage is climbing
+(0.19 → 0.29) — the model IS learning mu placement, just very slowly
+because the tight sigma makes every wrong mu catastrophically
+expensive. At this rate it would take 30+ evals to reach #009's
+coverage, let alone #007's headline metrics.
 
 ## Vs prediction
 
-_(Post-run.)_
+- miss ≤ 0.29: actual **0.3757** → **MISS**.
+- exact ≥ 0.35: actual **0.0641** → **MISS** by 29 pp.
+- coverage_2bin ≥ 0.85: actual **0.2925** → **MISS** by 56 pp.
+- n_active ≥ 2.0: actual **1.75** → **MISS** marginally.
+- mean_sigma ≤ 3.0: actual **3.0** → **MET** (by construction).
+- 3 of 3 component specialization: not evaluable — model hasn't
+  converged enough for heatmaps to be interpretable.
+- miss > 0.35 (fails-if): **0.3757 at E5** → **triggered at E1–E4**,
+  barely escaped at E5.
+
+**All gated predictions missed except the trivial sigma cap.**
 
 ## Takeaways
 
-_(Post-run.)_
+- **Hard sigma cap from step 0 is too restrictive.** With σ=3, a mu
+  that's 10 bins off target gets NLL penalty ~5.6 per component
+  (vs ~0.13 at σ=20). The loss landscape becomes a field of steep
+  narrow wells around each possible target, with vast flat deserts
+  between — the optimizer can't navigate from a random mu to the
+  right well. This is the fundamental problem: **the model needs
+  wide sigma to EXPLORE, then tight sigma to EXPLOIT.**
+- **The model IS slowly learning despite the handicap.** Miss
+  dropped from 0.49 to 0.38 across 5 evals; coverage climbed from
+  0.19 to 0.29. The gradient signal exists, it's just weak relative
+  to the NLL magnitudes. More training might eventually work, but
+  at ~10× the cost of #009 — not efficient.
+- **STOP is collateral damage.** The mixture NLL dominates the total
+  loss (7.78 vs stop_bce ~0.7), so the STOP gate's gradient is
+  overwhelmed. STOP can't learn until the mixture NLL comes down to
+  a comparable magnitude. A solution: scale stop_bce up, or use a
+  separate optimizer for the STOP gate.
+- **Next direction: sigma annealing or warm-start from #009.** Two
+  paths to get "wide sigma for exploration → tight sigma for
+  precision":
+  1. **Anneal max_sigma** from 50 → 3 over training. Principled,
+     requires a scheduler.
+  2. **Warm-start from #009's E3 checkpoint** (comp 0 and 2 already
+     at σ≈2) and continue with max_sigma=3. Cheapest — comp 0 and
+     2 survive; comp 1 is forced to tighten from its inflated
+     state.
 
 ## Followup questions
 
-_(Post-run.)_
+- **Does warm-starting from #009 with max_sigma=3 work?** Load
+  #009's best checkpoint (where two components already specialized
+  at σ≈2), resume training with the cap. Component 1 (σ=48) would
+  be forced to collapse or specialize. Zero new code; test the idea
+  in a few evals.
+- **Would sigma annealing produce a better trajectory?** Linear
+  anneal from max_sigma=50 (eval 1) to max_sigma=3 (eval 10) lets
+  the model explore with wide sigma early and tighten gradually.
+  More principled than warm-start but requires a scheduler hook.
+- **Is K=3 the right number?** #009 showed comp 1 became a junk
+  drawer while 0 and 2 specialized. With K=2, there's no spare
+  component to inflate — both must be useful. Cheaper to train,
+  cleaner diagnostic.

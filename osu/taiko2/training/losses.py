@@ -460,6 +460,11 @@ class MdnLossConfig(LossConfig):
     # max_sigma=0 means no cap (free sigma). max_sigma=3 forces sharp peaks.
     min_sigma: float = 1.0
     max_sigma: float = 0.0
+    # Sigma annealing: linearly interpolate max_sigma from its initial
+    # value to sigma_anneal_end over sigma_anneal_steps forward calls.
+    # 0 = no annealing, use max_sigma as-is throughout.
+    sigma_anneal_steps: int = 0
+    sigma_anneal_end: float = 3.0
 
 
 class MdnLoss(Loss[MdnLossConfig, EventEmbeddingOutput, EventEmbeddingTarget]):
@@ -477,6 +482,14 @@ class MdnLoss(Loss[MdnLossConfig, EventEmbeddingOutput, EventEmbeddingTarget]):
             raise ValueError(
                 f"n_components must be >= 1, got {config.n_components}"
             )
+        self._fwd_step = 0
+
+    def _effective_max_sigma(self) -> float:
+        cfg = self.config
+        if cfg.sigma_anneal_steps <= 0:
+            return cfg.max_sigma
+        progress = min(1.0, self._fwd_step / cfg.sigma_anneal_steps)
+        return cfg.max_sigma * (1.0 - progress) + cfg.sigma_anneal_end * progress
 
     def forward(
         self,
@@ -488,9 +501,12 @@ class MdnLoss(Loss[MdnLossConfig, EventEmbeddingOutput, EventEmbeddingTarget]):
         cfg = self.config
         stop_idx = cfg.b_pred
 
+        current_max_sigma = self._effective_max_sigma()
+        self._fwd_step += 1
+
         stop_logit, mu, sigma, pi = parse_mdn_params(
             raw, cfg.n_components, cfg.b_pred,
-            max_sigma=cfg.max_sigma,
+            max_sigma=current_max_sigma,
         )
         p_stop = torch.sigmoid(stop_logit)                              # (B,)
 
@@ -575,6 +591,7 @@ class MdnLoss(Loss[MdnLossConfig, EventEmbeddingOutput, EventEmbeddingTarget]):
                 "mdn/dominant_weight": dominant_w,
                 "mdn/n_active_components": n_active,
                 "mdn/mean_sigma": mean_sigma_val,
+                "mdn/max_sigma": current_max_sigma,
                 "mdn/correct_component_weight": correct_comp_w,
             },
         )
