@@ -1,0 +1,9 @@
+{
+    "__class__": "osu.taiko2.training.ratio_loss:RatioLossConfig",
+    "divisor_bins": 500,
+    "offset_bins": 100,
+    "ratio_bins": 255,
+    "aux_weight": 0.1,
+    "stop_weight": 1.5,
+    "ratio_freeze_evals": 1
+}

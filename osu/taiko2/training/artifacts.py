@@ -42,23 +42,56 @@ from ..domain.metrics import MetricInput
 
 
 def decode_pred_bins(batch: MetricInput, b_pred: int) -> np.ndarray:
-    """Extract predicted bins from output — works for both softmax
-    (argmax on logits) and MDN (highest-pi component's mu) output
-    shapes. Returns int32 numpy array of shape (B,)."""
+    """Extract predicted bins from output — works for softmax (argmax),
+    MDN (highest-pi mu), and ratio (divisor×ratio−offset) output shapes.
+    Returns int32 numpy array of shape (B,)."""
     logits = batch.output.logits
+    W = logits.size(-1)
     expected_softmax = b_pred + 1
-    if logits.size(-1) == expected_softmax:
+    if W == expected_softmax:
         return logits.argmax(dim=-1).detach().cpu().numpy()
-    # MDN mode: (B, K*3+1).
-    from .losses import parse_mdn_params
-    K = (logits.size(-1) - 1) // 3
-    stop_logit, mu, sigma, pi = parse_mdn_params(logits, K, b_pred)
-    best_k = pi.argmax(dim=-1)
-    pred_mu = mu.gather(1, best_k.unsqueeze(-1)).squeeze(-1)
-    pred_bin = pred_mu.round().long().clamp(0, b_pred - 1)
-    is_stop_pred = torch.sigmoid(stop_logit) > 0.5
-    pred_bin[is_stop_pred] = b_pred
-    return pred_bin.detach().cpu().numpy()
+
+    # Check for MDN: (B, K*3+1) where (W-1) is divisible by 3.
+    if (W - 1) % 3 == 0 and W < expected_softmax:
+        from .losses import parse_mdn_params
+        K = (W - 1) // 3
+        stop_logit, mu, sigma, pi = parse_mdn_params(logits, K, b_pred)
+        best_k = pi.argmax(dim=-1)
+        pred_mu = mu.gather(1, best_k.unsqueeze(-1)).squeeze(-1)
+        pred_bin = pred_mu.round().long().clamp(0, b_pred - 1)
+        is_stop_pred = torch.sigmoid(stop_logit) > 0.5
+        pred_bin[is_stop_pred] = b_pred
+        return pred_bin.detach().cpu().numpy()
+
+    # Ratio mode: (B, D+O+R+1) where D=b_pred, O=100, R=255.
+    # Derive bin from divisor × ratio − offset.
+    from ..models.ratio_detector import build_ratio_bin_centers
+    D = b_pred
+    O = 100  # default offset bins
+    R = W - D - O - 1
+    if R > 0:
+        div_logits = logits[:, :D].detach()
+        off_logits = logits[:, D:D + O].detach()
+        ratio_logits = logits[:, D + O:].detach()                       # (B, R+1)
+        # Soft expectations.
+        div_probs = torch.softmax(div_logits, dim=-1)
+        off_probs = torch.softmax(off_logits, dim=-1)
+        div_bins = torch.arange(D, device=logits.device, dtype=torch.float32)
+        off_bins = torch.arange(O, device=logits.device, dtype=torch.float32)
+        div_val = (div_probs * div_bins).sum(-1)
+        off_val = (off_probs * off_bins).sum(-1)
+        # Ratio: argmax over R bins (exclude STOP at index R).
+        ratio_idx = ratio_logits[:, :R].argmax(dim=-1)
+        centers = build_ratio_bin_centers(R).to(logits.device)
+        ratio_val = centers[ratio_idx]
+        pred_bin = (div_val * ratio_val - off_val).round().long().clamp(0, b_pred - 1)
+        # STOP: ratio head's last class.
+        is_stop_pred = ratio_logits.argmax(dim=-1) == R
+        pred_bin[is_stop_pred] = b_pred
+        return pred_bin.detach().cpu().numpy()
+
+    # Fallback: argmax.
+    return logits.argmax(dim=-1).detach().cpu().numpy()
 
 
 # Rhythmic ratio guides drawn on both heatmaps. Each entry is
@@ -875,4 +908,180 @@ class MdnComponentArtifact:
         np.savez(
             out_dir / "mdn_components.npz",
             targets=targets, mus=mus, sigmas=sigmas, pis=pis,
+        )
+
+
+# ─────────────────────────── Ratio-mode artifacts ────────────────────
+
+class RatioDecompositionArtifact:
+    """Target-vs-predicted heatmaps for each ratio head.
+
+    Saved under ``{eval_dir}/ratio/``:
+      - ``divisor_heatmap.png`` — GT divisor vs predicted divisor.
+      - ``offset_heatmap.png`` — GT offset vs predicted offset.
+      - ``ratio_heatmap.png`` — GT ratio bin vs predicted ratio bin.
+      - ``ratio_error.png`` — log-ratio error in ratio space.
+      - ``ratio_decomp.npz`` — raw arrays.
+    """
+    name: str = "ratio_decomp"
+
+    def __init__(self, *, b_pred: int = 500, offset_bins: int = 100,
+                 ratio_bins: int = 255):
+        self._b_pred = b_pred
+        self._O = offset_bins
+        self._R = ratio_bins
+        self.reset()
+
+    def reset(self) -> None:
+        self._div_targets: list[np.ndarray] = []
+        self._div_preds: list[np.ndarray] = []
+        self._off_targets: list[np.ndarray] = []
+        self._off_preds: list[np.ndarray] = []
+        self._ratio_targets: list[np.ndarray] = []
+        self._ratio_preds: list[np.ndarray] = []
+
+    def update(self, batch: MetricInput) -> None:
+        logits = batch.output.logits
+        D = self._b_pred
+        O = self._O
+        R = self._R
+        expected_ratio_width = D + O + R + 1
+        if logits.size(-1) != expected_ratio_width:
+            return  # not ratio output
+
+        target = batch.target
+        if target.divisor_target is None or target.offset_target is None:
+            return
+
+        div_logits = logits[:, :D].detach()
+        off_logits = logits[:, D:D + O].detach()
+        ratio_logits = logits[:, D + O:].detach()
+        div_pred = div_logits.argmax(dim=-1).cpu().numpy()
+        off_pred = off_logits.argmax(dim=-1).cpu().numpy()
+        ratio_pred = ratio_logits[:, :R].argmax(dim=-1).cpu().numpy()
+
+        div_target = target.divisor_target.cpu().numpy()
+        off_target = target.offset_target.cpu().numpy()
+
+        # Compute dynamic ratio target (same as in the loss).
+        from .ratio_loss import RatioLoss
+        from ..models.ratio_detector import build_ratio_bin_centers
+        centers = build_ratio_bin_centers(R)
+        log_centers = torch.log(centers)
+
+        targets_bin = target.target_bin.cpu()
+        div_probs = torch.softmax(div_logits.cpu(), dim=-1)
+        off_probs = torch.softmax(off_logits.cpu(), dim=-1)
+        div_bins = torch.arange(D, dtype=torch.float32)
+        off_bins_t = torch.arange(O, dtype=torch.float32)
+        div_val = (div_probs * div_bins).sum(-1)
+        off_val = (off_probs * off_bins_t).sum(-1)
+
+        is_bin = targets_bin < D
+        ratio_target_arr = np.full(len(targets_bin), R, dtype=np.int64)
+        if is_bin.any():
+            t_f = targets_bin[is_bin].float()
+            d_v = div_val[is_bin].clamp(min=1.0)
+            o_v = off_val[is_bin]
+            ratio_float = (t_f + o_v) / d_v
+            log_r = torch.log(ratio_float.clamp(min=1e-6))
+            dists = (log_r.unsqueeze(-1) - log_centers.unsqueeze(0)).abs()
+            ratio_target_arr[is_bin.numpy()] = dists.argmin(dim=-1).numpy()
+
+        self._div_targets.append(div_target)
+        self._div_preds.append(div_pred)
+        self._off_targets.append(off_target)
+        self._off_preds.append(off_pred)
+        self._ratio_targets.append(ratio_target_arr)
+        self._ratio_preds.append(ratio_pred)
+
+    def save(self, eval_dir: Path, *, step: int) -> None:
+        if not self._div_targets:
+            return
+        import matplotlib
+        matplotlib.use("Agg")
+        import matplotlib.pyplot as plt
+        from ..models.ratio_detector import build_ratio_bin_centers
+
+        out_dir = eval_dir / "ratio"
+        out_dir.mkdir(parents=True, exist_ok=True)
+
+        div_t = np.concatenate(self._div_targets)
+        div_p = np.concatenate(self._div_preds)
+        off_t = np.concatenate(self._off_targets)
+        off_p = np.concatenate(self._off_preds)
+        rat_t = np.concatenate(self._ratio_targets)
+        rat_p = np.concatenate(self._ratio_preds)
+
+        D = self._b_pred
+        O = self._O
+        R = self._R
+
+        def _heatmap(target, pred, size, xlabel, ylabel, title, path):
+            H = np.zeros((size, size), dtype=np.float64)
+            t_c = np.clip(target, 0, size - 1)
+            p_c = np.clip(pred, 0, size - 1)
+            for i in range(len(target)):
+                H[p_c[i], t_c[i]] += 1
+            fig, ax = plt.subplots(figsize=(7, 6))
+            im = ax.imshow(np.log1p(H), origin="lower", cmap="hot",
+                           aspect="auto", extent=(0, size, 0, size))
+            ax.plot([0, size], [0, size], "w--", alpha=0.3, lw=0.6)
+            ax.set_xlabel(xlabel)
+            ax.set_ylabel(ylabel)
+            ax.set_title(title)
+            plt.colorbar(im, ax=ax)
+            plt.tight_layout()
+            fig.savefig(path, dpi=100)
+            plt.close(fig)
+
+        # Divisor heatmap.
+        _heatmap(div_t, div_p, D,
+                 "target divisor (bins)", "predicted divisor",
+                 f"Divisor heatmap step {step:,}",
+                 out_dir / "divisor_heatmap.png")
+
+        # Offset heatmap.
+        _heatmap(off_t, off_p, O,
+                 "target offset (bins)", "predicted offset",
+                 f"Offset heatmap step {step:,}",
+                 out_dir / "offset_heatmap.png")
+
+        # Ratio heatmap (bin indices, excluding STOP).
+        non_stop = (rat_t < R) & (rat_p < R)
+        if non_stop.any():
+            _heatmap(rat_t[non_stop], rat_p[non_stop], R,
+                     "target ratio bin", "predicted ratio bin",
+                     f"Ratio heatmap step {step:,} ({non_stop.sum()} samples)",
+                     out_dir / "ratio_heatmap.png")
+
+            # Ratio error in log-ratio space.
+            centers = build_ratio_bin_centers(R).numpy()
+            pred_log = np.log(centers[np.clip(rat_p[non_stop], 0, R - 1)])
+            true_log = np.log(centers[np.clip(rat_t[non_stop], 0, R - 1)])
+            log_err = pred_log - true_log
+
+            fig, ax = plt.subplots(figsize=(8, 5))
+            ax.hist(log_err, bins=100, range=(-3, 3), density=True,
+                    color="C0", alpha=0.7)
+            for label, val in [("1x", 0), ("2x", np.log(2)),
+                               ("0.5x", -np.log(2)),
+                               ("3x", np.log(3)),
+                               ("1/3x", -np.log(3))]:
+                ax.axvline(val, color="red" if val == 0 else "orange",
+                           ls="--" if val != 0 else "-", alpha=0.5, lw=0.8)
+                ax.text(val, ax.get_ylim()[1] * 0.95, label,
+                        ha="center", fontsize=8)
+            ax.set_xlabel("log(pred_ratio / true_ratio)")
+            ax.set_ylabel("density")
+            ax.set_title(f"Ratio error distribution step {step:,}")
+            plt.tight_layout()
+            fig.savefig(out_dir / "ratio_error.png", dpi=100)
+            plt.close(fig)
+
+        np.savez(
+            out_dir / "ratio_decomp.npz",
+            div_targets=div_t, div_preds=div_p,
+            off_targets=off_t, off_preds=off_p,
+            ratio_targets=rat_t, ratio_preds=rat_p,
         )

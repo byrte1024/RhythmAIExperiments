@@ -142,6 +142,12 @@ class EventEmbeddingTarget(ModelTarget):
     target_bin: torch.Tensor                # (B,) int64 in [0, n_classes-1]
     all_future_bins: torch.Tensor | None = None  # (B, K) int64 — cursor offsets
     all_future_mask: torch.Tensor | None = None  # (B, K) bool, True = padded
+    # Ratio-mode targets. Present only when the adapter is built for a
+    # RatioDetector; None otherwise (standard/MDN paths ignore these).
+    divisor_target: torch.Tensor | None = None   # (B,) int64 — dominant gap
+    offset_target: torch.Tensor | None = None    # (B,) int64 — cursor−last_event
+    divisor_valid: torch.Tensor | None = None    # (B,) bool — enough past events for IOI
+    offset_valid: torch.Tensor | None = None     # (B,) bool — has at least 1 past event
 
 
 # ─────────────────────────── model ────────────────────────────────────
@@ -254,29 +260,35 @@ class EventEmbeddingDetector(
         Returns:
             logits:         (B, n_classes)
         """
+        cursor_tok = self.get_cursor_token(
+            mel, event_offsets, event_mask, conditioning,
+        )
+        return self._apply_head(cursor_tok)
+
+    def get_cursor_token(
+        self,
+        mel: torch.Tensor,
+        event_offsets: torch.Tensor,
+        event_mask: torch.Tensor,
+        conditioning: torch.Tensor,
+    ) -> torch.Tensor:
+        """Run the backbone and return the cursor token (B, d_model)
+        WITHOUT the output head. For subclasses that replace the head."""
         c = self.config
         B = mel.size(0)
         d = c.d_model
 
-        # 1. Conditioning vector.
         cond = self.cond_mlp(conditioning)
-
-        # 2. Conv stem + 3. audio pos-emb + FiLM.
-        x = self.conv_stem(mel)                              # (B, T/4, d)
+        x = self.conv_stem(mel)
         audio_positions = torch.arange(
-            x.size(1), device=x.device
+            x.size(1), device=x.device,
         ).unsqueeze(0).expand(B, -1)
         x = x + self.audio_pos_emb(audio_positions)
         x = self.film_conv(x, cond)
 
-        # 4. Build event embeddings.
         event_embs, token_pos, in_window = self._build_event_embeddings(
-            event_offsets, event_mask
+            event_offsets, event_mask,
         )
-
-        # 5. Scatter-add event embeddings to their audio tokens.
-        # Per-batch loop kept for faithfulness to taiko1; vectorizing
-        # is a follow-up if it shows up in profiles.
         for b in range(B):
             valid_idx = in_window[b].nonzero(as_tuple=True)[0]
             if valid_idx.numel() == 0:
@@ -287,21 +299,18 @@ class EventEmbeddingDetector(
                 0, tpos.unsqueeze(-1).expand(-1, d), embs,
             )
 
-        # 6. Transformer trunk with per-layer FiLM.
         for layer, film in zip(self.layers, self.film_layers):
             x = layer(x)
             x = film(x, cond)
 
-        # 7. Output head on the cursor token.
-        cursor = x[:, c.cursor_token, :]                      # (B, d)
-        raw = self.head_proj(self.head_norm(cursor))           # (B, n_output_dims)
+        return x[:, c.cursor_token, :]                         # (B, d)
+
+    def _apply_head(self, cursor_tok: torch.Tensor) -> torch.Tensor:
+        """Standard output head. Subclasses override this."""
+        raw = self.head_proj(self.head_norm(cursor_tok))
         if self._mdn_mode:
             return raw
-        # Standard softmax: additive Conv1d smoothing.
-        logits = raw + self.head_smooth(
-            raw.unsqueeze(1)
-        ).squeeze(1)
-        return logits
+        return raw + self.head_smooth(raw.unsqueeze(1)).squeeze(1)
 
     def predict(self, x: EventEmbeddingInput) -> EventEmbeddingOutput:
         logits = self.forward(

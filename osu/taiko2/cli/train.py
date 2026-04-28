@@ -59,6 +59,9 @@ from ..training import (
     build_exp45_post_augs,
     train,
 )
+from ..training.ratio_loss import RatioLoss, RatioLossConfig
+from ..training.augmentations import CursorShift
+from ..models.ratio_detector import RatioDetector, RatioDetectorConfig
 
 
 # ─────────────────────────── config loading ──────────────────────────
@@ -221,6 +224,15 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
             "about +/-40%% around normal speed."
         ),
     )
+    p.add_argument(
+        "--cursor-shift-prob", type=float, default=0.0,
+        help=(
+            "Probability of shifting the cursor forward between the "
+            "current event and the next (pre-sample augmentation). "
+            "Creates training examples with non-zero offset for the "
+            "ratio detector's offset head. 0.0 (default) disables."
+        ),
+    )
     return p.parse_args(argv)
 
 
@@ -280,7 +292,14 @@ def main(argv: list[str] | None = None) -> int:
                     seed=trainer_cfg.seed,
                 ),
             ] + post_augs
-        pipeline = AugmentationPipeline(pre=(), post=tuple(post_augs))
+        pre_augs: list = []
+        if args.cursor_shift_prob > 0.0:
+            pre_augs.append(
+                CursorShift(prob=args.cursor_shift_prob, seed=trainer_cfg.seed),
+            )
+        pipeline = AugmentationPipeline(
+            pre=tuple(pre_augs), post=tuple(post_augs),
+        )
 
     train_sampler = TaikoDetectionSampler(data_cfg_train, pipeline=pipeline)
     val_sampler = TaikoDetectionSampler(data_cfg_val)
@@ -288,17 +307,25 @@ def main(argv: list[str] | None = None) -> int:
     val_sampler.load_data(progress=True)
 
     # 3. Model + loss + adapter + metrics + artifacts.
-    model = EventEmbeddingDetector(model_cfg)
+    is_ratio_mode = isinstance(model_cfg, RatioDetectorConfig)
+    if is_ratio_mode:
+        model = RatioDetector(model_cfg)
+    else:
+        model = EventEmbeddingDetector(model_cfg)
     if isinstance(loss_cfg, GaussianCELossConfig):
         loss = GaussianCELoss(loss_cfg)
     elif isinstance(loss_cfg, LogEmdLossConfig):
         loss = LogEmdLoss(loss_cfg)
     elif isinstance(loss_cfg, MdnLossConfig):
         loss = MdnLoss(loss_cfg)
+    elif isinstance(loss_cfg, RatioLossConfig):
+        loss = RatioLoss(loss_cfg)
     elif isinstance(loss_cfg, OnsetLossConfig):
         loss = OnsetLoss(loss_cfg)
     else:
         raise TypeError(f"unsupported loss config: {type(loss_cfg).__name__}")
+    if is_ratio_mode:
+        adapter_cfg = _with(adapter_cfg, ratio_mode=True)
     adapter = DetectionSampleAdapter(adapter_cfg)
 
     # Train metrics are per-epoch running means (reset each epoch) — the
@@ -324,6 +351,15 @@ def main(argv: list[str] | None = None) -> int:
             MdnComponentArtifact(
                 b_pred=model_cfg.b_pred,
                 n_components=model_cfg.n_mdn_components,
+            ),
+        )
+    if is_ratio_mode:
+        from ..training.artifacts import RatioDecompositionArtifact
+        eval_artifacts.append(
+            RatioDecompositionArtifact(
+                b_pred=model_cfg.b_pred,
+                offset_bins=model_cfg.offset_bins,
+                ratio_bins=model_cfg.ratio_bins,
             ),
         )
 
@@ -374,6 +410,19 @@ def main(argv: list[str] | None = None) -> int:
             f"[infer-corpus] hook enabled — every {args.infer_corpus_every} "
             f"eval(s), fraction={corpus_cfg.fraction}, "
             f"modes={corpus_cfg.conditioning_modes}"
+        )
+
+    # Ratio-mode warmup: translate freeze_evals to freeze_steps.
+    if isinstance(loss, RatioLoss):
+        import math as _math
+        _n_train = train_sampler.count_samples()
+        _steps_per_epoch = _math.ceil(_n_train / trainer_cfg.batch_size)
+        _eval_every = max(1, int(_steps_per_epoch / max(1e-9, trainer_cfg.evals_per_epoch)))
+        loss.set_freeze_limit(_eval_every)
+        print(
+            f"[ratio] freeze_evals={loss.config.ratio_freeze_evals} "
+            f"-> freeze_steps={loss._freeze_step_limit} "
+            f"(eval_every={_eval_every})"
         )
 
     state = train(

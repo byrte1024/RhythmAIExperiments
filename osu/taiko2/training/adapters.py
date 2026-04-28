@@ -24,8 +24,13 @@ class DetectionSampleAdapterConfig:
     Any offset ≥ `b_pred` or negative is encoded as STOP (class index
     `b_pred`). A sample with no future event in its window (the
     sampler's ``future_events_mask[0] is True``) is always STOP.
+
+    When ``ratio_mode`` is True, also computes ``divisor_target``
+    (dominant past gap) and ``offset_target`` (cursor distance from
+    last event) for the RatioDetector's loss.
     """
     b_pred: int = 500
+    ratio_mode: bool = False
 
     def __post_init__(self):
         if self.b_pred <= 0:
@@ -123,8 +128,60 @@ class DetectionSampleAdapter(
                     all_bins[i, j] = off
                     all_mask[i, j] = False
 
+        # Ratio-mode: divisor + offset targets with validity masks.
+        div_t = None
+        off_t = None
+        div_v = None
+        off_v = None
+        if self.config.ratio_mode:
+            from collections import Counter
+            div_arr = np.zeros(B, dtype=np.int64)
+            off_arr = np.zeros(B, dtype=np.int64)
+            div_valid = np.zeros(B, dtype=bool)
+            off_valid = np.zeros(B, dtype=bool)
+            for i, s in enumerate(samples):
+                real_mask = ~s.past_events_mask
+                n_real = int(real_mask.sum())
+
+                # Offset: need ≥1 real past event.
+                if n_real >= 1:
+                    last_real_idx = int(np.where(real_mask)[0][-1])
+                    last_offset = s.past_events[last_real_idx].cursor_offset
+                    off_arr[i] = max(0, -last_offset)
+                    off_valid[i] = True
+
+                # Divisor: need ≥2 real past events to compute gaps,
+                # AND the IOI mode must appear ≥2 times (clear peak).
+                if n_real >= 2:
+                    real_offsets = [
+                        e.cursor_offset for e, m
+                        in zip(s.past_events, s.past_events_mask) if not m
+                    ]
+                    gaps = [
+                        abs(real_offsets[j] - real_offsets[j - 1])
+                        for j in range(1, len(real_offsets))
+                    ]
+                    quantized = [round(g / 3) * 3 for g in gaps]
+                    counts = Counter(quantized)
+                    mode_gap, mode_count = counts.most_common(1)[0]
+                    if mode_count >= 2:
+                        div_arr[i] = max(1, mode_gap)
+                        div_valid[i] = True
+                    else:
+                        # All gaps unique — no clear tempo. Loss masked.
+                        div_arr[i] = max(1, mode_gap)  # best guess, but masked
+
+            div_t = torch.from_numpy(div_arr).to(device=device)
+            off_t = torch.from_numpy(off_arr).to(device=device)
+            div_v = torch.from_numpy(div_valid).to(device=device)
+            off_v = torch.from_numpy(off_valid).to(device=device)
+
         return EventEmbeddingTarget(
             target_bin=torch.from_numpy(targets).to(device=device),
             all_future_bins=torch.from_numpy(all_bins).to(device=device),
             all_future_mask=torch.from_numpy(all_mask).to(device=device),
+            divisor_target=div_t,
+            offset_target=off_t,
+            divisor_valid=div_v,
+            offset_valid=off_v,
         )

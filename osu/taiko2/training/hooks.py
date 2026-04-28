@@ -265,7 +265,12 @@ DEFAULT_CURVES: tuple[CurveSpec, ...] = (
     # Loss — total + components on the same plot (log-y).
     CurveSpec(
         name="loss", key="loss", log_y=True,
-        companion_keys=("hard_ce", "soft_ce"),
+        companion_keys=(
+            "hard_ce", "soft_ce",               # OnsetLoss
+            "mixture_nll", "stop_bce",          # MdnLoss
+            "ratio_ce", "div_ce", "off_ce",     # RatioLoss
+            "log_emd",                          # LogEmdLoss
+        ),
     ),
     # Primary composites.
     CurveSpec(name="onset_hit",      key="onset/hit",          log_y=False),

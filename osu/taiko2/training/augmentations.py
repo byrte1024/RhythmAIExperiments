@@ -40,8 +40,8 @@ from dataclasses import dataclass, replace
 
 import numpy as np
 
-from ..data_samplers.detection import TaikoDetectionSample
-from ..domain.augmentation import PostSampleAugmentation
+from ..data_samplers.detection import TaikoDetectionPreContext, TaikoDetectionSample
+from ..domain.augmentation import PostSampleAugmentation, PreSampleAugmentation
 from ..domain.beatmap import RelativeOnset
 
 
@@ -424,6 +424,45 @@ class ConditioningJitter(_RngAug):
             density_peak=int(round(sample.density_peak * f2)),
             density_std=float(sample.density_std * f3),
         )
+
+
+# ─────────────────────────── cursor shift (pre-sample) ───────────────
+
+@dataclass
+class CursorShift(PreSampleAugmentation[TaikoDetectionPreContext]):
+    """Shift the cursor forward by a random amount between the current
+    event and the next, so the model sees non-zero offsets during
+    training.
+
+    At inference, after a STOP hop the cursor isn't at an event
+    boundary — the model needs training examples of this. 30%
+    probability by default (matching taiko1 exp 67).
+
+    Because this is a pre-sample augmentation, the shifted cursor
+    drives audio extraction and event-offset computation in the
+    sampler — no post-hoc audio rolling needed.
+    """
+    prob: float = 0.30
+    seed: int | None = None
+
+    def __post_init__(self) -> None:
+        self._rng = random.Random(self.seed)
+
+    def apply(self, ctx: TaikoDetectionPreContext) -> TaikoDetectionPreContext:
+        if self._rng.random() >= self.prob:
+            return ctx
+        ei = ctx.event_idx
+        bins = ctx.event_bins
+        # Shift forward: random position between current cursor and
+        # the next event (the target). If no next event exists, skip.
+        if ei >= len(bins):
+            return ctx
+        next_bin = int(bins[ei])
+        gap = next_bin - ctx.cursor_bin
+        if gap <= 1:
+            return ctx
+        shift = self._rng.randint(1, gap - 1)
+        return replace(ctx, cursor_bin=ctx.cursor_bin + shift)
 
 
 # ─────────────────────────── time stretch ────────────────────────────

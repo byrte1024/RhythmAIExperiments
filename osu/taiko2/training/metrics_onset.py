@@ -88,27 +88,12 @@ class OnsetMetric(Metric):
     # ── update ────────────────────────────────────────────────────────
 
     def _decode_pred(self, batch: MetricInput) -> torch.Tensor:
-        """Extract predicted bin from output, handling both softmax
-        (argmax on logits) and MDN (highest-pi component's mu) modes."""
-        logits = batch.output.logits
-        expected_softmax_width = self.config.b_pred + 1
-        if logits.size(-1) == expected_softmax_width:
-            return logits.argmax(dim=-1)
-        # MDN mode: output is (B, K*3+1). Parse and pick
-        # highest-weight component's rounded mu.
-        from ..training.losses import parse_mdn_params
-        B = logits.size(0)
-        K = (logits.size(-1) - 1) // 3
-        stop_logit, mu, sigma, pi = parse_mdn_params(
-            logits, K, self.config.b_pred,
-        )
-        best_k = pi.argmax(dim=-1)                                  # (B,)
-        pred_mu = mu.gather(1, best_k.unsqueeze(-1)).squeeze(-1)     # (B,)
-        pred_bin = pred_mu.round().long().clamp(0, self.config.b_pred - 1)
-        # STOP: if sigmoid(stop_logit) > 0.5, override to stop_idx.
-        is_stop_pred = torch.sigmoid(stop_logit) > 0.5
-        pred_bin[is_stop_pred] = self.config.b_pred
-        return pred_bin
+        """Extract predicted bin from output, handling softmax, MDN,
+        and ratio output shapes."""
+        from ..training.artifacts import decode_pred_bins
+        import numpy as np
+        pred_np = decode_pred_bins(batch, self.config.b_pred)
+        return torch.from_numpy(pred_np).to(batch.output.logits.device)
 
     def update(self, batch: MetricInput) -> None:
         cfg = self.config
