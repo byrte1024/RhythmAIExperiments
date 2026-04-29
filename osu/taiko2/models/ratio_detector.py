@@ -45,6 +45,10 @@ class RatioDetectorConfig(EventEmbeddingConfig):
     ratio_bins: int = 255         # log-spaced 0.125×–8.0×
     divisor_bins: int = 500       # dominant gap size
     offset_bins: int = 100        # cursor-to-last-event distance
+    # Ratio head Conv1d smoothing. Prevents collapse to few values
+    # but can over-spread if too wide. k=5/ch=8 was #010's default.
+    ratio_smooth_kernel: int = 5
+    ratio_smooth_channels: int = 8
 
 
 def build_ratio_bin_centers(ratio_bins: int = 255) -> torch.Tensor:
@@ -98,10 +102,12 @@ class RatioDetector(EventEmbeddingDetector):
             nn.Linear(d, d), nn.GELU(),
             nn.Linear(d, R + 1),
         )
+        k = config.ratio_smooth_kernel
+        ch = config.ratio_smooth_channels
         self.ratio_smooth = nn.Sequential(
-            nn.Conv1d(1, 8, kernel_size=5, padding=2),
+            nn.Conv1d(1, ch, kernel_size=k, padding=k // 2),
             nn.GELU(),
-            nn.Conv1d(8, 1, kernel_size=5, padding=2),
+            nn.Conv1d(ch, 1, kernel_size=k, padding=k // 2),
         )
 
         # Precompute ratio bin centers (not a parameter — just a buffer).
