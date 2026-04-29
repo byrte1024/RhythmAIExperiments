@@ -96,9 +96,17 @@ def _batch_stats(
     return scratch.compute()
 
 
-def _infer_b_pred(output: Any) -> int:
-    """Bin-offset-family models output `(B, n_classes)` where
-    ``n_classes = b_pred + 1``. Read it off the last axis."""
+def _infer_b_pred(output: Any, model_b_pred: int | None = None) -> int:
+    """Return ``b_pred`` for metric computation.
+
+    When ``model_b_pred`` is provided (from model config), use it
+    directly — this is the only reliable path for ratio-mode and MDN
+    outputs whose packed tensor width doesn't equal ``b_pred + 1``.
+    Falls back to ``output.logits.size(-1) - 1`` for the standard
+    softmax head.
+    """
+    if model_b_pred is not None:
+        return model_b_pred
     return int(output.logits.size(-1)) - 1
 
 
@@ -119,6 +127,7 @@ def _run_eval(
     indices: Sequence[int] | None = None,
     sample_mutation: "Callable[[DataSample], DataSample | None] | None" = None,
     desc: str = "eval",
+    model_b_pred: int | None = None,
 ) -> dict[str, float]:
     """Eval pass. Defaults to the full sampler; can be scoped to a
     subset via `indices`, and every sample can be mutated before the
@@ -196,7 +205,7 @@ def _run_eval(
 
             # Postfix with per-batch + running-average onset stats.
             if pbar is not None:
-                b_pred = _infer_b_pred(out)
+                b_pred = _infer_b_pred(out, model_b_pred)
                 bs = _batch_stats(out, tgt, b_pred=b_pred)
                 eval_hit_sum += bs["onset/hit"]
                 eval_miss_sum += bs["onset/miss"]
@@ -261,6 +270,11 @@ def train(
     device = torch.device(device) if isinstance(device, str) else device
     model.to(device)
     loss.to(device)
+
+    # b_pred from the model config — used for per-batch metrics. Must
+    # NOT be inferred from output width because ratio/MDN modes pack
+    # non-softmax tensors into the logits field.
+    _model_b_pred: int | None = getattr(getattr(model, "config", None), "b_pred", None)
 
     train_fetch = _pick_fetch(train_sampler, augmented=True)
     val_fetch = _pick_fetch(val_sampler, augmented=False)
@@ -436,7 +450,7 @@ def train(
                 # be both saved (into the step log alongside the loss
                 # sub-metrics) and shown in the tqdm postfix. Full set
                 # from OnsetMetric, not just hit/miss/exact.
-                b_pred = _infer_b_pred(out)
+                b_pred = _infer_b_pred(out, _model_b_pred)
                 batch_onset = _batch_stats(out, tgt, b_pred=b_pred)
 
                 # Merge into a new LossResult so hooks see hit/miss/exact
@@ -483,6 +497,7 @@ def train(
                         batch_size=batch_size,
                         device=device,
                         progress=progress,
+                        model_b_pred=_model_b_pred,
                     )
                     state.last_eval_metrics = val_out
 
@@ -534,6 +549,7 @@ def train(
                             progress=progress,
                             indices=noaug_indices,
                             desc="train_noaug",
+                            model_b_pred=_model_b_pred,
                         )
                         for k, v in train_noaug_out.items():
                             val_out[f"train_noaug/{k}"] = v
@@ -584,6 +600,7 @@ def train(
                                 indices=bench_indices,
                                 sample_mutation=_mut,
                                 desc=f"bench[{mode.name}]",
+                                model_b_pred=_model_b_pred,
                             )
                             for k, v in bench_out.items():
                                 val_out[f"bench/{mode.name}/{k}"] = v
