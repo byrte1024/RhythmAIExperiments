@@ -2,7 +2,11 @@
 
 ## Status
 
-`Planned`
+`Complete` — converged to the same plateau as #010 (miss ≈ 0.33,
+rgood ≈ 0.66). Weaker smoothing (k=3, 4ch) took 5 more evals to
+get there and landed 3.8 pp behind on rhit. **Conv1d kernel size is
+NOT the bottleneck** — the miss ≈ 0.33 ceiling is structural to the
+255-bin ratio decomposition.
 
 ## Context
 
@@ -107,20 +111,137 @@ Baseline: [#010](../010-ratio-decomposition/).
 
 ## Results summary
 
-_(To fill post-run.)_
+Run stopped at **eval 12 / step 248,088**. Best val miss was **E12
+(0.3255)**, marginally below #010's best of 0.3285. Wall time:
+~25.4 hours. The plateau formed at E6–E12 around miss ≈ 0.33,
+rgood ≈ 0.65 — identical to #010's ceiling.
+
+### Final vs #010
+
+Best-vs-best:
+
+| Metric | #010 best (E7) | #010b best (E12) | Δ |
+|---|---:|---:|---:|
+| miss | 0.329 | **0.326** | −0.3 pp |
+| hit | 0.651 | **0.640** | −1.1 pp |
+| exact | 0.375 | 0.351 | −2.4 pp |
+| r_rgood | **0.662** | 0.658 | −0.4 pp |
+| r_rhit | **0.498** | 0.460 | **−3.8 pp** |
+| ratio_ce | **2.63** | 2.76 | +0.13 |
+| div_acc | 0.717 | **0.736** | +1.9 pp |
+| off_acc | 0.947 | 0.952 | +0.5 pp |
+| fe_p90 | 35 | 35 | tie |
+
+At matched step (E10):
+
+| Metric | #010 E10 | #010b E10 | Δ |
+|---|---:|---:|---:|
+| miss | 0.333 | 0.334 | +0.1 pp (parity) |
+| r_rgood | 0.657 | 0.651 | −0.6 pp |
+| r_rhit | 0.496 | 0.461 | −3.4 pp |
+| exact | 0.381 | 0.352 | −2.8 pp |
+
+### Per-eval progression
+
+| E | Step | miss | hit | exact | r_rgood | r_rhit | div_acc | off_acc | ratio_ce | fe_p90 | stop_f1 |
+|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| 1 | 20,674 | 0.869 | 0.034 | 0.005 | 0.034 | 0.007 | 0.729 | 0.843 | 5.55 | 96 | 0.005 |
+| 2 | 41,348 | 0.388 | 0.500 | 0.185 | 0.536 | 0.248 | 0.666 | 0.942 | 3.62 | 37 | 0.464 |
+| 3 | 62,022 | 0.440 | 0.460 | 0.202 | 0.512 | 0.282 | 0.678 | 0.802 | 3.61 | 43 | 0.488 |
+| 4 | 82,696 | 0.409 | 0.533 | 0.247 | 0.566 | 0.338 | 0.686 | 0.919 | 3.28 | 45 | 0.431 |
+| 5 | 103,370 | 0.351 | 0.598 | 0.313 | 0.622 | 0.412 | 0.716 | 0.953 | 3.02 | 36 | 0.511 |
+| 6 | 124,044 | 0.349 | 0.603 | 0.303 | 0.632 | 0.406 | 0.706 | 0.945 | 2.98 | 36 | 0.498 |
+| 7 | 144,718 | 0.351 | 0.598 | 0.323 | 0.628 | 0.424 | 0.711 | 0.947 | 2.95 | 35 | 0.508 |
+| 8 | 165,392 | 0.363 | 0.592 | 0.311 | 0.621 | 0.411 | 0.714 | 0.947 | 2.99 | 40 | 0.560 |
+| 9 | 186,066 | 0.348 | 0.604 | 0.330 | 0.634 | 0.433 | 0.740 | 0.947 | 2.89 | 37 | 0.538 |
+| 10 | 206,740 | 0.334 | 0.630 | 0.352 | 0.651 | 0.461 | 0.729 | 0.947 | 2.79 | 38 | 0.533 |
+| 11 | 227,414 | 0.335 | 0.591 | 0.323 | 0.628 | 0.414 | 0.735 | 0.947 | 2.98 | 35 | 0.533 |
+| **12** | **248,088** | **0.326** | **0.640** | **0.351** | **0.658** | 0.460 | 0.736 | 0.952 | **2.76** | **35** | 0.554 |
+
+E3 regression (miss 0.440) shows the noisier training trajectory
+vs #010 — the weaker smoothing creates a less stable optimization
+landscape. Recovery by E5 and then gradual convergence to the same
+plateau as #010.
 
 ## Visualizations
 
-_(Post-run.)_
+![Training loss](graphs/01_train_loss.png)
+*Loss components: ratio_ce dominates and drops from 5.55 (warmup) to
+2.76 by E12. div_ce and off_ce are low throughout. Same shape as #010
+but ratio_ce converges ~0.13 higher, consistent with the weaker
+smoothing providing less stable gradient signal.*
+
+![val miss](graphs/02_val_miss.png)
+*Derived-bin miss: noisier than #010 (E3 regression to 0.44 before
+recovery). Plateaus at ~0.33 from E6 onward, same ceiling as #010.*
+
+![val exact](graphs/03_val_exact.png)
+*EXACT climbed 0.005 → 0.351. Behind #010's 0.381 — the weaker
+smoothing produces slightly less precise ratio peaks.*
+
+![Derived-bin heatmap @ E12](graphs/04_best_heatmap.png)
+*Derived-bin prediction heatmap. Similar diffuse diagonal to #010 —
+the multiplicative precision gap is unchanged by the smoothing knob.*
+
+![Derived-bin ratio_error @ E12](graphs/05_best_ratio_error.png)
+*Standard ratio-error heatmap on derived bins. Same ridge pattern as
+#010 — `±log 2` bands present.*
+
+![Divisor heatmap @ E12](graphs/06_divisor_heatmap.png)
+*Divisor target vs predicted. Strong diagonal, div_acc 73.6% —
+slightly better than #010's 71.7%. Harmonic banding at 2×/0.5×
+visible.*
+
+![Ratio heatmap @ E12](graphs/07_ratio_heatmap.png)
+*Ratio bin target vs predicted. Diagonal present. The floor at bin
+~60 persists — unchanged from #010, confirming it's not a smoothing
+artifact but a structural property of the dynamic target computation.*
+
+![Ratio error distribution @ E12](graphs/08_ratio_error_dist.png)
+*Histogram of log(pred_ratio / true_ratio). Compare to #010's: the
+peak at 0 is similar, but the between-peak smear may be slightly
+tighter. Hard to distinguish visually — the quantitative metrics
+(rgood/rhit) confirm no meaningful improvement.*
 
 ## Vs prediction
 
-_(Post-run.)_
+- miss ≤ 0.31: actual **0.326** → **MISS** by 1.6 pp.
+- r_rgood ≥ 0.68: actual **0.658** → **MISS** by 2.2 pp.
+- r_rhit ≥ 0.55: actual **0.460** → **MISS** by 9 pp.
+- No ratio collapse: **MET** — model uses many ratio bins.
+- miss > 0.35 (fails-if): **NOT triggered** — best miss 0.326.
+
+**One of five met. All ratio-precision targets missed — the
+weakened smoothing didn't improve precision, it slightly degraded
+it.**
 
 ## Takeaways
 
-_(Post-run.)_
+- **Conv1d kernel size is not the bottleneck.** k=5/8ch (#010) and
+  k=3/4ch (#010b) converge to the same miss ≈ 0.33 and rgood ≈ 0.66
+  plateau. The smoothing over-spread identified in #010's ratio
+  error histogram is cosmetic, not causal — reducing it doesn't
+  improve the ceiling.
+- **Weaker smoothing slightly hurts ratio precision.** rhit 0.460 vs
+  #010's 0.498 (−3.8 pp). The wider kernel's correlation between
+  neighboring bins helps the softmax peaks form stably — the broader
+  gradient signal from k=5 aids convergence, not just smears.
+- **Noisier training.** E3 regression to 0.440 (vs #010's monotonic
+  E2→E7 improvement) suggests the weaker smoothing creates a less
+  stable loss landscape for the ratio head.
+- **The plateau at miss ≈ 0.33 is structural to 255-bin ratio
+  decomposition.** Neither smoothing variant nor additional training
+  breaks through it. The next lever is the bin count itself — fewer
+  bins (128, 64, or 32) would concentrate training signal per bin
+  and potentially improve ratio precision.
 
 ## Followup questions
 
-_(Post-run.)_
+- **Does reducing ratio bins (255 → 128) break the plateau?** Same
+  log-range (0.125×–8.0×), half the bins → each bin is ~3.3%
+  log-ratio wide (vs 1.65%). More training signal per bin, less
+  room for between-peak smear, still finer than the octave distance.
+- **Is the plateau from insufficient training?** #010b's ratio_ce
+  was still dropping at E12 (2.76, vs 2.63 at #010's E7). More
+  evals might squeeze another 1-2 pp. Low priority — the
+  ratio-bins ablation is more informative.
