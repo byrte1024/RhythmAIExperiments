@@ -25,12 +25,12 @@ identified the structural cause: #002's trapezoid soft CE has an
 **entropy floor** — outside its ratio-plateau support, the loss
 saturates flat, so the model gets zero gradient signal to move mass
 off the octave/triplet bands. Hard CE pulls toward the target peak,
-but soft CE just sits at its floor. The user observation during #007
-mid-run confirmed this empirically: hard_CE dropped 12 % across the
-run while soft_CE only dropped 4.5 %. The trapezoid's partial-credit
+but soft CE just sits at its floor. Mid-run analysis on #007
+confirmed this empirically: hard_CE dropped 12 % across the run
+while soft_CE only dropped 4.5 %. The trapezoid's partial-credit
 machinery never actuated.
 
-The user also identified the perceptual constraint: in human rhythm
+A second constraint comes from perception: in human rhythm
 perception, octave-up and octave-down errors feel equally wrong —
 the right metric is `|log((p+1)/(t+1))|`, symmetric in log-space. A
 prediction at `2t` and one at `t/2` should cost the same.

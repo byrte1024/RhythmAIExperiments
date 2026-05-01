@@ -493,7 +493,7 @@ required the extended training to actually clear.
   the work in this run.
 - **Hard-CE / soft-CE divergence persists.** Hard CE dropped 12 %
   across the run (1.80 → 1.58), soft CE only 4.5 % (3.36 → 3.21).
-  Same dynamic the user identified during #007 mid-run: the model
+  Same dynamic noted during #007 mid-run analysis: the model
   optimizes for the spike (hard CE) and accepts the entropy floor
   on the trapezoid soft target. Time-stretch did not change this.
   **This is the strongest evidence yet that the loss shape is the

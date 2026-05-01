@@ -214,8 +214,8 @@ dynamic target computation, not a bin-density artifact.*
 ![Ratio error distribution @ E9](graphs/08_ratio_error_dist.png)
 *Histogram of log(pred_ratio / true_ratio). The peak at 0 is
 sharper than #010's, but the **same continuous smear between
-musical-ratio peaks is present** — confirming the user's
-observation that the systematic "garbage values" failure is
+musical-ratio peaks is present** — confirming the systematic
+"garbage values" failure noted on #010 is
 structural, not bin-count-dependent. Both 255 and 128 bin runs
 produce the same off-musical-ratio spread.*
 

@@ -49,6 +49,12 @@ class RatioDetectorConfig(EventEmbeddingConfig):
     # but can over-spread if too wide. k=5/ch=8 was #010's default.
     ratio_smooth_kernel: int = 5
     ratio_smooth_channels: int = 8
+    # Stop-gradient on the divisor/offset soft expectations before
+    # they enter the ratio head. True (default, taiko1 exp 67 design)
+    # means div/off heads only train via their own aux losses. False
+    # lets the ratio loss gradient flow back through the soft
+    # expectations and shape div/off predictions too.
+    aux_stop_gradient: bool = True
 
 
 def build_ratio_bin_centers(ratio_bins: int = 255) -> torch.Tensor:
@@ -135,16 +141,20 @@ class RatioDetector(EventEmbeddingDetector):
         div_logits = self.divisor_head(cursor_tok)              # (B, D)
         off_logits = self.offset_head(cursor_tok)               # (B, O)
 
-        # Soft expectations → scalar → DETACH → embed → add to cursor.
-        # Detach so ratio_loss gradient doesn't backprop into div/off
-        # heads — those are trained by their own auxiliary losses only
-        # (taiko1 exp 67 design: stop-gradient from ratio loss).
+        # Soft expectations → scalar → (optional detach) → embed → cursor.
+        # When ``aux_stop_gradient`` is True (default, taiko1 exp 67
+        # design), detach so ratio_loss gradient doesn't backprop
+        # into div/off heads. When False (#010d), gradients flow —
+        # ratio loss can shape div/off predictions too.
         div_probs = torch.softmax(div_logits, dim=-1)
         off_probs = torch.softmax(off_logits, dim=-1)
         div_bins = torch.arange(D, device=div_logits.device, dtype=torch.float32)
         off_bins = torch.arange(O, device=off_logits.device, dtype=torch.float32)
-        div_val = (div_probs * div_bins).sum(-1, keepdim=True).detach()  # (B, 1)
-        off_val = (off_probs * off_bins).sum(-1, keepdim=True).detach()  # (B, 1)
+        div_val = (div_probs * div_bins).sum(-1, keepdim=True)          # (B, 1)
+        off_val = (off_probs * off_bins).sum(-1, keepdim=True)          # (B, 1)
+        if cfg.aux_stop_gradient:
+            div_val = div_val.detach()
+            off_val = off_val.detach()
 
         ratio_in = (
             cursor_tok
