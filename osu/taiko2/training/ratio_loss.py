@@ -42,6 +42,10 @@ class RatioLossConfig(LossConfig):
     # first). 0 = no freeze. The training loop translates this to
     # steps via set_freeze_limit().
     ratio_freeze_evals: int = 1
+    # When True, freeze the divisor/offset heads (and their val
+    # embeddings) at the warmup boundary so the ratio head trains
+    # against fixed aux outputs. Used by #010e.
+    freeze_aux_after_warmup: bool = False
 
 
 class RatioLoss(Loss[RatioLossConfig, EventEmbeddingOutput, EventEmbeddingTarget]):
@@ -165,13 +169,16 @@ class RatioLoss(Loss[RatioLossConfig, EventEmbeddingOutput, EventEmbeddingTarget
         loss = per_sample.mean()
 
         # ── Ratio-space HIT/GOOD/MISS metrics ───────────────────────
-        ratio_pred = ratio_logits[:, :R].argmax(dim=-1)                 # (B,)
-        centers = self._ratio_centers.to(raw.device)
+        # Skipped while ratio head is frozen — argmax on a zero-filled
+        # ratio block (model returns zeros during warmup to save
+        # compute) produces meaningless metrics.
         r_rhit = 0.0
         r_rgood = 0.0
         r_rmiss = 0.0
         n_ratio_eval = 0
-        if is_bin.any():
+        if not ratio_frozen and is_bin.any():
+            ratio_pred = ratio_logits[:, :R].argmax(dim=-1)             # (B,)
+            centers = self._ratio_centers.to(raw.device)
             pred_ratio_val = centers[ratio_pred[is_bin]]
             true_ratio_val = centers[ratio_target[is_bin].clamp(0, R - 1)]
             log_err = (

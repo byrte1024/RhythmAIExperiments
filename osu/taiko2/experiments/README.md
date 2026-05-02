@@ -22,6 +22,7 @@ cross-repo links, not duplicated here.
 | [010b](010b-ratio-smooth-k3/) | Reduced Conv1d smoothing (k=3, 4ch) | `Complete` | Same plateau as #010 (best miss 0.326), reached 5 evals later, 3.8 pp behind on rhit. **Conv1d kernel size is not the bottleneck.** |
 | [010c](010c-ratio-128bins/) | Ratio with 128 bins (half resolution) | `Complete` | Best miss 0.326. Converges 2× faster (E5 advantage 5.4 pp), same ceiling. **Bin count is not the bottleneck either** — 255 / 255-with-weak-smoothing / 128 all land at miss ≈ 0.33. The systematic ratio-prediction blur appears in all three. |
 | [010d](010d-ratio-shared-grad/) | Remove stop-gradient between aux heads and ratio head | `Complete` (hypothesis rejected) | Decomposition collapsed: divisor head dropped to 0.39 acc with fanning-ray heatmap (looks like pre-decomposition direct detector); ratio head turned into a near-perfect bin-space diagonal — the inverse-noise shortcut. Product still recovers approximate bin (miss 0.36) but neither head encodes musical structure. **Reproduces the failure stop-gradient was originally introduced to prevent.** |
+| [010e](010e-aux-frozen/) | 8-eval warmup, then freeze divisor + offset heads; ratio MLP skipped during warmup | `Planned` | Direct counter-intervention to #010d. Aux saturates by E1 in every prior ratio run (div_acc plateaus at 0.71–0.74), so longer warmup buys stability not accuracy. Tests whether locking aux at #010-quality lets the ratio head find sharper musical-ratio structure. |
 
 ---
 

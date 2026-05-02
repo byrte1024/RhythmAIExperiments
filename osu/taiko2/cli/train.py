@@ -424,6 +424,15 @@ def main(argv: list[str] | None = None) -> int:
             f"-> freeze_steps={loss._freeze_step_limit} "
             f"(eval_every={_eval_every})"
         )
+        if isinstance(model, RatioDetector):
+            model.set_warmup_steps(
+                loss._freeze_step_limit,
+                freeze_aux_at_boundary=loss.config.freeze_aux_after_warmup,
+            )
+            print(
+                f"[ratio] model warmup_steps={model._warmup_step_limit} "
+                f"freeze_aux_at_boundary={model.freeze_aux_at_boundary}"
+            )
 
     state = train(
         spec=spec,

@@ -122,6 +122,47 @@ class RatioDetector(EventEmbeddingDetector):
             build_ratio_bin_centers(R),
         )
 
+        # Warmup state — set by training CLI via ``set_warmup_steps``.
+        # While ``_fwd_step < _warmup_step_limit`` and ``self.training``,
+        # the ratio MLP + Conv1d are skipped (zeros returned). On the
+        # first training-mode forward past the boundary, divisor /
+        # offset / val-embedding params are frozen if
+        # ``freeze_aux_at_boundary`` is True. Eval-mode forwards never
+        # increment the counter and never trigger the freeze.
+        self._fwd_step = 0
+        self._warmup_step_limit = 0
+        self.freeze_aux_at_boundary = False
+        self._aux_frozen = False
+
+    def set_warmup_steps(
+        self,
+        n_steps: int,
+        *,
+        freeze_aux_at_boundary: bool = False,
+    ) -> None:
+        """Configure the ratio-head warmup window.
+
+        While the model is in training mode and fewer than ``n_steps``
+        forward passes have been taken, the ratio MLP and Conv1d
+        smoothing layers are skipped (zero ratio logits returned).
+        Pass ``freeze_aux_at_boundary=True`` to freeze the divisor
+        and offset heads (and their val embeddings) once the boundary
+        is crossed — used by #010e to stop aux training after warmup.
+        """
+        self._warmup_step_limit = max(0, int(n_steps))
+        self.freeze_aux_at_boundary = bool(freeze_aux_at_boundary)
+
+    def _freeze_aux_heads(self) -> None:
+        for p in self.divisor_head.parameters():
+            p.requires_grad_(False)
+        for p in self.offset_head.parameters():
+            p.requires_grad_(False)
+        for p in self.divisor_val_emb.parameters():
+            p.requires_grad_(False)
+        for p in self.offset_val_emb.parameters():
+            p.requires_grad_(False)
+        self._aux_frozen = True
+
     @property
     def n_params(self) -> int:
         return sum(p.numel() for p in self.parameters())
@@ -137,9 +178,34 @@ class RatioDetector(EventEmbeddingDetector):
         cfg = self.config
         D = cfg.divisor_bins
         O = cfg.offset_bins
+        R = cfg.ratio_bins
+
+        # Warmup bookkeeping (training-mode only — eval forwards are
+        # idempotent).
+        in_warmup = False
+        if self.training:
+            in_warmup = self._fwd_step < self._warmup_step_limit
+            if (
+                not in_warmup
+                and self.freeze_aux_at_boundary
+                and not self._aux_frozen
+            ):
+                self._freeze_aux_heads()
+            self._fwd_step += 1
 
         div_logits = self.divisor_head(cursor_tok)              # (B, D)
         off_logits = self.offset_head(cursor_tok)               # (B, O)
+
+        if in_warmup:
+            # Skip ratio MLP + Conv1d entirely — backward through a
+            # zero tensor adds no gradient cost. Loss zeroes ratio_ce
+            # and skips ratio metrics during warmup.
+            ratio_logits = torch.zeros(
+                (cursor_tok.size(0), R + 1),
+                device=cursor_tok.device,
+                dtype=cursor_tok.dtype,
+            )
+            return torch.cat([div_logits, off_logits, ratio_logits], dim=-1)
 
         # Soft expectations → scalar → (optional detach) → embed → cursor.
         # When ``aux_stop_gradient`` is True (default, taiko1 exp 67
