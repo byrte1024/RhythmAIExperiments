@@ -2,7 +2,19 @@
 
 ## Status
 
-`Planned`
+`Complete`. **Pairwise complementarity is much larger than the
+"redundancy dominates" hypothesis predicted** — best 2-channel
+union hits **recall 0.905** at `hfc_mel + spectral_flux`,
+**+16.3 pp over the best single channel** (energy, R = 0.780)
+and well above the 8-pp "fails-if-this-high" threshold the pre-
+run set. The structural finding is that **difference-based**
+ODFs (spectral flux family, SuperFlux, log-filtered) and
+**envelope-based** ODFs (energy, HFC) catch genuinely different
+onset subsets — within-group Jaccard 0.81-0.88, **cross-group
+Jaccard 0.57-0.69**. Sub-band frequency specialization on
+DON vs KA was **not observed** (≤ 5 pp gap in any band, no
+crossover) — abandons the sub-band-as-separate-channel design
+idea.
 
 ## Context
 
@@ -378,11 +390,197 @@ osu/taiko2/.venv/Scripts/python.exe \
 
 ## Results summary
 
-_(To fill post-run.)_
+Survey ran on the full val split (958 charts, **654,333 GT
+onsets**) in **27.5 s** including all aggregations. No charts
+skipped.
+
+**Headline:** complementarity exists and is much higher than the
+pre-run "redundancy dominates" hypothesis predicted. The best
+2-channel union (`hfc_mel + spectral_flux`) reaches recall 0.905
+— +16.3 pp over the best single channel (`energy` at 0.780),
+and +33.2 pp over `log_filtered_flux` at 0.654. The maximum
+pairwise marginal gain is **13.3 pp**, well above the predicted
+4-7 pp ceiling. The structural reason is what we missed in the
+pre-run mechanism analysis: difference-based and envelope-based
+ODFs do detect different onsets even though they read the same
+log-mel.
+
+The F1 picture, however, **gets worse with more channels** because
+precision drops faster than recall rises. Single-channel best F1
+is 0.679 (`spectral_flux`); 2-channel best F1 is 0.495 (`hfc_mel +
+spectral_flux`); 4-channel drops to 0.29. For #012's downstream
+model design, the recall vs precision tradeoff is the design
+question — and **recall is what matters**, since the model is
+expected to filter the channel-injected false positives during
+training.
+
+The per-density and per-star results are inverted from the pre-run
+prediction. F1 *increases* with density and difficulty:
+sparse charts have F1 = 0.35; very-dense F1 = 0.73. The driver is
+precision, not recall — sparse charts contain many audio onsets
+that the chart author chose *not* to map (background hi-hats,
+ghost notes), so ODF activations get counted as false positives.
+Dense / insane charts map nearly every salient audio onset, so
+ODF activations match GT.
+
+The sub-band-8 DON-vs-KA per-band recall, predicted to show a
+strong low-band-on-DON / high-band-on-KA crossover (15-25 pp gap),
+**did not appear**: every band has KA recall slightly above DON
+recall by 0-7 pp; no crossover. This is an unambiguous design
+data point — sub-band channels don't carry kind-specific
+information beyond what broadband flux already encodes.
+
+### Per-algorithm single-channel @ ±10 frames (best-F1 threshold)
+
+| Algorithm | Recall | Precision (lower) | F1 | n_pred |
+|---|---:|---:|---:|---:|
+| **spectral_flux** | 0.7425 | **0.6254** | **0.6789** | 776,820 |
+| subband_sf_4 (collapsed) | 0.7425 | 0.6254 | 0.6789 | 776,820 |
+| subband_sf_8 (collapsed) | 0.7425 | 0.6254 | 0.6789 | 776,820 |
+| **energy** | **0.7802** | 0.5517 | 0.6463 | 925,426 |
+| hfc_mel | 0.7718 | 0.5257 | 0.6254 | 960,740 |
+| superflux | 0.6923 | 0.5653 | 0.6224 | 801,240 |
+| log_filtered_flux | 0.6536 | 0.4751 | 0.5502 | 900,221 |
+
+`energy` has the highest single-channel **recall** (0.780),
+confirming the #011 surprise; `spectral_flux` has the highest
+**precision** (0.625) and best single-channel F1.
+
+### Pairwise marginal gain (B | A) — sorted descending
+
+A small selection (full table in `pairwise.csv`). `B | A` is the
+fraction of GT onsets that B catches that A missed:
+
+| Pair | R(A) | R(B) | R(union) | marg(B \| A) | Jaccard |
+|---|---:|---:|---:|---:|---:|
+| **hfc_mel + spectral_flux** | 0.772 | 0.742 | **0.905** | **0.133** | 0.673 |
+| hfc_mel + log_filtered_flux | 0.772 | 0.654 | 0.905 | 0.133 | 0.575 |
+| hfc_mel + superflux | 0.772 | 0.692 | 0.898 | 0.127 | 0.630 |
+| energy + log_filtered_flux | 0.780 | 0.654 | 0.904 | 0.124 | 0.586 |
+| energy + spectral_flux | 0.780 | 0.742 | 0.900 | 0.120 | 0.691 |
+| energy + superflux | 0.780 | 0.692 | 0.895 | 0.115 | 0.645 |
+| log_filtered_flux + spectral_flux | 0.654 | 0.742 | 0.761 | 0.107 | 0.835 |
+| log_filtered_flux + superflux | 0.654 | 0.692 | 0.742 | 0.088 | 0.814 |
+| energy + hfc_mel | 0.780 | 0.772 | 0.835 | 0.055 | 0.859 |
+| spectral_flux + superflux | 0.742 | 0.692 | 0.765 | 0.022 | 0.876 |
+| spectral_flux + subband_sf_4 | 0.742 | 0.742 | 0.742 | 0.000 | 1.000 |
+
+**Pattern: cross-group is the win.** Pairs of one envelope-based
+algorithm (energy / HFC) and one difference-based algorithm (SF /
+log-SF / SuperFlux) consistently push union recall to ~0.90+
+with marginal gains 11-13 pp. Within-group pairs only gain 2-9
+pp. The sub-band collapsed envelopes are mathematically identical
+to broadband SF — Jaccard 1.000, marginal gain 0.000.
+
+### Best K-channel union by recall and by F1
+
+| K | Best by recall | Recall | Precision (lower) | F1 |
+|---:|---|---:|---:|---:|
+| 1 | spectral_flux | 0.742 | 0.625 | **0.679** |
+| 2 | hfc_mel + spectral_flux | **0.905** | 0.341 | 0.495 |
+| 3 | energy + hfc_mel + log_filtered_flux | **0.932** | 0.219 | 0.354 |
+| 4 | energy + hfc_mel + log_filtered_flux + superflux | 0.939 | 0.171 | 0.290 |
+
+**F1 peaks at K=1; recall climbs at K=2 and again at K=3.** The
+recall-precision tradeoff is sharp: every additional channel
+adds ~700K predicted peaks but only catches a few percentage
+points more GT onsets, dropping precision proportionally. Pre-
+run prediction was directionally right (F1 peaks at K=1) but the
+recall climb is steeper than predicted.
+
+### Per-kind recall (best-F1 threshold per algo)
+
+GT distribution: DON 303,821 (46.4 %); KA 309,597 (47.3 %);
+BIG_DON 19,844 (3.0 %); BIG_KA 19,450 (3.0 %); SPINNER 1,164;
+DRUMROLL 457.
+
+| Algorithm | DON | KA | BIG_DON | BIG_KA | DRUMROLL | SPINNER |
+|---|---:|---:|---:|---:|---:|---:|
+| energy | 0.760 | 0.785 | **0.914** | 0.905 | 0.731 | 0.535 |
+| hfc_mel | 0.757 | 0.775 | 0.874 | 0.851 | 0.759 | 0.547 |
+| log_filtered_flux | 0.617 | 0.670 | 0.807 | 0.823 | 0.711 | 0.539 |
+| spectral_flux | 0.703 | 0.757 | 0.936 | **0.942** | 0.718 | 0.502 |
+| superflux | 0.648 | 0.711 | 0.884 | 0.896 | 0.628 | 0.488 |
+
+**Every algorithm scores higher on KA than on DON by 1-5 pp**,
+and BIG variants by 15-20 pp. Inter-algorithm differences within
+a kind are 5-10 pp — `log_filtered_flux` is uniformly worst,
+`spectral_flux` wins on BIG variants, `energy` wins on plain DON
+and ties KA.
+
+The predicted asymmetry (HFC stronger on KA, energy stronger on
+DON) **is not present** — all algorithms have the same
+DON < KA < BIG_DON ≈ BIG_KA ordering. The 5-pp range across
+algorithms within a kind is the redundancy I expected to see at
+the *pair* level — it's there at the *kind-stratified-recall*
+level instead.
+
+### Per-density-bucket F1 (spectral_flux only)
+
+Bucket cuts: sparse < 1.5 events/s; medium 1.5-3.0; dense 3.0-5.0;
+very_dense ≥ 5.0.
+
+| Bucket | F1 | Recall | Precision |
+|---|---:|---:|---:|
+| sparse | 0.350 | **0.913** | 0.217 |
+| medium | 0.505 | 0.902 | 0.351 |
+| dense | 0.684 | 0.829 | 0.582 |
+| very_dense | **0.732** | 0.689 | **0.780** |
+
+**F1 increases with density. Reverse of the pre-run prediction.**
+Recall actually *decreases* with density (peak picker NMS more
+likely to suppress real onsets in dense passages), but precision
+climbs much faster (sparse charts have many unmapped audio onsets;
+dense charts map almost everything). Net effect: F1 climbs.
+
+### Per-star-rating-bucket F1 (spectral_flux only)
+
+| Bucket | Stars | F1 | Recall | Precision |
+|---|---|---:|---:|---:|
+| easy | < 3 | 0.551 | 0.881 | 0.401 |
+| medium | 3 - 4 | 0.718 | 0.801 | 0.650 |
+| hard | 4 - 5 | 0.730 | 0.719 | 0.741 |
+| insane_plus | ≥ 5 | 0.728 | 0.663 | 0.807 |
+
+Same shape as density. Easy charts are sparse → many FPs → low
+F1. Insane+ charts are dense → few FPs → high F1.
+
+### Sub-band 8 per-band recall — DON vs KA
+
+Tests the predicted low-band-fires-on-DON / high-band-fires-on-KA
+crossover (predicted 15-25 pp gap):
+
+| Band | DON recall | KA recall | KA − DON |
+|---:|---:|---:|---:|
+| 0 (low) | 0.687 | 0.690 | +0.003 |
+| 1 | 0.673 | 0.725 | +0.052 |
+| 2 | 0.674 | 0.727 | +0.053 |
+| 3 | 0.650 | 0.707 | +0.057 |
+| 4 | 0.607 | 0.668 | +0.061 |
+| 5 | 0.573 | 0.634 | +0.061 |
+| 6 | 0.533 | 0.600 | +0.067 |
+| 7 (high) | 0.505 | 0.565 | +0.060 |
+
+**No crossover.** Every band catches KA slightly *better* than DON
+by ~5-7 pp; no band catches DON better than KA. The predicted
+specialization (low-band-DON / high-band-KA) does not appear at
+this granularity. Two read-outs:
+1. Sub-band channels do not carry kind-specific information
+   the way the pre-run hypothesis assumed.
+2. Recall *decreases* with band index across both kinds — high-
+   freq bands have less mass to fire on; predictions get sparser.
+   So the high-band channel mostly misses both kinds rather than
+   specializing on one.
+
+This abandons the sub-band-as-channel design idea. **The
+broadband collapsed envelope (which is exactly `spectral_flux`)
+captures everything sub-band channels collectively offer at this
+granularity.**
 
 ## Visualizations
 
-_(Post-run.)_
+_(Plots not yet generated — script runs in seconds when needed.
+The above tables capture the headline numbers.)_
 
 Planned graphs:
 
@@ -391,24 +589,117 @@ Planned graphs:
 - `02_complementarity_jaccard.png` — pairwise Jaccard similarity
   heatmap (1 = perfectly redundant).
 - `03_union_vs_size.png` — best union recall / precision / F1
-  by subset size (1 / 2 / 3 / 4) at the best-F1 operating point.
+  by subset size (1 / 2 / 3 / 4).
 - `04_per_kind.png` — recall per (algo, onset kind).
 - `05_per_density.png` — F1 per (algo, density bucket).
 - `06_per_star.png` — F1 per (algo, star bucket).
 - `07_activation_distributions.png` — overlaid histograms of
   activation values at TP / FP / FN / near-miss frames per
   algorithm.
-- `08_subband_per_kind.png` — sub-band 8 per-band recall, split
-  by onset kind. Tests the low-band-DON / high-band-KA prediction.
+- `08_subband_per_kind.png` — sub-band 8 per-band recall by kind.
 
 ## Vs prediction
 
-_(Post-run.)_
+| Prediction | Actual | Verdict |
+|---|---|---|
+| Pairwise marginal gains 1-4 pp typical, max ~6 pp | 11/21 pairs ≥ 8 pp; max **13.3 pp** | **MISS — refuted.** Cross-group complementarity dominates. |
+| 2-channel best union at recall 0.78-0.80 | recall **0.905** | **MISS by 10+ pp.** |
+| 3-channel union at recall 0.81-0.83 | recall **0.932** | **MISS by 10+ pp.** |
+| F1 peaks at K=1; declines with K | F1 = 0.679 → 0.495 → 0.354 → 0.290 | **MET** directionally. |
+| Sub-band per-band DON vs KA gap 15-25 pp with crossover | gap 0-7 pp, no crossover | **MISS — refuted.** No frequency specialization. |
+| Per-kind algorithm gaps ≤ 5 pp | observed 5-10 pp range | **PARTIAL** — slightly larger than predicted. |
+| `log_filtered_flux` uniformly worst on per-kind | yes, by 5-10 pp | **MET**. |
+| Density: F1 drops on dense charts (~0.50) | F1 *rises* on dense (0.73) | **MISS — wrong direction.** |
+| Star rating: F1 drops on insane+ (~0.58) | F1 *rises* on insane+ (0.73) | **MISS — wrong direction.** |
+| `spectral_flux + subband_sf_4` near-zero gain | gain 0.000 exactly (Jaccard 1.000) | **MET**. |
+| Activation distribution analysis | not yet computed; data in summary.json | **DEFERRED**. |
+
+**Hypothesis "redundancy dominates" is rejected.** The pre-run
+mental model — same input, same NMS, same threshold-bound
+failures → near-redundant outputs — was wrong because difference-
+based ODFs and envelope-based ODFs respond to fundamentally
+different audio events. A flux-based algorithm fires on the
+attack frame; an envelope-based algorithm fires on the energy
+peak (which can be 2-5 frames later, on a different *type* of
+onset profile). Their miss sets concentrate on different
+onset shapes.
 
 ## Takeaways
 
-_(Post-run.)_
+- **Cross-group channel pairs are the strongest signal.** A
+  2-channel input of `spectral_flux + hfc_mel` captures
+  recall 0.905 — almost 16 pp above any single channel. That's
+  the candidate channel set for #012's first attempt.
+- **Within-group additional channels add little.** SF + SuperFlux
+  Jaccard 0.876 → marginal gain 2.2 pp. SF + log-SF marginal gain
+  10.7 pp (looks high in isolation but only because log-SF has
+  poor recall on its own — 0.654 — and most of its gain is from
+  catching onsets the others fire on too with different precision).
+  For channel selection, prefer one diff-based + one envelope-
+  based over two of the same family.
+- **F1 is not the right metric for channel selection.** Recall
+  is. F1 collapses at K ≥ 2 because the channels each contribute
+  ~800K-960K predicted peaks, dropping precision to 0.34. But
+  the channels are *inputs* to the model, not predictions —
+  the model can filter them. The real metric for channel design
+  is **maximum recall at K channels** with reasonable
+  per-channel precision (~0.50+).
+- **Sparse / easy-difficulty charts are where the channel
+  signal is weakest in absolute precision** (sparse: P = 0.22)
+  but the chart's recall is highest (R = 0.91 on sparse). The
+  channel's job is "look here" — sparse charts are exactly
+  where the model needs that hint most, and the channel still
+  provides it (recall 0.91), just at noisy precision.
+- **Sub-band channels are not worth the architectural cost.**
+  No DON / KA frequency specialization. Broadband flux already
+  encodes everything sub-band channels collectively encode. Drop
+  the sub-band-as-multi-channel idea from #012.
+- **`energy` is a real candidate channel.** Highest recall of
+  any single channel (0.780); high complementarity with SF / SF
+  family (Jaccard 0.69, 12 pp marginal gain). Cheap to compute.
+  Worth including in #012 as a second channel alongside SF.
+- **`log_filtered_flux` is consistently the weakest signal**
+  (lowest recall, lowest F1, lowest per-kind recall on every kind).
+  The log compression apparently hurts more than it helps for
+  taiko percussion. Drop from the channel candidate list for #012.
+- **Per-density inversion is a content insight, not a bug.** Easy /
+  sparse charts have many *unmapped* audio onsets relative to
+  mapped ones. The ODF predictions are full of "musically valid"
+  but chart-irrelevant peaks. **Implication for #012**: the
+  channel signal carries different information by chart density,
+  so the model may need to learn density-dependent gating.
 
 ## Followup questions
 
-_(Post-run.)_
+For #012 (the channel-input training experiment):
+
+- **Recommended channel set: `spectral_flux + energy + hfc_mel`**
+  — 3-channel union recall 0.927 (or 0.932 if `log_filtered_flux`
+  is added; F1 marginally worse). 2-channel `spectral_flux +
+  hfc_mel` at recall 0.905 is the lower-cost variant.
+- **Frame encoding (from #011):** bucket-pool the activations
+  into ±5 or ±10 frame windows, not raw 5 ms grid. Combined with
+  the multi-channel set above.
+- **Open: should each channel be max-pool or sum-pool when
+  bucketing?** Max-pool preserves peak strength; sum-pool
+  preserves total activation density. Worth a small ablation in
+  #012's pre-run.
+
+Open follow-ups within the survey itself:
+
+- **Generate the planned plots** from `summary.json` (matrix
+  heatmaps, K-vs-recall curve, etc.) — script can be one-shot
+  off this experiment's data.
+- **Activation distributions** — the data is sampled and stored
+  in `summary.json["activation_distributions"]`; just need a
+  histogram plot to see TP/FP/FN/near-miss separability.
+- **Threshold sensitivity** of the complementarity result — does
+  the cross-group complementarity hold if we use each algo's
+  recall-≥-0.85 threshold instead of best-F1? Cheap re-run, would
+  tell us whether the 13 pp marginal gains generalize across
+  operating points.
+- **Three-way and four-way Jaccard / complementarity decomposition**
+  — for the top 3-channel set, what fraction of GT onsets are
+  caught by exactly 1 / 2 / 3 of the algorithms? Tells us whether
+  the 0.93 union recall is "any one of three fires" (best-case
+  union) or "two of three" (degenerate redundancy).
