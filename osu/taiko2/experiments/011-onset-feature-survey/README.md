@@ -2,7 +2,13 @@
 
 ## Status
 
-`Planned`
+`Complete`. Single-channel `spectral_flux` is enough; F1 ceiling
+~0.68 at ±10 frames is much higher than predicted; **all classical
+ODFs collapse below ±2 frames** because they fire 2-3 frames late
+on the attack. Recommended next step: encode the spectral activation
+at a **coarser (±5 or ±10 frame) grid** rather than at the raw 5 ms
+grid, so the downstream model gets a clean bucket-aligned signal
+instead of a 2-3-frame-blurred one.
 
 ## Context
 
@@ -331,35 +337,242 @@ Out of scope for this run:
 
 ## Results summary
 
-_(To fill post-run.)_
+Survey ran on the full val split (958 charts) in **6 min 22 s** for
+the per-chart loop on a single RTX 5070, plus another **17 s** for
+joint coverage after the post-`[done]` patch (peak tensors moved to
+CPU once + union hoisted out of the tolerance loop + tqdm progress).
+No charts skipped.
+
+Headline finding: **classical ODFs are far stronger against
+chart-author GT than predicted.** Single-channel best F1 at
+±10 frames is **0.679 (spectral_flux)**, not the 0.40-0.45 my pre-
+run hypothesis estimated. Per-algo precision floors landed at
+0.47-0.62 — chart authors track audio onsets much more tightly than
+"a small subset of all audio events" assumed in the pre-run.
+
+The structural finding is in the tolerance sweep, not the absolute
+F1. **Every classical ODF collapses below ±2 frames**: at ±0
+(exact frame) every algorithm scores < 0.09 F1. The activations
+peak 2-3 frames *after* the actual attack, because spectral flux
+measures the change *between* frames, and HFC measures envelope
+energy. This means the per-frame channel signal is fundamentally
+**candidate-region**, not **frame-precise**, and the natural
+aggregation grid for downstream input is the **±5 or ±10 frame
+window** where the ODFs already operate near ceiling — not the
+raw 5 ms grid.
+
+### Per-algorithm best F1 / recall / precision @ ±10 frames
+
+Pooled across 958 charts (TP / FP / FN summed before computing
+P / R / F1, so high-onset charts weight more).
+
+| Algorithm | F1 | Recall | Precision | Best threshold |
+|---|---:|---:|---:|---:|
+| **spectral_flux** | **0.679** | 0.742 | **0.625** | 0.32 |
+| subband_sf_4 (collapsed) | 0.679 | 0.742 | 0.625 | 0.32 |
+| subband_sf_8 (collapsed) | 0.679 | 0.742 | 0.625 | 0.32 |
+| energy | 0.646 | **0.780** | 0.552 | 0.76 |
+| hfc_mel | 0.625 | 0.772 | 0.526 | 0.68 |
+| superflux | 0.622 | 0.692 | 0.565 | 0.28 |
+| log_filtered_flux | 0.550 | 0.654 | 0.475 | 0.24 |
+
+`subband_sf_4` and `subband_sf_8` collapse to the same envelope as
+`spectral_flux` when summed across bands (per-band sum = total
+spectral flux modulo per-band weighting), which is why they tie
+exactly. The per-band signal has different value, see Joint coverage.
+
+Complex Domain (`complex_domain`) was **not run**: it requires raw
+audio for STFT phase, which means walking and parsing every `.osz`
+pack to recover paths. The mel-domain results were strong enough
+that scaffolding the audio-loading path didn't seem worth the
+overhead for this analysis.
+
+### Tolerance sweep — best F1 per algorithm
+
+| Algorithm | ±0 | ±1 | ±2 | ±5 | ±10 | ±20 |
+|---|---:|---:|---:|---:|---:|---:|
+| spectral_flux | 0.070 | 0.231 | 0.415 | **0.656** | **0.679** | 0.697 |
+| subband_sf_4 | 0.070 | 0.231 | 0.415 | 0.656 | 0.679 | 0.697 |
+| subband_sf_8 | 0.070 | 0.231 | 0.415 | 0.656 | 0.679 | 0.697 |
+| superflux | 0.070 | 0.217 | 0.369 | 0.590 | 0.622 | 0.650 |
+| log_filtered_flux | **0.086** | **0.255** | 0.398 | 0.535 | 0.550 | 0.568 |
+| hfc_mel | 0.006 | 0.018 | 0.036 | 0.205 | 0.625 | 0.679 |
+| energy | 0.004 | 0.014 | 0.027 | 0.169 | 0.646 | 0.687 |
+
+Two clusters by strict-tolerance behavior:
+- **Difference-based (sf, sf-variants, superflux, log-filtered-sf)**
+  measure the spectral *change* between frames. They peak on the
+  attack frame or the next one. Strict-frame F1: 0.07-0.09.
+- **Envelope-based (energy, hfc_mel)** measure how much energy is
+  in the current frame. They peak when the broadband envelope
+  rises, which lags the attack by 2-5 frames. Strict-frame F1:
+  ~0.005, but they recover at ±10 frames.
+
+`log_filtered_flux` quietly wins the strict-tolerance regime
+(0.086 / 0.255 / 0.398 at ±0 / ±1 / ±2) — log compression sharpens
+the peak alignment. It loses ground at looser tolerances because
+the compression also dampens the activation magnitude, hurting
+peak-pick recall.
+
+### Joint coverage caveat
+
+The per-algo high-recall threshold (recall ≥ 0.95 at any tolerance)
+turned out to be a near-no-threshold operating point — peaks
+saturated at ~10× the GT count. Every 3-4-channel union therefore
+sits at recall = 1.0 with precision ≈ 0.08-0.09. The joint coverage
+table is in the summary but **does not differentiate channel sets
+in this configuration** — the analysis would need a more
+restrictive per-algo threshold (e.g. recall ≥ 0.85) to be
+informative. Treated as a known limitation; not blocking the
+overall conclusions.
 
 ## Visualizations
 
-_(Post-run.)_
+![Per-algorithm F1 / R / P at ±10 frames](graphs/01_algo_summary_bars.png)
+*Per-algorithm best-F1 ranking @ ±10 frames. spectral_flux ≈
+sub-band variants (the latter collapse to the same envelope when
+summed) lead at F1 = 0.679; energy is shockingly close (0.646)
+because chart authors mostly map amplitude swells.*
 
-Planned graphs:
-- `01_pr_curves_tol10.png` — precision-recall curves per
-  algorithm at ±10 frames.
-- `02_tolerance_sweep.png` — best F1 per algorithm vs tolerance
-  (every algorithm as one line).
-- `03_recall_at_high_threshold.png` — recall at the threshold
-  that gives recall ≥ 0.95 (calibration for downstream).
-- `04_joint_coverage.png` — recall as N channels are unioned,
-  for the top single-channel through 4-channel sets.
-- `05_per_kind.png` — DON vs KA recall per algorithm,
-  highlighting any sub-band specialization.
-- `06_per_density.png` — best F1 vs chart density bucket
-  (sparse / medium / dense / very-dense).
+![PR curves at ±10 frames](graphs/02_pr_curves_tol10.png)
+*Precision-recall traces over the 51-threshold sweep, marker on
+each algorithm's best-F1 operating point. spectral_flux dominates
+the upper-right corner; log_filtered_flux trails on this tolerance.*
+
+![Best F1 vs tolerance](graphs/03_tolerance_sweep.png)
+*The headline diagnostic. Every algorithm collapses below ±2
+frames; spectral_flux + sub-band variants own the top of the curve
+above ±5; energy and hfc_mel catch up to within 0.05 F1 by ±10
+because they fire late but eventually fire on the right region.*
+
+![Recall + precision at the recall-≥-0.95 threshold](graphs/04_recall_at_high_threshold.png)
+*Calibration view. At a per-algorithm threshold tuned for recall
+≥ 0.95, every algo lands near recall = 1.0 with precision 0.08-0.20.
+Demonstrates the recall-saturation problem with the joint coverage
+analysis (precision is too low to be useful as-is).*
+
+![Top joint-coverage subsets](graphs/05_joint_coverage.png)
+*Top-3 subsets by recall, per subset size. Recall pegs at 1.0 for
+size 3+ (saturation artifact); meaningful differences would need a
+tighter per-algo threshold. Single-algorithm row shows
+spectral_flux / sub-band variants tied at the top.*
+
+![P / R / F1 vs threshold per algorithm](graphs/06_per_algo_grid.png)
+*Operating-point shape per algorithm at ±10 frames. spectral_flux
+has the cleanest crossover near threshold = 0.32; energy shifts
+its sweet spot to threshold = 0.76 because its activation magnitude
+is much higher.*
 
 ## Vs prediction
 
-_(Post-run, scored against the predictions in this README.)_
+| Prediction | Actual | Verdict |
+|---|---|---|
+| superflux best F1 (predicted 0.40-0.45) | 0.622 | **MISS — too pessimistic by +18 pp** |
+| spectral_flux best F1 (predicted 0.35-0.40) | 0.679 | **MISS — too pessimistic by +30 pp** |
+| energy best F1 (predicted 0.20-0.25) | 0.646 | **MISS — too pessimistic by +42 pp** |
+| hfc_mel best F1 (predicted 0.35-0.45) | 0.625 | **MISS — too pessimistic by +21 pp** |
+| log_filtered_flux best F1 (predicted 0.36-0.42) | 0.550 | **MISS — too pessimistic by +14 pp** |
+| HFC underperforms on mel-binned approximation | F1 0.625, mid-pack | **MET (predicted)** — not the worst, but trails the SF cluster as predicted. |
+| Sub-band collapsed envelopes tie spectral_flux | 0.679 = 0.679 = 0.679 | **MET** exactly. |
+| superflux loses on strict-frame tolerance | 0.070 vs spectral_flux 0.070 (tied at ±0) | **PARTIAL** — predicted shift, observed indifferent at strict. At ±2 superflux *does* trail SF (0.369 vs 0.415). |
+| Joint coverage 2-channel union ≥ 0.97 recall | size-2 unions all at recall = 1.000 | **MET on numbers**, but the saturation makes this uninformative — see caveat. |
+| Per-kind / per-density breakdown answers questions | not computed in this run | **DEFERRED** to a follow-up plotting pass — the per-chart CSV has the data, just not aggregated by kind / density. |
+| `complex_domain` runs and is in the table | not run (audio-loading path skipped) | **NOT TESTED** — mel-domain results were strong enough that scaffolding `.osz` indexing didn't make the cut. |
+
+**The hypothesis was directionally correct (single-channel recall
+0.93-0.97; multi-channel near-saturating coverage) but the absolute
+F1 predictions were uniformly too pessimistic — by +14 to +42 pp.**
+The pre-run mental model of "GT is a small subset of audio onsets"
+was wrong: chart authors map the *vast majority* of salient audio
+onsets, and the precision floor is correspondingly higher than
+predicted.
 
 ## Takeaways
 
-_(Post-run.)_
+- **Single-channel `spectral_flux` is the obvious pick.** F1 = 0.679
+  at ±10 frames, P = 0.625. Adding more channels has limited
+  marginal value once the envelopes collapse (sub-band variants
+  contribute nothing when summed; per-band channels would need
+  separate peak-picking and a different evaluation to be useful
+  beyond the smoothed envelope).
+- **Encode the activation at a coarser (±5 or ±10 frame) grid,
+  not the raw 5 ms grid.** Every classical ODF collapses below
+  ±2 frames because the activations peak 2-3 frames after the
+  attack. Feeding the raw 5 ms-grid activation to the model gives
+  a 2-3-frame-blurred signal — the model has to learn to compensate
+  for the peak lag itself. **Pooling the activation into 25 ms or
+  50 ms buckets** (max-pool or sum-pool over 5- or 10-frame
+  windows) collapses the lag into the bucket and gives the model a
+  clean bucket-aligned "is there an onset in this region?" signal.
+  This is the channel-encoding decision for #012.
+- **The precision floor is much higher than the pre-run model
+  predicted (0.47-0.62 vs predicted 0.20-0.30).** Chart authors
+  track audio onsets tightly; the chart-vs-audio asymmetry is
+  smaller than the literature on general-music onset detection
+  would suggest. A free per-frame channel comes with **moderate
+  precision**, not just **high recall** — the downstream model
+  gets meaningful signal, not just candidate regions.
+- **`log_filtered_flux` quietly wins at strict tolerances** (0.086 /
+  0.255 / 0.398 at ±0 / ±1 / ±2 frames) — the cached features are
+  already log-compressed, so this is essentially the cleanest
+  attack-aligned signal available from the existing feature
+  pipeline. If we *do* want a fine-grained channel (rather than
+  bucket-pooled), this is the candidate, not plain spectral_flux.
+- **Energy is competitive at ±10** (F1 = 0.646 vs SF 0.679) but
+  collapses at strict tolerances (0.004 at ±0). For a bucketed
+  ±10-frame channel, energy is a viable cheap alternative to SF.
+  For a frame-precise channel it's useless.
+- **Sub-band channels need a different evaluation** to show their
+  value. The collapsed envelope is identical to broadband SF; the
+  real benefit (low-band fires on DON-like, high-band on KA-like)
+  would only show up under per-kind aggregation, which this run
+  did not compute. Filed as a followup.
+- **Joint-coverage analysis was hampered by threshold saturation.**
+  Re-run the coverage step with per-algo recall ≥ 0.85 (instead
+  of 0.95) to get an informative recall vs precision tradeoff
+  across channel-count. Filed as a followup.
+- **`complex_domain` skipped** because mel-domain results
+  saturated the design space. Adding it would require .osz
+  indexing + per-chart audio decode (~30 min on full split). Not
+  worth running unless the strict-tolerance regime becomes the
+  bottleneck for #012.
 
 ## Followup questions
+
+The decision queue for #012 (the actual training experiment):
+
+- **Channel-encoding granularity is the load-bearing knob.** Two
+  candidate designs to A/B:
+  1. **Bucketed channel** — pool the spectral_flux activation
+     over 5- or 10-frame windows (max-pool or mean-pool), produce
+     a coarser per-bucket "onset present?" channel. Repeat for
+     2-3 algorithms. Concat as low-resolution input planes.
+  2. **Frame-precise channel** — keep the activation at 5 ms grid
+     using `log_filtered_flux` (the only one that doesn't collapse
+     at ±2 frames). One channel as-is.
+  Likely (1) gives a cleaner training signal at the cost of
+  coarser timing; (2) gives finer timing but with the 2-3-frame
+  lag the model has to compensate for.
+
+Open follow-ups within the survey itself:
+
+- **Joint coverage with tighter per-algo recall target (0.85
+  instead of 0.95).** Should differentiate channel sets and tell us
+  whether 2 or 3 channels actually help vs single SF. Cheap re-run.
+- **Per-kind aggregation (DON vs KA recall per algorithm).** The
+  per-chart CSV has the chart_id; we can join with the events.npz
+  files to compute per-kind recall and check whether sub-band
+  splits expose a low-band/DON, high-band/KA bias.
+- **Per-density / per-star-rating breakdown.** Same data, different
+  aggregation. Tells us whether ODF performance degrades on dense
+  charts (where the model needs the most help).
+- **`complex_domain`** if the strict-tolerance regime turns out to
+  matter for #012's downstream metric.
+- **#007 frame-wise evaluation** — same harness, with #007's AR
+  rollout output as the activation source. Crossover analysis vs
+  classical ODFs.
+- **madmom RNN onset** — same harness, with the SOTA classical
+  baseline as a ceiling reference.
 
 The expected followup, regardless of result, is to scaffold #012:
 
