@@ -356,41 +356,70 @@ def _joint_coverage(
     gts: list[torch.Tensor],
     *,
     tolerances: tuple[int, ...],
+    progress: bool = True,
 ) -> dict[str, dict[int, dict[str, float]]]:
-    """For every subset of algorithms (size 1..k), what's the union recall
+    """For every subset of algorithms (size 1..k), the union recall
     across charts at each tolerance.
 
     Truncated to subsets of size <= 4 — past 4 the combinatorics blow up
     and the coverage saturates. Returns
     ``{frozenset(algos)-as-tuple: {tol: {recall, precision, f1}}}``.
+
+    Optimizations vs the obvious nested-loop implementation:
+    - Peak tensors moved to CPU once at the start (single sync per
+      algorithm, not per subset × chart × tolerance).
+    - Per-chart union computed once per subset, then reused across all
+      tolerances (the union does not depend on tolerance).
     """
     from itertools import combinations
+
+    # Single-pass GPU->CPU. Avoids the per-evaluate sync that dominates
+    # runtime if peaks_per_algo entries live on GPU.
+    peaks_cpu: dict[str, list[torch.Tensor]] = {
+        a: [p.detach().cpu() for p in lst] for a, lst in peaks_per_algo.items()
+    }
 
     algos = sorted(peaks_per_algo.keys())
     out: dict[str, dict[int, dict[str, float]]] = {}
     max_subset = min(4, len(algos))
 
+    all_combos: list[tuple[str, ...]] = []
     for size in range(1, max_subset + 1):
-        for combo in combinations(algos, size):
-            tag = "+".join(combo)
-            out[tag] = {}
-            for tol in tolerances:
-                tp = fp = fn = 0
-                for chart_idx, gt in enumerate(gts):
-                    union = torch.cat(
-                        [peaks_per_algo[a][chart_idx] for a in combo]
-                    ).sort().values.unique()
-                    ev = evaluate_frames(union, gt, tolerance=tol)
-                    tp += ev.tp
-                    fp += ev.fp
-                    fn += ev.fn
-                p = tp / (tp + fp) if (tp + fp) > 0 else 0.0
-                r = tp / (tp + fn) if (tp + fn) > 0 else 0.0
-                f = (2.0 * p * r) / (p + r) if (p + r) > 0 else 0.0
-                out[tag][tol] = {
-                    "precision": p, "recall": r, "f1": f,
-                    "tp": tp, "fp": fp, "fn": fn,
-                }
+        all_combos.extend(combinations(algos, size))
+
+    iterator: Any = all_combos
+    if progress:
+        try:
+            from tqdm import tqdm
+            iterator = tqdm(
+                all_combos, desc="Joint coverage", unit="subset",
+            )
+        except ImportError:
+            pass
+
+    n_charts = len(gts)
+    for combo in iterator:
+        tag = "+".join(combo)
+        # Pre-compute one union per chart (independent of tolerance).
+        unions: list[torch.Tensor] = []
+        for chart_idx in range(n_charts):
+            cat = torch.cat([peaks_cpu[a][chart_idx] for a in combo])
+            unions.append(torch.unique(cat))     # unique sorts ascending
+        out[tag] = {}
+        for tol in tolerances:
+            tp = fp = fn = 0
+            for chart_idx, gt in enumerate(gts):
+                ev = evaluate_frames(unions[chart_idx], gt, tolerance=tol)
+                tp += ev.tp
+                fp += ev.fp
+                fn += ev.fn
+            p = tp / (tp + fp) if (tp + fp) > 0 else 0.0
+            r = tp / (tp + fn) if (tp + fn) > 0 else 0.0
+            f = (2.0 * p * r) / (p + r) if (p + r) > 0 else 0.0
+            out[tag][tol] = {
+                "precision": p, "recall": r, "f1": f,
+                "tp": tp, "fp": fp, "fn": fn,
+            }
     return out
 
 
@@ -588,7 +617,8 @@ def main(argv: list[str] | None = None) -> int:
     summary = _aggregate(accumulator, thresholds)
     if peaks_high_recall:
         coverage = _joint_coverage(
-            dict(peaks_high_recall), gt_per_chart, tolerances=tolerances,
+            dict(peaks_high_recall), gt_per_chart,
+            tolerances=tolerances, progress=not args.no_progress,
         )
     else:
         coverage = {}
