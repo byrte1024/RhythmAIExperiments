@@ -1,0 +1,5 @@
+chart_id,n_gt,density_mean,star_rating,energy_caught,energy_n_pred,energy_n_tp,hfc_mel_caught,hfc_mel_n_pred,hfc_mel_n_tp,log_filtered_flux_caught,log_filtered_flux_n_pred,log_filtered_flux_n_tp,spectral_flux_caught,spectral_flux_n_pred,spectral_flux_n_tp,subband_sf_4_caught,subband_sf_4_n_pred,subband_sf_4_n_tp,subband_sf_8_caught,subband_sf_8_n_pred,subband_sf_8_n_tp,superflux_caught,superflux_n_pred,superflux_n_tp
+1043364 ICHIKO - I SAY YES (TV Size) [Futsuu],238,2.766,2.009,186,498,186,196,574,196,229,629,229,234,493,234,234,493,234,234,493,234,227,537,227
+1043364 ICHIKO - I SAY YES (TV Size) [Kantan],150,1.765,1.4304,124,498,124,123,574,123,142,629,142,141,493,141,141,493,141,141,493,141,127,537,127
+1043364 ICHIKO - I SAY YES (TV Size) [Muzukashii],353,4.102,3.1381,279,498,279,291,574,291,310,629,310,318,493,318,318,493,318,318,493,318,298,537,298
+1043364 ICHIKO - I SAY YES (TV Size) [Oni],425,4.939,3.8567,326,498,326,343,574,343,342,629,342,355,493,355,355,493,355,355,493,355,323,537,323
