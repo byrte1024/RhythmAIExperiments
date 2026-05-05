@@ -1,0 +1,13 @@
+{
+    "sample_rate": 22000,
+    "n_fft": 2048,
+    "hop_divisor": 200,
+    "n_mels": 80,
+    "f_min": 20.0,
+    "f_max": 8000.0,
+    "power": 2.0,
+    "top_db": 80.0,
+    "n_onset_subbands": 4,
+    "onset_norm_percentile": 99.0,
+    "onset_target_db_range": [-80.0, 0.0]
+}

@@ -17,10 +17,12 @@ from ..domain.dataset import (
     DatasetManifest,
     MelSamplerConfig,
 )
+from ..samplers.mel_onset import MelOnsetSamplerConfig
 
 _CONFIG_REGISTRY: dict[str, type[AudioSamplerConfig]] = {
     "AudioSamplerConfig": AudioSamplerConfig,
     "MelSamplerConfig": MelSamplerConfig,
+    "MelOnsetSamplerConfig": MelOnsetSamplerConfig,
 }
 
 

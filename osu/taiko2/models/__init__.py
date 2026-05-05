@@ -7,6 +7,7 @@ from .event_embedding import (
     EventEmbeddingOutput,
     EventEmbeddingTarget,
 )
+from .onset_augmented import OnsetAugmentedConfig, OnsetAugmentedDetector
 
 __all__ = [
     "AudioConvStem",
@@ -16,5 +17,7 @@ __all__ = [
     "EventEmbeddingOutput",
     "EventEmbeddingTarget",
     "FiLM",
+    "OnsetAugmentedConfig",
+    "OnsetAugmentedDetector",
     "SinusoidalPosEmb",
 ]

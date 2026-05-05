@@ -50,6 +50,10 @@ AUDIO_SAMPLERS: dict[str, tuple[str, str]] = {
         "osu.taiko2.samplers:MelSampler",
         "osu.taiko2.domain:MelSamplerConfig",
     ),
+    "mel_onset": (
+        "osu.taiko2.samplers:MelOnsetSampler",
+        "osu.taiko2.samplers:MelOnsetSamplerConfig",
+    ),
 }
 
 EVENT_SAMPLERS: dict[str, tuple[str, str]] = {
