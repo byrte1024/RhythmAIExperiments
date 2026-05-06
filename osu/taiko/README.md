@@ -1,4 +1,19 @@
-# osu!taiko Onset Detection
+# osu!taiko Onset Detection (legacy)
+
+> **No longer under active development.** Continued work moved to
+> [`osu/taiko2/`](../taiko2/), a re-engineered codebase with a
+> layered architecture (domain ABCs + concrete implementations
+> in sibling packages), stable on-disk formats, frozen-dataclass
+> IO types, and stricter experiment hygiene. New experiments and
+> architectural changes happen there.
+>
+> The trained model and 121 experiments in this directory remain
+> reproducible — the instructions below still work for inference
+> and training the legacy architecture against the legacy dataset
+> pipeline. Old git commits will continue to load and run; on-disk
+> formats here are not being changed.
+>
+> If you're starting fresh, use [`osu/taiko2/`](../taiko2/).
 
 Autoregressive model that predicts beat onset timings for osu!taiko charts given audio and chart context. Given a position in the audio (the "cursor"), the model predicts the bin offset to the next mapped onset — a classification problem at ~5ms resolution. At inference time, predictions are chained autoregressively to generate a full chart.
 
