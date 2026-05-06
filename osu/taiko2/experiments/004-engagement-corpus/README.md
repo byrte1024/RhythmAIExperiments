@@ -127,6 +127,7 @@ No baseline — first corpus pass involving engagement data.
 
 **Join: 10,027 charts** (out of 10,031 chart-metric rows and 10,027
 engagement rows fetched — 4 charts dropped for missing engagement).
+<!-- TODO(cite): inherits #003's "10,031 chart-metric rows" figure, which doesn't match the manifest's 10,048 charts [taiko2_v1/manifest.json] or chart_metrics.csv's 10,048 rows. Please reconcile against the actual analysis output (likely n_charts_used after some filter; see #003's TODO). -->
 100 % of the dataset is `status = "ranked"` — this is not a
 representative "what do players like" sample, it's what mappers and
 nominators pushed through ranking. Genre and language came back
@@ -242,34 +243,49 @@ P9 confirmed with room to spare.
 
 ### Engagement summary
 
-Pull from `engagement_summary.json`.
+All values from
+[`analysis/taiko2_v1/engagement/engagement_summary.json:scalars`].
+n = 10,027 for every row.
 
-| Field | n | min | p25 | median | p75 | p95 | max | mean |
-|---|---:|---:|---:|---:|---:|---:|---:|---:|
-| playcount         | | | | | | | | |
-| passcount         | | | | | | | | |
-| pass_rate         | | | | | | | | |
-| play_count_set    | | | | | | | | |
-| favourite_count   | | | | | | | | |
-| rating_mean       | | | | | | | | |
-| rating_count      | | | | | | | | |
-| bpm_set           | | | | | | | | |
-| nominations_current | | | | | | | | |
+| Field | min | p25 | median | p75 | p95 | max | mean |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| playcount           | 51    | 551   | 1,009  | 1,918  | 5,248   | 60,544     | 1,698.96  |
+| passcount           | 12    | 163   | 286    | 512    | 1,298.7 | 12,327     | 441.61    |
+| pass_rate           | 0.036 | 0.228 | 0.292  | 0.360  | 0.505   | 0.841      | 0.302     |
+| play_count_set      | 117   | 3,102 | 5,925  | 11,552 | 41,504  | 3,496,571  | 17,490.58 |
+| favourite_count     | 2     | 17    | 31     | 56     | 167.7   | 1,932      | 54.84     |
+| rating_mean         | 4.17  | 8.88  | 9.29   | 9.61   | 9.91    | 10.00      | 9.165     |
+| rating_count        | 1     | 16    | 24     | 38     | 89      | 1,415      | 35.60     |
+| bpm_set             | 2.33  | 142   | 173    | 195    | 248     | 336        | 170.78    |
+| nominations_current | 2     | 2     | 2      | 2      | 3       | 5          | 2.07      |
 
-Top categoricals: `status`, `genre`, `language` — top 20 values by
-count. Pull from the same JSON.
+Top categoricals: 100 % `status = "ranked"` (10,027/10,027)
+[`engagement_summary.json:categoricals.status`]. `genre` and
+`language` came back empty from the API.
 
 ### Top correlations
 
 Top-10 highest-|r| pairs from
-`correlations_ranked.csv`. Sign of r is preserved.
+[`analysis/taiko2_v1/engagement/correlations_ranked.csv`].
+Sign of r is preserved.
 
 | # | engagement | chart metric | n | r |
 |---:|---|---|---:|---:|
-| 1 | | | | |
-| 2 | | | | |
-| 3 | | | | |
-| … | | | | |
+| 1  | pass_rate | ioi_mean_ms            | 10,027 | +0.656 |
+| 2  | pass_rate | ioi_median_ms          | 10,027 | +0.622 |
+| 3  | pass_rate | gap_peak_mass_total    | 10,027 | −0.612 |
+| 4  | pass_rate | density_mean           | 10,027 | −0.607 |
+| 5  | pass_rate | ioi_p95_ms             | 10,027 | +0.606 |
+| 6  | pass_rate | events_per_sec         | 10,027 | −0.604 |
+| 7  | pass_rate | star_rating            | 10,027 | −0.601 |
+| 8  | pass_rate | ratio_peak_mass_total  | 10,027 | −0.591 |
+| 9  | pass_rate | total_events           | 10,027 | −0.590 |
+| 10 | pass_rate | density_peak           | 10,027 | −0.588 |
+
+All top-10 are pass_rate × difficulty-proxy correlations. No
+favourite_count or playcount entries reach |r| > 0.5 — see
+"Headline numbers" above for the favourite-count stat
+(max |r| = 0.044).
 
 ## Visualizations
 

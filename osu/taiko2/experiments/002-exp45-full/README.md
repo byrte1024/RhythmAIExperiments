@@ -156,7 +156,13 @@ Differences from taiko1 exp 45 (the numerical reference):
 Run stopped at **eval 11 / step 227,414** — primary metrics plateaued
 and the watched metric was no longer moving meaningfully. `best.pt`
 is eval 11 (`onset/miss = 0.2606`, barely beating eval 8's 0.2608).
-Wall time across 11 evals: ~1.85 hours of training.
+Wall time across 11 evals: **23.27 hours** end-to-end
+[computed from `wall_time` field in
+`runs/exp_002_exp45_full/metrics.jsonl`: E11 timestamp − E1
+timestamp = 83,760 s]. (~2.1 h/eval, with the gap at E5→E6
+covering a long no-eval stretch.) An earlier draft cited
+"~1.85 hours" — that figure is the E1→E2 wall-time delta
+specifically, mistakenly described as a total.
 
 ### Final vs baseline
 

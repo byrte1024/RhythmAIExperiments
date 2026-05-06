@@ -7,7 +7,8 @@
 > IO types, and stricter experiment hygiene. New experiments and
 > architectural changes happen there.
 >
-> The trained model and 121 experiments in this directory remain
+> The trained model and 124 experiment directories
+> [`ls osu/taiko/experiments/ | wc -l`] in this directory remain
 > reproducible — the instructions below still work for inference
 > and training the legacy architecture against the legacy dataset
 > pipeline. Old git commits will continue to load and run; on-disk

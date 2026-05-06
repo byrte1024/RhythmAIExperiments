@@ -194,10 +194,16 @@ adapter, dataset split, optimizer, schedule, seed, cursor-overlap
 
 Run stopped at **eval 11 / step 227,414** — matched #007's stopping
 step exactly. Best val miss was **eval 10 (0.2616 @ step 206,740)**,
-1.50 pp worse than #007's E10 (0.2512 at the same step). The
-trajectory across all 11 evals stayed 1.0–1.5 pp behind #007 with no
-sign of convergence. Wall time: **~24 hours** across 11 evals
-(~2.2 h/eval; same diagnostic-pass overhead as #007).
+1.04 pp worse than #007's E10 (0.2512 at the same step)
+[#008 E10 miss 0.2616, exp_008_log_emd, step 206,740,
+val/single/onset/miss; #007 E10 miss 0.2512,
+exp_007_time_stretch, step 206,740, val/single/onset/miss].
+(The 1.49 pp gap appears at E11 — 0.2642 vs 0.2493 — which is
+where the per-eval table below carries the headline number.)
+The trajectory across all 11 evals stayed 1.0–1.5 pp behind #007
+with no sign of convergence. Wall time: **25.3 hours** across 11
+evals (~2.3 h/eval) [computed as `wall_time` field span across
+eval lines in `runs/exp_008_log_emd/metrics.jsonl`].
 
 The mathematical prediction held: `log_emd` dropped 17 % across the
 run vs trapezoid `soft_CE`'s 4.5 % drop in #007 — the **entropy-

@@ -2,7 +2,27 @@
 
 ## Status
 
-`Planned`
+`Running` — 8 evals completed as of 2026-05-07. Best miss so far
+**0.2454** [exp_012_onset_channels, step 164,560 (E8),
+val/single/onset/miss], beating #007 at the matched step by
+2.1 pp. Run continuing toward the predicted ≤0.235 must-have
+target by E18.
+
+> **Amendment 2026-05-07 (pre-run citation drift):** The
+> Citations section below quotes #007's headline numbers as
+> `hit 0.7333 / exact 0.5568 / stop_f1 0.5831`. Three of those
+> are wrong relative to the actual `runs/exp_007_time_stretch/metrics.jsonl`:
+> - hit 0.7333 → **0.7512** [exp_007_time_stretch, step 372,132,
+>   val/single/onset/hit]
+> - exact 0.5568 → **0.5748** [exp_007_time_stretch, step 372,132,
+>   val/single/onset/exact]
+> - stop_f1 0.5831 → **0.5850** [exp_007_time_stretch, step
+>   372,132, val/single/onset/stop_f1]
+>
+> The pre-run section is left as-written per CLAUDE.md §10
+> (historical predictions don't get silently revised). Use this
+> amendment as the source of truth when scaffolding any future
+> experiment that copies #007's reference numbers from #012.
 
 ## Context
 

@@ -147,7 +147,9 @@ Baseline: [#010](../010-ratio-decomposition/).
 
 Run stopped at **eval 9 / step 186,066**. Best val miss was
 **eval 6 (0.3637 @ step 124,044)**, then drifted between 0.38 and
-0.45 through E7–E9. Wall time: ~19 hours across 9 evals.
+0.45 through E7–E9. Wall time: **20.32 hours** across 9 evals
+[`wall_time` span across eval lines in
+`runs/exp_010d_shared_grad/metrics.jsonl` = 73,150 s].
 
 Shared gradients did not break the plateau. Best-by-miss eval
 trailed #010's best by **3.5 pp** (0.364 vs 0.329). Every other

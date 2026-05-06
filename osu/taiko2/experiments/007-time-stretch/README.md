@@ -196,13 +196,14 @@ cursor-overlap (back to 0 as in #002/#005), evals_per_epoch=4.
 
 Run completed at **eval 20 / step 413,480** with manual stop. Best val
 miss was **eval 18 (0.2406 @ step 372,132)**, beating #002's all-time
-best (0.2606 at step 227,414) by 2.0 pp. Wall time: **~43.7 hours**
-across 20 evals (~2.1 hours per eval, dominated by the per-eval
-benchmark suite + train_noaug pass + per-eval AR corpus inference).
-For reference #002 ran in ~1.85 hours across 11 evals at ~10 min/eval
-without any of those diagnostic passes — the per-eval cost is ~12×
-higher in #007 because we're paying for all the new instrumentation,
-not because the model is slower to train.
+best (0.2606 at step 227,414) by 2.0 pp. Wall time: **43.66 hours**
+across 20 evals (~2.18 hours per eval, dominated by the per-eval
+benchmark suite + train_noaug pass + per-eval AR corpus inference)
+[`wall_time` span across eval lines in
+`runs/exp_007_time_stretch/metrics.jsonl` = 157,168 s].
+For reference #002 ran in 23.27 hours across 11 evals (~2.1 h/eval)
+[`runs/exp_002_exp45_full/metrics.jsonl`, `wall_time` span =
+83,760 s].
 
 **Key honesty caveat for the headline number.** #002 stopped at step
 227,414. #007 only beats #002 by 1.13 pp at the same step count

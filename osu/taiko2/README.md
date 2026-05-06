@@ -46,7 +46,7 @@ Conventions for working in this directory are documented in
 ## Current state of the work
 
 Direct-bin baseline ([#007](experiments/007-time-stretch/)) holds
-the lowest val miss at **0.241** (best, eval 18).
+the lowest val miss at **0.241** (best, eval 18) [exp_007_time_stretch, step 372,132, val/single/onset/miss=0.2406].
 
 See [`experiments/README.md`](experiments/README.md) for the full
 log with status, key result per experiment, and links.
@@ -147,6 +147,7 @@ osu/taiko2/.venv/Scripts/python.exe -m pytest osu/taiko2/tests -q
 
 385 tests covering domain types, persistence round-trips,
 samplers, augmentations, and the autoregressive predictor.
+[385 tests collected, pytest --collect-only osu/taiko2/tests]
 
 ## CLI reference
 
@@ -170,17 +171,27 @@ samplers, augmentations, and the autoregressive predictor.
 The headline numbers and full per-experiment progression live in
 [`experiments/README.md`](experiments/README.md). At a glance:
 
-| Metric                 | Best taiko2 | Experiment                         | Notes                                     |
-| ---------------------- | ----------: | ---------------------------------- | ----------------------------------------- |
-| val/single/onset/miss  |       0.241 | [#007](experiments/007-time-stretch/) | Direct-bin, TimeStretch + 14 augs         |
-| AR `matched_rate`    |       0.612 | [#010e](experiments/010e-aux-frozen/) | Ratio decomposition with frozen aux heads |
-| AR `error_median_ms` |          12 | [#010e](experiments/010e-aux-frozen/) | Same                                      |
-| Per-step rhit          |       0.533 | [#010e](experiments/010e-aux-frozen/) | Within ±3 % log-ratio                    |
+| Metric                                       | Best taiko2 | Experiment                            | Source |
+| -------------------------------------------- | ----------: | ------------------------------------- | ------ |
+| val/single/onset/miss                        |      0.2406 | [#007](experiments/007-time-stretch/) | [exp_007_time_stretch, step 372,132, val/single/onset/miss] |
+| val/single/onset/hit                         |      0.7512 | [#007](experiments/007-time-stretch/) | [exp_007_time_stretch, step 372,132, val/single/onset/hit] |
+| AR `matched_rate` (gt_cond, median)          |      0.7061 | [#007](experiments/007-time-stretch/) | [exp_007_time_stretch, step 413,480, infer_corpus/eval_413480/gt_cond/comparisons_summary.json:fields.matched_rate.median] |
+| AR `error_median_ms` (gt_cond, median)       |           8 | [#007](experiments/007-time-stretch/) | [exp_007_time_stretch, step 248,088+ (multiple late evals), infer_corpus/eval_*/gt_cond/comparisons_summary.json:fields.error_median_ms.median] |
+| Per-step `ratio/rhit` (within ±3 % log-ratio)|      0.5332 | [#010e](experiments/010e-aux-frozen/) | [exp_010e_aux_frozen, step 475,502, val/single/ratio/rhit] |
 
-The val miss baseline (taiko1's exp 44 at 0.257 miss / 73.7 %
-HIT) was beaten by #007 in taiko2 with a smaller intervention
-(direct time-stretch augmentation alone). Subsequent ratio-decomp
-experiments traded val miss for AR generation quality.
+#007 wins per-step *and* AR generation. The ratio-decomposition
+family (#010 → #010e) introduces ratio-space metrics
+(`rhit`, `rgood`, `div_acc`, `off_acc`) that don't apply to
+direct-bin runs, so the #010e row above is for a metric that
+doesn't exist on #007.
+
+The val miss baseline taiko1 exp 44 sat at HIT 73.7 % / MISS
+25.7 % [`osu/taiko/README.md`, "Per-sample (validation set)"
+table]. #007 reaches val/single/onset/miss 0.2406 in taiko2
+[exp_007_time_stretch, step 372,132, val/single/onset/miss],
+beating that baseline with direct time-stretch augmentation
+alone.
+
 
 ## Documentation
 

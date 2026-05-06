@@ -247,7 +247,9 @@ training-mode flag the loop already has.
 
 Run stopped at **eval 28 / step 578,872**. Best val miss was
 **eval 23 (0.3114 @ step 475,502)**, then drifted between 0.31
-and 0.34 through E24–E28. Wall time: ~58 hours across 28 evals.
+and 0.34 through E24–E28. Wall time: **60.29 hours** across
+28 evals [`wall_time` span across eval lines in
+`runs/exp_010e_aux_frozen/metrics.jsonl` = 217,026 s].
 
 The headline number — miss 0.311 — beats #010's best (0.329) by
 **1.8 pp**, but **only because the run trained ~2.3× longer**. At

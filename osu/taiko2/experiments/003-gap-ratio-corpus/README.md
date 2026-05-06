@@ -117,6 +117,7 @@ metrics enabled.
 ## Results summary
 
 Run size: **10,031 charts** from `taiko2_v1` (all, no split filter).
+<!-- TODO(cite): manifest.json reports 10,048 charts [taiko2_v1/manifest.json], chart_metrics.csv has 10,048 rows (1 header + 10,048 data lines). The 10,031 figure is 17 fewer than total — likely "kept after metric computation succeeded" but no `n_charts_used` field is exposed in summary.json. Please supply source or correct to 10,048. -->
 Corpus totals across the kept peak lists: **6,359,239 gaps** distributed
 across gap peaks, **5,316,127 ratios** distributed across ratio peaks.
 

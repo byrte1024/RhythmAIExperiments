@@ -115,7 +115,9 @@ Baseline: [#010](../010-ratio-decomposition/).
 
 Run stopped at **eval 11 / step 227,414**. Best val miss was
 **E9 (0.3260 @ step 186,066)** — marginally below #010's 0.3285 but
-within seed noise. Wall time: ~24.5 hours.
+within seed noise. Wall time: **24.45 hours**
+[`wall_time` span across eval lines in
+`runs/exp_010c_ratio_128/metrics.jsonl` = 88,021 s].
 
 The 128-bin ratio space converged ~2× faster than #010's 255-bin
 (at E5, miss was already at #010's eventual plateau), but the

@@ -113,7 +113,9 @@ Baseline: [#010](../010-ratio-decomposition/).
 
 Run stopped at **eval 12 / step 248,088**. Best val miss was **E12
 (0.3255)**, marginally below #010's best of 0.3285. Wall time:
-~25.4 hours. The plateau formed at E6–E12 around miss ≈ 0.33,
+**25.38 hours** [`wall_time` span across eval lines in
+`runs/exp_010b_ratio_k3/metrics.jsonl` = 91,358 s]. The plateau
+formed at E6–E12 around miss ≈ 0.33,
 rgood ≈ 0.65 — identical to #010's ceiling.
 
 ### Final vs #010

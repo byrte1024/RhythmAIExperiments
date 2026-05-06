@@ -131,7 +131,9 @@ learned in 8 evals across the subsample-16 cut.
 | val/single/onset/stop_f1         | 0.1483  | 0.3069 | +15.9 pp | ↑ good |
 | val/single/onset/frame_err_mean  | 23.5    | 21.5   | −2.0 bins | ↓ good |
 
-Final eval: step **1880**, wall time **≈5 min** from first train step,
+Final eval: step **1880**, wall time **5.07 min** (304 s) from
+first train step [`wall_time` span across eval lines in
+`runs/exp_001_exp45_smoke/metrics.jsonl`],
 epochs **2**, total samples visited ≈ 60 k.
 
 ### Per-eval progression

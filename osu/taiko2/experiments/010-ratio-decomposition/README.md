@@ -210,7 +210,9 @@ at eval time because the val metric's `b_pred` came from the config
 
 Run stopped at **eval 10 / step 206,740**. Best val miss was
 **eval 7 (0.3285 @ step 144,718)**, then plateaued at 0.33 through
-E8–E10. Wall time: ~21.5 hours across 10 evals.
+E8–E10. Wall time: **21.54 hours** across 10 evals
+[`wall_time` span across eval lines in
+`runs/exp_010_ratio/metrics.jsonl` = 77,528 s].
 
 The ratio decomposition works structurally: divisor head hits 72%
 accuracy, ratio head reaches 66% rgood (within ±10%) and 50% rhit

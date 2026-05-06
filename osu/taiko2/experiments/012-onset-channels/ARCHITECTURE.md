@@ -225,8 +225,13 @@ under a fixed trainer seed.
 
 Identical to #007 except the conv stem's first-layer input channel
 count expands from 80 to 84 to accept the augmented mel input.
-Total trainable parameters: **≈ 16.5 M** (the conv stem grows by
-4 × 192 × 7 = 5,376 weights, ~0.03 % of the total).
+Total trainable parameters: **16,359,758** (16.36 M)
+[computed by instantiating `OnsetAugmentedDetector(config)` with
+`config/model.json` and summing `p.numel() for p in model.parameters()`].
+The conv stem grows by 4 × 192 × 7 = 5,376 weights vs #007's
+16,354,382 [#007 instantiated from `007-time-stretch/config/model.json`],
+which is +0.033 % of total — confirming the architecture is
+otherwise identical.
 
 Conditioning MLP (3 → 64 → 64), conv stem
 (**Conv1d(84→192, k=7, s=2)** — the only change from #007 →
