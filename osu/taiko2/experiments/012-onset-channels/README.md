@@ -24,6 +24,46 @@ target by E18.
 > amendment as the source of truth when scaffolding any future
 > experiment that copies #007's reference numbers from #012.
 
+> **Amendment 2026-05-07 (infer.json config bug — AR corpus
+> rerun planned):** `config/infer.json` was copied from
+> [#007's config](../007-time-stretch/config/infer.json) verbatim
+> when this experiment was scaffolded and was not updated for
+> the augmented input. Specifically:
+>
+> - `audio_sampler` was `MelSampler` (80 bands) instead of
+>   `MelOnsetSampler` (80 mel + 4 onset = 84 bands).
+> - `checkpoint` pointed at `runs/exp_007_time_stretch/checkpoints/best.pt`
+>   instead of `runs/exp_012_onset_channels/checkpoints/best.pt`.
+>
+> **Impact analysis:**
+> - **Training-time AR-corpus hook (the per-eval `infer_corpus/eval_*/` runs):
+>   no impact.** `inference/corpus.py:_features_for` reads the
+>   dataset's pre-cached 84-row features directly from
+>   `taiko2_v1_onset/features/*.npy` and feeds them to the model
+>   via `predict_from_features`. The audio sampler is never
+>   invoked at training time. The AR corpus numbers logged so far
+>   are computed against the correct 84-row inputs.
+> - **Standalone `cli.infer` on fresh `.osz` audio: would have
+>   crashed.** The audio sampler would have produced an `(80, T)`
+>   tensor; the conv stem expects 84 input rows. Mismatch error,
+>   not silent corruption — no wrong outputs were ever produced.
+> - **Standalone `cli.infer_corpus`: same as the training-time
+>   hook (uses cached features).** Reliable.
+>
+> **Action taken:** `config/infer.json` has been corrected to
+> `MelOnsetSampler` + the right checkpoint path.
+>
+> **Follow-up at run completion:** rerun `cli.infer_corpus`
+> against this experiment's best checkpoint on the val split with
+> the corrected config. This gives a clean apples-to-apples AR
+> comparison vs #007, which the in-training AR corpus numbers
+> already provide (since the inputs are right) but the rerun
+> formally validates the corrected inference path end-to-end —
+> including the audio decode + 84-row feature derivation we'll
+> need for any real `cli.infer` use. Treat the rerun as the
+> publishable AR result; the in-training AR-corpus numbers as
+> reliable but redundant once the rerun lands.
+
 ## Context
 
 [#007](../007-time-stretch/) is the standing direct-bin baseline at

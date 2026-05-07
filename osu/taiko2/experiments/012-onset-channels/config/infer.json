@@ -1,6 +1,6 @@
 {
-    "_comment": "Inference spec for exp 007's AR-argmax stack. The per-eval InferCorpusHook uses the live model (ignores `checkpoint`); the standalone cli.infer_corpus reads it.",
-    "checkpoint": "osu/taiko2/runs/exp_007_time_stretch/checkpoints/best.pt",
+    "_comment": "Inference spec for #012's AR-argmax stack on top of OnsetAugmentedDetector. The per-eval InferCorpusHook uses predict_from_features against the dataset's pre-cached 84-row features (audio_sampler bypassed); standalone cli.infer + cli.infer_corpus instantiate audio_sampler to compute 84-row features from raw audio. n_mels here matches the dataset's MelOnsetSamplerConfig (80 mel + 4 onset subbands = 84 rows).",
+    "checkpoint": "osu/taiko2/runs/exp_012_onset_channels/checkpoints/best.pt",
     "predictor": {
         "__class__": "osu.taiko2.inference.autoregressive.predictor:AutoregressivePredictor",
         "config": {
@@ -29,9 +29,9 @@
         }
     },
     "audio_sampler": {
-        "__class__": "osu.taiko2.samplers.mel:MelSampler",
+        "__class__": "osu.taiko2.samplers.mel_onset:MelOnsetSampler",
         "config": {
-            "__class__": "osu.taiko2.domain.dataset:MelSamplerConfig",
+            "__class__": "osu.taiko2.samplers.mel_onset:MelOnsetSamplerConfig",
             "sample_rate": 22000,
             "n_fft": 2048,
             "hop_divisor": 200,
@@ -39,7 +39,10 @@
             "f_min": 20.0,
             "f_max": 8000.0,
             "power": 2.0,
-            "top_db": 80.0
+            "top_db": 80.0,
+            "n_onset_subbands": 4,
+            "onset_norm_percentile": 99.0,
+            "onset_target_db_range": [-80.0, 0.0]
         }
     },
     "event_sampler": {
