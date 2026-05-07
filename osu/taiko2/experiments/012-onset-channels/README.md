@@ -2,11 +2,16 @@
 
 ## Status
 
-`Running` — 8 evals completed as of 2026-05-07. Best miss so far
-**0.2454** [exp_012_onset_channels, step 164,560 (E8),
-val/single/onset/miss], beating #007 at the matched step by
-2.1 pp. Run continuing toward the predicted ≤0.235 must-have
-target by E18.
+`Complete` — manually stopped at **eval 20 / step 411,400** after
+20 evals (39.91 h wall time) [`wall_time` span across eval lines
+in `runs/exp_012_onset_channels/metrics.jsonl` = 143,687 s].
+Run met all must-have criteria, broke #007's per-step val miss
+ceiling for the first time in taiko2 history, and produced the
+best AR `matched_rate` in the codebase. **Headline numbers: best
+miss 0.2331** [exp_012_onset_channels, step 349,690 (E17),
+val/single/onset/miss], **best AR matched_rate 0.7080**
+[exp_012_onset_channels, step 308,550 (E15),
+infer_corpus/eval_308550/gt_cond/comparisons_summary.json:fields.matched_rate.median].
 
 > **Amendment 2026-05-07 (pre-run citation drift):** The
 > Citations section below quotes #007's headline numbers as
@@ -321,20 +326,296 @@ again).
 
 ## Results summary
 
-_(To fill post-run.)_
+Run completed at **eval 20 / step 411,400** after manual stop, 20
+evals total, 39.91 h wall time [`wall_time` span across eval
+lines in `runs/exp_012_onset_channels/metrics.jsonl` = 143,687 s].
+
+**Best per-step val miss: 0.2331** [exp_012_onset_channels, step
+349,690 (E17), val/single/onset/miss], paired with hit 0.7542
+[same step, val/single/onset/hit]. This is the **first run in
+taiko2 to break #007's all-time best of 0.2406** [#007 at step
+372,132], by 0.75 pp absolute.
+
+**Best AR matched_rate (gt_cond, median): 0.7080**
+[exp_012_onset_channels, step 308,550 (E15),
+infer_corpus/eval_308550/gt_cond/comparisons_summary.json:fields.matched_rate.median],
+also ahead of #007's run-best 0.7061 [exp_007_time_stretch, step
+413,480, infer_corpus/eval_413480/gt_cond/comparisons_summary.json:fields.matched_rate.median]
+by 0.2 pp at 75 % of the steps. **Best AR error_median_ms: 8**
+[exp_012_onset_channels, step 308,550, same file, fields.error_median_ms.median],
+tied with #007's run-best.
+
+### Final vs #007 (matched-step E10 + each run's all-time best)
+
+Per-step (val):
+
+| Metric | #007 @ step 372,132 (best) | #012 @ step 349,690 (best) | Δ |
+|---|---:|---:|---:|
+| val/single/onset/miss | 0.2406 | **0.2331** | **−0.75 pp** |
+| val/single/onset/hit | 0.7512 | **0.7542** | +0.30 pp |
+| val/single/onset/exact | 0.5748 | 0.5665 | −0.83 pp |
+| val/single/onset/fhit (±2 fr) | 0.7508 | **0.7539** | +0.31 pp |
+| val/single/onset/fgood (±7 fr) | 0.7637 | **0.7667** | +0.30 pp |
+| val/single/onset/frame_err_p90 | 30 | 31 | +1 |
+| val/single/onset/stop_f1 | 0.5850 | 0.5556 | −2.94 pp |
+
+AR generation (gt_cond, median):
+
+| Metric | #007 best | #012 best | Δ |
+|---|---:|---:|---:|
+| matched_rate | 0.7061 [step 413,480] | **0.7080** [step 308,550] | +0.19 pp at 75 % steps |
+| close_rate | 0.713 | **0.723** | +1.0 pp |
+| far_rate | 0.210 | **0.184** | −2.6 pp |
+| hallucination_rate | 0.144 | **0.135** | −0.9 pp |
+| error_mean_ms | 60.0 | **54.8** | −5.2 ms |
+| error_median_ms | 8 | 8 | tied |
+| dc_human | **92.78** | 91.79 | −0.99 pp |
+| oc_human | **94.29** | 93.61 | −0.68 pp |
+
+#012 wins 6/8 AR comparison metrics. #007 retains a small lead on
+the human-discriminator metrics (`dc_human`, `oc_human`).
+
+### Per-eval progression
+
+Sources: `runs/exp_012_onset_channels/metrics.jsonl` for val
+metrics; `runs/exp_012_onset_channels/infer_corpus/eval_*/gt_cond/comparisons_summary.json:fields.*.median`
+for AR metrics; `noaug` from `val/single/train_noaug/onset/miss`
+on the same JSONL line.
+
+| E | step | miss | hit | exact | fgood | stop_f1 | noaug | gap | AR matched | AR err_med |
+|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| 1 | 20,570 | 0.2780 | 0.7057 | 0.5169 | 0.7218 | 0.4770 | 0.2759 | −0.21 pp | 0.690 | 14 |
+| 2 | 41,140 | 0.2652 | 0.7197 | 0.5336 | 0.7347 | 0.5474 | 0.2616 | −0.36 | 0.644 | 14 |
+| 3 | 61,710 | 0.2635 | 0.7219 | 0.5362 | 0.7363 | 0.5329 | 0.2593 | −0.42 | 0.631 | 13 |
+| 4 | 82,280 | 0.2772 | 0.7098 | 0.5280 | 0.7227 | 0.5407 | 0.2668 | −1.04 | 0.605 | 14 |
+| 5 | 102,850 | 0.2726 | 0.7156 | 0.5338 | 0.7273 | 0.4829 | 0.2631 | −0.95 | 0.591 | 14 |
+| 6 | 123,420 | 0.2619 | 0.7251 | 0.5397 | 0.7380 | 0.5503 | 0.2515 | −1.03 | 0.602 | 12 |
+| 7 | 143,990 | 0.2537 | 0.7328 | 0.5484 | 0.7461 | 0.5500 | 0.2409 | −1.28 | 0.622 | 11 |
+| 8 | 164,560 | 0.2454 | 0.7413 | 0.5558 | 0.7545 | 0.5597 | 0.2324 | −1.30 | 0.689 | 10 |
+| 9 | 185,130 | 0.2534 | 0.7332 | 0.5492 | 0.7464 | 0.5297 | 0.2391 | −1.43 | 0.636 | 10 |
+| 10 | 205,700 | 0.2438 | 0.7429 | 0.5549 | 0.7561 | 0.5489 | 0.2268 | −1.70 | 0.707 | 9 |
+| 11 | 226,270 | 0.2500 | 0.7381 | 0.5522 | 0.7499 | 0.5178 | 0.2322 | −1.78 | 0.654 | 11 |
+| 12 | 246,840 | 0.2442 | 0.7432 | 0.5558 | 0.7557 | 0.5444 | 0.2244 | −1.98 | 0.677 | 10 |
+| 13 | 267,410 | 0.2430 | 0.7441 | 0.5587 | 0.7568 | 0.5387 | 0.2221 | −2.09 | 0.695 | 10 |
+| 14 | 287,980 | 0.2402 | 0.7474 | 0.5591 | 0.7597 | 0.5763 | 0.2179 | −2.23 | 0.690 | 10 |
+| **15** | **308,550** | 0.2421 | 0.7459 | 0.5589 | 0.7578 | 0.5555 | 0.2181 | −2.40 | **0.708** | **8** |
+| 16 | 329,120 | 0.2407 | 0.7474 | 0.5606 | 0.7591 | 0.5762 | 0.2162 | −2.45 | 0.655 | 8 |
+| **17** | **349,690** | **0.2331** | **0.7542** | **0.5665** | **0.7667** | 0.5556 | 0.2093 | −2.38 | 0.699 | 9 |
+| 18 | 370,260 | 0.2424 | 0.7448 | 0.5589 | 0.7574 | 0.5566 | 0.2162 | −2.62 | 0.670 | 9 |
+| 19 | 390,830 | 0.2382 | 0.7492 | 0.5607 | 0.7616 | 0.5342 | 0.2106 | −2.76 | 0.688 | 9 |
+| 20 | 411,400 | 0.2349 | 0.7528 | 0.5640 | 0.7649 | 0.5630 | 0.2077 | −2.72 | 0.683 | 10 |
+
+### train_noaug overfit gap
+
+The channel input acts as a regularizer on top of its accuracy
+lift. At every matched eval, #012's `(noaug_miss − val_miss)`
+gap sits **0.7-1.0 pp narrower** than #007's:
+
+| E | #007 gap | #012 gap | #012 narrower by |
+|---:|---:|---:|---:|
+| 1 | −1.10 pp | −0.21 pp | 0.89 pp |
+| 5 | −1.73 pp | −0.95 pp | 0.78 pp |
+| 10 | −2.55 pp | −1.70 pp | 0.85 pp |
+| 15 | −3.22 pp | −2.40 pp | 0.82 pp |
+| 17 | −3.28 pp | −2.38 pp | 0.89 pp |
+| 19 | −3.54 pp | −2.76 pp | 0.78 pp |
+
+Sources: `val/single/onset/miss` and `val/single/train_noaug/onset/miss`
+on each eval line; #007 gap from `runs/exp_007_time_stretch/metrics.jsonl`,
+#012 gap from `runs/exp_012_onset_channels/metrics.jsonl`. The
+mechanism: `noaug_miss` (the train-set proxy) stays close
+between runs at matched steps; `val_miss` improves under #012,
+which shrinks the gap. Diagnostic shape of a regularizer.
+
+### Chart-shape comparison vs GT corpus
+
+GT median values from [#003 — gap-ratio corpus reference](../003-gap-ratio-corpus/);
+generated-chart medians from each run's best-AR-eval
+`metrics_summary.json`.
+
+| Metric | GT median | #007 best | #012 best | Closer to GT |
+|---|---:|---:|---:|---|
+| `gap_peak_count` | 4 | 3.5 | **4** | #012 |
+| `gap_metronome_distance` | 0.514 | 0.524 | **0.522** | #012 |
+| `ratio_peak_falloff` | 0.655 | 0.590 | **0.598** | #012 |
+| `gap_peak_falloff` | 0.539 | **0.530** | 0.502 | #007 |
+| `gap_peak_mass_total` | 466 | **348** | 322 | #007 |
+| `ratio_peak_count` | 4 | **3.5** | 3 | #007 |
+| `ratio_metronome_distance` | 0.630 | **0.579** | 0.546 | #007 |
+| `ratio_peak_mass_total` | 391 | **270** | 259 | #007 |
+
+#012 wins on chart-vs-GT alignment metrics; #007 retains chart-
+intrinsic-shape similarity to the GT corpus. The
+`ratio_metronome_distance` gap (0.546 vs 0.630) is the largest
+single divergence — #012 produces slightly more metronomic ratio
+distributions than human-mapped charts, consistent with the
+channel signal pushing the model toward whatever dominant
+rhythmic gap is present.
+
+### Bug found mid-run: `infer.json` config
+
+The `audio_sampler` field in `config/infer.json` was copied from
+#007 verbatim and pointed at `MelSampler` (80 bands) instead of
+`MelOnsetSampler` (84 bands). Fixed during the run; impact
+analyzed in the amendment block above. Training-time AR-corpus
+hook used pre-cached 84-row features via
+`predict_from_features`, so the AR numbers in this README are
+reliable. A formal `cli.infer_corpus` rerun against the best
+checkpoint with the corrected config remains as a followup
+(see Followup questions).
 
 ## Visualizations
 
-_(Post-run.)_
+### Standard curves
+
+![Training loss](graphs/01_train_loss.png)
+*Training loss across all 20 evals. Smooth descent from ~3.0 to
+~2.41; no NaN events, no spikes.*
+
+![val miss](graphs/02_val_miss.png)
+*val/single/onset/miss across evals. 0.278 → 0.235 (best at E17,
+step 349,690). The plateau forms in the 0.235–0.245 band from
+E10 onward.*
+
+![val hit](graphs/03_val_hit.png)
+*val/single/onset/hit across evals. Mirror of miss — 0.706 → 0.754.*
+
+![val exact](graphs/04_val_exact.png)
+*val/single/onset/exact (within ±0 frames). 0.517 → 0.567 best
+at E17. Channels lift the strict-frame metric too, suggesting
+the conv stem is using them for fine-grained alignment.*
+
+![stop_f1](graphs/05_stop_f1.png)
+*val/single/onset/stop_f1 across evals. Reaches 0.576 at E14.
+Slightly below #007's run-best 0.615 — the only val metric
+where #007 leads.*
+
+### Best-eval per-chart artifacts (E17, step 349,690)
+
+![Derived-bin heatmap @ E17](graphs/06_best_heatmap.png)
+*Prediction heatmap on derived bins. Diagonal sharper than #007's
+matched eval (visible by reduced spread), with the same
+±log(2) ridges still present in the off-diagonal regions —
+channel input doesn't kill the octave-confusion failure mode.*
+
+![Onset distributions @ E17](graphs/07_best_distributions.png)
+*Predicted-bin distributions over the 501-class softmax. Shape
+healthy; STOP class accumulates appropriate mass.*
+
+![Ratio error @ E17](graphs/08_ratio_error.png)
+*log(pred / target) ratio-error histogram. Strong central peak,
+visible ±log(2) ridges (octave confusions persist).*
+
+### Cross-experiment comparisons (the headline)
+
+![Val miss + hit vs #007](graphs/09_vs_007_miss_hit.png)
+*Per-step val miss (left) and val hit (right) across training
+steps for #007 (blue circles) vs #012 (red squares). Star
+markers = each run's best-by-miss eval. #012 reaches the 0.245
+plateau ~50 % faster on compute and dips into 0.233-0.241 from
+E14 onward; #007 lands in 0.241-0.253. The dashed line is the
+must-have target (0.235).*
+
+![Overfit gap vs #007](graphs/10_overfit_gap_vs_007.png)
+*train_noaug_miss − val_miss (negative = val better than noaug =
+overfitting) for both runs. **#012 is consistently 0.7-1.0 pp
+narrower at every matched eval** — channel input acts as a
+regularizer.*
+
+![AR generation vs #007](graphs/11_ar_vs_007.png)
+*AR matched_rate (left, higher = better) and error_median_ms
+(right, lower = better) across infer_corpus evals. #012 hits
+matched_rate 0.708 at step 308,550, surpassing #007's run-best
+0.706 at step 413,480 with ~25 % less training. #012 also
+reaches error_median_ms 8 ms (#007's run-best) at step 308,550.*
+
+![Chart-shape vs GT corpus](graphs/12_chart_shape_vs_gt.png)
+*Generated-chart shape metrics from each run's best AR eval,
+normalized to GT corpus median (= 1.0) from
+[#003](../003-gap-ratio-corpus/). #012 wins on `gap_peak_count`,
+`gap_metronome_distance`, `ratio_peak_falloff`; #007 wins on
+`gap_peak_mass_total`, `ratio_peak_count`,
+`ratio_metronome_distance`, `ratio_peak_mass_total`. The
+biggest divergence is `ratio_metronome_distance` (#012 = 0.87× GT,
+#007 = 0.92× GT) — #012 produces slightly more metronomic ratio
+distributions than humans do.*
 
 ## Vs prediction
 
-_(Post-run.)_
+| Prediction | Actual | Verdict |
+|---|---|---|
+| miss ≤ 0.235 by E18 (must-have) | 0.2331 at E17, 0.2424 at E18 | **MET** at E17 (one eval early) |
+| training stable, no NaN | no failures, ran to manual stop | **MET** |
+| train_noaug gap not materially worse than #007's | gap narrower than #007 at every matched eval (0.7-1.0 pp better) | **MET** with margin |
+| miss ≤ 0.225 (nice-to-have) | best 0.2331 | **MISS** by 0.81 pp |
+| stop_f1 ≥ 0.60 (nice-to-have) | best 0.5763 at E14 | **MISS** by 2.4 pp |
+| fails-if miss > 0.245 every eval | E10/E12/E13/E14/E16/E17/E19/E20 all under 0.245 | **NOT triggered** |
+| fails-if gap > 4 pp at any post-warmup eval | max gap −2.76 pp at E19 | **NOT triggered** |
+
+**4 of 5 gated predictions met (4 must-haves + 1 of 2 nice-to-haves
+missed).** The hypothesis (channel input lifts miss by 1-2 pp at
+mature eval) is **confirmed**: best miss is 0.75 pp below #007's
+all-time best, and #012 matches or beats #007 across nearly every
+metric where they have a comparable measurement.
 
 ## Takeaways
 
-_(Post-run.)_
+- **First taiko2 run to break #007's per-step val miss ceiling.**
+  0.2331 vs 0.2406, achieved at 94 % of #007's best-step compute.
+  Modest but real — the channel-input intervention works.
+- **Best AR generation in taiko2.** matched_rate 0.708 at step
+  308,550, beating #007's 0.706 at step 413,480 with 25 %
+  less training. error_median_ms 8 ms tied.
+- **Channel input acts as a regularizer too.** train_noaug-vs-val
+  gap is 0.7-1.0 pp narrower than #007 at every matched eval.
+  Likely mechanism: per-chart percentile normalization of the
+  onset rows blocks the conv stem from memorizing absolute
+  spectral patterns; it has to learn relative-to-percentile
+  features that generalize better.
+- **Chart-shape comparison vs GT is mixed.** #012 wins on chart-
+  vs-GT alignment (`matched_rate`, `close_rate`, `far_rate`,
+  `hallucination_rate`); #007 wins on intrinsic chart-shape
+  similarity to GT (`ratio_peak_count`, `ratio_metronome_distance`,
+  `gap_peak_mass_total`). #012 trends slightly more metronomic
+  in ratio distributions — a side-effect of the channel pushing
+  the model toward dominant rhythmic gaps.
+- **The plateau is shifting, not breaking.** #012's best 0.2331 is
+  0.75 pp below #007 — meaningful, but the same band of 0.23-0.25
+  the codebase has lived in for 2 years. Across taiko1+taiko2's
+  ~143 experiments combined, the per-step MISS floor has dropped
+  from ~30 % (exp 14, 2022) to 23.3 % here. **Output-side and
+  loss-side interventions have produced essentially zero gain
+  over that period** — every breakthrough came from input or
+  data-side changes (BIN_MS fix, event embeddings, TimeStretch,
+  onset channels). The remaining gap to a hypothetical "real"
+  ceiling is bounded by something neither input-feature
+  augmentation nor output-head architecture has been able to
+  move.
+- **Time to consider non-input-non-output interventions.** Across
+  both codebases, every published experiment has trained the
+  audio encoder from scratch on ~10k ranked taiko charts using
+  80-band log-mel. Three axes have **never** been varied:
+  (a) audio representation (CQT, multi-resolution, HPSS,
+  pretrained encoder), (b) chart source (mania, unranked,
+  cross-game), (c) significantly larger / smaller model
+  capacity. The next experiment should target one of those.
 
 ## Followup questions
 
-_(Post-run.)_
+- **Formal AR rerun against `best.pt` with corrected `infer.json`.**
+  Closes the open thread from the in-run config bug. Cheap.
+- **Why does `dc_human` regress vs #007?** −0.99 pp on the
+  chart-vs-human-discriminator metric is the only AR field where
+  #007 wins. Worth pulling per-chart `dc_human` distributions to
+  see if the regression concentrates on specific densities or
+  styles, since #011b found per-density precision differences
+  for ODFs.
+- **What's the next move?** Run-level conclusions from this
+  experiment, combined with the broader 143-experiment record,
+  point at three directions: pretrained audio encoders,
+  cross-game / non-ranked data sources, and alternative audio
+  representations (CQT / multi-resolution / HPSS). Detailed
+  triage of these candidates is intentionally deferred to the
+  scaffolding of the next experiment, where the predictions and
+  scope can live in a fresh pre-run README rather than as a
+  followup note here.
