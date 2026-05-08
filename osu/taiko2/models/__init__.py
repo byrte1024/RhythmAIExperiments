@@ -7,10 +7,15 @@ from .event_embedding import (
     EventEmbeddingOutput,
     EventEmbeddingTarget,
 )
+from .conformer_block import ConformerBlock
+from .conformer_detector import ConformerDetector, ConformerDetectorConfig
 from .onset_augmented import OnsetAugmentedConfig, OnsetAugmentedDetector
 
 __all__ = [
     "AudioConvStem",
+    "ConformerBlock",
+    "ConformerDetector",
+    "ConformerDetectorConfig",
     "EventEmbeddingConfig",
     "EventEmbeddingDetector",
     "EventEmbeddingInput",
