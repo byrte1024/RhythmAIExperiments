@@ -161,6 +161,11 @@ def assemble_predictor(
     model.eval()
 
     decoder = build_component(spec["decoder"])
+    # Some decoders (e.g. DiffusionDecoder) need a reference to the
+    # model to wire their internal sampler against the model's
+    # process / denoiser. The bind_model hook is opt-in.
+    if hasattr(decoder, "bind_model"):
+        decoder.bind_model(model)
     input_builder = build_component(spec["input_builder"])
     audio_sampler = build_component(spec["audio_sampler"])
     event_sampler = build_component(spec["event_sampler"])
@@ -202,6 +207,8 @@ def assemble_predictor_with_model(
     predictor config) are built from the spec.
     """
     decoder = build_component(spec["decoder"])
+    if hasattr(decoder, "bind_model"):
+        decoder.bind_model(model)
     input_builder = build_component(spec["input_builder"])
     audio_sampler = build_component(spec["audio_sampler"])
     event_sampler = build_component(spec["event_sampler"])

@@ -1,0 +1,8 @@
+{
+    "__class__": "osu.taiko2.training.diffusion_loss:DiffusionLossConfig",
+    "loss_type": "mse",
+    "snr_weighting": false,
+    "snr_gamma": 5.0,
+    "stop_weight": 1.5,
+    "n_t_buckets": 4
+}

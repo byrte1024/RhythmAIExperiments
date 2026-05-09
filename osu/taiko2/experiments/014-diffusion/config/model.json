@@ -1,0 +1,36 @@
+{
+    "__class__": "osu.taiko2.models.diffusion_detector:DiffusionDetectorConfig",
+    "n_mels": 80,
+    "d_model": 384,
+    "n_layers": 8,
+    "n_heads": 8,
+    "dropout": 0.1,
+    "c_events": 128,
+    "gap_ratios": true,
+    "cond_dim": 64,
+    "a_bins": 500,
+    "b_bins": 500,
+    "b_pred": 500,
+    "schedule_config": {
+        "__class__": "osu.taiko2.diffusion.schedules:CosineScheduleConfig",
+        "n_steps": 64,
+        "s": 0.008,
+        "max_beta": 0.999
+    },
+    "process_config": {
+        "__class__": "osu.taiko2.diffusion.processes:GaussianContinuousProcessConfig",
+        "n_bins": 501,
+        "parameterization": "x0",
+        "x0_scale": 2.0
+    },
+    "denoiser_config": {
+        "__class__": "osu.taiko2.diffusion.denoisers:MLPDenoiserConfig",
+        "d_model": 384,
+        "n_bins": 501,
+        "time_embed_dim": 128,
+        "time_embed_proj_dim": 256,
+        "hidden_dim": 1536,
+        "n_layers": 3,
+        "dropout": 0.1
+    }
+}

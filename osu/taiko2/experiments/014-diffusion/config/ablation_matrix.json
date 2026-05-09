@@ -1,0 +1,10 @@
+[
+    {"name": "ddim_16_e0_n1", "sampler_overrides": {"n_inference_steps": 16, "eta": 0.0}, "decoder_overrides": {"n_samples": 1}},
+    {"name": "ddim_4_e0_n1",  "sampler_overrides": {"n_inference_steps": 4,  "eta": 0.0}, "decoder_overrides": {"n_samples": 1}},
+    {"name": "ddim_8_e0_n1",  "sampler_overrides": {"n_inference_steps": 8,  "eta": 0.0}, "decoder_overrides": {"n_samples": 1}},
+    {"name": "ddim_32_e0_n1", "sampler_overrides": {"n_inference_steps": 32, "eta": 0.0}, "decoder_overrides": {"n_samples": 1}},
+    {"name": "ddim_16_e1_n1", "sampler_overrides": {"n_inference_steps": 16, "eta": 1.0}, "decoder_overrides": {"n_samples": 1}},
+    {"name": "ddim_16_e0_n4", "sampler_overrides": {"n_inference_steps": 16, "eta": 0.0}, "decoder_overrides": {"n_samples": 4}},
+    {"name": "ddim_16_e1_n4", "sampler_overrides": {"n_inference_steps": 16, "eta": 1.0}, "decoder_overrides": {"n_samples": 4}},
+    {"name": "ddpm_64_e1_n1", "sampler_overrides": {"__class__": "osu.taiko2.domain.diffusion:DiffusionSamplerConfig", "n_inference_steps": 64}, "decoder_overrides": {"n_samples": 1}}
+]

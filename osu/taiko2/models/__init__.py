@@ -9,6 +9,11 @@ from .event_embedding import (
 )
 from .conformer_block import ConformerBlock
 from .conformer_detector import ConformerDetector, ConformerDetectorConfig
+from .diffusion_detector import (
+    DiffusionDetector,
+    DiffusionDetectorConfig,
+    DiffusionModelOutput,
+)
 from .onset_augmented import OnsetAugmentedConfig, OnsetAugmentedDetector
 
 __all__ = [
@@ -16,6 +21,9 @@ __all__ = [
     "ConformerBlock",
     "ConformerDetector",
     "ConformerDetectorConfig",
+    "DiffusionDetector",
+    "DiffusionDetectorConfig",
+    "DiffusionModelOutput",
     "EventEmbeddingConfig",
     "EventEmbeddingDetector",
     "EventEmbeddingInput",

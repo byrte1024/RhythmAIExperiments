@@ -76,6 +76,11 @@ def _build_from_json(path: Path) -> Any:
     """Read a JSON file shaped like ``{"__class__": "...", ...}`` and
     instantiate the config class, stripping any underscore-prefixed
     comment keys the file may carry for human notes.
+
+    Recurses into nested dict fields that themselves carry
+    ``__class__`` (polymorphic sub-configs, e.g. #014's diffusion
+    schedule / process / denoiser), instantiating each as its declared
+    concrete class.
     """
     data = _load_config_json(path)
     cls_name = data.pop("__class__")
@@ -86,9 +91,13 @@ def _build_from_json(path: Path) -> Any:
     cls = _resolve_class(cls_name)
     known = {f.name for f in fields(cls)}
     filtered = {k: v for k, v in data.items() if k in known}
-    # tuple restoration for fields that store tuples-of-tuples in JSON.
     for key, val in list(filtered.items()):
-        if isinstance(val, list):
+        if isinstance(val, dict) and "__class__" in val:
+            # Polymorphic sub-config — defer to inference.spec.build_config
+            # which knows how to recurse + coerce enums + tuples.
+            from ..inference.spec import build_config
+            filtered[key] = build_config(val)
+        elif isinstance(val, list):
             # list-of-lists → tuple-of-tuples (split_ratios, etc).
             if val and isinstance(val[0], list):
                 filtered[key] = tuple(tuple(x) for x in val)
@@ -308,8 +317,14 @@ def main(argv: list[str] | None = None) -> int:
 
     # 3. Model + loss + adapter + metrics + artifacts.
     is_ratio_mode = isinstance(model_cfg, RatioDetectorConfig)
+    from ..models.diffusion_detector import (
+        DiffusionDetector, DiffusionDetectorConfig,
+    )
+    is_diffusion_mode = isinstance(model_cfg, DiffusionDetectorConfig)
     if is_ratio_mode:
         model = RatioDetector(model_cfg)
+    elif is_diffusion_mode:
+        model = DiffusionDetector(model_cfg)
     else:
         model = EventEmbeddingDetector(model_cfg)
     if isinstance(loss_cfg, GaussianCELossConfig):
@@ -323,7 +338,17 @@ def main(argv: list[str] | None = None) -> int:
     elif isinstance(loss_cfg, OnsetLossConfig):
         loss = OnsetLoss(loss_cfg)
     else:
-        raise TypeError(f"unsupported loss config: {type(loss_cfg).__name__}")
+        from ..training.diffusion_loss import DiffusionLoss, DiffusionLossConfig
+        if isinstance(loss_cfg, DiffusionLossConfig):
+            loss = DiffusionLoss(loss_cfg)
+        else:
+            raise TypeError(f"unsupported loss config: {type(loss_cfg).__name__}")
+    # Diffusion: bind model components into the loss so it can run the
+    # q_sample + denoiser forward inline (the train loop calls
+    # model.predict generically, which for DiffusionDetector returns
+    # only the cursor token).
+    if is_diffusion_mode and hasattr(loss, "bind_model"):
+        loss.bind_model(model)
     if is_ratio_mode:
         adapter_cfg = _with(adapter_cfg, ratio_mode=True)
     adapter = DetectionSampleAdapter(adapter_cfg)
