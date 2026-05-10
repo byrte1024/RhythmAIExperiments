@@ -162,6 +162,47 @@ _SUMMARY_KEYS_GT: tuple[str, ...] = (
 )
 
 
+def _write_aggregate_summary(
+    *,
+    summary_rows: list[dict[str, Any]],
+    out_dir: Path,
+    base_spec: str,
+    matrix_path: str,
+    ds_root: str,
+    split: str,
+) -> None:
+    """Write the aggregate ``summary.csv`` + ``summary.json`` from the
+    rows accumulated so far. Called after every variant so the partial
+    sweep is queryable on disk in real time."""
+    if not summary_rows:
+        return
+    all_keys: list[str] = []
+    seen: set[str] = set()
+    for row in summary_rows:
+        for k in row:
+            if k not in seen:
+                all_keys.append(k)
+                seen.add(k)
+    with (out_dir / "summary.csv").open(
+        "w", newline="", encoding="utf-8",
+    ) as f:
+        w = csv.DictWriter(f, fieldnames=all_keys)
+        w.writeheader()
+        for row in summary_rows:
+            w.writerow(row)
+    with (out_dir / "summary.json").open("w", encoding="utf-8") as f:
+        json.dump(
+            {
+                "base_spec": base_spec,
+                "matrix": matrix_path,
+                "dataset": ds_root,
+                "split": split,
+                "rows": summary_rows,
+            },
+            f, indent=2,
+        )
+
+
 def _read_summary(variant_dir: Path) -> dict[str, float]:
     """Read the gt_cond comparisons_summary.json and pull a flat dict
     of medians for the canonical fields. Missing fields land as None."""
@@ -207,6 +248,7 @@ def main(argv: list[str] | None = None) -> int:
 
     # Build the val sampler once; reuse across variants.
     sampler_cfg = TaikoDetectionSamplerConfig(
+        batch_size=1,                      # AR inference is per-cursor; bs unused
         dataset_root=ds_root, split=split, split_ratios=split_ratios,
         split_seed=split_seed,
     )
@@ -227,6 +269,17 @@ def main(argv: list[str] | None = None) -> int:
 
     args.out_dir.mkdir(parents=True, exist_ok=True)
     summary_rows: list[dict[str, Any]] = []
+
+    # Headline metrics surfaced inline after each variant so the user can
+    # decide whether the sweep is worth continuing. Pulled from the
+    # variant's gt_cond comparisons_summary.json + the matched fixed_cond.
+    _HEADLINE_KEYS: tuple[tuple[str, str], ...] = (
+        ("matched_rate", "matched_rate_median"),
+        ("error_median_ms", "error_median_ms_median"),
+        ("density_ratio", "density_ratio_median"),
+        ("hi_pspace", "hi_pspace_median"),
+        ("hallucination_rate", "hallucination_rate_median"),
+    )
 
     for variant in matrix:
         name = variant["name"]
@@ -263,36 +316,29 @@ def main(argv: list[str] | None = None) -> int:
         row.update(_read_summary(variant_dir))
         summary_rows.append(row)
 
-    # Write the aggregate CSV + JSON.
-    if summary_rows:
-        # union of all keys across rows for a stable column set
-        all_keys: list[str] = []
-        seen: set[str] = set()
-        for row in summary_rows:
-            for k in row:
-                if k not in seen:
-                    all_keys.append(k)
-                    seen.add(k)
-        with (args.out_dir / "summary.csv").open(
-            "w", newline="", encoding="utf-8",
-        ) as f:
-            w = csv.DictWriter(f, fieldnames=all_keys)
-            w.writeheader()
-            for row in summary_rows:
-                w.writerow(row)
-        with (args.out_dir / "summary.json").open(
-            "w", encoding="utf-8",
-        ) as f:
-            json.dump(
-                {
-                    "base_spec": str(args.base_spec),
-                    "matrix": str(args.matrix),
-                    "dataset": str(ds_root),
-                    "split": split,
-                    "rows": summary_rows,
-                },
-                f, indent=2,
-            )
+        # Streaming summary write — the aggregate CSV + JSON are
+        # rewritten after every variant, so the user can `cat
+        # summary.csv` mid-sweep and decide whether to ctrl-C.
+        _write_aggregate_summary(
+            summary_rows=summary_rows, out_dir=args.out_dir,
+            base_spec=str(args.base_spec), matrix_path=str(args.matrix),
+            ds_root=str(ds_root), split=split,
+        )
+
+        # Headline print — one line that summarizes the variant's gt_cond
+        # result against the existing pre-run #007 baseline. Keeps the
+        # operator informed without needing to grep JSON.
+        print(f"[ablation]   ↳ {name} headline:")
+        for label, key in _HEADLINE_KEYS:
+            v = row.get(key)
+            if v is None:
+                print(f"      {label:24s}  (missing)")
+            elif isinstance(v, float):
+                print(f"      {label:24s}  {v:>10.4f}")
+            else:
+                print(f"      {label:24s}  {v!s:>10}")
+        print(f"[ablation]   ↳ summary.csv updated "
+              f"({len(summary_rows)}/{len(matrix)} variants done)")
 
     print(f"[ablation] done. {len(summary_rows)} variants. "
           f"output: {args.out_dir}")

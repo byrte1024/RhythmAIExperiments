@@ -1,10 +1,17 @@
 [
-    {"name": "ddim_16_e0_n1", "sampler_overrides": {"n_inference_steps": 16, "eta": 0.0}, "decoder_overrides": {"n_samples": 1}},
-    {"name": "ddim_4_e0_n1",  "sampler_overrides": {"n_inference_steps": 4,  "eta": 0.0}, "decoder_overrides": {"n_samples": 1}},
-    {"name": "ddim_8_e0_n1",  "sampler_overrides": {"n_inference_steps": 8,  "eta": 0.0}, "decoder_overrides": {"n_samples": 1}},
-    {"name": "ddim_32_e0_n1", "sampler_overrides": {"n_inference_steps": 32, "eta": 0.0}, "decoder_overrides": {"n_samples": 1}},
-    {"name": "ddim_16_e1_n1", "sampler_overrides": {"n_inference_steps": 16, "eta": 1.0}, "decoder_overrides": {"n_samples": 1}},
-    {"name": "ddim_16_e0_n4", "sampler_overrides": {"n_inference_steps": 16, "eta": 0.0}, "decoder_overrides": {"n_samples": 4}},
-    {"name": "ddim_16_e1_n4", "sampler_overrides": {"n_inference_steps": 16, "eta": 1.0}, "decoder_overrides": {"n_samples": 4}},
-    {"name": "ddpm_64_e1_n1", "sampler_overrides": {"__class__": "osu.taiko2.domain.diffusion:DiffusionSamplerConfig", "n_inference_steps": 64}, "decoder_overrides": {"n_samples": 1}}
+    {"_comment": "Reference run — same DDIM 16/eta0/n1 as the per-eval AR-corpus hook used during training. Establishes the ablation's baseline against the runs/exp_014_diffusion/metrics.jsonl numbers (matched_rate hit max 0.519 at E5).", "name": "ddim_16_e0_n1", "sampler_overrides": {"n_inference_steps": 16, "eta": 0.0}, "decoder_overrides": {"n_samples": 1}},
+
+    {"_comment": "n_samples=4 mean-of-softmax marginalization. THE headline question — does aggregating 4 independent x_T draws fix the dense/sparse bistability that flipped matched_rate 0.18 ↔ 0.52 between adjacent training evals? If yes, sampler variance was the issue. If matched_rate barely moves, denoiser quality is the bottleneck.", "name": "ddim_16_e0_n4", "sampler_overrides": {"n_inference_steps": 16, "eta": 0.0}, "decoder_overrides": {"n_samples": 4}},
+
+    {"_comment": "Cheapest sampler — 4 DDIM steps. If matched_rate is comparable to 16-step (within ~2 pp), inference can be 4× faster for free. If it craters, the schedule's high-t end matters and we need more steps.", "name": "ddim_4_e0_n1",  "sampler_overrides": {"n_inference_steps": 4,  "eta": 0.0}, "decoder_overrides": {"n_samples": 1}},
+
+    {"_comment": "Upper bound — full-schedule 64-step DDPM with eta=1 (paper-spec). If even this can't beat ddim_16 by >3 pp, the bottleneck is not in the sampler — it's in the denoiser / decode_to_logits soft-margin issue. Most expensive variant; place it early so its result informs whether to bother running the rest.", "name": "ddpm_64_e1_n1", "sampler_overrides": {"__class__": "osu.taiko2.domain.diffusion:DiffusionSamplerConfig", "n_inference_steps": 64}, "decoder_overrides": {"n_samples": 1}},
+
+    {"_comment": "Stochastic single-sample DDIM (eta=1). Tests whether deterministic eta=0 is better than per-step Brownian noise injection — the paper says eta=0 is sharper for image gen; here we want to confirm.", "name": "ddim_16_e1_n1", "sampler_overrides": {"n_inference_steps": 16, "eta": 1.0}, "decoder_overrides": {"n_samples": 1}},
+
+    {"_comment": "Stochastic + n_samples=4. Best-effort variance reduction.", "name": "ddim_16_e1_n4", "sampler_overrides": {"n_inference_steps": 16, "eta": 1.0}, "decoder_overrides": {"n_samples": 4}},
+
+    {"_comment": "Fill-in for the steps curve.", "name": "ddim_8_e0_n1",  "sampler_overrides": {"n_inference_steps": 8,  "eta": 0.0}, "decoder_overrides": {"n_samples": 1}},
+
+    {"_comment": "Fill-in — 32 steps eta=0. If 32 doesn't substantially beat 16, more deterministic steps don't help.", "name": "ddim_32_e0_n1", "sampler_overrides": {"n_inference_steps": 32, "eta": 0.0}, "decoder_overrides": {"n_samples": 1}}
 ]
