@@ -302,7 +302,7 @@ def main(argv: list[str] | None = None) -> int:
         predictor, _meta = assemble_predictor(spec=spec, device=device)
         run_infer_corpus(
             predictor=predictor,
-            sampler=val_sampler,
+            val_sampler=val_sampler,
             ds_root=ds_root,
             out_dir=variant_dir,
             config=corpus_cfg,
