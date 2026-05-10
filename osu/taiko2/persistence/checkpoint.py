@@ -17,7 +17,7 @@ import importlib
 import os
 import random
 import time
-from dataclasses import asdict, dataclass, fields, replace
+from dataclasses import MISSING, asdict, dataclass, fields, is_dataclass, replace
 from pathlib import Path
 from typing import Any
 
@@ -99,22 +99,87 @@ def _resolve_class(spec: str) -> type:
 # ─────────────────────────── config <-> dict ──────────────────────────
 
 def _config_to_dict(cfg: Any) -> dict[str, Any]:
-    """`dataclasses.asdict`, plus a `__class__` tag for reconstruction."""
-    d = asdict(cfg)
-    d["__class__"] = _qualified_name(type(cfg))
-    return d
+    """Recursive dataclass→dict serialization with a per-level
+    ``__class__`` tag, so polymorphic sub-configs (e.g. #014's
+    ``DiffusionDetectorConfig.schedule_config`` typed as the
+    ``NoiseScheduleConfig`` ABC) round-trip back to their concrete
+    type at load time without inference.
+    """
+    return _to_dict_recursive(cfg)
+
+
+def _to_dict_recursive(obj: Any) -> Any:
+    if is_dataclass(obj) and not isinstance(obj, type):
+        out: dict[str, Any] = {"__class__": _qualified_name(type(obj))}
+        for f in fields(obj):
+            out[f.name] = _to_dict_recursive(getattr(obj, f.name))
+        return out
+    if isinstance(obj, (list, tuple)):
+        return [_to_dict_recursive(x) for x in obj]
+    if isinstance(obj, dict):
+        return {k: _to_dict_recursive(v) for k, v in obj.items()}
+    if isinstance(obj, Path):
+        return str(obj)
+    return obj
 
 
 def _config_from_dict(d: dict[str, Any]) -> Any:
+    """Inverse of ``_config_to_dict``. Recurses into nested dict
+    fields:
+
+    - If a sub-dict carries ``__class__`` (modern checkpoints), it is
+      rebuilt as that concrete type via ``inference.spec.build_config``,
+      which also handles enums + tuple coercion.
+    - Else the parent dataclass field's default-factory is consulted
+      to discover the concrete type (back-compat for checkpoints
+      saved with the old non-recursive ``asdict`` serializer — e.g.
+      #014's existing ``runs/exp_014_diffusion/checkpoints/*.pt``).
+    """
     d = dict(d)
     cls_name = d.pop("__class__")
     cls = _resolve_class(cls_name)
-    known = {f.name for f in fields(cls)}
-    filtered = {k: v for k, v in d.items() if k in known}
+    fieldmap = {f.name: f for f in fields(cls)}
+    kwargs: dict[str, Any] = {}
+    for k, v in d.items():
+        if k not in fieldmap:
+            continue
+        f = fieldmap[k]
+        if isinstance(v, dict):
+            if "__class__" in v:
+                from ..inference.spec import build_config
+                kwargs[k] = build_config(v)
+            else:
+                concrete = _infer_concrete_dataclass(f)
+                if concrete is not None:
+                    from ..inference.spec import build_config
+                    inner = dict(v)
+                    inner["__class__"] = _qualified_name(concrete)
+                    kwargs[k] = build_config(inner)
+                else:
+                    kwargs[k] = v
+        else:
+            kwargs[k] = v
     for f in fields(cls):
         if f.name == "root" and f.type in (Path, "Path", "pathlib.Path"):
-            filtered[f.name] = Path(filtered[f.name])
-    return cls(**filtered)
+            if f.name in kwargs:
+                kwargs[f.name] = Path(kwargs[f.name])
+    return cls(**kwargs)
+
+
+def _infer_concrete_dataclass(f) -> type | None:
+    """Pull the concrete dataclass type out of a ``dataclasses.Field``'s
+    default / default_factory. Returns None if the field has no default
+    or its default is not a dataclass instance."""
+    if f.default_factory is not MISSING:
+        try:
+            sample = f.default_factory()
+            if is_dataclass(sample) and not isinstance(sample, type):
+                return type(sample)
+        except Exception:
+            return None
+    if f.default is not MISSING and is_dataclass(f.default) and not isinstance(f.default, type):
+        return type(f.default)
+    return None
 
 
 def _training_state_to_dict(s: TrainingState) -> dict[str, Any]:
