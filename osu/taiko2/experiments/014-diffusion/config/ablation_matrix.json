@@ -5,7 +5,7 @@
 
     {"_comment": "Cheapest sampler — 4 DDIM steps. If matched_rate is comparable to 16-step (within ~2 pp), inference can be 4× faster for free. If it craters, the schedule's high-t end matters and we need more steps.", "name": "ddim_4_e0_n1",  "sampler_overrides": {"n_inference_steps": 4,  "eta": 0.0}, "decoder_overrides": {"n_samples": 1}},
 
-    {"_comment": "Upper bound — full-schedule 64-step DDPM with eta=1 (paper-spec). If even this can't beat ddim_16 by >3 pp, the bottleneck is not in the sampler — it's in the denoiser / decode_to_logits soft-margin issue. Most expensive variant; place it early so its result informs whether to bother running the rest.", "name": "ddpm_64_e1_n1", "sampler_overrides": {"__class__": "osu.taiko2.domain.diffusion:DiffusionSamplerConfig", "n_inference_steps": 64}, "decoder_overrides": {"n_samples": 1}},
+    {"_comment": "Upper bound — full-schedule 64-step DDPM with eta=1 (paper-spec). If even this can't beat ddim_16 by >3 pp, the bottleneck is not in the sampler — it's in the denoiser / decode_to_logits soft-margin issue. Most expensive variant; place it early so its result informs whether to bother running the rest.", "name": "ddpm_64_e1_n1", "sampler_overrides": {"__class__": "osu.taiko2.domain.diffusion:DiffusionSamplerConfig", "n_inference_steps": 64, "eta": 1.0}, "decoder_overrides": {"n_samples": 1}},
 
     {"_comment": "Stochastic single-sample DDIM (eta=1). Tests whether deterministic eta=0 is better than per-step Brownian noise injection — the paper says eta=0 is sharper for image gen; here we want to confirm.", "name": "ddim_16_e1_n1", "sampler_overrides": {"n_inference_steps": 16, "eta": 1.0}, "decoder_overrides": {"n_samples": 1}},
 

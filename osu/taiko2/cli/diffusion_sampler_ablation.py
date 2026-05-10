@@ -130,20 +130,30 @@ def _apply_variant_overrides(
     decoder_overrides: dict[str, Any],
 ) -> dict[str, Any]:
     """Return a new spec dict with the sampler / decoder overrides
-    applied. Doesn't mutate the input."""
+    applied. Doesn't mutate the input.
+
+    When ``sampler_overrides`` carries a new ``__class__`` (i.e. the
+    variant switches to a different sampler type), the sampler_config
+    block is REPLACED rather than merged — fields don't transfer
+    between sampler classes (e.g. DDIM has ``timestep_spacing`` and
+    DDPM doesn't, so a merge would leave an unknown field on DDPM
+    and ``build_config`` would reject it).
+    """
     spec = copy.deepcopy(base_spec)
     decoder_cfg = spec["decoder"]["config"]
-    # Sampler-level overrides land inside decoder.config.sampler_config.
     sampler_cfg = decoder_cfg.get("sampler_config")
     if sampler_cfg is None:
         raise ValueError(
             "base spec's decoder.config has no sampler_config field "
             "— is it a DiffusionDecoderConfig?"
         )
-    for k, v in sampler_overrides.items():
-        sampler_cfg[k] = v
+    if "__class__" in sampler_overrides and sampler_overrides["__class__"] != sampler_cfg.get("__class__"):
+        # Switching sampler classes — start fresh from the override.
+        sampler_cfg = dict(sampler_overrides)
+    else:
+        for k, v in sampler_overrides.items():
+            sampler_cfg[k] = v
     decoder_cfg["sampler_config"] = sampler_cfg
-    # Decoder-level overrides land directly on decoder.config.
     for k, v in decoder_overrides.items():
         decoder_cfg[k] = v
     spec["decoder"]["config"] = decoder_cfg
@@ -157,8 +167,9 @@ def _apply_variant_overrides(
 # row. Keep these stable so the resulting CSV has consistent columns.
 _SUMMARY_KEYS_GT: tuple[str, ...] = (
     "matched_rate", "close_rate", "far_rate", "hallucination_rate",
-    "error_mean_ms", "error_median_ms", "error_p90_ms",
+    "error_mean_ms", "error_median_ms",
     "density_ratio", "hi_pspace", "dc_human", "oc_human",
+    "over_pspace_self", "over_pspace_other",
 )
 
 
@@ -263,7 +274,7 @@ def main(argv: list[str] | None = None) -> int:
     else:
         corpus_cfg = InferCorpusConfig(
             fraction=0.1, seed=42,
-            conditioning_modes=("gt_cond", "fixed_cond"),
+            conditioning_modes=("gt", "fixed"),
             save_bundles=False,
         )
 
