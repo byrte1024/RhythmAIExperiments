@@ -53,3 +53,4 @@ CLAUDE.md
 
 # taiko2 analysis — per-chart JSONs (10k+ files); keep summary/CSV/graphs tracked
 osu/taiko2/analysis/*/chart_metrics/
+osu/taiko2/experiments/014-diffusion/ablations

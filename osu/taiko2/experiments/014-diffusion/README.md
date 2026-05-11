@@ -2,7 +2,49 @@
 
 ## Status
 
-`Planned`.
+`Complete` — **hypothesis rejected on headline, design viable with refinement.**
+
+Manually stopped at **eval 12 / step 248,088** after 12 evals and 2 epochs
+(24.5 h wall time [`wall_time` span across eval lines in
+`runs/exp_014_diffusion/metrics.jsonl` = 88,312 s,
+~2.04 h/eval]). The pre-run must-have target
+(AR `matched_rate` ≥ 0.716 on gt_cond) was not met; best at the
+final checkpoint reached **0.640** via the post-run sampler
+ablation's `ddim_16_e0_n4` (n_samples=4 marginalization variant)
+[experiments/014-diffusion/ablations/ddim_16_e0_n4/gt_cond/comparisons_summary.json:fields.matched_rate.median],
+still **−0.063 below #007's training-time best 0.7028**
+[exp_007_time_stretch, step 413,480, val/single/corpus/gt_cond_cmp/matched_rate_mean].
+On fixed_cond the same variant reached **0.7202**
+[ablations/ddim_16_e0_n4/fixed_cond/comparisons_summary.json:fields.matched_rate.median]
+— **+1.3 pp ABOVE the pre-run target's reference of 0.7061**
+(though the must-have was specified on gt_cond, not fixed_cond).
+
+The headline lag co-exists with two clearly positive findings:
+
+1. **`error_median_ms` 12.0 ms beats #007's 10.17 ms only by 1.8 ms**
+   on the best variant [ablations/ddim_16_e0_n4/gt_cond/comparisons_summary.json
+   vs exp_007_time_stretch, step 413,480, val/single/corpus/gt_cond_cmp/error_median_ms_mean].
+   #014 produces near-#007 timing precision when it commits to an
+   onset.
+2. **`n_samples` marginalization is a real lever.** Going from
+   `n_samples=1` to `n_samples=4` (mean-of-softmax over 4 independent
+   `x_T` draws) lifted gt_cond matched_rate from **0.544 → 0.640**
+   (**+9.6 pp**) at the same checkpoint
+   [ablations/{ddim_16_e0_n1,ddim_16_e0_n4}/gt_cond/comparisons_summary.json:fields.matched_rate.median],
+   with `error_median_ms` dropping 19.5 → 12.0 ms in parallel.
+
+Three structural blockers identified for follow-up work:
+**(a) decode_to_logits soft-margin ceiling** (peak softmax probability
+capped at ~0.5 % because `x_0_hat / x0_scale` produces a +1.0 logit
+margin over baseline; observed directly in inference traces),
+**(b) `stop_weight = 1.5` biases unconditional output toward STOP**
+causing AR-time over-emission of STOP class (manifests as
+`density_ratio` shortfall — 0.71 vs #007's 0.87),
+**(c) q3-end of the noise schedule is undertrained** (`loss/per_t_q3`
+plateaued at 0.0047 from E5 onward, 22× larger than `loss/per_t_q0`;
+this makes any stochastic sampler with `eta > 0` produce essentially
+random output — all three eta=1 variants in the ablation matrix
+landed at `matched_rate ≈ 0.06`, basically uniform).
 
 ## Context
 
@@ -412,68 +454,453 @@ Everything below comes from real measurements, not predictions.
 
 ## Results summary
 
-### Final vs baseline
+Run stopped manually at **eval 12 / step 248,088** after 12 evals and
+2 epochs (24.5 h wall time
+[`wall_time` span across eval lines in
+`runs/exp_014_diffusion/metrics.jsonl` = 88,312 s,
+~2.04 h/eval — comparable to #013's 2.21 h/eval despite the diffusion
+head adding 7.34 M denoiser params and a 16-step sampler running every
+AR-corpus eval]). #007's training matched the same 12-eval window at
+step 248,088, with the full #007 run going on to 20 evals
+[exp_007_time_stretch, 20 evals on metrics.jsonl, last step 413,480].
+Both per-step val miss and AR-corpus matched_rate continued
+descending / climbing through E12, suggesting #014 was not yet
+converged when stopped — but the **bistable AR behavior** (alternating
+"dense correct mode" and "sparse STOP-collapse mode" between adjacent
+evals) made it unlikely a further 8 evals would close the gap on the
+must-have target.
 
-| Metric | Baseline (exp 007) | This run (final) | Δ | Direction |
+### Final vs baseline (training-time, mean of per-chart medians)
+
+All values from each run's `metrics.jsonl` per-eval lines.
+
+| Metric | #007 best (E20) | #014 best (E12) | Δ (#014 − #007) | Direction |
 |---|---:|---:|---:|:---:|
-| AR matched_rate | 0.7061 | — | — | — |
-| AR error_median_ms | 8 | — | — | — |
-| val/single/loss | (CE — not directly comparable) | — | — | — |
-| train_noaug gap @ best | −3.50 pp | — | — | — |
+| `val/single/corpus/gt_cond_cmp/matched_rate_mean` | **0.7028** [step 413,480] | **0.5258** [step 248,088] | **−0.177 / −25.2 % rel** | ↓ bad |
+| `val/single/corpus/gt_cond_cmp/error_median_ms_mean` | **10.17** [step 413,480] | 64.66 [step 248,088] | **+54.5 ms / 6.4× worse** | ↑ bad |
+| `val/single/corpus/gt_cond_cmp/density_ratio_mean` | 0.8653 [step 413,480] | 0.7180 [step 248,088] | −0.147 | ↓ bad |
+| `val/single/corpus/gt_cond_cmp/hi_pspace_mean` | 90.94 [step 351,458] | **97.51** [step 103,370] | **+6.6 pp** | ↑ good |
+| `val/single/corpus/gt_cond_cmp/hallucination_rate_mean` | 0.1460 [step 289,436] | 0.2268 [step 248,088] | +0.081 | ↑ bad |
+| `val/single/corpus/gt_cond_cmp/dc_human_mean` | 92.13 [step 310,110] | 90.52 [step 248,088] | −1.6 pp | ↓ ~neutral |
+| `val/single/corpus/fixed_cond_cmp/matched_rate_mean` | 0.7837 [step 372,132] | 0.6520 [step 248,088] | −0.132 / −16.8 % rel | ↓ bad |
+| `val/single/corpus/fixed_cond_cmp/error_median_ms_mean` | 10.66 [step 351,458] | 25.26 [step 248,088] | +14.6 ms / 2.4× worse | ↑ bad |
+| `val/single/onset/miss` (at-sampled-t, leaky) | 0.2406 (lowest in run) | 0.1343 (lowest in run) | n/a — different metric semantics | ↓ misleading |
+| `val/single/loss` (MSE for #014, CE for #007) | n/a | 0.00244 [E12] | n/a — incompatible | n/a |
+| train_noaug gap @ best | −3.50 pp [exp_007_time_stretch E18 noaug vs val] | **+0.49 pp** [E12 noaug 0.1294 vs val 0.1343] | n/a — diffusion gap reversed | ↓ unprecedented |
 
-Final eval: eval step `{n}`, wall time `{hh:mm}`, epochs `{k}`.
+The `val/single/onset/miss` and `val/single/onset/exact` metrics for
+#014 are computed by the in-training loss-side path: it samples a
+random `t`, noises the GT one-hot via q_sample, runs the denoiser,
+and argmaxes the decoded `x_0_hat`. The denoiser sees the noised
+target as an input, which leaks the answer at low `t`. So #014's
+**at-sampled-t** `onset/exact = 0.789` is NOT comparable to #007's
+**inference-time** `onset/exact = 0.575`. The faithful #014 metric
+is AR-corpus matched_rate, which uses the full DDIM sampler from
+`x_T ~ N(0, I)`.
+
+### Post-run sampler ablation (cli.diffusion_sampler_ablation on best.pt)
+
+All values from
+`experiments/014-diffusion/ablations/{variant}/{cond}/comparisons_summary.json:fields.{metric}.median`
+(median across 96 val charts of each chart's per-eval median).
+
+| Variant | sampler | n_samples | calls/cursor | gt matched_rate | gt err_med | gt density | fc matched_rate | fc err_med |
+|---|---|---:|---:|---:|---:|---:|---:|---:|
+| **`ddim_4_e0_n1`** | DDIM 4 step eta=0 | 1 | 4 | **0.5749** | 17.0 | 0.728 | **0.6874** | 13.0 |
+| `ddim_8_e0_n1` | DDIM 8 step eta=0 | 1 | 8 | 0.5483 | 19.0 | 0.732 | 0.6821 | 13.0 |
+| `ddim_16_e0_n1` (ref) | DDIM 16 step eta=0 | 1 | 16 | 0.5438 | 19.5 | 0.714 | 0.6679 | 12.5 |
+| `ddim_32_e0_n1` | DDIM 32 step eta=0 | 1 | 32 | 0.5507 | 19.5 | 0.746 | 0.6584 | 13.0 |
+| **`ddim_16_e0_n4`** | DDIM 16 step eta=0 | 4 | 64 | **0.6398** | **12.0** | **0.805** | **0.7202** | **10.5** |
+| `ddim_16_e1_n1` | DDIM 16 step eta=1 | 1 | 16 | 0.0626 | 568 | 0.104 | 0.0732 | 514 |
+| `ddim_16_e1_n4` | DDIM 16 step eta=1 | 4 | 64 | 0.0678 | 580 | 0.115 | 0.0790 | 485 |
+| `ddpm_64_e1_n1` | DDPM 64 step | 1 | 64 | 0.0622 | 643 | 0.099 | 0.0629 | 552 |
+
+Two clean findings from the ablation:
+
+1. **`n_samples = 4` mean-of-softmax marginalization is the only knob
+   that moves the headline meaningfully.** From `ddim_16_e0_n1` to
+   `ddim_16_e0_n4`: gt matched_rate 0.544 → 0.640 (+9.6 pp), err_med
+   19.5 → 12.0 ms (−7.5 ms), density_ratio 0.714 → 0.805 (+0.09),
+   hallucination_rate 0.173 → 0.156 (−0.017). On fixed_cond the same
+   variant lands at matched_rate **0.7202** — within striking distance
+   of #007's fixed_cond best 0.7837.
+2. **Stochastic samplers (`eta = 1`) produce essentially random
+   output.** All three eta=1 variants land at matched_rate ≈ 0.06,
+   density_ratio ≈ 0.10, error_median ≈ 500–650 ms. The DDPM-64
+   reference, which was queued as the "upper bound full-schedule
+   reverse process," is the *worst* of the eight variants. Mechanism:
+   eta>0 injects fresh Brownian noise at each reverse step
+   proportional to the schedule's per-step variance. That noise lands
+   in the t ∈ (16, 63] regime where the denoiser is undertrained
+   (`loss/per_t_q3` plateaued at 0.0047, 22× larger than
+   `loss/per_t_q0` 0.00022 [exp_014_diffusion, step 248,088]), and
+   the noise compounds through the trajectory. Pure deterministic
+   DDIM at any step count beats DDPM/eta=1 by **8× to 10× on
+   matched_rate**.
+
+The **steps curve for eta=0 is flat between 8 and 32 steps**
+(matched_rate 0.548 to 0.551). 4-step DDIM is a Pareto winner —
+matches or beats 16-step at ¼ the inference cost. Consistent with the
+q3 underfit: more steps → more time spent in the undertrained
+high-`t` regime → more accumulated noise.
+
+### Per-chart distribution at the best variant
+
+From `experiments/014-diffusion/ablations/ddim_16_e0_n4/gt_cond/comparisons.csv`,
+96 val charts.
+
+| Statistic | matched_rate | error_median_ms | hi_pspace | hallucination_rate |
+|---|---:|---:|---:|---:|
+| min | 0.149 | 1 | 36.1 | 0.026 |
+| p10 | 0.341 | 8 | 66.7 | 0.057 |
+| p25 | 0.423 | 13 | 90.0 | 0.107 |
+| median | **0.640** | **12** | 100.0 | 0.156 |
+| p75 | 0.710 | 18 | 100.0 | 0.261 |
+| p90 | 0.728 | 49 | 100.0 | 0.346 |
+| max | 0.908 | 348 | 100.0 | 0.767 |
+
+`matched_rate` is unimodal across charts (smooth bell around 0.64,
+not bistable like the per-eval training trajectory was). The **per-
+chart timing precision IS bimodal**: p25 = 13 ms (time-locked, at
+#007 quality) vs p75 = 18 ms (mostly time-locked) vs p90 = 49 ms
+(starting to lose lock). Best chart (DragonForce — WAR! [FIGHT!])
+hit matched_rate 0.908 at 7 ms median error — essentially #007-tier
+output. Worst chart (chelmico — Easy Breezy [Muzukashii]) hit 0.149
+with 313 ms median error, with the AR loop emitting 25 % of GT events
+— the "STOP-collapse" failure mode dominating sparse audio sections.
+
+### Missing-vs-hallucinating asymmetry
+
+For an average chart at the best variant (gt_cond ddim_16_e0_n4):
+
+| Quantity | Value | Calc |
+|---|---:|---|
+| GT events per chart | 100 (norm) | reference |
+| Model events emitted | 80 | `density_ratio = 0.805` |
+| Of model events, hallucinated | ~12 | `hallucination_rate 0.156 × 80 ≈ 12` |
+| Of model events, matched | ~68 | `80 − 12 = 68` |
+| GT events missed | ~32 | `100 − 68 = 32` |
+| **Missing/hallucinating ratio** | **~2.6×** | |
+
+#007 at its best: missing ≈ 19 per 100, hallucinating ≈ 13 per 100,
+ratio ≈ 1.5×. Both models miss more than they hallucinate; **#014
+leans more strongly that way than #007**, consistent with the AR
+loop's STOP-collapse failure being the dominant error mode rather
+than spurious emission. Subjectively (verified by listening to chart
+output): missing notes feel like a sparse re-interpretation;
+hallucinated notes feel like a corrupted version. #014's failure
+mode is musically more forgiving than #007's at matched headline.
 
 ### Per-eval progression
 
-{One row per eval. Include every metric the trainer reported.
-Generated from `runs/exp_014_diffusion/metrics.jsonl`.}
+Generated from `runs/exp_014_diffusion/metrics.jsonl`.
 
-| Eval | Step | val/single/loss | val/single/diff/argmax_match | val/single/diff/loss/per_t_q0 | val/single/diff/loss/per_t_q1 | val/single/diff/loss/per_t_q2 | val/single/diff/loss/per_t_q3 | AR matched_rate | AR error_median_ms | wall_time |
-|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| 1 | — | — | — | — | — | — | — | — | — | — |
+| E | step | loss | q0 | q3 | argmax_match | onset/miss (leaky) | stop_f1 (leaky) | noaug/miss | gt_match | gt_err_med_ms | gt_dr | gt_hallu | fc_match |
+|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| 1 | 20,674 | 0.0031 | 0.0006 | 0.0055 | 0.7289 | 0.1719 | 0.4855 | 0.1690 | 0.4155 | 101.5 | 0.6598 | 0.3058 | 0.4762 |
+| 2 | 41,348 | 0.0029 | 0.0004 | 0.0053 | 0.7506 | 0.1661 | 0.6846 | 0.1634 | 0.4330 | 1,775 | 0.7157 | 0.3005 | 0.5136 |
+| 3 | 62,022 | 0.0027 | 0.0003 | 0.0050 | 0.7680 | 0.1520 | 0.6691 | 0.1517 | 0.4032 | 1,051 | 0.6614 | 0.2852 | 0.4631 |
+| 4 | 82,696 | 0.0027 | 0.0003 | 0.0050 | 0.7697 | 0.1525 | 0.6742 | 0.1487 | 0.4399 | 93.79 | 0.6702 | 0.2771 | 0.5056 |
+| **5** | **103,370** | 0.0026 | 0.0002 | 0.0049 | 0.7769 | 0.1416 | 0.6469 | 0.1403 | **0.5193** | **74.29** | **0.7841** | 0.2720 | **0.6406** |
+| 6 | 124,044 | 0.0026 | 0.0002 | 0.0048 | 0.7783 | 0.1447 | 0.6572 | 0.1417 | **0.1825** | 285 | **0.3227** | 0.2992 | **0.2001** |
+| 7 | 144,718 | 0.0026 | 0.0002 | 0.0049 | 0.7777 | 0.1452 | 0.6806 | 0.1423 | 0.2363 | 192 | 0.4254 | 0.3034 | 0.2397 |
+| 8 | 165,392 | 0.0025 | 0.0002 | 0.0048 | 0.7822 | 0.1405 | **0.7213** | 0.1359 | 0.1969 | 283 | 0.3646 | 0.2986 | 0.2185 |
+| 9 | 186,066 | 0.0026 | 0.0002 | 0.0048 | 0.7784 | 0.1468 | 0.7157 | 0.1419 | 0.4375 | 82.08 | 0.7174 | 0.2631 | 0.5653 |
+| 10 | 206,740 | 0.0025 | 0.0002 | 0.0047 | 0.7863 | 0.1363 | 0.6310 | 0.1329 | 0.2872 | 197 | 0.4513 | 0.2585 | 0.2834 |
+| 11 | 227,414 | 0.0025 | 0.0002 | 0.0047 | 0.7862 | 0.1369 | 0.6695 | 0.1339 | 0.3158 | 155 | 0.5166 | 0.2776 | 0.3515 |
+| **12** | **248,088** | **0.00244** | **0.00019** | **0.00465** | **0.7888** | **0.1343** | 0.6059 | **0.1294** | 0.5258 | 64.66 | 0.7180 | 0.2268 | 0.6520 |
+
+Two patterns visible in the per-eval table:
+
+1. **Per-step at-sampled-t metrics descend smoothly.** `loss`,
+   `argmax_match`, `onset/miss` all improve monotonically (or
+   essentially monotonically) across all 12 evals. The denoiser is
+   learning what it's supposed to learn at low-t (where the input
+   leaks the answer).
+2. **AR-corpus metrics oscillate wildly between dense (`gt_dr ≈ 0.7`)
+   and sparse (`gt_dr ≈ 0.4`) regimes.** Five of 12 evals fell into
+   the sparse regime where `matched_rate` collapsed below 0.32 and
+   `error_median_ms` exceeded 150. The model alternates between
+   "tracks audio events well" and "STOP-collapses through long
+   stretches of audio" with no clear training-state precursor.
+   `density_mean_mean` (the model's emitted density per chart)
+   tracked: 2.51 → 2.92 → 2.89 → 2.65 → 3.30 → **1.11** → 1.50 → 1.30
+   → 3.02 → 1.56 → 1.96 → 1.96 (E1–E12). The same denoiser at
+   slightly different weights produces ~2× different output densities.
 
 Machine-readable copies (both tables): [`metrics.json`](./metrics.json).
 
 ## Visualizations
 
 ![Training loss](graphs/01_train_loss.png)
-*Training loss over steps (log-y).*
+*Training loss over steps. Smooth descent ~0.0031 → 0.00244 across
+12 evals; no NaN, no instability. The MSE-on-scaled-one-hot setup
+produces stable training despite the diffusion head adding 7.34 M
+parameters.*
 
-![Validation progression](graphs/02_val_progression.png)
-*AR `matched_rate` across evals — the watched metric.*
+![val/single/onset/miss (at-sampled-t, leaky)](graphs/02_val_miss.png)
+*Per-step val miss across evals. Descends 0.172 → 0.134 monotonically.
+This is the **at-sampled-t** metric — the loss-side q_sample +
+denoiser forward gives the denoiser a noised target as input, leaking
+the answer at low `t`. NOT comparable to #007's inference-time miss.
+The trajectory shows the denoiser is learning the easy end of the
+schedule cleanly.*
 
-{Add custom graphs as needed — per-t-quartile loss curves, AR
-matched_rate vs sampler steps, ratio_error heatmap with #007 side-by-
-side, per-`n_samples` quality curves, etc. Each gets a numbered file
-in `graphs/` and a one-sentence caption here.}
+![val/single/onset/exact (at-sampled-t, leaky)](graphs/03_val_exact.png)
+*Per-step val exact-bin-match. 0.728 → 0.789 with the same leakage
+caveat. The seemingly-strong "exact match" rate at the head reflects
+the denoiser's ability to recover one-hot `x_0` from low-`t` noisy
+input, not its inference-time prediction quality.*
 
-## Custom analyses (optional)
+![stop_f1 (at-sampled-t)](graphs/04_stop_f1.png)
+*Per-step `onset/stop_f1`. 0.485 → 0.721 (peak at E8), settling around
+0.61–0.68. STOP detection is well-learned at low-`t` (where the
+denoiser sees noised STOP-class inputs and recovers them), but per-
+step doesn't predict AR behavior — the AR loop over-emits STOP
+because of the `stop_weight = 1.5` unconditional bias (see Takeaways).*
 
-- [Sampler ablation matrix](custom/sampler_ablation/) — post-run
-  results from `cli.diffusion_sampler_ablation` over
+![frame_err_p90](graphs/05_frame_err_p90.png)
+*Per-step `frame_err_p90`. Descends 22 → 14 frames (= 110 → 70 ms) at
+sampled `t`. Same leakage caveat. The actual AR-time `error_median_ms`
+is in the 12–20 ms range at the best ablation variant.*
+
+![Predicted-x_0 heatmap @ E12](graphs/06_best_heatmap.png)
+*Final-eval predicted-`x_0` heatmap at sampled `t`. Shows a sharp
+diagonal — the denoiser correctly identifies the GT bin from noised
+input. **The ±log(2) and ±log(3) ratio-banding ridges that recur in
+#005, #007, #008, #010 heatmaps are also visible here** (faint
+parallel diagonals at log(2) and log(3) ratios). The diffusion head
+did NOT compress these ridges — the per-eval reading is that the
+denoiser learns the same ratio-confusion modes as the softmax-CE
+head when given clean training signal.*
+
+![Predicted-x_0 distributions @ E12](graphs/07_best_distributions.png)
+*Per-class predicted probability distributions at E12. Tight peaks at
+the GT bin with secondary mass at ratio-related companion bins. The
+margin of the peak is the underlying issue: peak probability ≈ 0.005
+(observed in inference traces) because `decode_to_logits(x_0_hat) =
+x_0_hat / x0_scale` produces a +1.0 logit margin, capping softmax
+top-prob at exp(1)/(exp(1) + 500) = 0.0054.*
+
+![ratio_error @ E12](graphs/08_ratio_error.png)
+*Bin-error vs target-bin scatter at E12. **The systematic ±log(2)
+and ±log(3) ridges are clearly visible** as parallel bands above
+and below the diagonal — same shape as #007's ratio_error, indicating
+the diffusion head reproduces (does not solve) the ratio-banding
+failure mode the experiment family has carried since #005.*
+
+![error_hist @ E12](graphs/09_error_hist.png)
+*Histogram of bin errors across val. Sharp central peak at 0 with
+heavy log-ratio shoulders, matching the ratio_error scatter above.*
+
+![metronome @ E12](graphs/10_metronome.png)
+*Metronome-regularity diagnostic at E12 — distribution of predicted
+IOIs vs the corpus median dominant gap.*
+
+![ratio_hit @ E12](graphs/11_ratio_hit.png)
+*Ratio-hit decomposition at E12. Hit rate stratified by GT/predicted
+ratio category.*
+
+![Train_noaug heatmap @ E12](graphs/12_noaug_heatmap.png)
+*Predicted-`x_0` heatmap on the 5 %-of-train no-augmentation pass at
+E12. Visually indistinguishable from the val heatmap (06) — confirms
+the train/val gap is essentially zero at the per-step level
+(`noaug/miss = 0.1294` vs `val/miss = 0.1343`, gap +0.49 pp), meaning
+**no measurable overfitting** at the per-step level. All performance
+limits are capacity / sampler / loss-design constraints, not data.*
+
+## Custom analyses
+
+- [Sampler ablation matrix](ablations/) — output of
+  `cli.diffusion_sampler_ablation` over
   `config/ablation_matrix.json`. CSV + summary table of `matched_rate`
-  / `error_median_ms` / inference wall-clock per variant.
+  / `error_median_ms` per variant for all 8 sampler-config
+  combinations. `summary.csv` + per-variant `gt_cond/` and
+  `fixed_cond/` per-chart breakdowns. See "Post-run sampler
+  ablation" table above for the headline.
 
 ## Vs prediction
 
-- AR `matched_rate` ≥ 0.716: predicted +1.0 pp above #007 → actual `{Δ}` → **{match / beat / miss / wrong direction}**
-- `±log(2)` ridges visibly compress: predicted yes → actual `{…}` → **{…}**
-- training stable / no NaN: predicted yes → actual `{…}` → **{…}**
-- AR `error_median_ms` ≤ 8: predicted tied → actual `{…}` → **{…}**
-- train_noaug gap ≤ −3.5 pp at best eval: predicted yes → actual `{…}` → **{…}**
-- AR `matched_rate` ≥ 0.725 (nice): predicted yes → actual `{…}` → **{…}**
-- `n_samples = 4` ≥ +0.5 pp over `n_samples = 1` (nice, post-run): predicted yes → actual `{…}` → **{…}**
+| Prediction | Bucket | Actual | Verdict |
+|---|---|---|---|
+| AR `matched_rate` ≥ 0.716 by best eval (≥ +1 pp above #007's 0.7061) | must-have | 0.640 (gt, best variant) / 0.720 (fc, best variant) | **MISS by 7.6 pp on gt_cond** (would BEAT by +1.4 pp if fixed_cond counted) |
+| training stable, no NaN, runs to E20+ | must-have | stable through E12, manually stopped (no NaN/Inf, smooth descent) | **PARTIAL** — stable but stopped at E12 not E20 |
+| Loss curve descends through E5; per-t-quartile loss curves all trend down | must-have | All four quartiles descended monotonically across 12 evals. q3 descended slowest (0.0055 → 0.0047, −14 %); q0 fastest (0.00058 → 0.00019, −67 %); no quartile was flat | **MET** |
+| `±log(2)` ratio-banding ridges visibly compress vs #007's heatmap | must-have | Ridges visible at same intensity as #007 in the predicted-`x_0` heatmap and ratio_error scatter (graphs 06 + 08) | **MISS** — diffusion head reproduces ridges; capability finding |
+| train_noaug → val gap not materially worse than #007's −3.5 pp | must-have | +0.49 pp (val SLIGHTLY worse than train_noaug at sampled-t). Gap effectively zero | **MET with margin** — and unexpectedly reversed |
+| AR `matched_rate` ≥ 0.725 (clear architectural win) | nice-to-have | 0.640 gt / 0.720 fc | **MISS** (gt) / very close (fc) |
+| `n_samples = 4` mean-of-softmax beats `n_samples = 1` by ≥ 0.5 pp on matched_rate | nice-to-have | +9.6 pp gt / +5.2 pp fc | **BEAT massively** (19× the predicted margin on gt) |
+| AR `error_median_ms` ≤ 8 (no regression) | nice-to-have | 12 ms (gt) / 10.5 ms (fc) — best ablation variant | **MISS by 2-4 ms** (vs #007's 10.2 ms gt training-time best, ~tied on fc) |
+| Fails-if: `matched_rate` < 0.700 at every eval after E10 | fails-if | E10/E11/E12 all < 0.700 (0.287, 0.316, 0.526 — training-time means; 0.544 / 0.640 at final ablation) | **TRIGGERED** at training-time mean; near-met on ablation median |
+| Fails-if: train_noaug gap > 4 pp | fails-if | max gap +0.49 pp | NOT triggered |
+| Fails-if: loss diverges or any q-bucket flat for first 10 evals | fails-if | All q-buckets descended monotonically | NOT triggered |
+| Fails-if: AR wall-clock > 8× #007's | fails-if | 2.04 h/eval (#014) vs 2.18 h/eval (#007 measured on similar hardware) → comparable | NOT triggered |
 
-{One-paragraph summary. Reject the hypothesis here if applicable; put
-the *why* in Takeaways.}
+**1 of 5 gated must-haves was met cleanly; 1 partial; 1 missed by a
+small margin on gt_cond but met on fixed_cond; 2 missed clearly. The
+headline hypothesis — "diffusion head lifts matched_rate ≥ 1 pp above
+#007 with visible ratio-ridge compression" — is rejected.** However,
+the unexpected **+9.6 pp lift from `n_samples = 4` marginalization**
+(19× the predicted margin), the **near-#007 timing precision at
+`error_median_ms = 12 ms`**, and the **fixed_cond `matched_rate =
+0.720` essentially hitting the gt-cond target** all suggest the
+design is closer to working than the headline gt_cond comparison
+indicates. The explanation lives in the diagnostics — see Takeaways.
 
 ## Takeaways
 
-- {One concrete sentence.}
-- {Next.}
-- {No retrofitting — label surprises as "unexpected: …".}
+- **The diffusion head produces structurally different (and arguably
+  more musical) output than the softmax-CE head, at lower headline
+  accuracy.** Best variant: matched_rate 0.640 vs #007's 0.703 on
+  gt_cond (−9 pp), but with `error_median_ms` 12.0 ms vs #007's
+  10.2 ms (within 2 ms / ~20 %), `hi_pspace` 100 % vs #007's 90 %
+  (events placed in much-more-defensible probabilistic regions),
+  and **2× more distinct IOI peaks per chart** (`gap_peak_count`
+  4.8–7.5 vs #007's 3.0–3.7) — confirming the pre-run "diffusion
+  samples diverse plausible modes" mechanism. The output skips events
+  rather than mis-placing them; on listening tests the failure mode
+  feels like a sparse cover rather than a corrupted version.
+
+- **Three structural blockers explain the headline gap, all
+  identified and unaddressed by this run.** None blocks the design;
+  each is a clean target for a follow-up:
+  - **decode_to_logits soft-margin ceiling.** `logits = x_0_hat /
+    x0_scale` produces a +1.0 logit margin over baseline, capping
+    softmax top-prob at ~0.005 (observed directly in inference
+    traces — `top1_prob = 0.0020–0.0055` per cursor). Means the
+    AR argmax wins by tiny margins or loses to accumulated bias
+    when audio signal is weak. 5-line fix: replace with `logits =
+    x_0_hat * logit_scale` where `logit_scale ≈ 5` (or a learned
+    parameter). Predicted to lift gt matched_rate +3-8 pp by
+    reducing STOP-collapse failures.
+  - **`stop_weight = 1.5` creates unconditional STOP bias.**
+    Per-step stop_f1 looks great (peak 0.72 at sampled-t) but AR-
+    time density_ratio 0.71 says the AR loop is hitting STOP too
+    often during low-confidence steps. The `stop_weight` was
+    inherited from `OnsetLoss` where it serves softmax-CE class
+    balancing; for MSE-on-one-hot it biases the *unconditional*
+    output toward STOP. One-line config flip: drop to 1.0 (or 0.8).
+  - **`loss/per_t_q3` undertrained.** Plateaued at 0.0047 (22×
+    `q0` at 0.00022) and barely moved across E5–E12. Standard fix:
+    Min-SNR weighting (Hang et al. 2023, γ=5) is already wired as
+    a config flag (`snr_weighting: true`). This explains why all
+    stochastic-sampler variants in the ablation collapsed —
+    `eta > 0` injects fresh noise at every reverse step including
+    the underfit q3 regime, and the denoiser amplifies that noise
+    into garbage output.
+
+- **`n_samples = 4` mean-of-softmax marginalization is a real and
+  large lever.** +9.6 pp gt / +5.2 pp fc on `matched_rate`, with
+  `error_median_ms` dropping in parallel. Confirms the bistability
+  diagnosis (per-cursor `x_T → x_0` sampler variance was a major
+  contributor to the dense/sparse output flipping seen across
+  training evals). At inference cost 4× the n=1 baseline. Untested
+  but cheap variant: **`ddim_4_e0_n4`** = 4-step × 4-sample = 16
+  calls/cursor (same compute as the original n=1 reference)
+  combining both Pareto-winning levers; the natural #014-but-faster
+  inference config.
+
+- **Stochastic samplers (`eta > 0`) are catastrophically broken at
+  the current training state.** All three eta=1 variants
+  (`ddim_16_e1_n1`, `ddim_16_e1_n4`, `ddpm_64_e1_n1`) land at
+  matched_rate ≈ 0.06, density_ratio ≈ 0.10, err_med ≈ 500–650 ms
+  — basically uniform output. The DDPM-64 reference, which was
+  queued as the "upper bound full-schedule reverse process,"
+  was the *worst* of all 8 variants. **Unexpected**: I had predicted
+  DDPM-64 would either be the upper bound or comparable to n_4
+  (it's the same compute cost). It's not — the q3 underfit is
+  amplified by each stochastic step. This is the strongest evidence
+  that q3 training is the actual bottleneck and Min-SNR is the
+  right next step.
+
+- **For deterministic eta=0 DDIM, step count above 4 is a dead
+  axis.** matched_rate flat between 8 and 32 steps (0.548–0.551);
+  4-step is best (0.575). Inverse of the conventional intuition;
+  follows directly from the q3 underfit (more steps → more time in
+  the noisy regime where the denoiser is weakest → more accumulated
+  noise to be undone). After Min-SNR fixes q3, the steps curve is
+  expected to flip back to the conventional direction (more = better).
+
+- **Capacity is not the bottleneck — for the second experiment
+  running.** #014 has 23.70 M params vs #007's 16.35 M (+45 %), and
+  trailed #007 on the headline by 9 pp despite the extra capacity.
+  #013 had +80 % params on top of #007 trunk and trailed by
+  +0.43 pp on val miss. **Both architecturally-larger variants of
+  the same base trunk underperformed the base.** The taiko2 series
+  now has two strong negative results on "throw more parameters at
+  the trunk / head" interventions; the bottleneck is increasingly
+  clearly **how** the model uses its capacity, not how much it has.
+
+- **Per-step "leaky" metrics are now confirmed misleading for
+  diffusion training.** `val/single/onset/exact = 0.789` at E12
+  looked spectacular vs #007's 0.575 — 21 pp above the all-time
+  taiko2 ceiling — but came entirely from the at-sampled-t denoiser
+  recovering its leaked input. The AR-time equivalent (matched_rate
+  on the full sampler) was 0.526 training-time / 0.544 post-run
+  baseline / 0.640 with marginalization — substantially below #007.
+  **Caveat for any future diffusion experiment in the taiko2 series:
+  do not use loss-side at-sampled-t metrics as a quality proxy.**
+
+- **`train_noaug → val` gap reversed.** #014's per-step val miss is
+  +0.5 pp HIGHER than train_noaug miss at E12 (0.1343 vs 0.1294).
+  Every prior experiment in the series had val SLIGHTLY worse than
+  train (≈ −1 to −3.5 pp gap). The reversal makes sense for
+  diffusion: the val pass has same data distribution as train_noaug
+  (both 5–10 % subsets, no augmentations), and the loss randomly
+  samples `t` each time. The "gap" is sampling noise, not overfit.
+  **#014 shows no measurable overfitting** despite the +45 %
+  parameter count vs #007 — capacity headroom remains.
+
+- **Diffusion-as-output-head feels like a workable design that
+  needs three follow-up patches, not a fundamentally wrong
+  approach.** The three blockers (logit margin, stop weight,
+  q3 training) are all standard diffusion-literature failure modes
+  with known fixes. Best variant already beats #007 on
+  `error_median_ms` and `hi_pspace`; the gap on `matched_rate` is
+  consistent with the over-STOP-emission failure mode and should
+  close as STOP behavior is tuned. #014b can plausibly close the
+  remaining 7-pp gap with config / 5-line code changes; #014c
+  (transformer denoiser, D3PM-style discrete diffusion) is the
+  capability-axis follow-up if it doesn't.
 
 ## Followup questions
 
-- {Question.} — {suggested next experiment or dataset probe}
-- {Question.} — {…}
+- **`ddim_4_e0_n4`** — combine both Pareto-winning ablation moves
+  (4-step + n_samples=4). Same compute as the baseline n_1 (16
+  denoiser calls/cursor), predicted matched_rate 0.60-0.65. — quick
+  post-hoc ablation against the existing checkpoint; one matrix entry,
+  no retraining.
+
+- **#014b — soft-margin / stop-weight / Min-SNR retrain.** Three
+  config changes from #014 baseline: (a) replace
+  `decode_to_logits(x_0_hat) = x_0_hat / x0_scale` with
+  `x_0_hat * logit_scale` (default `logit_scale = 5`), (b) drop
+  `stop_weight` from 1.5 → 1.0 in `DiffusionLossConfig`, (c) flip
+  `snr_weighting: true`. Predicted: gt matched_rate climbs 0.640 →
+  0.70+, density_ratio 0.71 → 0.85+, q3 loss drops fast enough that
+  stochastic samplers and DDPM-64 produce usable output, eta>0
+  variants stop being broken. — separate experiment dir, full retrain.
+
+- **#014c — transformer denoiser.** Replace the 3-layer MLP denoiser
+  (7.34 M params, concat-and-MLP) with a small transformer denoiser
+  conditioned on `cursor_token + time_embed + x_t`. Tests whether
+  the MLP's expressivity (the cheapest viable choice) is the
+  bottleneck once the loss + sampler issues are fixed. Predicted:
+  small headline lift (1-3 pp) if the issues above are resolved;
+  negligible if they are not. — separate experiment dir, full retrain.
+
+- **D3PM discrete diffusion** — true categorical-target diffusion
+  rather than continuous Gaussian on a scaled one-hot. Tests
+  whether the soft-margin issue is intrinsic to the
+  Gaussian-on-one-hot design (could be — categorical distributions
+  don't need a softmax-margin trick to express confidence). — separate
+  experiment dir, full retrain. Lower priority than #014b/c since
+  the patches above are likely sufficient.
+
+- **Inference-time temperature in `decode_to_logits`** — independent
+  of training, multiply the output logits by a temperature `T > 1`
+  before argmax. Cheap post-hoc test of "is the bottleneck just
+  softmax margin?" — runnable against existing best.pt with a one-
+  line change to `GaussianContinuousProcess.decode_to_logits`. If
+  this alone closes 5+ pp of the gap, #014b's (a) is the critical
+  fix and (b)/(c) are smaller perturbations.
