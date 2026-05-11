@@ -1,0 +1,61 @@
+{
+    "_comment": "Inference spec for #015 (patched diffusion). Decoder is DiffusionDecoder with a DDIM 16-step sampler at eta=0, time_offset=0. Post-run ablation matrix (config/ablation_matrix.json) varies n_inference_steps, eta, n_samples, and time_offset. assemble_predictor calls decoder.bind_model(model) after load to wire the sampler against the model's diffusion stack — the model's self-conditioning flag carries through automatically via denoiser.config.self_cond.",
+    "checkpoint": "osu/taiko2/runs/exp_015_diffusion_patched/checkpoints/best.pt",
+    "predictor": {
+        "__class__": "osu.taiko2.inference.autoregressive.predictor:AutoregressivePredictor",
+        "config": {
+            "__class__": "osu.taiko2.inference.autoregressive.predictor:AutoregressivePredictorConfig",
+            "hop_bins_on_stop": 20,
+            "max_events": 10000,
+            "min_onset_gap_bins": 1,
+            "default_kind": "DON"
+        }
+    },
+    "decoder": {
+        "__class__": "osu.taiko2.inference.autoregressive.diffusion_decoder:DiffusionDecoder",
+        "config": {
+            "__class__": "osu.taiko2.inference.autoregressive.diffusion_decoder:DiffusionDecoderConfig",
+            "b_pred": 500,
+            "decode_strategy": "argmax",
+            "n_samples": 1,
+            "top_k_log": 5,
+            "sampler_config": {
+                "__class__": "osu.taiko2.diffusion.samplers:DDIMSamplerConfig",
+                "n_inference_steps": 16,
+                "eta": 0.0,
+                "timestep_spacing": "linspace",
+                "time_offset": 0.0
+            }
+        }
+    },
+    "input_builder": {
+        "__class__": "osu.taiko2.inference.autoregressive.builders:DetectionARInputBuilder",
+        "config": {
+            "__class__": "osu.taiko2.inference.autoregressive.builders:DetectionARBuilderConfig",
+            "a_bins": 500,
+            "b_bins": 500,
+            "c_events": 128
+        }
+    },
+    "audio_sampler": {
+        "__class__": "osu.taiko2.samplers.mel:MelSampler",
+        "config": {
+            "__class__": "osu.taiko2.domain.dataset:MelSamplerConfig",
+            "sample_rate": 22000,
+            "n_fft": 2048,
+            "hop_divisor": 200,
+            "n_mels": 80,
+            "f_min": 20.0,
+            "f_max": 8000.0,
+            "power": 2.0,
+            "top_db": 80.0
+        }
+    },
+    "event_sampler": {
+        "__class__": "osu.taiko2.samplers.event:FixedRateEventSampler",
+        "config": {
+            "__class__": "osu.taiko2.domain.dataset:EventSamplerConfig",
+            "divisor": 200
+        }
+    }
+}

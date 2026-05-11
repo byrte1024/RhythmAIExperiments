@@ -1,0 +1,4 @@
+{
+    "__class__": "osu.taiko2.training.adapters:DetectionSampleAdapterConfig",
+    "b_pred": 500
+}

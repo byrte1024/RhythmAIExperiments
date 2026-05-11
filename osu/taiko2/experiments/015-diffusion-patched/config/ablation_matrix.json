@@ -1,0 +1,21 @@
+[
+    {"_comment": "Reference: same sampler as #014's best (ddim_16_e0_n4 marginalization). With #015's three patches (logit_scale=5, snr_weighting, stop_weight=1.0) PLUS self-conditioning, expectation is matched_rate >= 0.72 — clears #007's 0.706 baseline and #012's 0.708 best.", "name": "ddim_16_e0_n4", "sampler_overrides": {"n_inference_steps": 16, "eta": 0.0, "time_offset": 0.0}, "decoder_overrides": {"n_samples": 4}},
+
+    {"_comment": "Single-sample reference at the same step count. Disambiguates: is the lift from the patches alone (this row) or specifically from marginalization across 4 draws (row above)? If THIS row already clears 0.706, the patches are doing the work and n_samples is bonus.", "name": "ddim_16_e0_n1", "sampler_overrides": {"n_inference_steps": 16, "eta": 0.0, "time_offset": 0.0}, "decoder_overrides": {"n_samples": 1}},
+
+    {"_comment": "Pareto-winning sampler from #014's ablation (4-step DDIM beat 16-step at e0). With self-cond + asymmetric time the gap should grow further — fewer steps amortize better when the denoiser has access to its prior estimate.", "name": "ddim_4_e0_n1", "sampler_overrides": {"n_inference_steps": 4, "eta": 0.0, "time_offset": 0.0}, "decoder_overrides": {"n_samples": 1}},
+
+    {"_comment": "Asymmetric time intervals (Analog Bits) at 4 steps. With offset=1 the denoiser sees t+1 — partly compensates for few-step DDIM truncation error. Predicted lift on top of ddim_4_e0_n1.", "name": "ddim_4_e0_n1_off1", "sampler_overrides": {"n_inference_steps": 4, "eta": 0.0, "time_offset": 1.0}, "decoder_overrides": {"n_samples": 1}},
+
+    {"_comment": "Combined Pareto: 4 steps × 4 samples = 16 calls/cursor (same compute as #014 baseline ddim_16_e0_n1). Tests whether the two #014 wins (4-step Pareto, n_samples=4 marginalization) compound. Most likely to be the new headline number.", "name": "ddim_4_e0_n4", "sampler_overrides": {"n_inference_steps": 4, "eta": 0.0, "time_offset": 0.0}, "decoder_overrides": {"n_samples": 4}},
+
+    {"_comment": "Same with asymmetric time. If 4-step + 4-sample + offset=1 wins overall it's the recommended inference config.", "name": "ddim_4_e0_n4_off1", "sampler_overrides": {"n_inference_steps": 4, "eta": 0.0, "time_offset": 1.0}, "decoder_overrides": {"n_samples": 4}},
+
+    {"_comment": "Stochastic sampler test — #014's q3 was so undertrained that eta=1 collapsed all variants to matched_rate ~0.06. With Min-SNR fixing q3, eta=1 should produce usable output (predicted: ~0.55+).", "name": "ddim_16_e1_n1", "sampler_overrides": {"n_inference_steps": 16, "eta": 1.0, "time_offset": 0.0}, "decoder_overrides": {"n_samples": 1}},
+
+    {"_comment": "Step-count fill-in.", "name": "ddim_8_e0_n1", "sampler_overrides": {"n_inference_steps": 8, "eta": 0.0, "time_offset": 0.0}, "decoder_overrides": {"n_samples": 1}},
+
+    {"_comment": "Step-count fill-in for the curve.", "name": "ddim_32_e0_n1", "sampler_overrides": {"n_inference_steps": 32, "eta": 0.0, "time_offset": 0.0}, "decoder_overrides": {"n_samples": 1}},
+
+    {"_comment": "Upper bound — DDPM 64-step. #014 had this as the WORST variant (q3 noise compounded); with Min-SNR fixing q3, DDPM-64 should at least not be catastrophically broken. Expected to come in below ddim_16_e0_n4 but well above #014's 0.06.", "name": "ddpm_64_e1_n1", "sampler_overrides": {"__class__": "osu.taiko2.domain.diffusion:DiffusionSamplerConfig", "n_inference_steps": 64, "eta": 1.0}, "decoder_overrides": {"n_samples": 1}}
+]

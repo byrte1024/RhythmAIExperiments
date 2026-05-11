@@ -1,0 +1,9 @@
+{
+    "_comment": "#015 loss: same MSE on (B, n_bins) as #014, with two patches. snr_weighting flipped to true (Min-SNR-γ at γ=5, Hang et al 2023; addresses the loss/per_t_q3 plateau noted on #014). stop_weight dropped 1.5 -> 1.0 (under MSE-on-scaled-one-hot the 1.5 multiplier biases unconditional output toward STOP — different sign than the softmax-CE convention it was copied from on #002). Everything else identical to #014.",
+    "__class__": "osu.taiko2.training.diffusion_loss:DiffusionLossConfig",
+    "loss_type": "mse",
+    "snr_weighting": true,
+    "snr_gamma": 5.0,
+    "stop_weight": 1.0,
+    "n_t_buckets": 4
+}
