@@ -544,7 +544,7 @@ class TestEndToEndTrainingStep:
                 super().__init__(config)
                 self._x_0 = x_0
 
-            def forward(self, cursor_token, x_t, t):
+            def forward(self, cursor_token, x_t, t, prev_x0_hat=None):
                 return self._x_0
 
         denoiser = OracleDenoiser(
@@ -562,3 +562,203 @@ class TestEndToEndTrainingStep:
         with torch.no_grad():
             logits = s.sample(cursor)
         assert torch.equal(logits.argmax(-1), target)
+
+
+# ─────────────────────────── #015 patches ─────────────────────────────
+
+
+class TestLogitScale:
+    """``GaussianContinuousProcessConfig.logit_scale`` controls
+    softmax sharpness without changing argmax (scale invariance).
+    """
+
+    def test_default_matches_old_behavior(self):
+        cfg = GaussianContinuousProcessConfig(
+            n_bins=5, parameterization="x0", x0_scale=2.0,
+        )
+        assert cfg.logit_scale == 1.0
+        proc = GaussianContinuousProcess(
+            cfg, CosineSchedule(CosineScheduleConfig(n_steps=4)),
+        )
+        # Encode a one-hot, decode — recover (1/x0_scale)*x0_scale = 1.0
+        # for the hot bin (default logit_scale=1.0 cancels the
+        # +x0_scale encoding, matching #014's old formula).
+        x0 = proc.encode_x0(torch.tensor([2]))
+        logits = proc.decode_to_logits(x0)
+        # Hot bin should be exactly 1.0 with default constants.
+        assert logits[0, 2].item() == pytest.approx(1.0)
+        assert logits[0, 0].item() == pytest.approx(0.0)
+
+    def test_logit_scale_sharpens_softmax(self):
+        # Same encoded x_0, two decoders. The bigger logit_scale yields
+        # sharper softmax. argmax matches in both cases.
+        sched = CosineSchedule(CosineScheduleConfig(n_steps=4))
+        proc_soft = GaussianContinuousProcess(
+            GaussianContinuousProcessConfig(
+                n_bins=11, parameterization="x0",
+                x0_scale=2.0, logit_scale=1.0,
+            ),
+            sched,
+        )
+        proc_sharp = GaussianContinuousProcess(
+            GaussianContinuousProcessConfig(
+                n_bins=11, parameterization="x0",
+                x0_scale=2.0, logit_scale=5.0,
+            ),
+            sched,
+        )
+        x0 = proc_soft.encode_x0(torch.tensor([7]))
+        soft = torch.softmax(proc_soft.decode_to_logits(x0), dim=-1)
+        sharp = torch.softmax(proc_sharp.decode_to_logits(x0), dim=-1)
+        assert int(soft.argmax(-1).item()) == 7
+        assert int(sharp.argmax(-1).item()) == 7
+        # logit_scale=5 should produce a much sharper peak.
+        assert sharp[0, 7].item() > soft[0, 7].item()
+        # Empirically: top1 ≈ 0.20 with default; ≈ 0.94 with scale=5.
+        assert sharp[0, 7].item() > 0.85
+        assert soft[0, 7].item() < 0.30
+
+    def test_logit_scale_rejects_nonpositive(self):
+        with pytest.raises(ValueError, match="logit_scale"):
+            GaussianContinuousProcessConfig(
+                n_bins=5, parameterization="x0", logit_scale=0.0,
+            )
+        with pytest.raises(ValueError, match="logit_scale"):
+            GaussianContinuousProcessConfig(
+                n_bins=5, parameterization="x0", logit_scale=-1.0,
+            )
+
+
+class TestSelfConditioning:
+    """``MLPDenoiserConfig.self_cond=True`` enables Analog-Bits-style
+    self-conditioning: the denoiser accepts an extra ``prev_x0_hat``
+    input channel.
+    """
+
+    def test_default_self_cond_false(self):
+        c = MLPDenoiserConfig(d_model=8, n_bins=5, hidden_dim=16)
+        assert c.self_cond is False
+
+    def test_input_dim_grows_with_self_cond(self):
+        # The first Linear's in_features should expand by n_bins when
+        # self_cond is enabled.
+        c_off = MLPDenoiserConfig(
+            d_model=8, n_bins=5, hidden_dim=16, self_cond=False,
+        )
+        c_on = MLPDenoiserConfig(
+            d_model=8, n_bins=5, hidden_dim=16, self_cond=True,
+        )
+        d_off = MLPDenoiser(c_off)
+        d_on = MLPDenoiser(c_on)
+        in_off = d_off.mlp[0].in_features
+        in_on = d_on.mlp[0].in_features
+        assert in_on - in_off == 5  # exactly +n_bins channels
+
+    def test_forward_accepts_prev_x0_hat(self):
+        c = MLPDenoiserConfig(
+            d_model=8, n_bins=5, hidden_dim=16, self_cond=True,
+        )
+        d = MLPDenoiser(c)
+        cursor = torch.randn(3, 8)
+        x_t = torch.randn(3, 5)
+        t = torch.randint(0, 4, (3,))
+        prev = torch.randn(3, 5)
+        out = d(cursor, x_t, t, prev_x0_hat=prev)
+        assert out.shape == (3, 5)
+
+    def test_forward_none_falls_back_to_zeros(self):
+        c = MLPDenoiserConfig(
+            d_model=8, n_bins=5, hidden_dim=16, self_cond=True,
+        )
+        d = MLPDenoiser(c).eval()
+        cursor = torch.randn(3, 8)
+        x_t = torch.randn(3, 5)
+        t = torch.randint(0, 4, (3,))
+        with torch.no_grad():
+            out_none = d(cursor, x_t, t, prev_x0_hat=None)
+            out_zeros = d(cursor, x_t, t, prev_x0_hat=torch.zeros(3, 5))
+        # ``None`` is documented to be equivalent to zeros.
+        assert torch.allclose(out_none, out_zeros)
+
+    def test_no_self_cond_ignores_prev_arg(self):
+        # When self_cond=False, passing prev_x0_hat doesn't change
+        # the output (it's not consumed).
+        c = MLPDenoiserConfig(
+            d_model=8, n_bins=5, hidden_dim=16, self_cond=False,
+        )
+        d = MLPDenoiser(c).eval()
+        cursor = torch.randn(3, 8)
+        x_t = torch.randn(3, 5)
+        t = torch.randint(0, 4, (3,))
+        with torch.no_grad():
+            a = d(cursor, x_t, t, prev_x0_hat=None)
+            b = d(cursor, x_t, t, prev_x0_hat=torch.randn(3, 5))
+        assert torch.allclose(a, b)
+
+
+class TestAsymmetricTime:
+    """``DDIMSamplerConfig.time_offset`` shifts the timestep handed to
+    the denoiser while preserving the reverse-process transition.
+    """
+
+    def test_default_zero(self):
+        c = DDIMSamplerConfig(n_inference_steps=4, eta=0.0)
+        assert c.time_offset == 0.0
+
+    def test_rejects_negative(self):
+        with pytest.raises(ValueError, match="time_offset"):
+            DDIMSamplerConfig(
+                n_inference_steps=4, eta=0.0, time_offset=-0.5,
+            )
+
+    def test_offset_changes_denoiser_t(self):
+        # Recording denoiser sees t' = t + offset, clamped to T-1.
+        T = 8
+        sched = CosineSchedule(CosineScheduleConfig(n_steps=T))
+        proc = GaussianContinuousProcess(
+            GaussianContinuousProcessConfig(
+                n_bins=4, parameterization="x0", x0_scale=2.0,
+            ),
+            sched,
+        )
+
+        seen_ts: list[int] = []
+
+        class RecordingDenoiser(DenoiserHead):
+            def __init__(self, config):
+                super().__init__(config)
+
+            def forward(self, cursor_token, x_t, t, prev_x0_hat=None):
+                seen_ts.append(int(t[0].item()))
+                return torch.zeros_like(x_t)
+
+        d = RecordingDenoiser(
+            MLPDenoiserConfig(d_model=8, n_bins=4, hidden_dim=8),
+        )
+
+        # offset=0 → denoiser sees the same ts the sampler iterates over
+        seen_ts.clear()
+        DDIMSampler(
+            DDIMSamplerConfig(
+                n_inference_steps=4, eta=0.0,
+                timestep_spacing="linspace", time_offset=0.0,
+            ),
+            proc, d,
+        ).sample(torch.randn(1, 8))
+        baseline = list(seen_ts)
+
+        # offset=2 → denoiser sees baseline + 2 (clipped to T-1)
+        seen_ts.clear()
+        DDIMSampler(
+            DDIMSamplerConfig(
+                n_inference_steps=4, eta=0.0,
+                timestep_spacing="linspace", time_offset=2.0,
+            ),
+            proc, d,
+        ).sample(torch.randn(1, 8))
+        offset = list(seen_ts)
+
+        assert len(baseline) == len(offset)
+        T_max = T - 1
+        for base_t, off_t in zip(baseline, offset):
+            assert off_t == min(base_t + 2, T_max)

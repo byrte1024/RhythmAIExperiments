@@ -39,13 +39,37 @@ class GaussianContinuousProcessConfig(DiffusionProcessConfig):
     it. Scaling ``x_0`` by a constant (typically 1.0–10.0) keeps
     SNR balanced. Standard 2.0 is a reasonable default for n_bins
     around 500.
+
+    ``logit_scale`` is the multiplier ``decode_to_logits`` applies
+    when turning a predicted ``x_0`` into a softmax-able logit
+    vector. The decoded logits are ``(x_0_hat / x0_scale) *
+    logit_scale``, so:
+
+    - argmax is unaffected by either constant (scale invariance);
+    - softmax sharpness scales with ``logit_scale``. With
+      ``logit_scale=1`` and ``x0_scale=2``, a perfectly predicted
+      one-hot gives top-1 logit margin = 1.0, top-1 prob ≈ 0.005
+      over 501 bins (the soft-margin ceiling noted on #014). With
+      ``logit_scale=5``, the same prediction reaches top-1 prob
+      ≈ 0.95 — making mean-of-softmax aggregation across
+      ``n_samples`` and any downstream confidence metric
+      meaningful.
+
+    Default ``logit_scale=1.0`` preserves the #014 behavior so old
+    configs / checkpoints decode identically. #015 onwards bumps it
+    to 5.0.
     """
     x0_scale: float = 2.0
+    logit_scale: float = 1.0
 
     def __post_init__(self) -> None:
         DiffusionProcessConfig.__post_init__(self)
         if self.x0_scale <= 0.0:
             raise ValueError(f"x0_scale must be > 0 (got {self.x0_scale})")
+        if self.logit_scale <= 0.0:
+            raise ValueError(
+                f"logit_scale must be > 0 (got {self.logit_scale})"
+            )
 
 
 class GaussianContinuousProcess(DiffusionProcess):
@@ -220,7 +244,10 @@ class GaussianContinuousProcess(DiffusionProcess):
         )
 
     def decode_to_logits(self, x_0_hat: torch.Tensor) -> torch.Tensor:
-        # Return as-is; the caller argmaxes to get the bin index.
-        # Dividing by x0_scale doesn't change the argmax, but produces
-        # something closer to a one-hot for inspection.
-        return x_0_hat / self.config.x0_scale
+        # ``x_0`` was encoded as a scaled one-hot; the inverse scale
+        # recovers a 0/1-magnitude prediction. ``logit_scale`` then
+        # turns that into a softmax-able logit margin — without it,
+        # the +1 logit gap over 501 bins caps top-1 prob at ~0.005,
+        # which is the soft-margin ceiling identified on #014. argmax
+        # is invariant to both constants; softmax sharpness is not.
+        return x_0_hat * (self.config.logit_scale / self.config.x0_scale)

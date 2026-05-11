@@ -158,6 +158,8 @@ class DiffusionLoss(
         if output.model_out is None or output.loss_target is None or output.t is None:
             # Inference-shape output (cursor_token only). Run the
             # diffusion forward inline using bound model components.
+            # Mirrors ``DiffusionDetector.forward_diffusion`` including
+            # the optional Analog-Bits two-pass self-conditioning.
             if self._process is None or self._denoiser is None or self._n_steps is None:
                 raise RuntimeError(
                     "DiffusionLoss got an inference-shape "
@@ -166,14 +168,37 @@ class DiffusionLoss(
                 )
             cursor_token = output.cursor_token
             target_bin = target.target_bin
+            B = cursor_token.size(0)
             x_0 = self._process.encode_x0(target_bin)
             t = torch.randint(
-                0, self._n_steps, (cursor_token.size(0),),
+                0, self._n_steps, (B,),
                 device=cursor_token.device, dtype=torch.long,
             )
             noise = torch.randn_like(x_0)
             x_t = self._process.q_sample(x_0, t, noise=noise)
-            model_out = self._denoiser(cursor_token, x_t, t)
+
+            self_cond = bool(
+                getattr(self._denoiser.config, "self_cond", False)
+            )
+            prev_x0_hat: torch.Tensor | None = None
+            if self_cond and self._denoiser.training:
+                mask = torch.rand(B, device=cursor_token.device) < 0.5
+                if bool(mask.any()):
+                    with torch.no_grad():
+                        first_pass = self._denoiser(
+                            cursor_token, x_t, t, prev_x0_hat=None,
+                        )
+                        sc_x0 = self._process.predict_x0(
+                            first_pass, x_t, t,
+                        ).detach()
+                    prev_x0_hat = torch.where(
+                        mask.view(-1, 1), sc_x0, torch.zeros_like(sc_x0),
+                    )
+
+            model_out = self._denoiser(
+                cursor_token, x_t, t,
+                prev_x0_hat=prev_x0_hat if self_cond else None,
+            )
             loss_target = self._process.loss_target(x_0, x_t, t, noise=noise)
             x0_hat = self._process.predict_x0(model_out, x_t, t)
             logits = self._process.decode_to_logits(x0_hat)

@@ -299,11 +299,21 @@ class DenoiserConfig:
     ``d_model`` matches the trunk's d_model; ``n_bins`` the output
     bin count; ``time_embed_dim`` the sinusoidal-time-embedding size.
     Concrete denoisers add their own fields.
+
+    ``self_cond`` enables Analog-Bits-style self-conditioning (Chen,
+    Zhang, Hinton 2022): the denoiser additionally consumes the
+    previous reverse step's predicted ``x_0`` (or, at training time,
+    a stop-grad copy of a first-pass denoiser output with prob 0.5,
+    else zeros). Concrete denoisers that opt in must expand their
+    input layer to accept the extra ``n_bins`` channel. ``False``
+    (default) is the #014 behavior — old configs / checkpoints load
+    unchanged.
     """
     d_model: int = 384
     n_bins: int = 501
     time_embed_dim: int = 128
     dropout: float = 0.1
+    self_cond: bool = False
 
     def __post_init__(self) -> None:
         if self.d_model < 1:
@@ -332,6 +342,13 @@ class DenoiserHead(nn.Module, ABC):
     - cursor_token: ``(B, d_model)`` float32 conditioning.
     - x_t:          process-defined shape; usually ``(B, n_bins)``.
     - t:            ``(B,) int64`` timestep indices.
+    - prev_x0_hat:  optional self-conditioning input (Chen, Zhang,
+                    Hinton 2022 — Analog Bits). Same shape as ``x_t``.
+                    Concrete denoisers ignore it unless their config
+                    enables self-conditioning. ``None`` means "no
+                    prior estimate" and the denoiser should behave as
+                    if conditioned on zeros (kept for backward
+                    compat with #014 checkpoints / configs).
     - return:       same shape as ``x_t``.
     """
 
@@ -347,6 +364,7 @@ class DenoiserHead(nn.Module, ABC):
         cursor_token: torch.Tensor,
         x_t: torch.Tensor,
         t: torch.Tensor,
+        prev_x0_hat: torch.Tensor | None = None,
     ) -> torch.Tensor:
         ...
 

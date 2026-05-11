@@ -74,16 +74,26 @@ class DDPMSampler(DiffusionSampler):
         B = cursor_token.size(0)
         process = self.process
         denoiser = self.denoiser
+        self_cond = bool(getattr(denoiser.config, "self_cond", False))
 
         if x_T is None:
             x_T = process.sample_prior(B, device, cursor_token.dtype)
         x_t = x_T
+        prev_x0_hat: torch.Tensor | None = None
 
         ts = self.timesteps().to(device)
         for i, t_int in enumerate(ts):
             t = t_int.repeat(B)
             t_prev = (t_int - 1).repeat(B)
-            model_out = denoiser(cursor_token, x_t, t)
+            model_out = denoiser(
+                cursor_token, x_t, t,
+                prev_x0_hat=prev_x0_hat if self_cond else None,
+            )
+            if self_cond:
+                # Compute the predicted x_0 for the next step's
+                # self-conditioning input. ``process.predict_x0``
+                # handles the parameterization (x0 / noise / v).
+                prev_x0_hat = process.predict_x0(model_out, x_t, t).detach()
             x_prev_mean = process.reverse_step(model_out, x_t, t, t_prev)
             if t_int > 0 and self.config.eta > 0.0:
                 # DDPM-style noise injection scaled by eta.
@@ -135,8 +145,19 @@ class DDIMSamplerConfig(DiffusionSamplerConfig):
     - ``"leading"``  — evenly spaced from 0 to T-1 with leading bias.
 
     For ``n_inference_steps == n_steps`` all three coincide.
+
+    ``time_offset`` enables Analog-Bits-style asymmetric time
+    intervals (Chen, Zhang, Hinton 2022). At sampling time, the
+    timestep handed to the denoiser is ``min(t + time_offset, T-1)``
+    while the reverse-process transition still goes ``t → t_prev``.
+    The offset partly compensates for the few-step DDIM truncation
+    error in mid-trajectory states by querying the denoiser as if
+    the input were slightly noisier than it actually is. ``0.0``
+    (default) matches DDIM's standard behavior. Values in 0.5–2.0
+    range typically help when ``n_inference_steps`` is small (≤ 8).
     """
     timestep_spacing: str = "linspace"
+    time_offset: float = 0.0
 
     def __post_init__(self) -> None:
         DiffusionSamplerConfig.__post_init__(self)
@@ -145,6 +166,10 @@ class DDIMSamplerConfig(DiffusionSamplerConfig):
                 f"timestep_spacing must be one of "
                 f"linspace/trailing/leading "
                 f"(got {self.timestep_spacing!r})"
+            )
+        if self.time_offset < 0.0:
+            raise ValueError(
+                f"time_offset must be >= 0 (got {self.time_offset})"
             )
 
 
@@ -194,17 +219,40 @@ class DDIMSampler(DiffusionSampler):
         B = cursor_token.size(0)
         process = self.process
         denoiser = self.denoiser
+        self_cond = bool(getattr(denoiser.config, "self_cond", False))
+        time_offset = float(self.config.time_offset)
+        T_max = int(self.process.schedule.n_steps) - 1
 
         if x_T is None:
             x_T = process.sample_prior(B, device, cursor_token.dtype)
         x_t = x_T
+        prev_x0_hat: torch.Tensor | None = None
 
         ts = self.timesteps().to(device)
         for i, t_int in enumerate(ts):
             t = t_int.repeat(B)
             t_prev_int = ts[i + 1] if i + 1 < len(ts) else torch.tensor(-1, device=device)
             t_prev = t_prev_int.repeat(B)
-            model_out = denoiser(cursor_token, x_t, t)
+            # Asymmetric time intervals: query the denoiser as if the
+            # input were slightly noisier (t + offset), but still
+            # transition along t → t_prev. Clamp to schedule range.
+            if time_offset > 0.0:
+                t_query = (t.float() + time_offset).round().long().clamp(
+                    min=0, max=T_max,
+                )
+            else:
+                t_query = t
+            model_out = denoiser(
+                cursor_token, x_t, t_query,
+                prev_x0_hat=prev_x0_hat if self_cond else None,
+            )
+            if self_cond:
+                # Use the predicted x_0 implied by this step's denoiser
+                # output as the self-conditioning input for the next
+                # step. ``predict_x0`` handles the parameterization.
+                # We pass ``t`` (not ``t_query``) so the conversion is
+                # consistent with the actual noise level of ``x_t``.
+                prev_x0_hat = process.predict_x0(model_out, x_t, t).detach()
             x_t = process.reverse_step(model_out, x_t, t, t_prev)
             if self.config.eta > 0.0 and i + 1 < len(ts):
                 # Scaled stochastic component (DDIM eta > 0 case).

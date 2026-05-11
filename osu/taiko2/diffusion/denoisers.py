@@ -87,12 +87,17 @@ class MLPDenoiserConfig(DenoiserConfig):
 class MLPDenoiser(DenoiserHead):
     """Cheapest viable denoiser. Concat-and-MLP architecture.
 
-    Forward:
+    Forward (no self-conditioning, ``self_cond=False``):
         time_emb = sinusoidal_time_embedding(t, time_embed_dim)
         time_emb = Linear(time_embed_dim, time_embed_proj_dim)(time_emb)
         h = concat([cursor_token, time_emb, x_t])
         h = MLP(h)  # n_layers Linear+Swish blocks
         return Linear(hidden_dim, n_bins)(h)
+
+    With ``self_cond=True`` the input concat also includes a
+    ``prev_x0_hat`` channel of shape ``(B, n_bins)``. Callers pass
+    ``None`` (= zeros, matches no-prior-estimate) on the first pass
+    or the previous step's predicted ``x_0`` on subsequent passes.
     """
 
     config: MLPDenoiserConfig
@@ -111,7 +116,11 @@ class MLPDenoiser(DenoiserHead):
         else:
             self.time_proj = nn.Identity()
 
-        d_in = c.d_model + proj_dim + c.n_bins
+        # Self-conditioning adds one extra ``n_bins`` channel at the
+        # input. When disabled, the first Linear is identical to the
+        # #014 version — checkpoint shapes match.
+        extra_in = c.n_bins if c.self_cond else 0
+        d_in = c.d_model + proj_dim + c.n_bins + extra_in
         layers: list[nn.Module] = [
             nn.Linear(d_in, c.hidden_dim),
             nn.SiLU(),
@@ -131,8 +140,14 @@ class MLPDenoiser(DenoiserHead):
         cursor_token: torch.Tensor,
         x_t: torch.Tensor,
         t: torch.Tensor,
+        prev_x0_hat: torch.Tensor | None = None,
     ) -> torch.Tensor:
         time_emb_raw = sinusoidal_time_embedding(t, self.config.time_embed_dim)
         time_emb = self.time_proj(time_emb_raw)
-        h = torch.cat([cursor_token, time_emb, x_t], dim=-1)
+        if self.config.self_cond:
+            if prev_x0_hat is None:
+                prev_x0_hat = torch.zeros_like(x_t)
+            h = torch.cat([cursor_token, time_emb, x_t, prev_x0_hat], dim=-1)
+        else:
+            h = torch.cat([cursor_token, time_emb, x_t], dim=-1)
         return self.mlp(h)

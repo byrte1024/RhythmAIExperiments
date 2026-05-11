@@ -494,3 +494,128 @@ class TestAssemblePredictorBindModel:
         assert hasattr(decoder, "bind_model")
         decoder.bind_model(model)
         assert decoder._sampler is not None
+
+
+# ─────────────────────────── #015 patches ─────────────────────────────
+
+
+def _tiny_self_cond_config(b_pred: int = 8) -> DiffusionDetectorConfig:
+    """Same as ``_tiny_detector_config`` but with self-conditioning."""
+    n_bins = b_pred + 1
+    return DiffusionDetectorConfig(
+        n_mels=8, d_model=32, n_layers=1, n_heads=2,
+        c_events=4, cond_dim=8,
+        a_bins=8, b_bins=8, b_pred=b_pred,
+        schedule_config=CosineScheduleConfig(n_steps=8),
+        process_config=GaussianContinuousProcessConfig(
+            n_bins=n_bins, parameterization="x0",
+            x0_scale=2.0, logit_scale=5.0,
+        ),
+        denoiser_config=MLPDenoiserConfig(
+            d_model=32, n_bins=n_bins, hidden_dim=64,
+            time_embed_dim=16, time_embed_proj_dim=32,
+            n_layers=2, dropout=0.0, self_cond=True,
+        ),
+    )
+
+
+class TestSelfCondTraining:
+    """``DiffusionDetector.forward_diffusion`` runs the Analog-Bits
+    two-pass self-conditioning logic when the denoiser opts in."""
+
+    def test_forward_diffusion_with_self_cond_runs(self):
+        cfg = _tiny_self_cond_config()
+        model = DiffusionDetector(cfg).train()
+        B = 4
+        cursor_token = torch.randn(B, cfg.d_model)
+        target_bin = torch.tensor([0, 1, cfg.b_pred, 3], dtype=torch.long)
+        # ``forward_diffusion`` should accept ``self_cond_prob`` kwarg
+        # and produce a populated output.
+        out = model.forward_diffusion(
+            cursor_token, target_bin, self_cond_prob=0.5,
+        )
+        assert out.model_out is not None
+        assert out.model_out.shape == (B, cfg.process_config.n_bins)
+        assert out.logits.shape == (B, cfg.process_config.n_bins)
+
+    def test_self_cond_zero_prob_matches_no_prev(self):
+        # With self_cond_prob=0.0 the prev_x0_hat input is all zeros
+        # (= the no-prior-estimate case). The output should match
+        # passing prev_x0_hat=None explicitly through the denoiser.
+        cfg = _tiny_self_cond_config()
+        model = DiffusionDetector(cfg).train()
+        cursor_token = torch.randn(2, cfg.d_model)
+        target_bin = torch.tensor([2, 4], dtype=torch.long)
+        torch.manual_seed(0)
+        t = torch.randint(0, cfg.schedule_config.n_steps, (2,))
+        noise = torch.randn(2, cfg.process_config.n_bins)
+        out = model.forward_diffusion(
+            cursor_token, target_bin,
+            t=t, noise=noise, self_cond_prob=0.0,
+        )
+        # Verify the denoiser got prev_x0_hat=None equivalent (zeros).
+        x_0 = model.process.encode_x0(target_bin)
+        x_t = model.process.q_sample(x_0, t, noise=noise)
+        with torch.no_grad():
+            expected = model.denoiser(
+                cursor_token, x_t, t, prev_x0_hat=None,
+            )
+        # forward_diffusion uses dropout=0 here; outputs match exactly.
+        # Note: model.train() sets dropout active but config.dropout=0.0
+        # so no stochasticity, and the two-pass branch is skipped.
+        assert torch.allclose(out.model_out, expected, atol=1e-6)
+
+    def test_self_cond_loss_inline_path(self):
+        # When the train loop hands ``DiffusionLoss`` an inference-shape
+        # output (cursor_token only), the loss's inline diffusion forward
+        # must also honor self_cond. Hard to verify directly; check that
+        # the loss runs without error and produces a real scalar.
+        cfg = _tiny_self_cond_config()
+        model = DiffusionDetector(cfg).train()
+        loss_cfg = DiffusionLossConfig(
+            loss_type="mse", snr_weighting=True, snr_gamma=5.0,
+            stop_weight=1.0, n_t_buckets=4,
+        )
+        loss = DiffusionLoss(loss_cfg)
+        loss.bind_model(model)
+
+        cursor_token = torch.randn(3, cfg.d_model, requires_grad=True)
+        # Inference-shape output: only cursor_token populated.
+        inf_out = DiffusionModelOutput(
+            logits=torch.zeros(3, cfg.process_config.n_bins),
+            cursor_token=cursor_token,
+        )
+        target_bin = torch.tensor([0, 4, cfg.b_pred], dtype=torch.long)
+        result = loss.forward(
+            inf_out,
+            EventEmbeddingTarget(target_bin=target_bin),
+        )
+        assert torch.isfinite(result.loss)
+        # SNR-weighted metric is always reported.
+        assert "loss/snr_weighted" in result.metrics
+        # Per-t-bucket diagnostics fire.
+        for q in range(loss_cfg.n_t_buckets):
+            assert f"loss/per_t_q{q}" in result.metrics
+
+
+class TestProcessLogitScaleIntegration:
+    """``logit_scale=5`` produces sharper decoder outputs than the
+    default while preserving argmax."""
+
+    def test_decode_logits_sharper_with_scale_5(self):
+        cfg = _tiny_self_cond_config()      # logit_scale=5 by config
+        model = DiffusionDetector(cfg).eval()
+        x_0 = model.process.encode_x0(torch.tensor([3]))
+        logits = model.process.decode_to_logits(x_0)
+        # With logit_scale=5 and x0_scale=2 the positive bin has logit
+        # 2.5, so softmax should sharply favor it.
+        prob = torch.softmax(logits, dim=-1)[0, 3].item()
+        assert prob > 0.85
+        # And the default-1 config (#014 behavior) gives prob < 0.30.
+        cfg2 = _tiny_detector_config()      # logit_scale=1 by default
+        model2 = DiffusionDetector(cfg2).eval()
+        x_0_2 = model2.process.encode_x0(torch.tensor([3]))
+        prob2 = torch.softmax(
+            model2.process.decode_to_logits(x_0_2), dim=-1,
+        )[0, 3].item()
+        assert prob2 < 0.30

@@ -295,6 +295,7 @@ class DiffusionDetector(EventEmbeddingDetector):
         target_bin: torch.Tensor,
         t: torch.Tensor | None = None,
         noise: torch.Tensor | None = None,
+        self_cond_prob: float = 0.5,
     ) -> DiffusionModelOutput:
         """Run one diffusion training step starting from a precomputed
         cursor token.
@@ -302,6 +303,16 @@ class DiffusionDetector(EventEmbeddingDetector):
         Sampling of ``t`` and ``noise`` happens here; pass them in
         explicitly for reproducible eval / gradient checks. ``t`` is
         sampled uniformly over the schedule by default.
+
+        When the denoiser opts into self-conditioning
+        (``denoiser_config.self_cond=True``), this method follows the
+        Analog-Bits two-pass training recipe (Chen, Zhang, Hinton
+        2022): with probability ``self_cond_prob`` it first runs a
+        no-self-cond forward and uses the (stop-gradient) predicted
+        ``x_0`` as the self-conditioning input for the real loss
+        forward; otherwise it uses zeros. This matches the inference
+        distribution where the first step has no prior estimate but
+        subsequent steps do.
 
         Returns a ``DiffusionModelOutput`` with all training fields
         populated, plus a placeholder ``logits`` field that contains
@@ -322,7 +333,28 @@ class DiffusionDetector(EventEmbeddingDetector):
             noise = torch.randn_like(x_0)
 
         x_t = self.process.q_sample(x_0, t, noise=noise)
-        model_out = self.denoiser(cursor_token, x_t, t)
+
+        # Optional self-conditioning: with prob ``self_cond_prob`` we
+        # first denoise with no prior estimate and feed the (stop-grad)
+        # predicted x_0 back in as ``prev_x0_hat`` for the real pass.
+        self_cond = bool(self.denoiser.config.self_cond)
+        prev_x0_hat: torch.Tensor | None = None
+        if self_cond and self_cond_prob > 0.0 and self.training:
+            mask = torch.rand(B, device=device) < self_cond_prob       # (B,)
+            if bool(mask.any()):
+                with torch.no_grad():
+                    first_pass = self.denoiser(
+                        cursor_token, x_t, t, prev_x0_hat=None,
+                    )
+                    sc_x0 = self.process.predict_x0(first_pass, x_t, t).detach()
+                prev_x0_hat = torch.where(
+                    mask.view(-1, 1), sc_x0, torch.zeros_like(sc_x0),
+                )
+
+        model_out = self.denoiser(
+            cursor_token, x_t, t,
+            prev_x0_hat=prev_x0_hat if self_cond else None,
+        )
         loss_target = self.process.loss_target(x_0, x_t, t, noise=noise)
 
         # Predict x_0 logits at this sampled t; downstream metrics may
