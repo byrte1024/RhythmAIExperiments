@@ -544,7 +544,7 @@ class TestEndToEndTrainingStep:
                 super().__init__(config)
                 self._x_0 = x_0
 
-            def forward(self, cursor_token, x_t, t, prev_x0_hat=None):
+            def forward(self, cursor_token, x_t, t, prev_x0_hat=None, audio_features=None):
                 return self._x_0
 
         denoiser = OracleDenoiser(
@@ -728,7 +728,7 @@ class TestAsymmetricTime:
             def __init__(self, config):
                 super().__init__(config)
 
-            def forward(self, cursor_token, x_t, t, prev_x0_hat=None):
+            def forward(self, cursor_token, x_t, t, prev_x0_hat=None, audio_features=None):
                 seen_ts.append(int(t[0].item()))
                 return torch.zeros_like(x_t)
 

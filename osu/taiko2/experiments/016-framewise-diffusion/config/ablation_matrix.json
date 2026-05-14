@@ -1,0 +1,21 @@
+[
+    {"_comment": "Reference: τ=0.5 / no NMS / 16-step DDIM / no offset. The default per-eval AR-corpus hook config — establishes the baseline number for this design.", "name": "thr_50_nms_1_ddim_16_off_0", "decoder_overrides": {"decode_threshold": 0.5, "nms_kernel": 1, "min_emit_gap_bins": 1}, "sampler_overrides": {"n_inference_steps": 16, "eta": 0.0, "time_offset": 0.0}},
+
+    {"_comment": "Threshold sweep down: τ=0.3. If matched_rate rises sharply, the model is producing diffuse activation maps and the threshold is too tight. If hallucination_rate spikes, the model emits noise at low threshold.", "name": "thr_30_nms_1_ddim_16", "decoder_overrides": {"decode_threshold": 0.3, "nms_kernel": 1, "min_emit_gap_bins": 1}, "sampler_overrides": {"n_inference_steps": 16, "eta": 0.0, "time_offset": 0.0}},
+
+    {"_comment": "Threshold sweep up: τ=0.7. Tells us if the model produces sharp peaks (matched_rate roughly held) or smooth activations (matched_rate collapses).", "name": "thr_70_nms_1_ddim_16", "decoder_overrides": {"decode_threshold": 0.7, "nms_kernel": 1, "min_emit_gap_bins": 1}, "sampler_overrides": {"n_inference_steps": 16, "eta": 0.0, "time_offset": 0.0}},
+
+    {"_comment": "NMS-3 at τ=0.5: suppress adjacent-bin duplicates within ±1 frame. Tests whether the raw activation map has duplicate-emission artifacts (a known framewise failure mode).", "name": "thr_50_nms_3_ddim_16", "decoder_overrides": {"decode_threshold": 0.5, "nms_kernel": 3, "min_emit_gap_bins": 1}, "sampler_overrides": {"n_inference_steps": 16, "eta": 0.0, "time_offset": 0.0}},
+
+    {"_comment": "NMS-5 at lower threshold: aggressive local-max filter + permissive threshold. Best variant if the model has highly bimodal peaks (sharp around onsets, near-zero elsewhere).", "name": "thr_30_nms_5_ddim_16", "decoder_overrides": {"decode_threshold": 0.3, "nms_kernel": 5, "min_emit_gap_bins": 2}, "sampler_overrides": {"n_inference_steps": 16, "eta": 0.0, "time_offset": 0.0}},
+
+    {"_comment": "Step-count sweep: 4-step DDIM at the canonical operating point. If matched_rate holds, 4 steps is free (4× inference speedup over 16-step).", "name": "thr_50_nms_1_ddim_4", "decoder_overrides": {"decode_threshold": 0.5, "nms_kernel": 1, "min_emit_gap_bins": 1}, "sampler_overrides": {"n_inference_steps": 4, "eta": 0.0, "time_offset": 0.0}},
+
+    {"_comment": "4-step + asymmetric time offset (Analog Bits Figure 3 fix). Free quality lift at few-step end if the trajectory truncation matters.", "name": "thr_50_nms_1_ddim_4_off_1", "decoder_overrides": {"decode_threshold": 0.5, "nms_kernel": 1, "min_emit_gap_bins": 1}, "sampler_overrides": {"n_inference_steps": 4, "eta": 0.0, "time_offset": 1.0}},
+
+    {"_comment": "Full DDPM-64 reference. After #015's q3 fix, stochastic samplers should produce usable output on framewise targets (unlike #014/#015 next-bin where the activation map is dominated by one peak).", "name": "thr_50_nms_3_ddpm_64", "decoder_overrides": {"decode_threshold": 0.5, "nms_kernel": 3, "min_emit_gap_bins": 1}, "sampler_overrides": {"__class__": "osu.taiko2.domain.diffusion:DiffusionSamplerConfig", "n_inference_steps": 64, "eta": 1.0}},
+
+    {"_comment": "32-step DDIM step-curve fill-in. If matched_rate is essentially flat across (4, 8, 16, 32), step count is dead axis (same as #014/#015 finding).", "name": "thr_50_nms_1_ddim_32", "decoder_overrides": {"decode_threshold": 0.5, "nms_kernel": 1, "min_emit_gap_bins": 1}, "sampler_overrides": {"n_inference_steps": 32, "eta": 0.0, "time_offset": 0.0}},
+
+    {"_comment": "Combined Pareto: best inference config combining the strongest individual axes. 4-step DDIM (cheapest), offset=1 (free), NMS-3 (suppress adjacent duplicates), threshold tuned by the sweep above.", "name": "thr_50_nms_3_ddim_4_off_1", "decoder_overrides": {"decode_threshold": 0.5, "nms_kernel": 3, "min_emit_gap_bins": 2}, "sampler_overrides": {"n_inference_steps": 4, "eta": 0.0, "time_offset": 1.0}}
+]

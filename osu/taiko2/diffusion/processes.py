@@ -251,3 +251,177 @@ class GaussianContinuousProcess(DiffusionProcess):
         # which is the soft-margin ceiling identified on #014. argmax
         # is invariant to both constants; softmax sharpness is not.
         return x_0_hat * (self.config.logit_scale / self.config.x0_scale)
+
+
+# ─────────────────────────── FramewiseActivation ──────────────────────
+
+
+@dataclass(frozen=True, slots=True)
+class FramewiseActivationProcessConfig(DiffusionProcessConfig):
+    """Continuous Gaussian diffusion on a ``[0, 1]`` activation map (#016).
+
+    Identical math to :class:`GaussianContinuousProcess` but the
+    encoded ``x_0`` is the activation map itself (not a one-hot over a
+    target bin). The decoder is identity-with-clip: the predicted
+    ``x_0`` IS the ``[0, 1]`` activation map, and a downstream
+    threshold-based decoder turns it into onset bin indices.
+
+    Only ``parameterization="x0"`` is supported — predicting noise or
+    v isn't useful when the target is bounded in ``[0, 1]`` (the
+    inverse formulas overshoot and you have to re-clip every step,
+    which defeats the purpose of the parameterization). Other
+    choices raise at config-time.
+    """
+
+    def __post_init__(self) -> None:
+        DiffusionProcessConfig.__post_init__(self)
+        if self.parameterization != "x0":
+            raise ValueError(
+                f"FramewiseActivationProcess only supports x0 "
+                f"parameterization (got {self.parameterization!r})"
+            )
+
+
+class FramewiseActivationProcess(DiffusionProcess):
+    """DDPM in continuous space over a ``(B, n_bins)`` activation map.
+
+    Same math as :class:`GaussianContinuousProcess` (Gaussian forward
+    noising, DDIM-style reverse step), with two differences:
+
+    - ``encode_x0`` accepts the ``(B, n_bins)`` activation map
+      directly (not a ``(B,) int`` bin index). Passing a rank-1
+      tensor raises — the framewise pipeline never one-hots.
+    - ``decode_to_logits`` returns the activation map clipped to
+      ``[0, 1]``; argmax-ing it isn't meaningful (it'd just be the
+      max-activation bin) — the framewise decoder thresholds
+      instead.
+    """
+
+    config: FramewiseActivationProcessConfig
+
+    def __init__(
+        self,
+        config: FramewiseActivationProcessConfig,
+        schedule: NoiseSchedule,
+    ):
+        super().__init__(config, schedule)
+        betas = schedule.betas().double()
+        alphas = 1.0 - betas
+        alphas_cumprod = torch.cumprod(alphas, dim=0)
+        alphas_cumprod_prev = torch.cat([
+            torch.ones(1, dtype=alphas_cumprod.dtype),
+            alphas_cumprod[:-1],
+        ])
+        self._betas = betas.float()
+        self._alphas = alphas.float()
+        self._alphas_cumprod = alphas_cumprod.float()
+        self._alphas_cumprod_prev = alphas_cumprod_prev.float()
+        self._sqrt_alphas_cumprod = alphas_cumprod.sqrt().float()
+        self._sqrt_one_minus_alphas_cumprod = (
+            (1.0 - alphas_cumprod).sqrt().float()
+        )
+
+    # ── helpers ──────────────────────────────────────────────────────
+
+    def _gather(self, table: torch.Tensor, t: torch.Tensor) -> torch.Tensor:
+        out = table.to(t.device).gather(0, t.long())
+        return out.view(-1, 1)
+
+    # ── forward noising ──────────────────────────────────────────────
+
+    def encode_x0(self, target_map_or_bin: torch.Tensor) -> torch.Tensor:
+        """Return the activation map as-is (float32).
+
+        The ABC signature expects ``(B,) int target_bin``; for the
+        framewise process we overload to accept ``(B, n_bins)``
+        activation maps and raise on a rank-1 tensor. Callers
+        construct the map via :func:`make_framewise_target`.
+        """
+        if target_map_or_bin.dim() != 2:
+            raise ValueError(
+                "FramewiseActivationProcess.encode_x0 expects a "
+                "(B, n_bins) activation map (not a (B,) int bin "
+                f"index; got rank {target_map_or_bin.dim()})"
+            )
+        if target_map_or_bin.size(-1) != self.config.n_bins:
+            raise ValueError(
+                f"activation map last dim must equal n_bins="
+                f"{self.config.n_bins} (got {target_map_or_bin.size(-1)})"
+            )
+        return target_map_or_bin.float()
+
+    def q_sample(
+        self,
+        x_0: torch.Tensor,
+        t: torch.Tensor,
+        noise: torch.Tensor | None = None,
+    ) -> torch.Tensor:
+        if noise is None:
+            noise = torch.randn_like(x_0)
+        sqrt_ab = self._gather(self._sqrt_alphas_cumprod, t)
+        sqrt_om = self._gather(self._sqrt_one_minus_alphas_cumprod, t)
+        return sqrt_ab * x_0 + sqrt_om * noise
+
+    # ── parameterization conversions ─────────────────────────────────
+
+    def loss_target(
+        self,
+        x_0: torch.Tensor,
+        x_t: torch.Tensor,
+        t: torch.Tensor,
+        noise: torch.Tensor | None = None,
+    ) -> torch.Tensor:
+        # Config enforces parameterization=="x0".
+        return x_0
+
+    def predict_x0(
+        self,
+        model_out: torch.Tensor,
+        x_t: torch.Tensor,
+        t: torch.Tensor,
+    ) -> torch.Tensor:
+        return model_out
+
+    # ── reverse process ──────────────────────────────────────────────
+
+    def reverse_step(
+        self,
+        model_out: torch.Tensor,
+        x_t: torch.Tensor,
+        t: torch.Tensor,
+        t_prev: torch.Tensor,
+    ) -> torch.Tensor:
+        x_0_hat = self.predict_x0(model_out, x_t, t)
+        sqrt_ab_t = self._gather(self._sqrt_alphas_cumprod, t)
+        ab_prev = torch.where(
+            t_prev >= 0,
+            self._alphas_cumprod.to(t.device).gather(
+                0, t_prev.clamp(min=0).long(),
+            ),
+            torch.ones_like(t_prev, dtype=self._alphas_cumprod.dtype),
+        ).view(-1, 1)
+        sqrt_ab_prev = ab_prev.sqrt()
+        sqrt_om_prev = (1.0 - ab_prev).clamp(min=0.0).sqrt()
+        sqrt_om_t = self._gather(self._sqrt_one_minus_alphas_cumprod, t)
+        eps_hat = (x_t - sqrt_ab_t * x_0_hat) / sqrt_om_t.clamp(min=1e-8)
+        return sqrt_ab_prev * x_0_hat + sqrt_om_prev * eps_hat
+
+    # ── prior + decoding ─────────────────────────────────────────────
+
+    def sample_prior(
+        self,
+        batch_size: int,
+        device: torch.device,
+        dtype: torch.dtype = torch.float32,
+    ) -> torch.Tensor:
+        return torch.randn(
+            batch_size, self.config.n_bins, device=device, dtype=dtype,
+        )
+
+    def decode_to_logits(self, x_0_hat: torch.Tensor) -> torch.Tensor:
+        # Activation map directly; clip to [0, 1] so downstream
+        # threshold-based decoders see a clean probability-like
+        # signal. argmax of this is just the strongest bin and is
+        # not the canonical decoding — the framewise decoder
+        # thresholds and peak-picks.
+        return x_0_hat.clamp(0.0, 1.0)

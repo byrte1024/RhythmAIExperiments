@@ -1,0 +1,7 @@
+{
+    "_comment": "#016 framewise adapter: converts each DataSample's future-event tuple into a (B_PRED,) Gaussian-smoothed activation map. sigma_frames=2 matches the canonical tolerance band. max_events_per_window=100 must equal data.json's d_events.",
+    "__class__": "osu.taiko2.training.framewise_adapter:FramewiseSampleAdapterConfig",
+    "b_pred": 500,
+    "sigma_frames": 2.0,
+    "max_events_per_window": 100
+}

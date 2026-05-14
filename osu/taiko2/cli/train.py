@@ -234,6 +234,33 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         ),
     )
     p.add_argument(
+        "--rollout-eval-n-charts", type=int, default=32,
+        help=(
+            "Framewise rollout hook: number of val samples drawn per "
+            "eval boundary for the full DDIM convergence rollout."
+        ),
+    )
+    p.add_argument(
+        "--rollout-noaug-n-charts", type=int, default=32,
+        help="Framewise rollout hook: same on the train-noaug subset.",
+    )
+    p.add_argument(
+        "--rollout-t-inf-steps", type=int, default=16,
+        help="Framewise rollout hook: T_inf for the DDIM sampler.",
+    )
+    p.add_argument(
+        "--rollout-every-n-evals", type=int, default=1,
+        help="Run the framewise rollout hook every Nth eval.",
+    )
+    p.add_argument(
+        "--rollout-n-gif-samples", type=int, default=5,
+        help="Framewise rollout hook: number of representative GIF samples.",
+    )
+    p.add_argument(
+        "--no-rollout-hook", action="store_true",
+        help="Disable the framewise rollout hook even in framewise mode.",
+    )
+    p.add_argument(
         "--cursor-shift-prob", type=float, default=0.0,
         help=(
             "Probability of shifting the cursor forward between the "
@@ -320,9 +347,19 @@ def main(argv: list[str] | None = None) -> int:
     from ..models.diffusion_detector import (
         DiffusionDetector, DiffusionDetectorConfig,
     )
+    # Framewise diffusion (#016) — separate dispatch path. Imported lazily
+    # so test environments without the framewise stack don't pay the cost.
+    from ..models.framewise_diffusion_detector import (
+        FramewiseDiffusionDetector, FramewiseDiffusionDetectorConfig,
+    )
     is_diffusion_mode = isinstance(model_cfg, DiffusionDetectorConfig)
+    is_framewise_diffusion = isinstance(
+        model_cfg, FramewiseDiffusionDetectorConfig,
+    )
     if is_ratio_mode:
         model = RatioDetector(model_cfg)
+    elif is_framewise_diffusion:
+        model = FramewiseDiffusionDetector(model_cfg)
     elif is_diffusion_mode:
         model = DiffusionDetector(model_cfg)
     else:
@@ -339,7 +376,12 @@ def main(argv: list[str] | None = None) -> int:
         loss = OnsetLoss(loss_cfg)
     else:
         from ..training.diffusion_loss import DiffusionLoss, DiffusionLossConfig
-        if isinstance(loss_cfg, DiffusionLossConfig):
+        from ..training.framewise_diffusion_loss import (
+            FramewiseDiffusionLoss, FramewiseDiffusionLossConfig,
+        )
+        if isinstance(loss_cfg, FramewiseDiffusionLossConfig):
+            loss = FramewiseDiffusionLoss(loss_cfg)
+        elif isinstance(loss_cfg, DiffusionLossConfig):
             loss = DiffusionLoss(loss_cfg)
         else:
             raise TypeError(f"unsupported loss config: {type(loss_cfg).__name__}")
@@ -347,29 +389,58 @@ def main(argv: list[str] | None = None) -> int:
     # q_sample + denoiser forward inline (the train loop calls
     # model.predict generically, which for DiffusionDetector returns
     # only the cursor token).
-    if is_diffusion_mode and hasattr(loss, "bind_model"):
+    if (is_diffusion_mode or is_framewise_diffusion) and hasattr(loss, "bind_model"):
         loss.bind_model(model)
     if is_ratio_mode:
         adapter_cfg = _with(adapter_cfg, ratio_mode=True)
-    adapter = DetectionSampleAdapter(adapter_cfg)
+    # Framewise dispatch — uses a separate adapter that produces
+    # FramewiseTarget instead of EventEmbeddingTarget. The chunk-C work
+    # will hook up framewise-specific metrics + artifacts; for now we
+    # disable the bin-classification artifacts and metrics that don't
+    # apply.
+    if is_framewise_diffusion:
+        from ..training.framewise_adapter import (
+            FramewiseSampleAdapter, FramewiseSampleAdapterConfig,
+        )
+        adapter = FramewiseSampleAdapter(
+            FramewiseSampleAdapterConfig(b_pred=model_cfg.b_pred),
+        )
+    else:
+        adapter = DetectionSampleAdapter(adapter_cfg)
 
     # Train metrics are per-epoch running means (reset each epoch) — the
     # loop uses them for the tqdm postfix so "good_avg / miss_avg" show
     # during training, not just at eval boundaries.
-    train_metrics = MetricSet(
-        OnsetMetric(OnsetMetricConfig(b_pred=model_cfg.b_pred)),
-    )
-    val_metrics = MetricSet(
-        OnsetMetric(OnsetMetricConfig(b_pred=model_cfg.b_pred)),
-    )
-    eval_artifacts: list = [
-        PredictionHeatmapArtifact(b_pred=model_cfg.b_pred),
-        DistributionArtifact(b_pred=model_cfg.b_pred),
-        RatioErrorHeatmapArtifact(b_pred=model_cfg.b_pred),
-        ErrorHistogramArtifact(b_pred=model_cfg.b_pred),
-        RatioHitArtifact(b_pred=model_cfg.b_pred),
-        MetronomeHitArtifact(b_pred=model_cfg.b_pred),
-    ]
+    # Framewise mode: OnsetMetric + bin-classification artifacts don't
+    # apply to (B, n_bins) activation-map output. Chunk C will replace
+    # them with framewise-specific metric classes + GIF rollout
+    # artifacts; for now disable them so the train loop doesn't crash.
+    if is_framewise_diffusion:
+        train_metrics = MetricSet()
+        val_metrics = MetricSet()
+        from ..training.framewise_artifacts import (
+            FramewiseDistributionArtifact,
+            FramewiseHeatmapArtifact,
+        )
+        eval_artifacts: list = [
+            FramewiseHeatmapArtifact(),
+            FramewiseDistributionArtifact(),
+        ]
+    else:
+        train_metrics = MetricSet(
+            OnsetMetric(OnsetMetricConfig(b_pred=model_cfg.b_pred)),
+        )
+        val_metrics = MetricSet(
+            OnsetMetric(OnsetMetricConfig(b_pred=model_cfg.b_pred)),
+        )
+        eval_artifacts = [
+            PredictionHeatmapArtifact(b_pred=model_cfg.b_pred),
+            DistributionArtifact(b_pred=model_cfg.b_pred),
+            RatioErrorHeatmapArtifact(b_pred=model_cfg.b_pred),
+            ErrorHistogramArtifact(b_pred=model_cfg.b_pred),
+            RatioHitArtifact(b_pred=model_cfg.b_pred),
+            MetronomeHitArtifact(b_pred=model_cfg.b_pred),
+        ]
     if model_cfg.n_mdn_components > 0:
         from ..training.artifacts import MdnComponentArtifact
         eval_artifacts.append(
@@ -389,8 +460,10 @@ def main(argv: list[str] | None = None) -> int:
         )
 
     # 4. Weighted sampling (exp 45 default).
+    # Framewise: per-bin target distribution makes the (B,)
+    # single-target-class weighting meaningless. Disable.
     train_weights = None
-    if args.weighted_sampling:
+    if args.weighted_sampling and not is_framewise_diffusion:
         train_weights = train_sampler.compute_target_weights(
             b_pred=model_cfg.b_pred, power=args.weighted_power,
         )
@@ -459,6 +532,35 @@ def main(argv: list[str] | None = None) -> int:
                 f"freeze_aux_at_boundary={model.freeze_aux_at_boundary}"
             )
 
+    extra_hooks: list = []
+    if is_framewise_diffusion and not args.no_rollout_hook:
+        from ..training.framewise_rollout_hook import (
+            FramewiseRolloutHook,
+            FramewiseRolloutHookConfig,
+        )
+        rollout_cfg = FramewiseRolloutHookConfig(
+            eval_n_charts=args.rollout_eval_n_charts,
+            noaug_n_charts=args.rollout_noaug_n_charts,
+            t_inf_steps=args.rollout_t_inf_steps,
+            every_n_evals=args.rollout_every_n_evals,
+            n_gif_samples=args.rollout_n_gif_samples,
+        )
+        extra_hooks.append(FramewiseRolloutHook(
+            config=rollout_cfg,
+            spec=spec,
+            model=model,
+            adapter=adapter,
+            val_sampler=val_sampler,
+            train_sampler=train_sampler,
+            device=args.device,
+        ))
+        print(
+            f"[framewise-rollout] hook enabled — every "
+            f"{rollout_cfg.every_n_evals} eval(s), "
+            f"{rollout_cfg.eval_n_charts}*{rollout_cfg.eval_n_windows_per_chart}"
+            f" samples, T_inf={rollout_cfg.t_inf_steps}"
+        )
+
     state = train(
         spec=spec,
         trainer_config=trainer_cfg,
@@ -472,6 +574,7 @@ def main(argv: list[str] | None = None) -> int:
         eval_artifacts=eval_artifacts,
         train_weights=train_weights,
         pre_hooks=pre_hooks,
+        extra_hooks=extra_hooks,
         device=args.device,
         resume=args.resume,
         train_noaug_fraction=args.train_noaug_fraction,

@@ -13,10 +13,17 @@ from .schedules import (
     LinearScheduleConfig,
 )
 from .processes import (
+    FramewiseActivationProcess,
+    FramewiseActivationProcessConfig,
     GaussianContinuousProcess,
     GaussianContinuousProcessConfig,
 )
-from .denoisers import MLPDenoiser, MLPDenoiserConfig
+from .denoisers import (
+    Conv1DDenoiser,
+    Conv1DDenoiserConfig,
+    MLPDenoiser,
+    MLPDenoiserConfig,
+)
 from .samplers import DDIMSampler, DDIMSamplerConfig, DDPMSampler
 
 __all__ = [
@@ -28,9 +35,13 @@ __all__ = [
     # processes
     "GaussianContinuousProcess",
     "GaussianContinuousProcessConfig",
+    "FramewiseActivationProcess",
+    "FramewiseActivationProcessConfig",
     # denoisers
     "MLPDenoiser",
     "MLPDenoiserConfig",
+    "Conv1DDenoiser",
+    "Conv1DDenoiserConfig",
     # samplers
     "DDPMSampler",
     "DDIMSampler",

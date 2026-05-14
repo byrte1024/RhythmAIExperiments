@@ -1,0 +1,12 @@
+{
+    "_comment": "#016 framewise loss: weighted MSE on the predicted activation map vs Gaussian-smoothed target. Per-sample positive-class weighting (clamped [10, 200]) compensates for the ~1.5% positive-bin rate. Min-SNR γ=5 weighting on (from #015's lessons). No STOP class. Canonical operating point τ=0.5 with tolerance ±2 frames; the 101-threshold sweep + 5-tolerance grid live in the rollout/curve metric modules.",
+    "__class__": "osu.taiko2.training.framewise_diffusion_loss:FramewiseDiffusionLossConfig",
+    "loss_type": "mse",
+    "snr_weighting": true,
+    "snr_gamma": 5.0,
+    "pos_weight_clamp_min": 10.0,
+    "pos_weight_clamp_max": 200.0,
+    "n_t_buckets": 4,
+    "canonical_threshold": 0.5,
+    "canonical_tolerance_frames": 2
+}

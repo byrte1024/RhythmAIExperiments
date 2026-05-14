@@ -69,6 +69,7 @@ class DDPMSampler(DiffusionSampler):
         self,
         cursor_token: torch.Tensor,
         x_T: torch.Tensor | None = None,
+        audio_features: torch.Tensor | None = None,
     ) -> torch.Tensor:
         device = cursor_token.device
         B = cursor_token.size(0)
@@ -88,6 +89,7 @@ class DDPMSampler(DiffusionSampler):
             model_out = denoiser(
                 cursor_token, x_t, t,
                 prev_x0_hat=prev_x0_hat if self_cond else None,
+                audio_features=audio_features,
             )
             if self_cond:
                 # Compute the predicted x_0 for the next step's
@@ -214,6 +216,7 @@ class DDIMSampler(DiffusionSampler):
         self,
         cursor_token: torch.Tensor,
         x_T: torch.Tensor | None = None,
+        audio_features: torch.Tensor | None = None,
     ) -> torch.Tensor:
         device = cursor_token.device
         B = cursor_token.size(0)
@@ -245,6 +248,7 @@ class DDIMSampler(DiffusionSampler):
             model_out = denoiser(
                 cursor_token, x_t, t_query,
                 prev_x0_hat=prev_x0_hat if self_cond else None,
+                audio_features=audio_features,
             )
             if self_cond:
                 # Use the predicted x_0 implied by this step's denoiser
@@ -271,3 +275,70 @@ class DDIMSampler(DiffusionSampler):
                     std = var.clamp(min=0.0).sqrt()
                     x_t = x_t + std * noise
         return process.decode_to_logits(x_t)
+
+    @torch.no_grad()
+    def sample_with_intermediates(
+        self,
+        cursor_token: torch.Tensor,
+        x_T: torch.Tensor | None = None,
+        audio_features: torch.Tensor | None = None,
+    ) -> dict[str, torch.Tensor]:
+        """Run the DDIM rollout and return per-step predicted x0 maps.
+
+        Returns ``{"final": (B, n_bins), "per_step": (T_inf, B, n_bins)}``
+        where ``per_step[k]`` is the predicted x0 (clipped to logits via
+        ``process.decode_to_logits``) at step ``k`` (k=0 is the noisiest
+        predicted x0; k=T_inf-1 is the final).
+        """
+        device = cursor_token.device
+        B = cursor_token.size(0)
+        process = self.process
+        denoiser = self.denoiser
+        self_cond = bool(getattr(denoiser.config, "self_cond", False))
+        time_offset = float(self.config.time_offset)
+        T_max = int(self.process.schedule.n_steps) - 1
+
+        if x_T is None:
+            x_T = process.sample_prior(B, device, cursor_token.dtype)
+        x_t = x_T
+        prev_x0_hat: torch.Tensor | None = None
+
+        ts = self.timesteps().to(device)
+        per_step: list[torch.Tensor] = []
+        for i, t_int in enumerate(ts):
+            t = t_int.repeat(B)
+            t_prev_int = ts[i + 1] if i + 1 < len(ts) else torch.tensor(-1, device=device)
+            t_prev = t_prev_int.repeat(B)
+            if time_offset > 0.0:
+                t_query = (t.float() + time_offset).round().long().clamp(
+                    min=0, max=T_max,
+                )
+            else:
+                t_query = t
+            model_out = denoiser(
+                cursor_token, x_t, t_query,
+                prev_x0_hat=prev_x0_hat if self_cond else None,
+                audio_features=audio_features,
+            )
+            x0_hat = process.predict_x0(model_out, x_t, t)
+            per_step.append(process.decode_to_logits(x0_hat).detach().clamp(0.0, 1.0))
+            if self_cond:
+                prev_x0_hat = x0_hat.detach()
+            x_t = process.reverse_step(model_out, x_t, t, t_prev)
+            if self.config.eta > 0.0 and i + 1 < len(ts):
+                noise = torch.randn_like(x_t) * self.config.eta
+                if hasattr(process, "_alphas_cumprod") and hasattr(process, "_betas"):
+                    ab_t = process._alphas_cumprod[t_int]
+                    ab_prev = (
+                        process._alphas_cumprod[t_prev_int]
+                        if int(t_prev_int) >= 0
+                        else torch.tensor(1.0, device=device)
+                    )
+                    var = (1.0 - ab_prev) / (1.0 - ab_t).clamp(min=1e-8) * (1.0 - ab_t / ab_prev.clamp(min=1e-8))
+                    std = var.clamp(min=0.0).sqrt()
+                    x_t = x_t + std * noise
+        final = process.decode_to_logits(x_t).clamp(0.0, 1.0)
+        return {
+            "final": final,
+            "per_step": torch.stack(per_step, dim=0),
+        }

@@ -60,6 +60,11 @@ class InferCorpusConfig:
     fixed_density_std: float = 2.2
     save_bundles: bool = True
     save_per_chart_jsons: bool = True
+    # Multi-tolerance sweep. When non-empty, additionally compute a
+    # multi-tolerance comparison per chart and write
+    # `comparisons_summary_tol.json` under each mode dir. Existing
+    # single-tolerance flow is untouched.
+    tolerances_ms: tuple[int, ...] = ()
 
 
 # ─────────────────────────── metric averaging ────────────────────────
@@ -254,7 +259,8 @@ def _run_one_mode(
     save_bundles: bool,
     save_per_chart_jsons: bool,
     progress: bool,
-) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    tolerances_ms: tuple[int, ...] = (),
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[int, ChartComparison]]]:
     gen_dir = mode_dir / "generated"
     metrics_dir = mode_dir / "metrics"
     cmp_dir = mode_dir / "comparisons"
@@ -263,6 +269,7 @@ def _run_one_mode(
 
     metric_rows: list[dict[str, Any]] = []
     cmp_rows: list[dict[str, Any]] = []
+    multi_tol: list[dict[int, ChartComparison]] = []
 
     it: Any = selected
     if progress:
@@ -295,7 +302,13 @@ def _run_one_mode(
             _dump_json(cmp_dir / f"{stem}.json", asdict(cmp_))
         cmp_rows.append(_comparison_to_csv_row(chart_id, cmp_))
 
-    return metric_rows, cmp_rows
+        if tolerances_ms:
+            from .multi_tolerance_compare import compare_at_tolerances
+            multi_tol.append(
+                compare_at_tolerances(generated, gt_chart, tolerances_ms),
+            )
+
+    return metric_rows, cmp_rows, multi_tol
 
 
 # ─────────────────────────── entry point ─────────────────────────────
@@ -386,7 +399,7 @@ def run_infer_corpus(
                 f"known: {sorted(mode_cond_map)!r}"
             )
         mode_dir = out_dir / f"{mode}_cond"
-        metric_rows, cmp_rows = _run_one_mode(
+        metric_rows, cmp_rows, multi_tol = _run_one_mode(
             predictor=predictor, mode_dir=mode_dir, mode_label=mode,
             selected=selected, sampler=val_sampler,
             features_cache=features_cache, gt_charts=gt_charts,
@@ -394,8 +407,25 @@ def run_infer_corpus(
             save_bundles=config.save_bundles,
             save_per_chart_jsons=config.save_per_chart_jsons,
             progress=progress,
+            tolerances_ms=config.tolerances_ms,
         )
         per_mode_rows[mode] = (metric_rows, cmp_rows)
+
+        if config.tolerances_ms and multi_tol:
+            from .multi_tolerance_compare import (
+                aggregate_multi_tolerance_summaries,
+            )
+            tol_summary = aggregate_multi_tolerance_summaries(
+                multi_tol, config.tolerances_ms,
+            )
+            _dump_json(mode_dir / "comparisons_summary_tol.json", tol_summary)
+            for tol in config.tolerances_ms:
+                key = f"matched_rate_at_tol_{int(tol)}"
+                stats = tol_summary["fields"].get(key)
+                if stats:
+                    flat_summary[
+                        f"corpus/{mode}_cond_cmp_tol/{key}_median"
+                    ] = stats["median"]
 
         _write_csv(metric_rows, _METRIC_CSV_FIELDS, mode_dir / "metrics.csv")
         _write_csv(cmp_rows, _COMPARISON_CSV_FIELDS, mode_dir / "comparisons.csv")

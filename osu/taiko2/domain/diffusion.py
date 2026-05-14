@@ -349,6 +349,15 @@ class DenoiserHead(nn.Module, ABC):
                     prior estimate" and the denoiser should behave as
                     if conditioned on zeros (kept for backward
                     compat with #014 checkpoints / configs).
+    - audio_features: optional ``(B, T_audio, audio_feature_dim)``
+                    tensor of future audio context (e.g., the
+                    framewise-trunk output for the bins covered by
+                    ``x_t``). Added for #016 framewise diffusion;
+                    concrete denoisers that don't use audio context
+                    (e.g., MLPDenoiser) ignore it. ``None`` means
+                    "no audio context" and is the default so
+                    pre-#016 denoisers and callsites work
+                    unchanged.
     - return:       same shape as ``x_t``.
     """
 
@@ -365,6 +374,7 @@ class DenoiserHead(nn.Module, ABC):
         x_t: torch.Tensor,
         t: torch.Tensor,
         prev_x0_hat: torch.Tensor | None = None,
+        audio_features: torch.Tensor | None = None,
     ) -> torch.Tensor:
         ...
 

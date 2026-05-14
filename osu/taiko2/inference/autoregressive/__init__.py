@@ -11,6 +11,10 @@ from .builders import (
     DetectionARInputBuilder,
 )
 from .decoders import ARDecoder, ArgmaxDecoder, ArgmaxDecoderConfig
+from .framewise_diffusion_decoder import (
+    FramewiseDiffusionDecoder,
+    FramewiseDiffusionDecoderConfig,
+)
 from .predictor import AutoregressivePredictor, AutoregressivePredictorConfig
 from .types import (
     ARContext,
@@ -28,6 +32,8 @@ __all__ = [
     "ARInputBuilderConfig",
     "ArgmaxDecoder",
     "ArgmaxDecoderConfig",
+    "FramewiseDiffusionDecoder",
+    "FramewiseDiffusionDecoderConfig",
     "AutoregressivePredictor",
     "AutoregressivePredictorConfig",
     "DetectionARBuilderConfig",
