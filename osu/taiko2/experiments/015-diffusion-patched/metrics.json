@@ -1,46 +1,555 @@
 {
-  "experiment_id": "NNN-slug",
-  "run_name": "exp_NNN_slug",
-  "baseline_experiment": "NNN-previous-slug",
-
+  "experiment_id": "015-diffusion-patched",
+  "run_name": "exp_015_diffusion_patched",
+  "baseline_experiments": [
+    "014-diffusion",
+    "007-time-stretch"
+  ],
   "final": {
-    "eval_step": null,
-    "wall_time_s": null,
-    "epoch": null,
-    "metrics": {
-      "val/single/hit_e1": null,
-      "val/single/miss": null,
-      "train/overall/loss": null
-    },
-    "baseline": {
-      "val/single/hit_e1": null,
-      "val/single/miss": null,
-      "train/overall/loss": null
-    },
-    "deltas": {
-      "val/single/hit_e1": null,
-      "val/single/miss": null,
-      "train/overall/loss": null
-    }
+    "eval_step": 372132,
+    "wall_time_s": 149096.3,
+    "wall_time_h": 41.42,
+    "epochs": 4,
+    "n_evals": 18,
+    "total_params": 24468547
   },
-
+  "best_ablation_variant": {
+    "name": "ddim_4_e0_n4_off1",
+    "gt_matched_rate_median": 0.6468,
+    "gt_error_median_ms_median": 11.0,
+    "gt_density_ratio_median": 0.802,
+    "gt_hallucination_rate_median": 0.1453,
+    "gt_hi_pspace_median": 100.0,
+    "gt_dc_human_median": 91.6267
+  },
+  "ablation_matrix": [
+    {
+      "variant": "ddim_4_e0_n4_off1",
+      "n_inference_steps": 4,
+      "eta": 0.0,
+      "time_offset": 1.0,
+      "n_samples": 4,
+      "matched_rate_median": 0.6468,
+      "error_median_ms_median": 11.0,
+      "density_ratio_median": 0.802,
+      "hallucination_rate_median": 0.1453,
+      "dc_human_median": 91.6267
+    },
+    {
+      "variant": "ddim_4_e0_n4",
+      "n_inference_steps": 4,
+      "eta": 0.0,
+      "time_offset": 0.0,
+      "n_samples": 4,
+      "matched_rate_median": 0.6424,
+      "error_median_ms_median": 11.0,
+      "density_ratio_median": 0.799,
+      "hallucination_rate_median": 0.1342,
+      "dc_human_median": 91.5742
+    },
+    {
+      "variant": "ddim_16_e0_n4",
+      "n_inference_steps": 16,
+      "eta": 0.0,
+      "time_offset": 0.0,
+      "n_samples": 4,
+      "matched_rate_median": 0.6317,
+      "error_median_ms_median": 12.0,
+      "density_ratio_median": 0.7864,
+      "hallucination_rate_median": 0.1469,
+      "dc_human_median": 91.78
+    },
+    {
+      "variant": "ddim_4_e0_n1_off1",
+      "n_inference_steps": 4,
+      "eta": 0.0,
+      "time_offset": 1.0,
+      "n_samples": 1,
+      "matched_rate_median": 0.6214,
+      "error_median_ms_median": 12.0,
+      "density_ratio_median": 0.7711,
+      "hallucination_rate_median": 0.1535,
+      "dc_human_median": 91.681
+    },
+    {
+      "variant": "ddim_16_e0_n1",
+      "n_inference_steps": 16,
+      "eta": 0.0,
+      "time_offset": 0.0,
+      "n_samples": 1,
+      "matched_rate_median": 0.6056,
+      "error_median_ms_median": 11.5,
+      "density_ratio_median": 0.776,
+      "hallucination_rate_median": 0.1577,
+      "dc_human_median": 91.4257
+    },
+    {
+      "variant": "ddim_4_e0_n1",
+      "n_inference_steps": 4,
+      "eta": 0.0,
+      "time_offset": 0.0,
+      "n_samples": 1,
+      "matched_rate_median": 0.6055,
+      "error_median_ms_median": 12.5,
+      "density_ratio_median": 0.7673,
+      "hallucination_rate_median": 0.1431,
+      "dc_human_median": 91.8569
+    },
+    {
+      "variant": "ddim_8_e0_n1",
+      "n_inference_steps": 8,
+      "eta": 0.0,
+      "time_offset": 0.0,
+      "n_samples": 1,
+      "matched_rate_median": 0.6018,
+      "error_median_ms_median": 12.0,
+      "density_ratio_median": 0.7736,
+      "hallucination_rate_median": 0.1536,
+      "dc_human_median": 91.4389
+    },
+    {
+      "variant": "ddim_32_e0_n1",
+      "n_inference_steps": 32,
+      "eta": 0.0,
+      "time_offset": 0.0,
+      "n_samples": 1,
+      "matched_rate_median": 0.598,
+      "error_median_ms_median": 12.5,
+      "density_ratio_median": 0.7804,
+      "hallucination_rate_median": 0.1698,
+      "dc_human_median": 91.5541
+    },
+    {
+      "variant": "ddim_16_e1_n1",
+      "n_inference_steps": 16,
+      "eta": 1.0,
+      "time_offset": 0.0,
+      "n_samples": 1,
+      "matched_rate_median": 0.1562,
+      "error_median_ms_median": 357.5,
+      "density_ratio_median": 0.2254,
+      "hallucination_rate_median": 0.169,
+      "dc_human_median": 90.8745
+    },
+    {
+      "variant": "ddpm_64_e1_n1",
+      "n_inference_steps": 64,
+      "eta": 1.0,
+      "time_offset": null,
+      "n_samples": 1,
+      "matched_rate_median": 0.0115,
+      "error_median_ms_median": 5734.75,
+      "density_ratio_median": 0.0211,
+      "hallucination_rate_median": 0.1056,
+      "dc_human_median": 90.404
+    }
+  ],
+  "best_of_run": {
+    "matched_rate_max": 0.6191596137062395,
+    "matched_rate_max_step": 248088,
+    "stop_f1_max": 0.7662957074721781,
+    "stop_f1_max_step": 186066,
+    "miss_min": 0.12940482644434348,
+    "q3_min": 0.004622778362971595
+  },
   "per_eval": [
     {
       "eval": 1,
-      "step": 2000,
-      "wall_time_s": null,
-      "lr": null,
+      "step": 20674,
+      "wall_time_s": 0.0,
       "metrics": {
-        "val/single/hit_e1": null,
-        "val/single/miss": null,
-        "val/single/loss": null,
-        "train/running/loss": null,
-        "train/overall/loss": null
+        "val/single/loss": 0.0030118403550186434,
+        "val/single/loss/per_t_q0": 0.0008931623661293098,
+        "val/single/loss/per_t_q3": 0.005342339649815265,
+        "val/single/onset/miss": 0.1696764787762458,
+        "val/single/onset/exact": 0.728135210772319,
+        "val/single/onset/stop_f1": 0.5870425321463897,
+        "val/single/onset/frame_err_p90": 22.0,
+        "val/single/train_noaug/onset/miss": 0.1684359733334344,
+        "val/single/corpus/gt_cond_cmp/matched_rate_mean": 0.6031439689015822,
+        "val/single/corpus/gt_cond_cmp/error_median_ms_mean": 3362.6041666666665,
+        "val/single/corpus/gt_cond_cmp/density_ratio_mean": 0.9513300815252377,
+        "val/single/corpus/gt_cond_cmp/hallucination_rate_mean": 0.28575473698402154,
+        "val/single/corpus/gt_cond_cmp/hi_pspace_mean": 97.86968414463138,
+        "val/single/corpus/gt_cond_cmp/dc_human_mean": 89.14501961352433,
+        "val/single/corpus/fixed_cond_cmp/matched_rate_mean": 0.6962292812082379
+      }
+    },
+    {
+      "eval": 2,
+      "step": 41348,
+      "wall_time_s": 8146.0,
+      "metrics": {
+        "val/single/loss": 0.0027968454212851106,
+        "val/single/loss/per_t_q0": 0.0005640164863656896,
+        "val/single/loss/per_t_q3": 0.005155047396371649,
+        "val/single/onset/miss": 0.1608118800275462,
+        "val/single/onset/exact": 0.7533846649767763,
+        "val/single/onset/stop_f1": 0.6725212464589234,
+        "val/single/onset/frame_err_p90": 20.0,
+        "val/single/train_noaug/onset/miss": 0.15907118466780112,
+        "val/single/corpus/gt_cond_cmp/matched_rate_mean": 0.5090002958657068,
+        "val/single/corpus/gt_cond_cmp/error_median_ms_mean": 58.421875,
+        "val/single/corpus/gt_cond_cmp/density_ratio_mean": 0.764894702678907,
+        "val/single/corpus/gt_cond_cmp/hallucination_rate_mean": 0.28875105865434125,
+        "val/single/corpus/gt_cond_cmp/hi_pspace_mean": 93.34935446487982,
+        "val/single/corpus/gt_cond_cmp/dc_human_mean": 90.24990033571778,
+        "val/single/corpus/fixed_cond_cmp/matched_rate_mean": 0.583889567629169
+      }
+    },
+    {
+      "eval": 3,
+      "step": 62022,
+      "wall_time_s": 16262.6,
+      "metrics": {
+        "val/single/loss": 0.002757453240873392,
+        "val/single/loss/per_t_q0": 0.0005035678011707745,
+        "val/single/loss/per_t_q3": 0.005109861825528671,
+        "val/single/onset/miss": 0.16198222684581454,
+        "val/single/onset/exact": 0.756866400972908,
+        "val/single/onset/stop_f1": 0.6373452725836187,
+        "val/single/onset/frame_err_p90": 21.0,
+        "val/single/train_noaug/onset/miss": 0.16096022800488152,
+        "val/single/corpus/gt_cond_cmp/matched_rate_mean": 0.4789008352035291,
+        "val/single/corpus/gt_cond_cmp/error_median_ms_mean": 69.94791666666667,
+        "val/single/corpus/gt_cond_cmp/density_ratio_mean": 0.687608716560883,
+        "val/single/corpus/gt_cond_cmp/hallucination_rate_mean": 0.25899511264554603,
+        "val/single/corpus/gt_cond_cmp/hi_pspace_mean": 93.92351303369695,
+        "val/single/corpus/gt_cond_cmp/dc_human_mean": 90.43462943133,
+        "val/single/corpus/fixed_cond_cmp/matched_rate_mean": 0.5711378454238626
+      }
+    },
+    {
+      "eval": 4,
+      "step": 82696,
+      "wall_time_s": 24448.8,
+      "metrics": {
+        "val/single/loss": 0.0027099213521594224,
+        "val/single/loss/per_t_q0": 0.0004495282597520852,
+        "val/single/loss/per_t_q3": 0.005070787335604488,
+        "val/single/onset/miss": 0.15560850708435292,
+        "val/single/onset/exact": 0.7620477955720963,
+        "val/single/onset/stop_f1": 0.7022900763358778,
+        "val/single/onset/frame_err_p90": 19.0,
+        "val/single/train_noaug/onset/miss": 0.15286411741516814,
+        "val/single/corpus/gt_cond_cmp/matched_rate_mean": 0.5032289554634923,
+        "val/single/corpus/gt_cond_cmp/error_median_ms_mean": 66.83854166666667,
+        "val/single/corpus/gt_cond_cmp/density_ratio_mean": 0.7322611591740467,
+        "val/single/corpus/gt_cond_cmp/hallucination_rate_mean": 0.27292039912631355,
+        "val/single/corpus/gt_cond_cmp/hi_pspace_mean": 94.90479231208451,
+        "val/single/corpus/gt_cond_cmp/dc_human_mean": 90.29969431903483,
+        "val/single/corpus/fixed_cond_cmp/matched_rate_mean": 0.6006341310757805
+      }
+    },
+    {
+      "eval": 5,
+      "step": 103370,
+      "wall_time_s": 32748.7,
+      "metrics": {
+        "val/single/loss": 0.0026295375014646085,
+        "val/single/loss/per_t_q0": 0.0004083827423016774,
+        "val/single/loss/per_t_q3": 0.004980052177031953,
+        "val/single/onset/miss": 0.14980256120968805,
+        "val/single/onset/exact": 0.772328165980454,
+        "val/single/onset/stop_f1": 0.726321905868681,
+        "val/single/onset/frame_err_p90": 17.0,
+        "val/single/train_noaug/onset/miss": 0.14684564470761274,
+        "val/single/corpus/gt_cond_cmp/matched_rate_mean": 0.5190551041173159,
+        "val/single/corpus/gt_cond_cmp/error_median_ms_mean": 45.71875,
+        "val/single/corpus/gt_cond_cmp/density_ratio_mean": 0.7585653591303316,
+        "val/single/corpus/gt_cond_cmp/hallucination_rate_mean": 0.26304995007565213,
+        "val/single/corpus/gt_cond_cmp/hi_pspace_mean": 92.78522472373417,
+        "val/single/corpus/gt_cond_cmp/dc_human_mean": 90.32550392358546,
+        "val/single/corpus/fixed_cond_cmp/matched_rate_mean": 0.616589820532977
+      }
+    },
+    {
+      "eval": 6,
+      "step": 124044,
+      "wall_time_s": 42233.7,
+      "metrics": {
+        "val/single/loss": 0.0026084687691010577,
+        "val/single/loss/per_t_q0": 0.00038646058770361704,
+        "val/single/loss/per_t_q3": 0.004947881885431582,
+        "val/single/onset/miss": 0.15056081407786193,
+        "val/single/onset/exact": 0.7722127796744275,
+        "val/single/onset/stop_f1": 0.694006309148265,
+        "val/single/onset/frame_err_p90": 19.0,
+        "val/single/train_noaug/onset/miss": 0.14647948180519177,
+        "val/single/corpus/gt_cond_cmp/matched_rate_mean": 0.4787977345860804,
+        "val/single/corpus/gt_cond_cmp/error_median_ms_mean": 88.515625,
+        "val/single/corpus/gt_cond_cmp/density_ratio_mean": 0.6393764083653807,
+        "val/single/corpus/gt_cond_cmp/hallucination_rate_mean": 0.2281560867490873,
+        "val/single/corpus/gt_cond_cmp/hi_pspace_mean": 90.72152912663601,
+        "val/single/corpus/gt_cond_cmp/dc_human_mean": 91.07636189458005,
+        "val/single/corpus/fixed_cond_cmp/matched_rate_mean": 0.5328276523346649
+      }
+    },
+    {
+      "eval": 7,
+      "step": 144718,
+      "wall_time_s": 51268.1,
+      "metrics": {
+        "val/single/loss": 0.00254916384047445,
+        "val/single/loss/per_t_q0": 0.00038496499799168176,
+        "val/single/loss/per_t_q3": 0.0048362371780612525,
+        "val/single/onset/miss": 0.14141415991443096,
+        "val/single/onset/exact": 0.7787806414746004,
+        "val/single/onset/stop_f1": 0.7210300429184548,
+        "val/single/onset/frame_err_p90": 17.0,
+        "val/single/train_noaug/onset/miss": 0.1379958752881233,
+        "val/single/corpus/gt_cond_cmp/matched_rate_mean": 0.4862636120903878,
+        "val/single/corpus/gt_cond_cmp/error_median_ms_mean": 72.13020833333333,
+        "val/single/corpus/gt_cond_cmp/density_ratio_mean": 0.7011468138503593,
+        "val/single/corpus/gt_cond_cmp/hallucination_rate_mean": 0.24866821827743313,
+        "val/single/corpus/gt_cond_cmp/hi_pspace_mean": 92.12569792767881,
+        "val/single/corpus/gt_cond_cmp/dc_human_mean": 90.06296846386086,
+        "val/single/corpus/fixed_cond_cmp/matched_rate_mean": 0.5596611535285664
+      }
+    },
+    {
+      "eval": 8,
+      "step": 165392,
+      "wall_time_s": 60238.1,
+      "metrics": {
+        "val/single/loss": 0.0025334662068152184,
+        "val/single/loss/per_t_q0": 0.0003584472618869968,
+        "val/single/loss/per_t_q3": 0.004832197282135956,
+        "val/single/onset/miss": 0.14277315418540926,
+        "val/single/onset/exact": 0.7800114287388826,
+        "val/single/onset/stop_f1": 0.7254393546528378,
+        "val/single/onset/frame_err_p90": 17.0,
+        "val/single/train_noaug/onset/miss": 0.13884467285185864,
+        "val/single/corpus/gt_cond_cmp/matched_rate_mean": 0.49122108720809443,
+        "val/single/corpus/gt_cond_cmp/error_median_ms_mean": 89.265625,
+        "val/single/corpus/gt_cond_cmp/density_ratio_mean": 0.6480494958781643,
+        "val/single/corpus/gt_cond_cmp/hallucination_rate_mean": 0.2262431617263332,
+        "val/single/corpus/gt_cond_cmp/hi_pspace_mean": 93.6157859256346,
+        "val/single/corpus/gt_cond_cmp/dc_human_mean": 91.3001090675743,
+        "val/single/corpus/fixed_cond_cmp/matched_rate_mean": 0.6119869693492482
+      }
+    },
+    {
+      "eval": 9,
+      "step": 186066,
+      "wall_time_s": 69544.9,
+      "metrics": {
+        "val/single/loss": 0.002485015941144815,
+        "val/single/loss/per_t_q0": 0.000340848901890665,
+        "val/single/loss/per_t_q3": 0.004761282880201153,
+        "val/single/onset/miss": 0.13645621181262724,
+        "val/single/onset/exact": 0.7852386115547481,
+        "val/single/onset/stop_f1": 0.7662957074721781,
+        "val/single/onset/frame_err_p90": 17.0,
+        "val/single/train_noaug/onset/miss": 0.13311930743544165,
+        "val/single/corpus/gt_cond_cmp/matched_rate_mean": 0.5761544467044438,
+        "val/single/corpus/gt_cond_cmp/error_median_ms_mean": 52.244791666666664,
+        "val/single/corpus/gt_cond_cmp/density_ratio_mean": 0.8019700093997647,
+        "val/single/corpus/gt_cond_cmp/hallucination_rate_mean": 0.24834712738288697,
+        "val/single/corpus/gt_cond_cmp/hi_pspace_mean": 97.98363642292254,
+        "val/single/corpus/gt_cond_cmp/dc_human_mean": 90.5629347390382,
+        "val/single/corpus/fixed_cond_cmp/matched_rate_mean": 0.6965164057548202
+      }
+    },
+    {
+      "eval": 10,
+      "step": 206740,
+      "wall_time_s": 78893.7,
+      "metrics": {
+        "val/single/loss": 0.0024559702595335544,
+        "val/single/loss/per_t_q0": 0.0003114959706509137,
+        "val/single/loss/per_t_q3": 0.004712728286915179,
+        "val/single/onset/miss": 0.13683533824671423,
+        "val/single/onset/exact": 0.7866214156983985,
+        "val/single/onset/stop_f1": 0.7250226380923634,
+        "val/single/onset/frame_err_p90": 16.0,
+        "val/single/train_noaug/onset/miss": 0.1316905652653484,
+        "val/single/corpus/gt_cond_cmp/matched_rate_mean": 0.5939501445935096,
+        "val/single/corpus/gt_cond_cmp/error_median_ms_mean": 48.526041666666664,
+        "val/single/corpus/gt_cond_cmp/density_ratio_mean": 0.8029192945339435,
+        "val/single/corpus/gt_cond_cmp/hallucination_rate_mean": 0.24873442782494704,
+        "val/single/corpus/gt_cond_cmp/hi_pspace_mean": 95.31023754565312,
+        "val/single/corpus/gt_cond_cmp/dc_human_mean": 91.34240636047377,
+        "val/single/corpus/fixed_cond_cmp/matched_rate_mean": 0.7165126311816383
+      }
+    },
+    {
+      "eval": 11,
+      "step": 227414,
+      "wall_time_s": 87619.5,
+      "metrics": {
+        "val/single/loss": 0.002474880188214568,
+        "val/single/loss/per_t_q0": 0.00031991016186709727,
+        "val/single/loss/per_t_q3": 0.0047824939711158315,
+        "val/single/onset/miss": 0.1380093481223168,
+        "val/single/onset/exact": 0.7849364093246788,
+        "val/single/onset/stop_f1": 0.7399764150943396,
+        "val/single/onset/frame_err_p90": 17.0,
+        "val/single/train_noaug/onset/miss": 0.13388751795793197,
+        "val/single/corpus/gt_cond_cmp/matched_rate_mean": 0.5744903661854658,
+        "val/single/corpus/gt_cond_cmp/error_median_ms_mean": 48.25,
+        "val/single/corpus/gt_cond_cmp/density_ratio_mean": 0.7799803715352747,
+        "val/single/corpus/gt_cond_cmp/hallucination_rate_mean": 0.22728292908568218,
+        "val/single/corpus/gt_cond_cmp/hi_pspace_mean": 95.61757710561444,
+        "val/single/corpus/gt_cond_cmp/dc_human_mean": 90.98988466208937,
+        "val/single/corpus/fixed_cond_cmp/matched_rate_mean": 0.7103214196694564
+      }
+    },
+    {
+      "eval": 12,
+      "step": 248088,
+      "wall_time_s": 96182.6,
+      "metrics": {
+        "val/single/loss": 0.0024377821755916427,
+        "val/single/loss/per_t_q0": 0.00031350531838475557,
+        "val/single/loss/per_t_q3": 0.004706413830739288,
+        "val/single/onset/miss": 0.13411551817609046,
+        "val/single/onset/exact": 0.788511553282832,
+        "val/single/onset/stop_f1": 0.7424905220180811,
+        "val/single/onset/frame_err_p90": 16.0,
+        "val/single/train_noaug/onset/miss": 0.13060681515844053,
+        "val/single/corpus/gt_cond_cmp/matched_rate_mean": 0.6191596137062395,
+        "val/single/corpus/gt_cond_cmp/error_median_ms_mean": 26.015625,
+        "val/single/corpus/gt_cond_cmp/density_ratio_mean": 0.816843659768047,
+        "val/single/corpus/gt_cond_cmp/hallucination_rate_mean": 0.23664911845801495,
+        "val/single/corpus/gt_cond_cmp/hi_pspace_mean": 93.99643161955474,
+        "val/single/corpus/gt_cond_cmp/dc_human_mean": 91.14333695682161,
+        "val/single/corpus/fixed_cond_cmp/matched_rate_mean": 0.7009614703003605
+      }
+    },
+    {
+      "eval": 13,
+      "step": 268762,
+      "wall_time_s": 104380.8,
+      "metrics": {
+        "val/single/loss": 0.0024361441065586568,
+        "val/single/loss/per_t_q0": 0.00030136919484919196,
+        "val/single/loss/per_t_q3": 0.0047233852059131,
+        "val/single/onset/miss": 0.1370239856994242,
+        "val/single/onset/exact": 0.7871122653811777,
+        "val/single/onset/stop_f1": 0.7451573849878934,
+        "val/single/onset/frame_err_p90": 17.0,
+        "val/single/train_noaug/onset/miss": 0.13234703237887302,
+        "val/single/corpus/gt_cond_cmp/matched_rate_mean": 0.46098052396736006,
+        "val/single/corpus/gt_cond_cmp/error_median_ms_mean": 115.66145833333333,
+        "val/single/corpus/gt_cond_cmp/density_ratio_mean": 0.6132398595622169,
+        "val/single/corpus/gt_cond_cmp/hallucination_rate_mean": 0.20721750557025773,
+        "val/single/corpus/gt_cond_cmp/hi_pspace_mean": 88.13715541181536,
+        "val/single/corpus/gt_cond_cmp/dc_human_mean": 90.98422125324693,
+        "val/single/corpus/fixed_cond_cmp/matched_rate_mean": 0.5167824514266608
+      }
+    },
+    {
+      "eval": 14,
+      "step": 289436,
+      "wall_time_s": 112868.5,
+      "metrics": {
+        "val/single/loss": 0.0024821731219060615,
+        "val/single/loss/per_t_q0": 0.00030079896703181743,
+        "val/single/loss/per_t_q3": 0.004751463206817947,
+        "val/single/onset/miss": 0.1418573898518659,
+        "val/single/onset/exact": 0.7831103752435933,
+        "val/single/onset/stop_f1": 0.7382022471910112,
+        "val/single/onset/frame_err_p90": 17.0,
+        "val/single/train_noaug/onset/miss": 0.13595581852847194,
+        "val/single/corpus/gt_cond_cmp/matched_rate_mean": 0.5689406007938981,
+        "val/single/corpus/gt_cond_cmp/error_median_ms_mean": 46.4375,
+        "val/single/corpus/gt_cond_cmp/density_ratio_mean": 0.7256485440767299,
+        "val/single/corpus/gt_cond_cmp/hallucination_rate_mean": 0.2096050781935291,
+        "val/single/corpus/gt_cond_cmp/hi_pspace_mean": 94.291561364369,
+        "val/single/corpus/gt_cond_cmp/dc_human_mean": 91.5983620471665,
+        "val/single/corpus/fixed_cond_cmp/matched_rate_mean": 0.6833356541517107
+      }
+    },
+    {
+      "eval": 15,
+      "step": 310110,
+      "wall_time_s": 121393.9,
+      "metrics": {
+        "val/single/loss": 0.0024234601813716747,
+        "val/single/loss/per_t_q0": 0.00028200638278553315,
+        "val/single/loss/per_t_q3": 0.004687983949462907,
+        "val/single/onset/miss": 0.1349433691336137,
+        "val/single/onset/exact": 0.7894071708010374,
+        "val/single/onset/stop_f1": 0.7296187683284456,
+        "val/single/onset/frame_err_p90": 16.0,
+        "val/single/train_noaug/onset/miss": 0.13092697938656161,
+        "val/single/corpus/gt_cond_cmp/matched_rate_mean": 0.5850446405538986,
+        "val/single/corpus/gt_cond_cmp/error_median_ms_mean": 36.197916666666664,
+        "val/single/corpus/gt_cond_cmp/density_ratio_mean": 0.7692175531625268,
+        "val/single/corpus/gt_cond_cmp/hallucination_rate_mean": 0.2062734959138058,
+        "val/single/corpus/gt_cond_cmp/hi_pspace_mean": 95.81985162007106,
+        "val/single/corpus/gt_cond_cmp/dc_human_mean": 91.35312854112276,
+        "val/single/corpus/fixed_cond_cmp/matched_rate_mean": 0.6571831704980636
+      }
+    },
+    {
+      "eval": 16,
+      "step": 330784,
+      "wall_time_s": 130411.0,
+      "metrics": {
+        "val/single/loss": 0.002400223341649111,
+        "val/single/loss/per_t_q0": 0.0003040878017255394,
+        "val/single/loss/per_t_q3": 0.004622778362971595,
+        "val/single/onset/miss": 0.12940482644434348,
+        "val/single/onset/exact": 0.7927497106184705,
+        "val/single/onset/stop_f1": 0.704331450094162,
+        "val/single/onset/frame_err_p90": 16.0,
+        "val/single/train_noaug/onset/miss": 0.12461152464260272,
+        "val/single/corpus/gt_cond_cmp/matched_rate_mean": 0.5423520589611673,
+        "val/single/corpus/gt_cond_cmp/error_median_ms_mean": 60.833333333333336,
+        "val/single/corpus/gt_cond_cmp/density_ratio_mean": 0.7055694256544908,
+        "val/single/corpus/gt_cond_cmp/hallucination_rate_mean": 0.1924909975967509,
+        "val/single/corpus/gt_cond_cmp/hi_pspace_mean": 96.84301837599537,
+        "val/single/corpus/gt_cond_cmp/dc_human_mean": 90.99144637266158,
+        "val/single/corpus/fixed_cond_cmp/matched_rate_mean": 0.6042480173376212
+      }
+    },
+    {
+      "eval": 17,
+      "step": 351458,
+      "wall_time_s": 139586.7,
+      "metrics": {
+        "val/single/loss": 0.0024542483722292947,
+        "val/single/loss/per_t_q0": 0.00029626658947356225,
+        "val/single/loss/per_t_q3": 0.004726552013895343,
+        "val/single/onset/miss": 0.13932438570528505,
+        "val/single/onset/exact": 0.7858173746135475,
+        "val/single/onset/stop_f1": 0.7661016949152541,
+        "val/single/onset/frame_err_p90": 17.0,
+        "val/single/train_noaug/onset/miss": 0.13219798047182973,
+        "val/single/corpus/gt_cond_cmp/matched_rate_mean": 0.5832320550635764,
+        "val/single/corpus/gt_cond_cmp/error_median_ms_mean": 35.770833333333336,
+        "val/single/corpus/gt_cond_cmp/density_ratio_mean": 0.7554529414289268,
+        "val/single/corpus/gt_cond_cmp/hallucination_rate_mean": 0.21466911468897165,
+        "val/single/corpus/gt_cond_cmp/hi_pspace_mean": 94.23144158691072,
+        "val/single/corpus/gt_cond_cmp/dc_human_mean": 91.33840087887093,
+        "val/single/corpus/fixed_cond_cmp/matched_rate_mean": 0.7050712600376485
+      }
+    },
+    {
+      "eval": 18,
+      "step": 372132,
+      "wall_time_s": 149096.3,
+      "metrics": {
+        "val/single/loss": 0.002399402803834245,
+        "val/single/loss/per_t_q0": 0.00026672251279214967,
+        "val/single/loss/per_t_q3": 0.0047020356192939775,
+        "val/single/onset/miss": 0.13462834620287478,
+        "val/single/onset/exact": 0.790496930357954,
+        "val/single/onset/stop_f1": 0.6733298264071541,
+        "val/single/onset/frame_err_p90": 16.0,
+        "val/single/train_noaug/onset/miss": 0.1291425366119887,
+        "val/single/corpus/gt_cond_cmp/matched_rate_mean": 0.5831280519470236,
+        "val/single/corpus/gt_cond_cmp/error_median_ms_mean": 39.557291666666664,
+        "val/single/corpus/gt_cond_cmp/density_ratio_mean": 0.7625474433528744,
+        "val/single/corpus/gt_cond_cmp/hallucination_rate_mean": 0.20298391870000312,
+        "val/single/corpus/gt_cond_cmp/hi_pspace_mean": 95.20032599879305,
+        "val/single/corpus/gt_cond_cmp/dc_human_mean": 91.20038530054886,
+        "val/single/corpus/fixed_cond_cmp/matched_rate_mean": 0.7218203791169087
       }
     }
   ],
-
-  "hypothesis_outcome": null,
-
-  "_comment": "Populate `per_eval` with one entry per eval step — include ALL metric keys the trainer emitted, not just the curated subset. The README tables are generated from these arrays."
+  "hypothesis_outcome": "rejected_on_headline",
+  "hypothesis_summary": "Five patches stacked (Min-SNR, stop_weight=1.0, logit_scale=5, self-cond, asymmetric time) lift stop_f1 to new taiko2 ATH and suppress bistability, but matched_rate ceiling did not lift beyond #014. Best 0.6468 (+0.7 pp over #014, -5.6 pp below #007). New diagnosis: ceiling is in the diffusion design itself, not the config \u2014 CARD-style anchored forward process is the next move."
 }
