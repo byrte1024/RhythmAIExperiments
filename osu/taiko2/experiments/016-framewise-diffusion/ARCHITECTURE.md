@@ -13,12 +13,13 @@
 ## Task
 
 Given a mel-spectrogram window around a cursor plus the last 128
-onsets as bin-offsets from the cursor, predict the bin offset from
-the cursor to the next onset — or `STOP` if no onset falls within
-the 500-bin (≈ 2.5 s) prediction range. Prediction is performed by
-running an iterative denoising-diffusion sampler against the model's
-cursor-token representation; the final sampler output is decoded
-to an integer bin via argmax.
+onsets as bin-offsets from the cursor, predict an **activation map**
+over the next 500 bins (= 2.5 seconds at 5 ms/bin). Each bin `b ∈
+[0, 500)` has a predicted activation `M_0_hat[b] ∈ [0, 1]` ≈ "is
+there an onset at this bin offset from the cursor". A threshold-based
+decoder emits all bins above the threshold as onsets. No STOP class
+— an empty positive set causes the autoregressive cursor to advance
+by a fixed `hop_bins_on_stop = 20` bins ≈ 100 ms.
 
 ## Inputs
 
@@ -33,12 +34,15 @@ to an integer bin via argmax.
 
 | Name | Shape | Dtype | Description |
 |---|---|---|---|
-| `cursor_token` | `(B, 384)` | float32 | The trunk's cursor-token vector at audio token index 125. **Only output of `predict()`.** |
-| Inference logits | `(B, 501)` | float32 | Output of the AR decoder's sampler (not directly the model). 500 bin-offset classes (0..499) + 1 STOP class (500 = `b_pred`). |
+| `cursor_token` | `(B, 384)` | float32 | The trunk's cursor-token vector at audio token index 125. |
+| `audio_features` | `(B, 125, 384)` | float32 | The future-half audio token sequence (indices 125..249), used as per-bin conditioning for the denoiser. |
+| Predicted activation map (inference) | `(B, 500)` | float32 in [0, 1] | The output of the AR decoder's diffusion sampler after `T_inf` DDIM steps and clipping. A threshold-based decoder turns this into a list of bin offsets to emit as onsets. |
 
-The model emits `cursor_token`; the decoder turns it into logits via
-the diffusion sampler. Training mode also emits the structured
-`(model_out, loss_target, t, x_t)` tuple consumed by `DiffusionLoss`.
+The model emits `(cursor_token, audio_features)` from `predict()`;
+the decoder runs the diffusion sampler against both to produce the
+final activation map. Training mode emits the structured
+`(model_out, loss_target, t, x_t, audio_features, cursor_token)`
+tuple consumed by `FramewiseDiffusionLoss`.
 
 ---
 
@@ -74,12 +78,12 @@ the diffusion sampler. Training mode also emits the structured
 | Past audio bins (`a_bins`) | 500 |
 | Future audio bins (`b_bins`) | 500 |
 | Past events context (`c_events`) | 128 |
-| Future events stored (`d_events`) | 1 |
+| Future events stored (`d_events`) | 100 (changed from #015's 1; framewise needs all future events in the window) |
 | Min cursor bin filter | 6000 |
 | Allowed overlap forward | 0 bins |
 | Allowed overlap backward | 0 bins |
 | Past-event padding | Start (oldest-first, back-aligned) |
-| Future-event padding | End |
+| Future-event padding | End — invalid slots get bin_offset = -1 sentinel |
 | Subsample | 1 (full dataset) |
 
 ### Train / val split
@@ -90,32 +94,40 @@ the diffusion sampler. Training mode also emits the structured
 
 ### Target derivation
 
+For each sample, gather the future-events list. Each future onset
+has a bin offset `b ∈ ℤ` relative to the cursor. Filter to
+`b ∈ [0, 500)` (in-window). Build two target tensors:
+
 ```
-stop_idx = b_pred  # = 500
-if future_events_mask[0]:
-    target = stop_idx
-elif future_events[0].cursor_offset < 0 or future_events[0].cursor_offset >= b_pred:
-    target = stop_idx
-else:
-    target = future_events[0].cursor_offset
+M_target_binary[b] = 1.0 if any GT onset at bin b, else 0.0     # (B, 500)
+M_target_smoothed[b] = max over GT onsets g of
+                           exp(-(b - g_bin)² / (2 * sigma²))    # (B, 500)
+where sigma = 2 frames (= 10 ms).
 ```
 
-Target derivation happens **after** augmentation, so the post-stretch
-`cursor_offset` is what the adapter sees. An in-range target stretched
-to ≥ 500 becomes STOP.
+The smoothed target is what the model is trained against (MSE
+target); the binary target is used for metric computation
+(precision/recall/F1) and decoder thresholding.
+
+Edge cases:
+- No future events in window → all-zero target.
+- Multiple onsets at the same bin → still 1.0 (max).
+- Adjacent onsets (e.g., bin 100 + bin 101) → smoothed map is
+  pointwise max, peaks at both bins remain 1.0.
 
 ### Class-balanced sampling
 
-```
-count[c]   = number of training samples with target class c
-weight[i]  = min(1.0, 1 / (count[target(i)] + 1) ** 0.5)
-```
+**Disabled** for #016. Class balancing in #002/#005/#007/#014/#015
+was over the next-target-bin distribution (concentrated mass at
+small bin offsets); under framewise output every sample produces
+a B_PRED-dim target so there is no analogous discrete class to
+balance.
 
-Each epoch draws `N` indices with replacement from the weight-
-normalized distribution. Sampling weights are computed pre-aug
-against the source target.
+Random uniform sampling within each train epoch.
 
 ### Augmentations (training only)
+
+Identical to #007/#014/#015 — 14 augmentations:
 
 | Order | Name | Probability | Parameters |
 |---:|---|---|---|
@@ -134,42 +146,24 @@ against the source target.
 | 13 | ContextTruncation | 5 % | keep only the 8–32 most recent real events |
 | 14 | ConditioningJitter | 10 % | each of `density_mean / peak / std` multiplied independently by `U(0.98, 1.02)` |
 
-### TimeStretch — complete semantics
-
-**Per-call draw:** `s = exp(u)` where `u ~ Uniform(-log 1.4, log 1.4)`.
-Log-uniform so `s = 0.75` and `s = 1.33` are equally likely.
-
-**Audio.** The mel window is treated as a single `(80, a_bins + b_bins)
-= (80, 1000)` tensor with the cursor pinned at frame index `a_bins =
-500`. For each output frame `t`, the source index is
-`src_idx(t) = a_bins + (t - a_bins) / s`. Linear interpolation between
-`floor(src_idx)` and `floor(src_idx) + 1` produces the output value;
-the result is then split back into `(80, 500) + (80, 500)`.
-
-When `s < 1` (speed up), some output frames require source indices
-outside `[0, total - 1]` — those positions are zero-padded.
-
-When `s > 1` (slow down), the required source range is a subset of
-the original window — no padding is needed.
-
-**Events.** For each past / future `RelativeOnset`, the new
-`cursor_offset` is `round(cursor_offset * s)`. Past events whose new
-offset falls outside `[-a_bins, 0]` are dropped. Survivors are
-dedupe'd — two events that post-round onto the same integer offset
-collapse to one, keeping the older. The list is then re-padded at
-the start so its length stays `c_events`.
+Note: event-level augmentations (EventJitter, EventDropout, etc.)
+operate on PAST events. The future events used to build M_target
+are jittered only by TimeStretch (which moves all events by the
+same factor).
 
 ---
 
 ## Trunk architecture
 
-**Total parameters: 24,468,547 (24.47 M)** [computed by instantiating
-`DiffusionDetector(config)` with `experiments/015-diffusion-patched/config/model.json`
-and summing `p.numel() for p in m.parameters()`]. Of these, 8,113,665
-(8.11 M) are in the diffusion denoiser and the remainder (≈ 16.35 M)
-are the `EventEmbeddingDetector` trunk. Self-conditioning expands the
-denoiser's first Linear `in_features` by `n_bins = 501` channels
-(+0.77 M params) vs the no-self-cond variant.
+**Total parameters: 22,265,519 (22.27 M)** [computed by
+instantiating `FramewiseDiffusionDetector(config)` with
+`experiments/016-framewise-diffusion/config/model.json` and summing
+`p.numel() for p in m.parameters()`]. Of these, 5,911,137 (5.91 M)
+are in the diffusion denoiser and the remainder (≈ 16.35 M) are
+the `EventEmbeddingDetector` trunk. The 1D Conv denoiser is
+lighter than the MLP denoiser used in earlier diffusion experiments
+because the convolutional inductive bias replaces dense parameter
+sharing.
 
 ### Conditioning MLP
 
@@ -235,28 +229,33 @@ for layer, film in zip(self.layers, self.film_layers):
     x = film(x, cond_vec)                     # FiLM modulation
 ```
 
-Output: `(B, 250, 384)`. Cursor token = `x[:, 125, :]`, shape `(B, 384)`.
+Output: `(B, 250, 384)`. From this:
+- `cursor_token = x[:, 125, :]`, shape `(B, 384)`.
+- `audio_features = x[:, 125:250, :]`, shape `(B, 125, 384)` — the
+  future-half audio tokens.
 
 The parent class's `head_norm`, `head_proj`, `head_smooth` modules
-remain in the parameter dict but are **never called** during the
-training-time `forward_diffusion()` or inference-time `predict()`
-paths. They receive zero gradient.
+remain in the parameter dict but are **never called**. They receive
+zero gradient.
 
 ---
 
 ## Diffusion head
 
-Takes `cursor_token (B, 384)` and produces a final per-bin logit
-distribution `(B, 501)` either by one denoiser forward (training) or
-by running `T_inf` reverse-diffusion steps (inference).
+The diffusion head takes `(cursor_token, audio_features)` and
+produces a final per-bin activation map `(B, 500)` either by one
+denoiser forward (training) or by running `T_inf` reverse-diffusion
+steps (inference).
 
 ### Notation
 
 - `T = 64` — number of training timesteps.
 - `t ∈ {0, …, T-1}` — discrete timestep. `t = 0` is the cleanest end
-  (closest to a clean one-hot); `t = T-1` is the noisiest end (closest
-  to the prior).
-- `b = b_pred + 1 = 501` — number of bins.
+  (closest to a clean activation map); `t = T-1` is the noisiest end
+  (close to N(0, I)).
+- `n_bins = 500` — bin count = b_pred = B_PRED. There is **no STOP
+  class**; the activation map encodes "no onset here" as low
+  activation.
 
 ### Cosine noise schedule
 
@@ -272,143 +271,169 @@ ab_cum(t)    = product of alpha(0..t)         # = ab(t) by construction
 `ab_cum`, `1 - ab_cum`, `sqrt(ab_cum)`, `sqrt(1 - ab_cum)` are cached
 on the schedule object at construction.
 
-### x0-parameterized continuous Gaussian process
+### Framewise activation Gaussian process (x_0-parameterized)
 
-The forward process at timestep `t` is
+The forward (q) process at timestep `t` is
+
 ```
 x_t = sqrt(ab_cum(t)) * x_0 + sqrt(1 - ab_cum(t)) * eps,    eps ~ N(0, I)
 ```
 
-with `x_0 = encode_x0(target_bin)`:
-```
-x_0 ∈ R^501,  x_0[target_bin] = 2.0,  x_0[other] = 0.0
-                                  ^^^                    (x0_scale)
-```
+where `x_0 = M_target_smoothed` ∈ [0, 1]^500 (the Gaussian-smoothed
+GT activation map). Unlike #014/#015's process, **no encoding step
+is needed** — the activation map IS the x_0 representation; the
+process treats it as a continuous tensor without scaling.
 
-Decoding back to logits applies both the inverse data scale and a
-sharpness factor:
+Decoding: `decode_to_logits(x_0_hat) = clamp(x_0_hat, 0.0, 1.0)`.
+No `logit_scale` or `x0_scale` constants — argmax-style decoding
+is not meaningful for framewise (which threshold-decodes), and the
+clamp keeps the output in the valid probability-like range.
 
-```
-logits = x_0_hat * (logit_scale / x0_scale) = x_0_hat * (5.0 / 2.0) = x_0_hat * 2.5
-```
+Only `parameterization = "x0"` is supported by
+`FramewiseActivationProcess`. Predicting noise or v would require
+inverse formulas that overshoot [0, 1] and need re-clipping every
+step, which defeats the parameterization.
 
-`x0_scale = 2.0` (data scale, inverse-of-encoding); `logit_scale = 5.0`
-(softmax sharpness multiplier). With a perfectly predicted scaled
-one-hot, the positive bin has logit `+2.5`, off-bins logit `0.0`;
-softmax top-1 prob `exp(2.5) / (exp(2.5) + 500) ≈ 0.94`. Argmax is
-invariant to both constants — they affect only softmax sharpness,
-which matters for mean-of-softmax aggregation across `n_samples`
-draws and for any downstream confidence reading.
-
-### MLP denoiser (with self-conditioning)
+### Conv1D denoiser (with self-conditioning and audio context)
 
 Inputs:
 - `cursor_token` `(B, 384)`,
-- `x_t`         `(B, 501)`,
-- `t`           `(B,)` int64,
-- `prev_x0_hat` `(B, 501)` — the previous reverse step's predicted
-  `x_0` (zeros on the first step / during the training-time
-  no-self-cond branch).
+- `x_t` `(B, 500)`,
+- `t` `(B,)` int64,
+- `prev_x0_hat` `(B, 500)` — previous reverse step's predicted x_0
+  (zeros on the first step or during the training-time no-self-cond
+  pass),
+- `audio_features` `(B, 125, 384)` — future-half audio tokens.
 
-Build a sinusoidal time embedding from `t`:
-```
-half = time_embed_dim / 2 = 64
-freqs = exp(-log(10000) * arange(half) / half)
-emb   = concat([sin(t[:, None] * freqs), cos(t[:, None] * freqs)], dim=-1)
-                                                                   # (B, 128)
-```
+Per-bin input channels (concatenated along the channel axis of a
+`(B, C, 500)` tensor):
 
-Project: `time_proj = Linear(128, 256) → SiLU → Linear(256, 256)`,
-yielding `(B, 256)`.
-
-Concatenate the conditioning sources (self-cond enabled adds a
-fourth term):
 ```
-h = concat([cursor_token, time_proj_out, x_t, prev_x0_hat], dim=-1)
-                                              # (B, 384 + 256 + 501 + 501 = 1642)
+x_t                  (B, 1, 500)
+prev_x0_hat          (B, 1, 500)            # only if self_cond=True
+positional embed     (B, 32, 500)           # sinusoidal over bin index, precomputed
+audio features       (B, 384, 500)          # F.interpolate(audio_features.transpose(1,2), 500, mode="linear")
+cursor projection    (B, 32, 500)           # broadcast Linear(384 → 32) of cursor_token
+time projection      (B, 32, 500)           # broadcast of Linear(128 → 32) of sinusoidal_time_embedding(t, 128)
 ```
 
-3-layer MLP:
+Total input channels: 1 + 1 + 32 + 384 + 32 + 32 = **482**.
+
+Time embedding builder:
 ```
-h = Linear(1642, 1536) → SiLU → Dropout(0.1)
-h = Linear(1536, 1536) → SiLU → Dropout(0.1)
-h = Linear(1536, 1536) → SiLU → Dropout(0.1)
-out = Linear(1536, 501)         # the predicted x_0 (on x0_scale)
+time_emb_raw = sinusoidal_time_embedding(t, dim=128)             # (B, 128)
+time_emb     = Linear(128, 32) → SiLU → Linear(32, 32)(time_emb_raw)  # (B, 32)
 ```
 
-Output: `model_out (B, 501)` — interpreted as `x_0_hat * x0_scale`,
-matching the `encode_x0` scale.
+Cursor projection:
+```
+cursor_emb = Linear(384, 32)(cursor_token)                       # (B, 32)
+```
 
-**Denoiser parameter count: 8,113,665** (the first Linear is
-+501·1536 = +769k params over the no-self-cond variant).
+Audio upsampling:
+```
+audio = audio_features.transpose(1, 2)                           # (B, 384, 125)
+audio = F.interpolate(audio, size=500, mode="linear", align_corners=False)  # (B, 384, 500)
+```
 
-### Loss target (x0 parameterization)
+Conv stack (3 blocks):
 
-`loss_target = x_0` (the encoded scaled one-hot). The denoiser is
-trained to output `x_0` directly; per-sample distance is
-`MSE(model_out, x_0)`.
+```
+h: (B, 482, 500)
+for k in [31, 15, 15]:
+    h = Conv1d(in_ch, 256, kernel_size=k, padding=k//2)(h)
+    h = GroupNorm(num_groups=8, num_channels=256)(h)
+    gamma, beta = Linear(32+32, 2*256)([cursor_emb || time_emb]).chunk(2, dim=-1)
+    h = h * (1 + gamma.unsqueeze(-1)) + beta.unsqueeze(-1)
+    h = SiLU(h)
+    h = Dropout(0.1)(h)
+    in_ch = 256
+
+out = Conv1d(256, 1, kernel_size=1)(h)                           # (B, 1, 500)
+out = out.squeeze(1)                                             # (B, 500)
+```
+
+FiLM linear layers are **zero-initialized** so the conv stack is
+identity at training start.
+
+Receptive field of the kernel = 31 (= 155 ms at 5 ms/bin) for the
+first conv block, accumulating to 31 + 14 + 14 = 59 bins ≈ 295 ms
+total — sufficient to capture local musical structure around each
+predicted bin.
+
+**Denoiser parameter count: 5,911,137.**
+
+### Loss target (x0-parameterization)
+
+`loss_target = M_target_smoothed` (the Gaussian-σ=2 smoothed map).
+The denoiser is trained to output the clean smoothed map directly;
+per-bin distance is `(M_0_hat[b] - M_target_smoothed[b])²`.
 
 ### Training-time forward (`forward_diffusion`)
 
-Self-conditioning at training time uses a two-pass recipe: with
-probability `self_cond_prob = 0.5` per sample, a first no-grad
-denoise pass produces the `prev_x0_hat` input for the second
-(gradient-tracked) pass; otherwise `prev_x0_hat = 0` (no prior
-estimate). This matches the inference distribution where the first
-reverse step has no prior estimate but every subsequent step does.
+Self-conditioning at training time uses the Analog-Bits two-pass
+recipe: with probability `self_cond_prob = 0.5` per sample, a first
+no-grad denoise pass produces the `prev_x0_hat` input for the
+second (gradient-tracked) pass; otherwise `prev_x0_hat = 0` (no
+prior estimate). Matches the inference distribution where the
+first reverse step has no prior estimate but every subsequent
+step does.
 
 ```
-B       = cursor_token.size(0)
-x_0     = encode_x0(target_bin)                       # (B, 501)
-t       = randint(0, T, (B,))                         # uniform sample
-eps     = randn_like(x_0)                             # (B, 501)
-x_t     = sqrt(ab_cum[t]) * x_0
-        + sqrt(1 - ab_cum[t]) * eps                   # (B, 501)
+B          = cursor_token.size(0)
+x_0        = M_target_smoothed                          # (B, 500), identity in process
+t          = randint(0, T, (B,))                        # uniform
+eps        = randn_like(x_0)                            # (B, 500)
+x_t        = sqrt(ab_cum[t]) * x_0
+           + sqrt(1 - ab_cum[t]) * eps                  # (B, 500)
 
-# Two-pass self-conditioning (only when training and self_cond=True)
-mask    = (rand(B) < 0.5)                             # (B,) bool
-prev_x0 = zeros(B, 501)
+# Two-pass self-conditioning (training only, when self_cond=True)
+mask       = (rand(B) < 0.5)
+prev_x0    = zeros(B, 500)
 if mask.any():
     with no_grad():
-        sc_out = denoiser(cursor_token, x_t, t, prev_x0_hat=None)
-        sc_x0  = predict_x0(sc_out, x_t, t).detach()
+        sc_out = denoiser(cursor_token, x_t, t,
+                          prev_x0_hat=None,
+                          audio_features=audio_features)
+        sc_x0  = process.predict_x0(sc_out, x_t, t).detach()
     prev_x0 = where(mask, sc_x0, zeros_like(sc_x0))
 
-mout    = denoiser(cursor_token, x_t, t, prev_x0_hat=prev_x0)
-ltgt    = x_0                                         # x0-param loss target
-x0_hat  = mout                                        # already x_0-shaped
-logits  = x0_hat * 2.5                                # decode_to_logits
+mout       = denoiser(cursor_token, x_t, t,
+                      prev_x0_hat=prev_x0,
+                      audio_features=audio_features)
+ltgt       = x_0                                        # x0-param loss target
+x0_hat     = mout                                       # x0-param
+logits     = clamp(x0_hat, 0.0, 1.0)                    # decode_to_logits
 
-return DiffusionModelOutput(
+return FramewiseModelOutput(
     logits=logits, cursor_token=cursor_token,
+    audio_features=audio_features,
     model_out=mout, loss_target=ltgt, t=t, x_t=x_t,
 )
 ```
 
-`logits` here is a placeholder used only for the `argmax_match`
-diagnostic metric; **it is not the inference-time prediction** (which
-requires the full sampler). The two-pass logic roughly doubles
-per-step denoiser forward cost (the first pass has `no_grad` so no
-backward through it).
-
 ### Inference-time forward (`predict`)
 
 ```
-cursor_token = trunk(input)               # (B, 384)
-return DiffusionModelOutput(
-    logits=zeros(B, 501),                 # placeholder; decoder fills
+cursor_token, audio_tokens = trunk(input)                # full token sequence
+audio_features              = audio_tokens[:, 125:250, :] # future-half
+
+return FramewiseModelOutput(
+    logits=zeros(B, 500),                                # placeholder; sampler fills
     cursor_token=cursor_token,
+    audio_features=audio_features,
 )
 ```
 
-The decoder runs the sampler on `cursor_token` to produce the real
-logits.
+The decoder runs the sampler on `(cursor_token, audio_features)` to
+produce the real activation map.
 
 ---
 
 ## Loss
 
-`DiffusionLoss` — MSE on the structured `DiffusionModelOutput`.
+`FramewiseDiffusionLoss` — weighted MSE on the predicted activation
+map vs the smoothed target.
 
 ### Hyperparameters
 
@@ -417,43 +442,62 @@ logits.
 | `loss_type` | `"mse"` |
 | `snr_weighting` | `true` (Min-SNR-γ applied as the loss weight) |
 | `snr_gamma` | `5.0` |
-| `stop_weight` | `1.0` |
+| `pos_weight_clamp_min` | `10.0` |
+| `pos_weight_clamp_max` | `200.0` |
 | `n_t_buckets` | `4` |
+| `canonical_threshold` | `0.5` |
+| `canonical_tolerance_frames` | `2` |
+
+No `stop_weight` — there is no STOP class to weight.
 
 ### Forward
 
 ```
-per_sample = ((mout - loss_target) ** 2).mean(dim=-1)        # (B,)
-is_stop    = (target_bin == 500)
-mult       = where(is_stop, 1.0, 1.0)                        # STOP weight = 1.0
-snr_t      = ab_cum(t) / (1 - ab_cum(t))                     # signal-to-noise
-snr_w      = min(snr_t, 5.0) / snr_t                         # Min-SNR-γ, γ=5
-weighted   = per_sample * mult * snr_w
-loss       = weighted.mean()
-```
+# (B, 500) per-bin squared error
+per_bin = (mout - loss_target) ** 2
 
-`snr_w(t)` rebalances the per-t gradient magnitude. For
-x0-prediction, `min(SNR_t, γ) / SNR_t` is mathematically equivalent
-to Hang et al.'s `min(SNR_t, γ)` applied to the `‖x_0 − x̂_0‖²` term
-(the explicit division is what the implementation uses since
-`per_sample` is the raw x0-MSE).
+# Per-sample positive-class upweighting: balance gradient
+# contribution between positive and negative bins.
+n_gt           = target.n_gt                            # (B,) int
+n_neg          = n_bins - n_gt                          # (B,) int
+pos_w          = (n_neg / clamp(n_gt, min=1)).float()   # (B,)
+pos_w          = pos_w.clamp(min=10.0, max=200.0)       # (B,)
+
+# Per-bin weight: pos_w at positive bins, 1.0 at negatives.
+pos_mask       = (target.target_map_binary > 0.5)       # (B, 500) bool
+weight         = where(pos_mask, pos_w[:, None], ones_like(pos_mask).float())
+
+# Min-SNR-γ weighting per sample (Hang et al. 2023).
+snr_t          = ab_cum(t) / (1 - ab_cum(t))            # (B,)
+snr_w          = min(snr_t, 5.0) / snr_t                # (B,) — equivalent to min(SNR, γ)
+                                                        #         on the x_0-MSE term
+
+loss           = (per_bin * weight * snr_w[:, None]).mean()
+```
 
 ### Diagnostic metrics reported per step
 
 - `loss` — the headline scalar.
+- `loss/snr_weighted` — `(per_bin * snr_w).mean()` reported always (independent of whether `snr_weighting` is on as the actual loss path).
 - `loss/per_t_q0..3` — per-sample loss bucketed into `n_t_buckets`
-  equal-width quartiles of the sampled `t` (0..63). Reveals whether
-  the model is good at the easy or hard end of the schedule.
-- `loss/snr_weighted` — `(per_sample * snr_w).mean()` where
-  `snr_w(t) = min(snr(t), 5.0) / snr(t)` and
-  `snr(t) = ab_cum(t) / (1 - ab_cum(t))`. Always computed as a
-  diagnostic, even when `snr_weighting=False`. The schedule's
-  `alphas_cumprod()` is bound to the loss at trainer-construction
-  time via `loss.bind_schedule(model.schedule.alphas_cumprod())`.
-- `stop_rate` — fraction of training samples whose target is STOP.
-- `argmax_match` — `(logits.argmax(-1) == target_bin).float().mean()`.
-  **At-sampled-t** — diagnostic only; not directly comparable to
-  inference-time argmax.
+  equal-width quartiles of the sampled `t` (0..63).
+- `loss/pos_only` — MSE summed over positive-target bins only.
+- `loss/neg_only` — MSE summed over negative-target bins only.
+- `loss/pos_neg_ratio` — `pos_only / neg_only` (a value < 1 means
+  the model is paying more attention to negatives than positives).
+- `frame/precision_τ_50_tol_2`, `recall_τ_50_tol_2`, `f1_τ_50_tol_2`
+  — single-point F1 at the canonical operating point (`τ=0.5`,
+  tolerance ±2 frames). Computed via 1D max-pool dilation:
+  a predicted positive at bin `b` is TP iff `max_pool1d(target, k=5, stride=1)[b] == 1` (i.e., some target within ±2 frames).
+- `frame/auc_pr`, `frame/auc_roc` — threshold-free integrated
+  quality. Sorted-prediction trapezoidal integration.
+- `frame/mean_act_pos`, `frame/mean_act_neg`, `frame/separation` —
+  mean predicted activation at GT bins vs non-GT bins;
+  `separation = mean_pos - mean_neg`.
+- `frame/pos_rate_pred_50` — fraction of bins with M_0_hat > 0.5
+  (model-emitted positive rate at the canonical threshold).
+- `frame/pos_rate_target` — fraction of target bins == 1.0 (≈ 1.5
+  % at typical density).
 
 ---
 
@@ -469,36 +513,68 @@ to Hang et al.'s `min(SNR_t, γ)` applied to the `‖x_0 − x̂_0‖²` term
 | Epochs | 50 |
 | LR scheduler | CosineAnnealingLR (`T_max = steps_per_epoch × epochs`) |
 | Mixed precision | off |
-| Balanced sampling | on (weights ∝ 1 / (count + 1) ^ 0.5) |
+| Balanced sampling | **off** (no class to balance under framewise) |
 | Evals per epoch | 4 |
 | Watched metric | `loss` (lower is better) |
 | Checkpoint cadence | every eval — `latest.pt` rewritten; `best.pt` on new best |
 | Step log cadence | every step into `metrics.jsonl` |
-| Eval artifacts | per-eval AR-corpus output under `{run_dir}/infer_corpus/eval_{step}/` from the `InferCorpusHook`; train_noaug pass under `{run_dir}/eval_{step}/train_noaug/` |
+| Eval artifacts | per-eval AR-corpus output under `{run_dir}/infer_corpus/eval_{step}/`; train_noaug pass under `{run_dir}/eval_{step}/train_noaug/`; full T_inf-step rollout under `{run_dir}/eval_{step}/rollout_maps.npz` plus convergence plots and GIFs |
 | Seed | 42 |
 
-### Auxiliary eval passes
+### Auxiliary eval passes (5 per training eval)
 
-- **`train_noaug`** — 5 % of the train split, fetched with
-  augmentations OFF. Loss + diagnostics reported under
-  `val/single/train_noaug/*`.
-- **`benchmarks`** — 10 input-distortion modes on 5 % of val per
-  eval: `normal`, `no_audio`, `no_future_audio`, `no_past_audio`,
-  `static_audio`, `no_context`, `random_context`, `metronome`,
-  `advanced_metronome`, `context_time_shifted`. Same diffusion
-  loss, diagnostic only.
-- **AR-corpus hook** — every eval runs the full AR pipeline
-  (including the 16-step DDIM sampler) on 10 % of val charts using
-  the LIVE model (no checkpoint reload), both `gt_cond` and
-  `fixed_cond` conditioning modes.
+1. **EVAL_1** — sampled-t (random `t` per sample), single denoiser
+   forward. Full val 5% subset. Cheap. Tracks training health
+   (loss curves, per-t-quartile, framewise F1 at canonical op).
+2. **NOAUG_1** — same machinery on a deterministic train-no-aug 5%
+   subset. Diagnoses overfit (gap between val and train_noaug).
+3. **EVAL_K** — full `T_inf`-step rollout from `x_T ~ N(0, I)`. On
+   ~32 charts × ~5 random windows = ~150 samples. Tracks per-step
+   convergence (F1 at each k, MSE, mass distribution). Mini-chart
+   metrics at step `K` (threshold-decode the final M_0_hat, compare
+   emissions to GT events in the window at 101 thresholds × 5
+   tolerances). Saves `rollout_maps.npz` with full per-step M_k
+   tensors. Renders 5 representative GIFs (best/p75/p50/p25/worst
+   by final F1) + a population-summary GIF + convergence plots.
+4. **NOAUG_K** — same on train_noaug subset.
+5. **AR-corpus** — full AR loop on 10% of val charts. Uses
+   `FramewiseDiffusionDecoder` (threshold + multi-emit + cursor-to-
+   last). Produces chart-level `matched_rate`, `error_median_ms`,
+   `density_ratio`, etc. via the standard `comparisons_summary.json`
+   machinery, extended to 5 tolerances (5/10/20/40/100 ms).
+
+### Per-eval artifacts
+
+```
+runs/exp_016_framewise_diffusion/eval_{step}/
+  ├── checkpoint.pt
+  ├── eval.json                       # scalar metric summary
+  ├── curves.npz                      # 101-threshold × 5-tolerance grids
+  ├── rollout_maps.npz                # per-sample per-step M_k tensors
+  ├── noaug_rollout_maps.npz          # train_noaug equivalent
+  ├── convergence_curves.png          # mean+p10/p25/p75/p90 over k, 3 panels
+  ├── convergence_by_density.png      # 4 sub-panels for density buckets
+  ├── convergence_by_star.png         # 4 sub-panels for star buckets
+  ├── convergence_by_kind.png         # 6 sub-panels per onset kind
+  ├── rollout_gifs/
+  │   ├── sample_best_chart-X_window-Y_f1-Z.gif
+  │   ├── sample_p75_*.gif
+  │   ├── sample_p50_*.gif
+  │   ├── sample_p25_*.gif
+  │   ├── sample_worst_*.gif
+  │   └── summary_histogram.gif        # population-level histogram evolution
+  ├── train_noaug/                     # mirror of the above for noaug
+  └── (legacy artifacts disabled in framewise mode)
+```
 
 ---
 
 ## Inference (autoregressive)
 
 Reconstructs at inference time:
-- `DiffusionDetector` (the model).
-- `DiffusionDecoder(b_pred=500, decode_strategy="argmax", n_samples=1, top_k_log=5,
+- `FramewiseDiffusionDetector` (the model).
+- `FramewiseDiffusionDecoder(b_pred=500, decode_threshold=0.5, nms_kernel=1,
+   stop_hop_bins=20, min_emit_gap_bins=1, top_k_log=5,
    sampler_config=DDIMSamplerConfig(n_inference_steps=16, eta=0.0,
    timestep_spacing="linspace", time_offset=0.0))`.
 - `DetectionARInputBuilder(a_bins=500, b_bins=500, c_events=128)`.
@@ -518,8 +594,8 @@ Pre-compute the inference-time timestep schedule by `linspace`-spacing
 16 steps over `[0, T-1] = [0, 63]`, producing a strictly-decreasing
 sequence `t_15 > t_14 > … > t_0 = 0`.
 
-Initialize `x = randn(1, 501)` (this is `x_T`); `prev_x0_hat = None`
-(treated as zeros on the first denoiser call).
+Initialize `x = randn(1, 500)` (= `x_T ~ N(0, I)`).
+`prev_x0_hat = None` (treated as zeros on the first denoiser call).
 
 For `i = 15, …, 0`:
 
@@ -528,59 +604,63 @@ t        = ts[i]                          # current step
 t_prev   = ts[i - 1] if i > 0 else -1     # next step (cleaner end)
 
 ab_t     = ab_cum(t)
-ab_prev  = ab_cum(t_prev) if t_prev >= 0 else 1.0     # clean
+ab_prev  = ab_cum(t_prev) if t_prev >= 0 else 1.0
 
-# Asymmetric time intervals: query the denoiser as if the input
-# were slightly noisier than it actually is. With time_offset = 0
-# the queried t matches the actual t.
-t_query  = clamp(t + time_offset, 0, T - 1)
+t_query  = clamp(t + time_offset, 0, T - 1)  # asymmetric time intervals
 
 # Predict x_0 from the denoiser at this step, with self-cond.
 mout     = denoiser(cursor_token, x, tensor([t_query]),
-                    prev_x0_hat=prev_x0_hat)
-x0_hat   = mout                                       # x0-param
-prev_x0_hat = x0_hat.detach()                         # for next step
+                    prev_x0_hat=prev_x0_hat,
+                    audio_features=audio_features)
+x0_hat   = mout                           # x0-param identity
+prev_x0_hat = x0_hat.detach()             # for next step
 
 # Recover the implied noise:
 eps_hat  = (x - sqrt(ab_t) * x0_hat) / sqrt(1 - ab_t)
 
 # DDIM update with eta = 0 (deterministic):
-sigma    = 0.0                # eta * sqrt((1 - ab_prev) * (1 - ab_t / ab_prev))
-                              #   evaluates to 0 when eta = 0
+sigma    = 0.0
 mean_pred = sqrt(ab_prev) * x0_hat
           + sqrt(1 - ab_prev - sigma**2) * eps_hat
-x        = mean_pred                                  # no stochastic term
+x        = mean_pred
 ```
 
-After the loop, `logits = x * 2.5` (`decode_to_logits` with
-`logit_scale / x0_scale = 5.0 / 2.0`). With `n_samples = 1` this is
-the final logit vector fed to the argmax. With `n_samples = N > 1`,
-the sampler is run `N` times from independent `x_T` draws (and
-`prev_x0_hat` reset to zeros at the start of each draw); the
-resulting per-draw softmaxes are averaged: `logits_final =
-log(mean(softmax(logits_i)))`.
+After the loop, `M_0_hat = clamp(x, 0.0, 1.0)` (`decode_to_logits`).
 
-The decoder argmaxes (`decode_strategy = "argmax"`); a class index
-of 500 is STOP, otherwise the AR loop emits an onset at
-`cursor + cls`.
+### Decoder: threshold + (optional) NMS + min-gap
 
-### Sampler ablation (post-run)
+```
+scores = M_0_hat[0]                                       # (500,)
 
-Run `cli.diffusion_sampler_ablation` against
-`config/ablation_matrix.json`. Each variant overrides
-`decoder.config.sampler_config.{n_inference_steps, eta, time_offset}`
-and `decoder.config.n_samples`. The matrix probes (10 variants):
+# Optional 1-D max-pool NMS (kept only when scores[b] == local max).
+if nms_kernel > 1:
+    pooled    = max_pool1d(scores.view(1,1,-1),
+                            kernel_size=nms_kernel,
+                            stride=1, padding=nms_kernel // 2)
+    local_max = scores >= pooled.view(-1) - 1e-9
+else:
+    local_max = ones_like(scores, dtype=bool)
 
-- DDIM 4 / 8 / 16 / 32 steps at `eta = 0` — quality vs steps knee.
-- DDIM 16 steps at `eta = 1` — stochastic resampling (predicted to
-  finally produce usable output with Min-SNR-trained q3).
-- DDIM 4 / 16 steps × `n_samples ∈ {1, 4}` — multi-draw
-  marginalization benefit.
-- DDIM 4 steps × `time_offset ∈ {0, 1}` × `n_samples ∈ {1, 4}` —
-  Analog-Bits asymmetric-time test at the most-sensitive (few-step)
-  end of the curve.
-- DDPM 64-step reference (full-schedule reverse process) — upper
-  bound on this stack's quality.
+above   = scores > decode_threshold
+keep    = above & local_max
+bins    = sorted(keep.nonzero()[0].tolist())
+
+# Min-emit-gap enforcement: greedy, lower-bin wins.
+final   = []
+last    = -10**9
+for b in bins:
+    if b - last >= min_emit_gap_bins:
+        final.append(b)
+        last = b
+
+if not final:
+    return ARDecision(bin_offsets=(), ...)       # empty -> STOP_HOP
+return ARDecision(
+    bin_offsets=tuple(final),
+    confidences=tuple(scores[b] for b in final),
+    ...,
+)
+```
 
 ### AR loop
 
@@ -589,19 +669,35 @@ and `decoder.config.n_samples`. The matrix probes (10 variants):
    - Slice mel `[cursor - 500, cursor + 500)` with zero-padding.
    - Back-align up to 128 past onsets as `event_offsets` /
      `event_mask`.
-   - Trunk forward → `cursor_token (1, 384)`.
+   - Trunk forward → `cursor_token (1, 384)`, `audio_features (1, 125, 384)`.
    - DDIM sampler runs 16 reverse-diffusion steps starting from
      `x_T ~ N(0, I)`, each step calling the denoiser with
-     `(cursor_token, x_i, t_i)`.
-   - With `n_samples > 1`, repeat the sampler call N times and
-     average softmaxes.
-   - Argmax → class `cls`.
-   - `cls == 500` (STOP) → `cursor += hop_bins_on_stop = 20`.
-     Else → emit onset at `cursor + cls`, advance `cursor` there.
+     `(cursor_token, x_i, t_i, prev_x0_hat=M_(i-1)_hat, audio_features)`.
+   - Decode: threshold + optional NMS + min-gap → list of positive
+     bin offsets.
+   - If empty (`bin_offsets == ()`): cursor advances by
+     `hop_bins_on_stop = 20` bins.
+   - Else: for each bin `b` in `bin_offsets`, emit an onset at
+     `cursor + b`. Advance cursor to `cursor + max(bin_offsets)`
+     (the predictor's standard semantics — the next AR step starts
+     AT the last emitted onset, and `min_onset_gap_bins = 1` prevents
+     repeat emission).
 3. Return a new `Chart` with the accumulated onsets.
 
 `hop_bins_on_stop = 20`, `max_events = 10000`, `min_onset_gap_bins = 1`,
 `default_kind = "DON"`.
+
+### Sampler / decoder ablation (post-run)
+
+Run `cli.diffusion_sampler_ablation` against
+`config/ablation_matrix.json`. 10 variants:
+
+- Threshold sweep: τ ∈ {0.3, 0.5, 0.7} at default sampler config.
+- NMS variants: nms_kernel ∈ {3, 5} at τ ∈ {0.3, 0.5}.
+- DDIM step count: {4, 8, 16, 32} at τ=0.5.
+- Asymmetric time offset: time_offset ∈ {0, 1} at 4-step DDIM.
+- DDPM-64: full-schedule reverse process reference.
+- Combined Pareto: 4-step + offset=1 + NMS-3 + threshold tuned.
 
 ---
 
@@ -634,6 +730,7 @@ and `decoder.config.n_samples`. The matrix probes (10 variants):
 | scipy | 1.17.1 |
 | librosa | 0.11.0 |
 | matplotlib | 3.10.8 |
+| Pillow | 12.2.0 (used for GIF rendering — no imageio dependency) |
 | tqdm | 4.67.3 |
 
 ---
