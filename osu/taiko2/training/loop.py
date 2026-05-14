@@ -71,6 +71,15 @@ def _batch_slices(n: int, batch_size: int):
         yield start, min(start + batch_size, n)
 
 
+_ONSET_STATS_KEYS: tuple[str, ...] = (
+    "onset/exact", "onset/fhit", "onset/fgood", "onset/fmiss",
+    "onset/rhit", "onset/rgood", "onset/rmiss",
+    "onset/hit", "onset/good", "onset/miss",
+    "onset/pred_stop_rate", "onset/n_total", "onset/n_nonstop",
+    "onset/n_stop_target",
+)
+
+
 def _batch_stats(
     output: Any, target: Any, *, b_pred: int,
 ) -> dict[str, float]:
@@ -86,7 +95,15 @@ def _batch_stats(
     is present.
 
     ``b_pred`` = STOP class index (n_classes - 1).
+
+    Returns an all-zero placeholder when the target has no
+    ``target_bin`` attribute — framewise targets (#016) carry an
+    activation map rather than a single next-bin index, and the
+    OnsetMetric semantics don't apply. The training loop disables
+    its `hit`/`miss` tqdm postfix in that case.
     """
+    if not hasattr(target, "target_bin"):
+        return {k: 0.0 for k in _ONSET_STATS_KEYS}
     # Local imports keep startup light; cached after first call.
     from ..domain.metrics import MetricInput
     from .metrics_onset import OnsetMetric, OnsetMetricConfig
@@ -94,6 +111,112 @@ def _batch_stats(
     scratch = OnsetMetric(OnsetMetricConfig(b_pred=b_pred))
     scratch.update(MetricInput(output=output, target=target))
     return scratch.compute()
+
+
+def _framewise_batch_stats(output: Any, target: Any) -> dict[str, float]:
+    """Per-batch framewise stats for #016-style activation-map targets.
+
+    Both recall and precision are reported at threshold 0.5, exact-bin
+    and loose (±2 bins) variants. Gaussian σ=2 smoothing of the GT map
+    means exact-bin scoring penalizes near-miss predictions; loose
+    matching mirrors the eval-time tolerance grid.
+
+    Returns:
+      - ``fw/recall`` / ``fw/recall_loose``: fraction of GT bins
+        covered by a ``pred>=0.5`` (exact bin / within ±2 bins).
+      - ``fw/precision`` / ``fw/precision_loose``: fraction of bins
+        with ``pred>=0.5`` that land on (or within ±2 of) a GT bin.
+      - ``fw/f1`` / ``fw/f1_loose``: harmonic mean of the above pair.
+      - ``fw/pmean``: mean predicted activation (post-clamp).
+      - ``fw/pmean_at_gt`` / ``fw/pmean_off_gt``: mean activation on
+        vs off GT bins.
+      - ``fw/n_pred_pos``: average #bins/sample with ``pred>=0.5``.
+      - ``fw/n_gt``: average #GT onsets per sample.
+    """
+    pred = output.logits.detach().clamp(0.0, 1.0)      # (B, n_bins)
+    gt_binary = target.target_map_binary.detach()      # (B, n_bins)
+    gt_padded = target.gt_bins_padded.detach()          # (B, M)
+
+    B, n_bins = pred.shape
+    pmean = float(pred.mean())
+    pred_pos = pred >= 0.5
+    n_pred_pos_total = float(pred_pos.sum())
+    n_pred_pos_avg = n_pred_pos_total / max(B, 1)
+
+    gt_mask = gt_binary > 0.5
+    n_gt_total = float(gt_mask.sum())
+
+    if n_gt_total > 0:
+        pmean_at_gt = float((pred * gt_binary).sum() / n_gt_total)
+        n_off = float((1.0 - gt_binary).sum())
+        pmean_off_gt = float(
+            (pred * (1.0 - gt_binary)).sum() / max(n_off, 1.0)
+        )
+
+        # Loose-GT mask: max-pool the binary GT map with kernel 5 so any
+        # bin within ±2 of a GT onset is True. Reused for both loose
+        # precision and (cheap) loose recall via the gather path below.
+        gt_dilated = torch.nn.functional.max_pool1d(
+            gt_binary.unsqueeze(1), kernel_size=5, stride=1, padding=2,
+        ).squeeze(1) > 0.5
+
+        # Recall (exact / loose).
+        recall = float((pred_pos & gt_mask).sum() / n_gt_total)
+        valid = gt_padded >= 0
+        if valid.any():
+            idx = gt_padded.clamp(min=0, max=n_bins - 1).long()
+            window_max = pred.new_zeros(idx.shape)
+            for off in range(-2, 3):
+                shifted = (idx + off).clamp(min=0, max=n_bins - 1)
+                window_max = torch.maximum(
+                    window_max, pred.gather(1, shifted),
+                )
+            recall_loose = float(
+                ((window_max >= 0.5) & valid).sum()
+                / max(valid.sum().item(), 1)
+            )
+        else:
+            recall_loose = 0.0
+
+        # Precision (exact / loose).
+        if n_pred_pos_total > 0:
+            precision = float(
+                (pred_pos & gt_mask).sum() / n_pred_pos_total
+            )
+            precision_loose = float(
+                (pred_pos & gt_dilated).sum() / n_pred_pos_total
+            )
+        else:
+            precision = 0.0
+            precision_loose = 0.0
+    else:
+        pmean_at_gt = 0.0
+        pmean_off_gt = pmean
+        recall = recall_loose = 0.0
+        precision = precision_loose = 0.0
+
+    def _f1(p: float, r: float) -> float:
+        return (2.0 * p * r / (p + r)) if (p + r) > 0 else 0.0
+
+    return {
+        "fw/recall": recall,
+        "fw/recall_loose": recall_loose,
+        "fw/precision": precision,
+        "fw/precision_loose": precision_loose,
+        "fw/f1": _f1(precision, recall),
+        "fw/f1_loose": _f1(precision_loose, recall_loose),
+        "fw/pmean": pmean,
+        "fw/pmean_at_gt": pmean_at_gt,
+        "fw/pmean_off_gt": pmean_off_gt,
+        "fw/n_pred_pos": n_pred_pos_avg,
+        "fw/n_gt": float(target.n_gt.float().mean()),
+    }
+
+
+def _is_framewise_target(target: Any) -> bool:
+    return hasattr(target, "target_map_binary") and not hasattr(
+        target, "target_bin",
+    )
 
 
 def _infer_b_pred(output: Any, model_b_pred: int | None = None) -> int:
@@ -203,22 +326,40 @@ def _run_eval(
                 for a in artifacts:
                     a.update(batch_in)
 
-            # Postfix with per-batch + running-average onset stats.
+            # Postfix with per-batch + running-average stats. Onset
+            # stats for event-target mode, framewise stats for #016.
             if pbar is not None:
-                b_pred = _infer_b_pred(out, model_b_pred)
-                bs = _batch_stats(out, tgt, b_pred=b_pred)
-                eval_hit_sum += bs["onset/hit"]
-                eval_miss_sum += bs["onset/miss"]
                 eval_batches += 1
                 batch_loss = float(result.loss.detach())
                 avg_loss = total_loss / max(n_seen, 1)
-                pbar.set_postfix({
-                    "loss": f"{batch_loss:.3f}/{avg_loss:.3f}",
-                    "hit":  f"{bs['onset/hit']:.3f}/"
-                            f"{eval_hit_sum / eval_batches:.3f}",
-                    "miss":  f"{bs['onset/miss']:.3f}/"
-                            f"{eval_miss_sum / eval_batches:.3f}",
-                })
+                if _is_framewise_target(tgt):
+                    fs = _framewise_batch_stats(out, tgt)
+                    # Re-use the hit/miss accumulators for the two
+                    # headline framewise stats: loose recall + loose
+                    # precision. Avoids growing local state surface.
+                    eval_hit_sum += fs["fw/recall_loose"]
+                    eval_miss_sum += fs["fw/precision_loose"]
+                    avg_r = eval_hit_sum / eval_batches
+                    avg_p = eval_miss_sum / eval_batches
+                    pbar.set_postfix({
+                        "loss": f"{batch_loss:.3f}/{avg_loss:.3f}",
+                        "rec":  f"{fs['fw/recall_loose']:.3f}/{avg_r:.3f}",
+                        "prec": f"{fs['fw/precision_loose']:.3f}/{avg_p:.3f}",
+                        "f1":   f"{fs['fw/f1_loose']:.3f}",
+                        "p@gt": f"{fs['fw/pmean_at_gt']:.3f}",
+                    })
+                else:
+                    b_pred = _infer_b_pred(out, model_b_pred)
+                    bs = _batch_stats(out, tgt, b_pred=b_pred)
+                    eval_hit_sum += bs["onset/hit"]
+                    eval_miss_sum += bs["onset/miss"]
+                    pbar.set_postfix({
+                        "loss": f"{batch_loss:.3f}/{avg_loss:.3f}",
+                        "hit":  f"{bs['onset/hit']:.3f}/"
+                                f"{eval_hit_sum / eval_batches:.3f}",
+                        "miss":  f"{bs['onset/miss']:.3f}/"
+                                f"{eval_miss_sum / eval_batches:.3f}",
+                    })
     out_dict: dict[str, float] = {}
     denom = max(n_seen, 1)
     out_dict["loss"] = total_loss / denom
@@ -446,44 +587,73 @@ def train(
                         loss_metrics=dict(result.metrics),
                     ))
 
-                # Per-batch onset stats — computed inline so they can
-                # be both saved (into the step log alongside the loss
-                # sub-metrics) and shown in the tqdm postfix. Full set
-                # from OnsetMetric, not just hit/miss/exact.
-                b_pred = _infer_b_pred(out, _model_b_pred)
-                batch_onset = _batch_stats(out, tgt, b_pred=b_pred)
+                # Per-batch stats — saved into the step log alongside
+                # the loss sub-metrics and shown in the tqdm postfix.
+                # Onset-target mode uses the full OnsetMetric set;
+                # framewise mode (#016) uses the activation-map stats.
+                framewise_mode = _is_framewise_target(tgt)
+                if framewise_mode:
+                    batch_extras = _framewise_batch_stats(out, tgt)
+                else:
+                    b_pred = _infer_b_pred(out, _model_b_pred)
+                    batch_extras = _batch_stats(out, tgt, b_pred=b_pred)
 
-                # Merge into a new LossResult so hooks see hit/miss/exact
-                # alongside loss when MetricLoggerHook writes the step.
+                # Merge into a new LossResult so hooks see per-batch
+                # stats alongside loss when MetricLoggerHook writes.
                 step_result = LossResult(
                     loss=result.loss,
-                    metrics={**result.metrics, **batch_onset},
+                    metrics={**result.metrics, **batch_extras},
                 )
                 for h in hooks:
                     h.on_step_end(state, step_result)
 
                 batch_loss = float(result.loss.detach())
                 epoch_loss_sum += batch_loss
-                epoch_hit_sum += batch_onset["onset/hit"]
-                epoch_miss_sum += batch_onset["onset/miss"]
                 epoch_n += 1
-                if pbar is not None:
-                    denom = max(epoch_n, 1)
-                    post = {
-                        "loss": (
-                            f"{batch_loss:.3f}/"
-                            f"{epoch_loss_sum / denom:.3f}"
-                        ),
-                        "hit": (
-                            f"{batch_onset['onset/hit']:.3f}/"
-                            f"{epoch_hit_sum / denom:.3f}"
-                        ),
-                        "miss": (
-                            f"{batch_onset['onset/miss']:.3f}/"
-                            f"{epoch_miss_sum / denom:.3f}"
-                        ),
-                    }
-                    pbar.set_postfix(post)
+                if framewise_mode:
+                    # Re-use the hit/miss accumulators to track the
+                    # two headline framewise stats (loose recall +
+                    # loose precision) without growing train()'s
+                    # local state surface.
+                    epoch_hit_sum += batch_extras["fw/recall_loose"]
+                    epoch_miss_sum += batch_extras["fw/precision_loose"]
+                    if pbar is not None:
+                        denom = max(epoch_n, 1)
+                        pbar.set_postfix({
+                            "loss": (
+                                f"{batch_loss:.3f}/"
+                                f"{epoch_loss_sum / denom:.3f}"
+                            ),
+                            "rec": (
+                                f"{batch_extras['fw/recall_loose']:.3f}/"
+                                f"{epoch_hit_sum / denom:.3f}"
+                            ),
+                            "prec": (
+                                f"{batch_extras['fw/precision_loose']:.3f}/"
+                                f"{epoch_miss_sum / denom:.3f}"
+                            ),
+                            "f1": f"{batch_extras['fw/f1_loose']:.3f}",
+                            "p@gt": f"{batch_extras['fw/pmean_at_gt']:.3f}",
+                        })
+                else:
+                    epoch_hit_sum += batch_extras["onset/hit"]
+                    epoch_miss_sum += batch_extras["onset/miss"]
+                    if pbar is not None:
+                        denom = max(epoch_n, 1)
+                        pbar.set_postfix({
+                            "loss": (
+                                f"{batch_loss:.3f}/"
+                                f"{epoch_loss_sum / denom:.3f}"
+                            ),
+                            "hit": (
+                                f"{batch_extras['onset/hit']:.3f}/"
+                                f"{epoch_hit_sum / denom:.3f}"
+                            ),
+                            "miss": (
+                                f"{batch_extras['onset/miss']:.3f}/"
+                                f"{epoch_miss_sum / denom:.3f}"
+                            ),
+                        })
 
                 if state.step % eval_every == 0:
                     val_out = _run_eval(
