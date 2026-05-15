@@ -28,6 +28,8 @@ Experiments on machine learning applied to music and rhythm.
 
 ## License
 
-See [`LICENSE.md`](LICENSE.md). Research and educational use only.
-You are responsible for the legal use of training data and
-generated content in your jurisdiction.
+Source code is licensed under the [PolyForm Noncommercial
+License 1.0.0](LICENSE). See [`LICENSE.md`](LICENSE.md) for a
+project-specific notice about scope and training-data
+responsibility. You are responsible for the legal use of
+training data and generated content in your jurisdiction.
