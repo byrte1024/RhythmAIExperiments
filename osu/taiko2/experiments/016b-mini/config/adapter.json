@@ -1,0 +1,7 @@
+{
+    "_comment": "#016b-mini adapter: byte-identical to #016/config/adapter.json. Target smoothing (sigma=2) unchanged; the probe isolates the loss-formula effect.",
+    "__class__": "osu.taiko2.training.framewise_adapter:FramewiseSampleAdapterConfig",
+    "b_pred": 500,
+    "sigma_frames": 2.0,
+    "max_events_per_window": 100
+}

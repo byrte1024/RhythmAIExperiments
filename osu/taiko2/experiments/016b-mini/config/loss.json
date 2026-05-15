@@ -1,0 +1,13 @@
+{
+    "_comment": "#016b-mini probe loss: same as #016's loss EXCEPT `snr_x0_mode: true`. Switches the Min-SNR formula from the eps-prediction form `min(snr,gamma)/snr` to the x0-prediction form `min(snr,gamma)` (Hang 2023 §4.2). Everything else identical so any delta in training behaviour is attributable to the formula switch.",
+    "__class__": "osu.taiko2.training.framewise_diffusion_loss:FramewiseDiffusionLossConfig",
+    "loss_type": "mse",
+    "snr_weighting": true,
+    "snr_gamma": 5.0,
+    "snr_x0_mode": true,
+    "pos_weight_clamp_min": 10.0,
+    "pos_weight_clamp_max": 200.0,
+    "n_t_buckets": 4,
+    "canonical_threshold": 0.5,
+    "canonical_tolerance_frames": 2
+}

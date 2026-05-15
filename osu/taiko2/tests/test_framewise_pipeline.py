@@ -428,6 +428,64 @@ class TestLoss:
         assert torch.isfinite(r_off.loss)
         assert torch.isfinite(r_on.loss)
 
+    def test_snr_x0_mode_flips_weight_direction(self):
+        """ε-mode `min(snr,γ)/snr` downweights low-t (high SNR) heavily;
+        x0-mode `min(snr,γ)` upweights low-t to γ. Verify both
+        formulas evaluate correctly on a synthetic schedule and that
+        the produced training losses differ."""
+        cfg = _tiny_detector_config()
+        out, tgt = self._make_output_and_target(cfg, B=8)
+        model = FramewiseDiffusionDetector(cfg)
+        ab = model.schedule.alphas_cumprod()
+        snr = ab / (1.0 - ab).clamp(min=1e-8)
+        gamma = 5.0
+
+        loss_eps = FramewiseDiffusionLoss(FramewiseDiffusionLossConfig(
+            snr_weighting=True, snr_gamma=gamma, snr_x0_mode=False,
+        ))
+        loss_x0 = FramewiseDiffusionLoss(FramewiseDiffusionLossConfig(
+            snr_weighting=True, snr_gamma=gamma, snr_x0_mode=True,
+        ))
+        loss_eps.bind_schedule(ab)
+        loss_x0.bind_schedule(ab)
+
+        # Inspect raw weights at the schedule endpoints. t=0 is low-noise
+        # (snr huge); t=T-1 is high-noise (snr tiny).
+        T = ab.numel()
+        t_low = torch.tensor([0], dtype=torch.long)
+        t_hi = torch.tensor([T - 1], dtype=torch.long)
+        eps_low = loss_eps._snr_weights(t_low).item()
+        eps_hi = loss_eps._snr_weights(t_hi).item()
+        x0_low = loss_x0._snr_weights(t_low).item()
+        x0_hi = loss_x0._snr_weights(t_hi).item()
+        # ε-mode (`min(snr,γ)/snr` = `min(γ/snr, 1)`): weight at low-t
+        # is γ/snr (small relative to high-t which is 1). Direction:
+        # low-t weight < high-t weight.
+        assert eps_low < eps_hi, (
+            f"eps-mode should weight high-t more than low-t; "
+            f"got eps_low={eps_low}, eps_hi={eps_hi}"
+        )
+        assert eps_hi >= 0.99, (
+            f"eps-mode high-t weight should be ~1; got {eps_hi}"
+        )
+        # x0-mode (`min(snr,γ)`): weight at low-t is capped at γ;
+        # weight at high-t is snr (small). Direction: low-t > high-t.
+        assert x0_low > x0_hi, (
+            f"x0-mode should weight low-t more than high-t; "
+            f"got x0_low={x0_low}, x0_hi={x0_hi}"
+        )
+        assert abs(x0_low - gamma) < 1e-3, (
+            f"x0-mode low-t weight should be capped at γ={gamma}; got {x0_low}"
+        )
+        # End-to-end loss differs.
+        r_eps = loss_eps.forward(out, tgt)
+        r_x0 = loss_x0.forward(out, tgt)
+        assert torch.isfinite(r_eps.loss)
+        assert torch.isfinite(r_x0.loss)
+        assert not torch.isclose(r_eps.loss, r_x0.loss, atol=1e-6), (
+            "x0-mode and eps-mode should produce numerically different losses"
+        )
+
     def test_inference_mode_output_unbound_raises(self):
         cfg = _tiny_detector_config()
         model = FramewiseDiffusionDetector(cfg).eval()

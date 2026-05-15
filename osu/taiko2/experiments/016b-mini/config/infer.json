@@ -1,0 +1,63 @@
+{
+    "_comment": "#016b-mini inference spec: identical to #016/config/infer.json except `checkpoint` points at the mini run dir. The probe's purpose is the per-step rollout regression metric, not AR-corpus headline; AR-corpus pass still runs each eval and is logged but not gated on.",
+    "checkpoint": "osu/taiko2/runs/exp_016b_mini/checkpoints/best.pt",
+    "predictor": {
+        "__class__": "osu.taiko2.inference.autoregressive.predictor:AutoregressivePredictor",
+        "config": {
+            "__class__": "osu.taiko2.inference.autoregressive.predictor:AutoregressivePredictorConfig",
+            "hop_bins_on_stop": 20,
+            "max_events": 10000,
+            "min_onset_gap_bins": 1,
+            "default_kind": "DON"
+        }
+    },
+    "decoder": {
+        "__class__": "osu.taiko2.inference.autoregressive.framewise_diffusion_decoder:FramewiseDiffusionDecoder",
+        "config": {
+            "__class__": "osu.taiko2.inference.autoregressive.framewise_diffusion_decoder:FramewiseDiffusionDecoderConfig",
+            "b_pred": 500,
+            "decode_threshold": 0.5,
+            "nms_kernel": 1,
+            "stop_hop_bins": 20,
+            "min_emit_gap_bins": 1,
+            "top_k_log": 5,
+            "sampler_config": {
+                "__class__": "osu.taiko2.diffusion.samplers:DDIMSamplerConfig",
+                "n_inference_steps": 16,
+                "eta": 0.0,
+                "timestep_spacing": "linspace",
+                "time_offset": 0.0
+            }
+        }
+    },
+    "input_builder": {
+        "__class__": "osu.taiko2.inference.autoregressive.builders:DetectionARInputBuilder",
+        "config": {
+            "__class__": "osu.taiko2.inference.autoregressive.builders:DetectionARBuilderConfig",
+            "a_bins": 500,
+            "b_bins": 500,
+            "c_events": 128
+        }
+    },
+    "audio_sampler": {
+        "__class__": "osu.taiko2.samplers.mel:MelSampler",
+        "config": {
+            "__class__": "osu.taiko2.domain.dataset:MelSamplerConfig",
+            "sample_rate": 22000,
+            "n_fft": 2048,
+            "hop_divisor": 200,
+            "n_mels": 80,
+            "f_min": 20.0,
+            "f_max": 8000.0,
+            "power": 2.0,
+            "top_db": 80.0
+        }
+    },
+    "event_sampler": {
+        "__class__": "osu.taiko2.samplers.event:FixedRateEventSampler",
+        "config": {
+            "__class__": "osu.taiko2.domain.dataset:EventSamplerConfig",
+            "divisor": 200
+        }
+    }
+}

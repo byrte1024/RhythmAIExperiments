@@ -44,6 +44,13 @@ class FramewiseDiffusionLossConfig(LossConfig):
     - ``snr_weighting`` — Min-SNR (γ=5 from #015) applied to per-sample
       loss. Default ON.
     - ``snr_gamma`` — Min-SNR γ.
+    - ``snr_x0_mode`` — when ``True``, apply the **x0-parameterization**
+      form of Min-SNR from Hang 2023 §4.2: ``w = min(snr, γ)`` with no
+      division by SNR. When ``False`` (default for backcompat with
+      #016 reproductions), apply the ε-parameterization form
+      ``w = min(snr, γ) / snr``. The framewise process is x0-param
+      (see ``FramewiseActivationProcessConfig``); ``snr_x0_mode=true``
+      is the canonical setting for #016b+.
     - ``pos_weight_clamp_min/max`` — per-sample positive-class
       upweighting is clamped to this range. n_neg / max(n_pos, 1) for
       typical 500-bin / ~5-event windows is around 100×; clamp keeps
@@ -56,6 +63,7 @@ class FramewiseDiffusionLossConfig(LossConfig):
     loss_type: str = "mse"
     snr_weighting: bool = True
     snr_gamma: float = 5.0
+    snr_x0_mode: bool = False
     pos_weight_clamp_min: float = 10.0
     pos_weight_clamp_max: float = 200.0
     n_t_buckets: int = 4
@@ -135,15 +143,32 @@ class FramewiseDiffusionLoss(
         raise ValueError(f"unknown loss_type {self.config.loss_type!r}")
 
     def _snr_weights(self, t: torch.Tensor) -> torch.Tensor:
+        """Per-sample Min-SNR weight.
+
+        Two formulas, switched by ``config.snr_x0_mode``:
+          - **x0-mode** (canonical for x0-parameterized models, Hang
+            2023 §4.2): ``w = min(snr, γ)``. Caps the high-SNR
+            (low-noise / refinement-regime) weight at γ; lets
+            high-noise (low-SNR) loss decay naturally with snr → 0.
+          - **ε-mode** (default, ``snr_x0_mode=False``): the form
+            ``w = min(snr, γ) / snr = min(γ/snr, 1)`` derived for
+            ε-parameterization. Caps the explosion of ε-loss at low t.
+            **Wrong-signed for x0-prediction** — multiplies the
+            refinement-regime gradient by γ/snr → 0 and is the root
+            cause of #016's saturation pathology.
+
+        Both share the same γ.
+        """
         if self._alphas_cumprod is None:
             return torch.ones_like(t, dtype=torch.float32)
         ab = self._alphas_cumprod.to(t.device).gather(0, t.long())
         snr = ab / (1.0 - ab).clamp(min=1e-8)
-        weight = (
-            torch.minimum(snr, torch.full_like(snr, self.config.snr_gamma))
-            / snr.clamp(min=1e-8)
+        capped = torch.minimum(
+            snr, torch.full_like(snr, self.config.snr_gamma),
         )
-        return weight
+        if self.config.snr_x0_mode:
+            return capped
+        return capped / snr.clamp(min=1e-8)
 
     # ── inline diffusion forward (for inference-shape outputs) ───────
 

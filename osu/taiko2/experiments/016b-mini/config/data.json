@@ -1,0 +1,15 @@
+{
+    "_comment": "#016b-mini data: identical to #016 except `subsample: 8` (keep every 8th training sample, ~1/8 dataset). Probe-only — full data returns in #016b proper.",
+    "__class__": "osu.taiko2.data_samplers.detection:TaikoDetectionSamplerConfig",
+    "batch_size": 64,
+    "a_bins": 500,
+    "b_bins": 500,
+    "c_events": 128,
+    "d_events": 100,
+    "min_cursor_bin": 6000,
+    "allowed_overlap_forward": 0,
+    "allowed_overlap_back": 0,
+    "subsample": 8,
+    "split_ratios": [["train", 0.9], ["val", 0.1]],
+    "split_seed": 42
+}
