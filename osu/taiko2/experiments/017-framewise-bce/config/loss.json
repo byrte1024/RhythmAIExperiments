@@ -1,0 +1,8 @@
+{
+    "_comment": "#017 loss: per-bin BCE with positive-class upweighting. No sigma smoothing (binary targets). Canonical operating point tau=0.5, tolerance +/-2 frames.",
+    "__class__": "osu.taiko2.training.framewise_bce_loss:FramewiseBCELossConfig",
+    "pos_weight_clamp_min": 10.0,
+    "pos_weight_clamp_max": 200.0,
+    "canonical_threshold": 0.5,
+    "canonical_tolerance_frames": 2
+}

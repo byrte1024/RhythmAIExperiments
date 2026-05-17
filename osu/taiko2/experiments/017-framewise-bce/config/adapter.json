@@ -1,0 +1,8 @@
+{
+    "_comment": "#017 framewise adapter: binary_only=true so the smoothed map equals the binary map (no Gaussian allocation). max_events_per_window=100 matches data.json's d_events.",
+    "__class__": "osu.taiko2.training.framewise_adapter:FramewiseSampleAdapterConfig",
+    "b_pred": 500,
+    "sigma_frames": 2.0,
+    "binary_only": true,
+    "max_events_per_window": 100
+}

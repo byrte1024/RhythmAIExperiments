@@ -27,17 +27,23 @@ from ..domain.metrics import MetricInput
 
 
 def _extract_pred_target(batch: MetricInput) -> tuple[np.ndarray, np.ndarray] | None:
-    """Pull (M_0_hat (B, n_bins), target_binary (B, n_bins)) from a
-    framewise batch's output. Returns ``None`` if the batch is not a
-    framewise-shape output (best-effort skip)."""
+    """Pull ``(confidence_map (B, n_bins), target_binary (B, n_bins))``
+    from a framewise batch's output. Returns ``None`` if the batch is
+    not a framewise-shape output.
+
+    Prefers ``output.confidence_map`` (already in ``[0, 1]``); falls
+    back to ``sigmoid(output.logits)`` for BCE models where the raw
+    logits are pre-sigmoid.
+    """
+    import torch as _torch
     output = batch.output
     target = batch.target
-    # framewise output exposes ``model_out`` (at sampled t) and ``logits``
-    # (the predicted x0_hat via decode_to_logits). Prefer ``logits`` —
-    # already clipped to [0, 1].
-    pred = getattr(output, "logits", None)
+    pred = getattr(output, "confidence_map", None)
     if pred is None:
-        return None
+        logits = getattr(output, "logits", None)
+        if logits is None or logits.dim() != 2:
+            return None
+        pred = _torch.sigmoid(logits).clamp(0.0, 1.0)
     if pred.dim() != 2:
         return None
     tgt = getattr(target, "target_map_binary", None)

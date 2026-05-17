@@ -142,62 +142,19 @@ class FramewiseDiffusionDecoder(ARDecoder[FramewiseDiffusionDecoderConfig, "Fram
         return self._decision_from_map(m_hat)
 
     def _decision_from_map(self, m_hat: torch.Tensor) -> ARDecision:
+        from .framewise_decoder import framewise_decision_from_map
         cfg = self.config
-        scores = m_hat[0]                              # (n_bins,)
-
-        # Compose extras early — even if no bins pass thresholding, we
-        # still want diagnostic context (top-K, mean, max).
-        extras: dict[str, float] = {
-            "mean_act": float(scores.mean().item()),
-            "max_act": float(scores.max().item()),
-            "n_inference_steps": float(cfg.sampler_config.n_inference_steps),
-            "decode_threshold": float(cfg.decode_threshold),
-            "nms_kernel": float(cfg.nms_kernel),
-        }
-        k = min(cfg.top_k_log, scores.numel())
-        top_vals, top_idx = torch.topk(scores, k=k)
-        for i, (v, idx) in enumerate(
-            zip(top_vals.tolist(), top_idx.tolist()), start=1,
-        ):
-            extras[f"top{i}_bin"] = float(idx)
-            extras[f"top{i}_score"] = float(v)
-
-        # NMS via max-pool: keep bin b only if scores[b] == local max.
-        nms_kernel = int(cfg.nms_kernel)
-        if nms_kernel > 1:
-            pooled = F.max_pool1d(
-                scores.view(1, 1, -1), kernel_size=nms_kernel,
-                stride=1, padding=nms_kernel // 2,
-            ).view(-1)
-            local_max = scores >= pooled - 1e-9
-        else:
-            local_max = torch.ones_like(scores, dtype=torch.bool)
-
-        above = scores > cfg.decode_threshold
-        keep_mask = above & local_max
-        n_above_threshold = int(above.sum().item())
-        extras["n_above_threshold"] = float(n_above_threshold)
-
-        kept_bins = keep_mask.nonzero(as_tuple=True)[0].tolist()
-        if not kept_bins:
-            extras["n_emitted"] = 0.0
-            return ARDecision(bin_offsets=(), confidences=(), extras=extras)
-
-        # Sort by ascending bin (predictor consumes them in order); apply
-        # greedy min-gap enforcement.
-        kept_bins.sort()
-        gap = int(cfg.min_emit_gap_bins)
-        final: list[int] = []
-        last = -10 ** 9
-        for b in kept_bins:
-            if b - last >= gap:
-                final.append(b)
-                last = b
-
-        confidences = tuple(float(scores[b].item()) for b in final)
-        extras["n_emitted"] = float(len(final))
+        decision = framewise_decision_from_map(
+            m_hat[0],
+            decode_threshold=cfg.decode_threshold,
+            nms_kernel=cfg.nms_kernel,
+            min_emit_gap_bins=cfg.min_emit_gap_bins,
+            top_k_log=cfg.top_k_log,
+        )
+        extras = dict(decision.extras)
+        extras["n_inference_steps"] = float(cfg.sampler_config.n_inference_steps)
         return ARDecision(
-            bin_offsets=tuple(final),
-            confidences=confidences,
+            bin_offsets=decision.bin_offsets,
+            confidences=decision.confidences,
             extras=extras,
         )

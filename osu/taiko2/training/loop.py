@@ -133,7 +133,11 @@ def _framewise_batch_stats(output: Any, target: Any) -> dict[str, float]:
       - ``fw/n_pred_pos``: average #bins/sample with ``pred>=0.5``.
       - ``fw/n_gt``: average #GT onsets per sample.
     """
-    pred = output.logits.detach().clamp(0.0, 1.0)      # (B, n_bins)
+    conf = getattr(output, "confidence_map", None)
+    if conf is not None:
+        pred = conf.detach()
+    else:
+        pred = output.logits.detach().clamp(0.0, 1.0)    # (B, n_bins)
     gt_binary = target.target_map_binary.detach()      # (B, n_bins)
     gt_padded = target.gt_bins_padded.detach()          # (B, M)
 

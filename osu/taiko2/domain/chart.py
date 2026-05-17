@@ -866,14 +866,42 @@ def _gt_match_metrics(
     self_ms: np.ndarray, other_ms: np.ndarray,
 ) -> dict[str, float]:
     """Port of `run_comparison.compute_gt_metrics`. Returns a flat dict."""
+    return gt_match_metrics(self_ms, other_ms)
+
+
+def gt_match_metrics(
+    self_ms: np.ndarray,
+    other_ms: np.ndarray,
+    tolerances_ms: tuple[float, ...] = (5.0, 10.0, 25.0, 50.0, 100.0),
+) -> dict[str, float]:
+    """Onset-matching metrics between two onset lists (in milliseconds).
+
+    ``self_ms`` is the predicted (or "self") onset times; ``other_ms``
+    is the reference (ground truth). Both are 1-D float arrays.
+
+    ``tolerances_ms`` controls the threshold sweep. For each tolerance
+    ``t``, the result contains ``matched_rate_at_tol_{t}`` (fraction of
+    GT onsets with a predicted onset within ``t`` ms) and
+    ``halluc_rate_at_tol_{t}`` (fraction of predicted onsets with no GT
+    onset within ``t`` ms).
+
+    The canonical keys ``matched_rate`` (tol=25), ``close_rate``
+    (tol=50), ``far_rate`` (>100), ``hallucination_rate`` (>100) are
+    always present for backward compatibility.
+    """
     n_self = len(self_ms)
     n_other = len(other_ms)
+    empty: dict[str, float] = dict(
+        matched_rate=0.0, close_rate=0.0, far_rate=0.0,
+        hallucination_rate=0.0, error_mean_ms=0.0, error_median_ms=0.0,
+        density_ratio=0.0,
+    )
+    for t in tolerances_ms:
+        t_key = _tol_key(t)
+        empty[f"matched_rate_at_tol_{t_key}"] = 0.0
+        empty[f"halluc_rate_at_tol_{t_key}"] = 0.0
     if n_self == 0 or n_other == 0:
-        return dict(
-            matched_rate=0.0, close_rate=0.0, far_rate=0.0,
-            hallucination_rate=0.0, error_mean_ms=0.0, error_median_ms=0.0,
-            density_ratio=0.0,
-        )
+        return empty
 
     ps = np.sort(self_ms)
     gs = np.sort(other_ms)
@@ -892,7 +920,7 @@ def _gt_match_metrics(
     ps_density = n_self / max((ps[-1] - ps[0]) / 1000.0, 0.1) if n_self > 1 else 0.0
     gs_density = n_other / max((gs[-1] - gs[0]) / 1000.0, 0.1) if n_other > 1 else 0.0
 
-    return dict(
+    out = dict(
         matched_rate=float((gt_err <= 25).mean()),
         close_rate=float((gt_err <= 50).mean()),
         far_rate=float((gt_err > 100).mean()),
@@ -901,6 +929,18 @@ def _gt_match_metrics(
         error_median_ms=float(np.median(gt_err)),
         density_ratio=ps_density / max(gs_density, 0.01),
     )
+    for t in tolerances_ms:
+        t_key = _tol_key(t)
+        out[f"matched_rate_at_tol_{t_key}"] = float((gt_err <= t).mean())
+        out[f"halluc_rate_at_tol_{t_key}"] = float((pe_err > t).mean())
+    return out
+
+
+def _tol_key(tol_ms: float) -> str:
+    """Stable string key for a tolerance value (no trailing zeros)."""
+    if tol_ms == int(tol_ms):
+        return str(int(tol_ms))
+    return f"{tol_ms:.1f}"
 
 
 def _tn_pattern_metrics(

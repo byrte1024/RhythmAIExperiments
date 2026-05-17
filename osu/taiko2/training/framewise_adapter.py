@@ -36,12 +36,13 @@ class FramewiseSampleAdapterConfig:
     """
     b_pred: int = 500
     sigma_frames: float = 2.0
+    binary_only: bool = False
     max_events_per_window: int = 100
 
     def __post_init__(self) -> None:
         if self.b_pred <= 0:
             raise ValueError(f"b_pred must be > 0 (got {self.b_pred})")
-        if self.sigma_frames <= 0.0:
+        if not self.binary_only and self.sigma_frames <= 0.0:
             raise ValueError(
                 f"sigma_frames must be > 0 (got {self.sigma_frames})"
             )
@@ -112,8 +113,9 @@ class FramewiseSampleAdapter(
                     slot += 1
 
         future_offsets = torch.from_numpy(offsets_np).to(device=device)
+        sigma = None if self.config.binary_only else self.config.sigma_frames
         return make_framewise_target(
             future_offsets,
             n_bins=b_pred,
-            sigma=self.config.sigma_frames,
+            sigma=sigma,
         )

@@ -38,17 +38,23 @@ class FramewiseTarget:
 def make_framewise_target(
     future_offsets: torch.Tensor,
     n_bins: int,
-    sigma: float = 2.0,
+    sigma: float | None = 2.0,
 ) -> FramewiseTarget:
     """Build binary and smoothed activation maps from per-sample GT
     bin offsets.
 
     ``future_offsets`` is ``(B, max_events) int`` with entries in
     ``[0, n_bins)`` for valid GT and ``-1`` for padding / "no onset".
-    The smoothed map at bin ``i`` is the elementwise max across all
-    valid GT bins ``b`` of ``exp(-((i - b) ** 2) / (2 * sigma ** 2))``,
-    clipped to ``[0, 1]``. Rows with zero valid GT produce all-zero
-    maps.
+
+    When ``sigma`` is a positive float, the smoothed map at bin ``i``
+    is the elementwise max across all valid GT bins ``b`` of
+    ``exp(-((i - b) ** 2) / (2 * sigma ** 2))``, clipped to ``[0, 1]``.
+
+    When ``sigma is None``, the smoothed map is identical to the binary
+    map (no Gaussian allocation). Use this for BCE training where the
+    loss operates on the binary target only.
+
+    Rows with zero valid GT produce all-zero maps.
     """
     if future_offsets.dim() != 2:
         raise ValueError(
@@ -57,8 +63,8 @@ def make_framewise_target(
         )
     if n_bins < 1:
         raise ValueError(f"n_bins must be >= 1 (got {n_bins})")
-    if sigma <= 0.0:
-        raise ValueError(f"sigma must be > 0 (got {sigma})")
+    if sigma is not None and sigma <= 0.0:
+        raise ValueError(f"sigma must be > 0 or None (got {sigma})")
 
     device = future_offsets.device
     B, M = future_offsets.shape
@@ -76,20 +82,19 @@ def make_framewise_target(
         binary.scatter_add_(1, idx_clamped, ones)
         binary = binary.clamp(max=1.0)
 
-    # Smoothed map: for each valid GT bin b, place a Gaussian over
-    # the bin axis and take the elementwise max across all GT bins.
-    smoothed = torch.zeros(B, n_bins, dtype=torch.float32, device=device)
-    if M > 0:
-        bins_axis = torch.arange(n_bins, dtype=torch.float32, device=device)
-        # offsets: (B, M, n_bins) = bins_axis[None,None,:] - future[..., None]
-        offsets = future_offsets.float().unsqueeze(-1)                 # (B, M, 1)
-        deltas = bins_axis.view(1, 1, n_bins) - offsets                # (B, M, n_bins)
-        gauss = torch.exp(-(deltas ** 2) / (2.0 * sigma * sigma))      # (B, M, n_bins)
-        # Mask invalid entries to 0 so they don't contribute to max.
-        gauss = gauss * valid.float().unsqueeze(-1)
-        # Elementwise max across M.
-        smoothed = gauss.max(dim=1).values
-        smoothed = smoothed.clamp(0.0, 1.0)
+    # Smoothed map: Gaussian smoothing when sigma is set, else copy binary.
+    if sigma is None:
+        smoothed = binary.clone()
+    else:
+        smoothed = torch.zeros(B, n_bins, dtype=torch.float32, device=device)
+        if M > 0:
+            bins_axis = torch.arange(n_bins, dtype=torch.float32, device=device)
+            offsets = future_offsets.float().unsqueeze(-1)                 # (B, M, 1)
+            deltas = bins_axis.view(1, 1, n_bins) - offsets                # (B, M, n_bins)
+            gauss = torch.exp(-(deltas ** 2) / (2.0 * sigma * sigma))      # (B, M, n_bins)
+            gauss = gauss * valid.float().unsqueeze(-1)
+            smoothed = gauss.max(dim=1).values
+            smoothed = smoothed.clamp(0.0, 1.0)
 
     return FramewiseTarget(
         target_map_binary=binary,

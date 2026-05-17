@@ -347,17 +347,21 @@ def main(argv: list[str] | None = None) -> int:
     from ..models.diffusion_detector import (
         DiffusionDetector, DiffusionDetectorConfig,
     )
-    # Framewise diffusion (#016) — separate dispatch path. Imported lazily
-    # so test environments without the framewise stack don't pay the cost.
     from ..models.framewise_diffusion_detector import (
         FramewiseDiffusionDetector, FramewiseDiffusionDetectorConfig,
+    )
+    from ..models.framewise_detector import (
+        FramewiseDetector, FramewiseDetectorConfig,
     )
     is_diffusion_mode = isinstance(model_cfg, DiffusionDetectorConfig)
     is_framewise_diffusion = isinstance(
         model_cfg, FramewiseDiffusionDetectorConfig,
     )
+    is_framewise_bce = isinstance(model_cfg, FramewiseDetectorConfig)
     if is_ratio_mode:
         model = RatioDetector(model_cfg)
+    elif is_framewise_bce:
+        model = FramewiseDetector(model_cfg)
     elif is_framewise_diffusion:
         model = FramewiseDiffusionDetector(model_cfg)
     elif is_diffusion_mode:
@@ -375,54 +379,64 @@ def main(argv: list[str] | None = None) -> int:
     elif isinstance(loss_cfg, OnsetLossConfig):
         loss = OnsetLoss(loss_cfg)
     else:
+        from ..training.framewise_bce_loss import (
+            FramewiseBCELoss, FramewiseBCELossConfig,
+        )
         from ..training.diffusion_loss import DiffusionLoss, DiffusionLossConfig
         from ..training.framewise_diffusion_loss import (
             FramewiseDiffusionLoss, FramewiseDiffusionLossConfig,
         )
-        if isinstance(loss_cfg, FramewiseDiffusionLossConfig):
+        if isinstance(loss_cfg, FramewiseBCELossConfig):
+            loss = FramewiseBCELoss(loss_cfg)
+        elif isinstance(loss_cfg, FramewiseDiffusionLossConfig):
             loss = FramewiseDiffusionLoss(loss_cfg)
         elif isinstance(loss_cfg, DiffusionLossConfig):
             loss = DiffusionLoss(loss_cfg)
         else:
             raise TypeError(f"unsupported loss config: {type(loss_cfg).__name__}")
-    # Diffusion: bind model components into the loss so it can run the
-    # q_sample + denoiser forward inline (the train loop calls
-    # model.predict generically, which for DiffusionDetector returns
-    # only the cursor token).
     if (is_diffusion_mode or is_framewise_diffusion) and hasattr(loss, "bind_model"):
         loss.bind_model(model)
     if is_ratio_mode:
         adapter_cfg = _with(adapter_cfg, ratio_mode=True)
-    # Framewise dispatch — uses a separate adapter that produces
-    # FramewiseTarget instead of EventEmbeddingTarget. The chunk-C work
-    # will hook up framewise-specific metrics + artifacts; for now we
-    # disable the bin-classification artifacts and metrics that don't
-    # apply.
-    if is_framewise_diffusion:
+    if is_framewise_bce or is_framewise_diffusion:
         from ..training.framewise_adapter import (
             FramewiseSampleAdapter, FramewiseSampleAdapterConfig,
         )
         adapter = FramewiseSampleAdapter(
-            FramewiseSampleAdapterConfig(b_pred=model_cfg.b_pred),
+            FramewiseSampleAdapterConfig(
+                b_pred=model_cfg.b_pred,
+                binary_only=is_framewise_bce,
+            ),
         )
     else:
         adapter = DetectionSampleAdapter(adapter_cfg)
 
-    # Train metrics are per-epoch running means (reset each epoch) — the
-    # loop uses them for the tqdm postfix so "good_avg / miss_avg" show
-    # during training, not just at eval boundaries.
-    # Framewise mode: OnsetMetric + bin-classification artifacts don't
-    # apply to (B, n_bins) activation-map output. Chunk C will replace
-    # them with framewise-specific metric classes + GIF rollout
-    # artifacts; for now disable them so the train loop doesn't crash.
-    if is_framewise_diffusion:
+    if is_framewise_bce:
+        from ..training.framewise_metric import (
+            FramewiseMetric, FramewiseMetricConfig,
+        )
+        train_metrics = MetricSet()
+        val_metrics = MetricSet(FramewiseMetric(FramewiseMetricConfig()))
+        from ..training.framewise_artifacts import (
+            FramewiseDistributionArtifact,
+            FramewiseHeatmapArtifact,
+        )
+        from ..training.framewise_diagnostics_artifact import (
+            FramewiseDiagnosticsArtifact,
+        )
+        eval_artifacts: list = [
+            FramewiseHeatmapArtifact(),
+            FramewiseDistributionArtifact(),
+            FramewiseDiagnosticsArtifact(),
+        ]
+    elif is_framewise_diffusion:
         train_metrics = MetricSet()
         val_metrics = MetricSet()
         from ..training.framewise_artifacts import (
             FramewiseDistributionArtifact,
             FramewiseHeatmapArtifact,
         )
-        eval_artifacts: list = [
+        eval_artifacts = [
             FramewiseHeatmapArtifact(),
             FramewiseDistributionArtifact(),
         ]
@@ -463,7 +477,7 @@ def main(argv: list[str] | None = None) -> int:
     # Framewise: per-bin target distribution makes the (B,)
     # single-target-class weighting meaningless. Disable.
     train_weights = None
-    if args.weighted_sampling and not is_framewise_diffusion:
+    if args.weighted_sampling and not (is_framewise_diffusion or is_framewise_bce):
         train_weights = train_sampler.compute_target_weights(
             b_pred=model_cfg.b_pred, power=args.weighted_power,
         )
