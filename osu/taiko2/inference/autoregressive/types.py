@@ -39,6 +39,7 @@ class ARDecision:
     bin_offsets: tuple[int, ...] = ()
     confidences: tuple[float, ...] = ()
     extras: dict[str, float] = field(default_factory=dict)
+    confidence_map: tuple[float, ...] | None = None
 
     @property
     def is_stop(self) -> bool:

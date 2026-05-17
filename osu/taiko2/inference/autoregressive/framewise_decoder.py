@@ -61,10 +61,15 @@ def framewise_decision_from_map(
     n_above_threshold = int(above.sum().item())
     extras["n_above_threshold"] = float(n_above_threshold)
 
+    conf_map = tuple(scores.tolist())
+
     kept_bins = keep_mask.nonzero(as_tuple=True)[0].tolist()
     if not kept_bins:
         extras["n_emitted"] = 0.0
-        return ARDecision(bin_offsets=(), confidences=(), extras=extras)
+        return ARDecision(
+            bin_offsets=(), confidences=(), extras=extras,
+            confidence_map=conf_map,
+        )
 
     kept_bins.sort()
     gap = int(min_emit_gap_bins)
@@ -81,6 +86,7 @@ def framewise_decision_from_map(
         bin_offsets=tuple(final),
         confidences=confidences,
         extras=extras,
+        confidence_map=conf_map,
     )
 
 

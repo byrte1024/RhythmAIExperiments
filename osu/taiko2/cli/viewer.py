@@ -26,6 +26,7 @@ Controls:
   D          - Toggle density graph
   W          - Toggle mel spectrogram
   G          - Toggle ghost candidates   (requires --steps-log)
+  C          - Toggle confidence heatmap (requires --steps-log + framewise model)
   N          - Toggle mute
   E          - Export to video (.mp4, file-picker dialog)
   Esc / Q    - Quit
@@ -166,6 +167,39 @@ def _get_mel_colormap() -> list[tuple[int, int, int]]:
         b = int(lo[1][2] + t * (hi[1][2] - lo[1][2]))
         cmap.append((r, g, b))
     _MEL_CMAP = cmap
+    return cmap
+
+
+_CONF_CMAP: list[tuple[int, int, int]] | None = None
+
+
+def _get_conf_colormap() -> list[tuple[int, int, int]]:
+    """256-entry colormap: black -> red -> yellow -> white.
+    Hot colormap for confidence values 0..1."""
+    global _CONF_CMAP
+    if _CONF_CMAP is not None:
+        return _CONF_CMAP
+    stops = [
+        (0,   (0, 0, 0)),
+        (64,  (120, 0, 0)),
+        (128, (220, 40, 0)),
+        (192, (255, 200, 0)),
+        (255, (255, 255, 255)),
+    ]
+    cmap: list[tuple[int, int, int]] = []
+    for i in range(256):
+        lo, hi = stops[0], stops[-1]
+        for j in range(len(stops) - 1):
+            if stops[j][0] <= i <= stops[j + 1][0]:
+                lo, hi = stops[j], stops[j + 1]
+                break
+        span = hi[0] - lo[0]
+        t = (i - lo[0]) / span if span > 0 else 0
+        r = int(lo[1][0] + t * (hi[1][0] - lo[1][0]))
+        g = int(lo[1][1] + t * (hi[1][1] - lo[1][1]))
+        b = int(lo[1][2] + t * (hi[1][2] - lo[1][2]))
+        cmap.append((r, g, b))
+    _CONF_CMAP = cmap
     return cmap
 
 
@@ -408,6 +442,38 @@ def _parse_steps_log(
     return out or None
 
 
+def _parse_confidence_maps(
+    path: Path,
+) -> "dict[int, list[float]] | None":
+    """Parse confidence_map arrays from the step log.
+
+    Returns ``{cursor_bin: [conf_0, conf_1, ..., conf_499]}`` for each
+    step that has a ``confidence_map`` key. Used by the framewise
+    heatmap overlay.
+    """
+    if not path.exists():
+        return None
+    out: dict[int, list[float]] = {}
+    try:
+        with path.open("r", encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    d = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                cursor_bin = d.get("cursor_bin")
+                cmap = d.get("confidence_map")
+                if cursor_bin is None or cmap is None:
+                    continue
+                out[int(cursor_bin)] = cmap
+    except OSError:
+        return None
+    return out or None
+
+
 # ─────────────────────────── ffmpeg + gif support ────────────────────
 
 def _ffmpeg_available() -> bool:
@@ -602,6 +668,8 @@ class Viewer:
         self._cand_by_cursor: dict[
             int, tuple[int, list[tuple[int, float, float]]]
         ] = {}
+        self._conf_maps: dict[int, list[float]] = {}
+        self.show_conf_heatmap = False
         if steps_log_path is not None:
             parsed = _parse_steps_log(steps_log_path)
             if parsed:
@@ -610,6 +678,14 @@ class Viewer:
                 print(
                     f"[viewer] loaded {len(parsed):,} ghost-candidate "
                     f"cursors from {steps_log_path}"
+                )
+            conf_maps = _parse_confidence_maps(steps_log_path)
+            if conf_maps:
+                self._conf_maps = conf_maps
+                self.show_conf_heatmap = True
+                print(
+                    f"[viewer] loaded {len(conf_maps):,} confidence maps "
+                    f"from {steps_log_path}"
                 )
 
         # ── density surface ───────────────────────────────────────────
@@ -758,6 +834,10 @@ class Viewer:
         if self.show_mel and self.mel_data is not None:
             self._draw_mel_view(y_below)
             y_below += 14 + 90 + 6   # label + panel + gap
+
+        if self.show_conf_heatmap and self._conf_maps:
+            self._draw_conf_heatmap(y_below)
+            y_below += 14 + 40 + 6   # label + panel + gap
 
         if self.show_density and self._density_surface is not None:
             self._draw_density_graph(y_below)
@@ -1057,6 +1137,71 @@ class Viewer:
                 pygame.draw.line(self.screen, (80, 80, 100),
                                  (lx, y), (lx, y + mel_h), 1)
 
+    # ── confidence heatmap ───────────────────────────────────────────
+
+    def _draw_conf_heatmap(self, y_start: int) -> None:
+        import numpy as np
+        pygame = self.pygame
+        if not self._conf_maps:
+            return
+        pad_x = 10
+        view_w = self.w - 20
+        heat_h = 40
+        px_per_frame = SCROLL_SPEED * self.zoom * MEL_BIN_MS
+        cursor_frame = int(self.now_ms / MEL_BIN_MS)
+
+        label = self.font_small.render(
+            "Confidence Map (C to toggle)", True, DIM_TEXT,
+        )
+        self.screen.blit(label, (pad_x, y_start))
+        y = y_start + 14
+
+        pygame.draw.rect(self.screen, PANEL_BG,
+                         (pad_x, y, view_w, heat_h), border_radius=3)
+
+        cmap = np.array(_get_conf_colormap(), dtype=np.uint8)
+
+        for pred_cursor, conf_list in self._conf_maps.items():
+            n_bins = len(conf_list)
+            # Each bin in the confidence map covers one mel frame
+            # starting at the cursor position.
+            map_start_frame = pred_cursor
+            map_end_frame = pred_cursor + n_bins
+
+            vis_start = cursor_frame - int((HIT_X - pad_x) / max(px_per_frame, 0.001))
+            vis_end = cursor_frame + int((view_w - HIT_X + pad_x) / max(px_per_frame, 0.001))
+
+            if map_end_frame < vis_start or map_start_frame > vis_end:
+                continue
+
+            clip_lo = max(0, vis_start - map_start_frame)
+            clip_hi = min(n_bins, vis_end - map_start_frame)
+            if clip_hi <= clip_lo:
+                continue
+
+            vals = np.array(conf_list[clip_lo:clip_hi], dtype=np.float32)
+            vals_u8 = np.clip(vals * 255, 0, 255).astype(np.uint8)
+            colors = cmap[vals_u8]                             # (W, 3)
+            strip = np.broadcast_to(
+                colors[np.newaxis, :, :], (heat_h, clip_hi - clip_lo, 3),
+            ).copy()
+            strip_t = strip.transpose(1, 0, 2)                # (W, H, 3)
+            surf = pygame.surfarray.make_surface(strip_t)
+
+            x_offset = int((map_start_frame + clip_lo - vis_start) * px_per_frame)
+            w_px = max(1, int((clip_hi - clip_lo) * px_per_frame))
+            scaled = pygame.transform.scale(surf, (w_px, heat_h))
+            self.screen.blit(scaled, (pad_x + x_offset, y))
+
+        # Cursor line.
+        cx = pad_x + int(
+            (cursor_frame - (cursor_frame - int((HIT_X - pad_x) / max(px_per_frame, 0.001))))
+            * px_per_frame
+        )
+        pygame.draw.line(
+            self.screen, (255, 255, 255), (cx, y), (cx, y + heat_h), 1,
+        )
+
     # ── density graph ─────────────────────────────────────────────────
 
     def _draw_density_graph(self, y_start: int) -> None:
@@ -1319,6 +1464,7 @@ class Viewer:
             ("M",                "Toggle minimap"),
             ("I",                "Toggle stats panel"),
             ("G",                "Toggle ghost candidates"),
+            ("C",                "Toggle confidence heatmap"),
             ("H",                "Toggle this help"),
             ("E",                "Export to video (.mp4)"),
             ("Esc / Q",          "Quit"),
@@ -1390,6 +1536,9 @@ class Viewer:
                 elif ev.key == pygame.K_w:
                     if self.mel_data is not None:
                         self.show_mel = not self.show_mel
+                elif ev.key == pygame.K_c:
+                    if self._conf_maps:
+                        self.show_conf_heatmap = not self.show_conf_heatmap
                 elif ev.key == pygame.K_d:
                     self.show_density = not self.show_density
                 elif ev.key == pygame.K_m:

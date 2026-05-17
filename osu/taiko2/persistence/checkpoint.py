@@ -214,10 +214,15 @@ class Checkpoint:
         trainer_config: TrainerConfig,
         training_state: TrainingState,
     ) -> "Checkpoint":
+        # Unwrap torch.compile's OptimizedModule so the checkpoint
+        # stores the real model class and clean state dict keys.
+        raw_model = model
+        if type(model).__name__ == "OptimizedModule":
+            raw_model = model._orig_mod  # type: ignore[attr-defined]
         meta = CheckpointMeta(
-            model_class=_qualified_name(type(model)),
+            model_class=_qualified_name(type(raw_model)),
             loss_class=_qualified_name(type(loss)),
-            model_config=model.config,
+            model_config=raw_model.config,
             loss_config=loss.config,
             trainer_config=trainer_config,
             training_state=training_state,
@@ -225,7 +230,7 @@ class Checkpoint:
         )
         return cls(
             meta=meta,
-            model_state=model.state_dict(),
+            model_state=raw_model.state_dict(),
             optimizer_state=optimizer.state_dict() if optimizer is not None else None,
             scheduler_state=scheduler.state_dict() if scheduler is not None else None,
             rng_state=_capture_rng_state(),

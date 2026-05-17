@@ -121,6 +121,10 @@ def _download_url_to_temp(url: str) -> tuple[Path, "contextlib.AbstractContextMa
         "noplaylist": True,
         "quiet": True,
         "no_warnings": True,
+        "postprocessors": [{
+            "key": "FFmpegExtractAudio",
+            "preferredcodec": "wav",
+        }],
     }
     print(f"[infer] fetching audio via yt-dlp: {url}")
     with yt_dlp.YoutubeDL(opts) as ydl:

@@ -16,7 +16,7 @@
         "config": {
             "__class__": "osu.taiko2.inference.autoregressive.framewise_decoder:FramewiseDecoderConfig",
             "b_pred": 500,
-            "decode_threshold": 0.5,
+            "decode_threshold": 0.9,
             "nms_kernel": 3,
             "stop_hop_bins": 20,
             "min_emit_gap_bins": 1,

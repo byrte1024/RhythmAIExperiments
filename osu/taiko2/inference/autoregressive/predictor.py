@@ -254,7 +254,7 @@ class AutoregressivePredictor(ChartPredictor[AutoregressivePredictorConfig]):
                         )
 
                 if log_fh is not None:
-                    log_fh.write(json.dumps({
+                    row: dict = {
                         "step": step,
                         "cursor_bin": cursor_before,
                         "cursor_bin_after": cursor_bin,
@@ -263,7 +263,10 @@ class AutoregressivePredictor(ChartPredictor[AutoregressivePredictorConfig]):
                         "confidences": list(decision.confidences),
                         "n_placed": len(placed),
                         **decision.extras,
-                    }) + "\n")
+                    }
+                    if decision.confidence_map is not None:
+                        row["confidence_map"] = list(decision.confidence_map)
+                    log_fh.write(json.dumps(row) + "\n")
                     log_fh.flush()
 
                 if pbar is not None:
