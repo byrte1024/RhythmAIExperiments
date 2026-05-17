@@ -269,6 +269,14 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
             "ratio detector's offset head. 0.0 (default) disables."
         ),
     )
+    p.add_argument(
+        "--compile", action="store_true",
+        help=(
+            "Apply torch.compile to the model for faster training. "
+            "Requires triton. First few batches are slow (compilation); "
+            "subsequent batches are 20-40%% faster on modern GPUs."
+        ),
+    )
     return p.parse_args(argv)
 
 
@@ -595,6 +603,7 @@ def main(argv: list[str] | None = None) -> int:
         benchmarks=_resolve_benchmarks(args.benchmarks),
         benchmark_fraction=args.benchmark_fraction,
         benchmark_seed=args.benchmark_seed,
+        compile=args.compile,
     )
     print(
         f"done. final step={state.step:,} epoch={state.epoch} "

@@ -400,6 +400,7 @@ def train(
     device: torch.device | str = torch.device("cpu"),
     progress: bool = True,
     resume: bool = False,
+    compile: bool = False,
 ) -> TrainingState:
     """Run training to completion.
 
@@ -415,6 +416,9 @@ def train(
     device = torch.device(device) if isinstance(device, str) else device
     model.to(device)
     loss.to(device)
+
+    if compile:
+        model = torch.compile(model)
 
     # b_pred from the model config — used for per-batch metrics. Must
     # NOT be inferred from output width because ratio/MDN modes pack
