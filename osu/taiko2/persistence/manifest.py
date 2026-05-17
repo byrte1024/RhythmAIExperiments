@@ -50,7 +50,8 @@ def _chart_to_dict(c: ChartEntry) -> dict[str, Any]:
 def _chart_from_dict(d: dict[str, Any]) -> ChartEntry:
     known = {f.name for f in fields(ChartEntry)}
     filtered = {k: v for k, v in d.items() if k in known}
-    filtered["features_path"] = Path(filtered["features_path"])
+    from pathlib import PureWindowsPath
+    filtered["features_path"] = Path(PureWindowsPath(filtered["features_path"]).as_posix())
     return ChartEntry(**filtered)
 
 
