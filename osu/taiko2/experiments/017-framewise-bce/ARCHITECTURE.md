@@ -409,10 +409,10 @@ Saved under `runs/exp_017_framewise_bce/eval_{step}/`:
 | framewise_heatmap.png/.npz | Predicted confidence map vs GT for 64 representative windows |
 | framewise_distribution.png/.npz | Histogram of predicted confidences at GT-positive vs GT-negative bins |
 | per_bin_rate.png/.npz | Per-bin P(target=1), recall@bin, FPR@bin |
-| value_hist_target.png/.npz | Histogram of target values ({0, 1}) |
-| value_hist_pred.png/.npz | Histogram of predicted confidences (linear + log y-axis) |
+| value_hist_target.png/.npz | Histogram of target values, linear + log y-axis |
+| value_hist_pred.png/.npz | Histogram of predicted confidences, linear + log y-axis |
+| value_hist_combined.png | Side-by-side 2x2 grid: target vs prediction, linear vs log |
 | confidence_by_outcome.png/.npz | Overlaid histograms of confidence for TP/FN/FP/TN |
-| reliability.png/.npz | Calibration plot (10-bin) + ECE + Brier score |
 
 ---
 
@@ -450,4 +450,18 @@ on numerical results is expected.
 
 ## Addenda
 
-(None yet.)
+> *2026-05-17: `value_hist_target.png` rendered with linear y-axis
+> while `value_hist_pred.png` rendered with both linear and log panels.
+> The visual mismatch is deceptive when comparing the two side-by-side.
+> Fixed: both histograms now render as two-panel (linear + log) plots.
+> Added `value_hist_combined.png` showing target and prediction
+> side-by-side in a 2x2 grid. Use `cli/regenerate_diagnostics.py` to
+> re-render from the saved NPZs.*
+
+> *2026-05-17: `reliability.png` removed. The calibration plot used
+> reservoir-sampled per-outcome data with per-class caps (50k each)
+> that destroyed the true class ratios (~97% negative, ~3% positive
+> -> each capped to 50k = ~50/50). This produced a misleading plot
+> where low-confidence bins appeared to have 90%+ positive rate.
+> The artifact and regeneration script no longer produce this plot.
+> The `reliability.npz` from eval 1 should be ignored.*

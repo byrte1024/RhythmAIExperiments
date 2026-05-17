@@ -383,7 +383,7 @@ class TestDiagnostics:
         assert (tmp_path / "value_hist_pred.png").exists()
         assert (tmp_path / "value_hist_target.png").exists()
         assert (tmp_path / "confidence_by_outcome.png").exists()
-        assert (tmp_path / "reliability.png").exists()
+        assert (tmp_path / "value_hist_combined.png").exists()
         data = np.load(tmp_path / "per_bin_rate.npz")
         assert data["pos_rate"].shape == (n_bins,)
 

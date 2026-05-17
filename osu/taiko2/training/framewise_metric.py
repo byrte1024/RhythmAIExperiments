@@ -278,16 +278,17 @@ class FramewiseMetric(Metric):
 
     def _compute_ece(self) -> float:
         all_conf = self._conf_tp + self._conf_fn + self._conf_fp + self._conf_tn
-        all_correct = (
+        # ECE uses empirical positive rate (GT=1), not accuracy.
+        all_positive = (
             [1.0] * len(self._conf_tp)
-            + [0.0] * len(self._conf_fn)
+            + [1.0] * len(self._conf_fn)
             + [0.0] * len(self._conf_fp)
-            + [1.0] * len(self._conf_tn)
+            + [0.0] * len(self._conf_tn)
         )
         if not all_conf:
             return 0.0
         conf_arr = np.array(all_conf)
-        corr_arr = np.array(all_correct)
+        corr_arr = np.array(all_positive)
         n_bins_cal = 10
         ece = 0.0
         total = len(conf_arr)
