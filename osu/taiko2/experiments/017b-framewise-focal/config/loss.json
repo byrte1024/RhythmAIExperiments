@@ -1,0 +1,9 @@
+{
+    "_comment": "#017b loss: focal loss with gamma=2.0. Focal modulation (1-p_t)^gamma down-weights easy TN bins (confidence near 0) and focuses gradient on hard FP bins (metronomic beats confidently predicted as onsets but not in GT). pos_weight unchanged from #017 — handles class count imbalance independently of focal.",
+    "__class__": "osu.taiko2.training.framewise_focal_loss:FramewiseFocalLossConfig",
+    "gamma": 2.0,
+    "pos_weight_clamp_min": 10.0,
+    "pos_weight_clamp_max": 200.0,
+    "canonical_threshold": 0.5,
+    "canonical_tolerance_frames": 2
+}

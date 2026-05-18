@@ -255,6 +255,66 @@ def _regenerate_value_hist_combined(d: Path, step: int) -> None:
     plt.close(fig)
 
 
+def _regenerate_calibration(d: Path, step: int) -> None:
+    """Regenerate calibration plot from calibration.npz."""
+    npz_path = d / "calibration.npz"
+    if not npz_path.exists():
+        return
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+
+    data = np.load(npz_path)
+    mean_conf = data["mean_conf"]
+    pos_rate = data["pos_rate"]
+    count = data["count"]
+    populated = data["populated"]
+    ece = float(data["ece"])
+    n = len(mean_conf)
+
+    fig, axes = plt.subplots(1, 2, figsize=(14, 6))
+
+    ax = axes[0]
+    ax.plot([0, 1], [0, 1], "k--", alpha=0.3, label="perfect")
+    if populated.any():
+        ax.plot(
+            mean_conf[populated], pos_rate[populated], "o-",
+            color="#d62728", label="model", markersize=6,
+        )
+        for b in range(n):
+            if populated[b]:
+                ax.annotate(
+                    f"{count[b]:,}",
+                    (mean_conf[b], pos_rate[b]),
+                    textcoords="offset points", xytext=(4, 4),
+                    fontsize=6, color="#666666",
+                )
+    ax.set_xlabel("mean predicted confidence")
+    ax.set_ylabel("empirical positive rate (GT=1)")
+    ax.set_title(f"Calibration - step {step:,}  ECE={ece:.4f}")
+    ax.legend()
+    ax.set_xlim(0, 1)
+    ax.set_ylim(0, 1)
+    ax.set_aspect("equal")
+
+    ax2 = axes[1]
+    bucket_edges = np.linspace(0, 1, n + 1)
+    bucket_centers = (bucket_edges[:-1] + bucket_edges[1:]) / 2
+    ax2.bar(
+        bucket_centers, count,
+        width=1.0 / n * 0.85, color="#4a90d9", alpha=0.8,
+    )
+    ax2.set_xlabel("confidence bucket")
+    ax2.set_ylabel("count")
+    ax2.set_yscale("log")
+    ax2.set_title(f"Bucket population - step {step:,}")
+    ax2.set_xlim(0, 1)
+
+    fig.tight_layout()
+    fig.savefig(d / "calibration.png", dpi=120)
+    plt.close(fig)
+
+
 def _delete_reliability(d: Path) -> None:
     rel_png = d / "reliability.png"
     if rel_png.exists():
@@ -270,6 +330,7 @@ def _process_dir(d: Path, step: int) -> int:
         _regenerate_value_hist_combined,
         _regenerate_per_bin_rate,
         _regenerate_confidence_by_outcome,
+        _regenerate_calibration,
     ):
         try:
             fn(d, step)

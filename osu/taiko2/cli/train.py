@@ -390,11 +390,16 @@ def main(argv: list[str] | None = None) -> int:
         from ..training.framewise_bce_loss import (
             FramewiseBCELoss, FramewiseBCELossConfig,
         )
+        from ..training.framewise_focal_loss import (
+            FramewiseFocalLoss, FramewiseFocalLossConfig,
+        )
         from ..training.diffusion_loss import DiffusionLoss, DiffusionLossConfig
         from ..training.framewise_diffusion_loss import (
             FramewiseDiffusionLoss, FramewiseDiffusionLossConfig,
         )
-        if isinstance(loss_cfg, FramewiseBCELossConfig):
+        if isinstance(loss_cfg, FramewiseFocalLossConfig):
+            loss = FramewiseFocalLoss(loss_cfg)
+        elif isinstance(loss_cfg, FramewiseBCELossConfig):
             loss = FramewiseBCELoss(loss_cfg)
         elif isinstance(loss_cfg, FramewiseDiffusionLossConfig):
             loss = FramewiseDiffusionLoss(loss_cfg)

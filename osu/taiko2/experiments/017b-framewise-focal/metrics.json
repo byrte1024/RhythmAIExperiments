@@ -1,0 +1,20 @@
+{
+  "experiment_id": "017b-framewise-focal",
+  "run_name": "exp_017b_framewise_focal",
+  "baseline_experiment": "017-framewise-bce",
+
+  "final": {
+    "eval_step": null,
+    "wall_time_s": null,
+    "epoch": null,
+    "metrics": {},
+    "baseline": {},
+    "deltas": {}
+  },
+
+  "per_eval": [],
+
+  "hypothesis_outcome": null,
+
+  "_comment": "Populate per_eval with one entry per eval step -- include ALL metric keys the trainer emitted. The README tables are generated from these arrays."
+}

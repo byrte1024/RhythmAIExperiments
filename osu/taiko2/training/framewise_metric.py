@@ -79,6 +79,11 @@ class FramewiseMetric(Metric):
         self._hedge_sum = 0.0
         self._brier_sum = 0.0
         self._n_bins_total = 0
+        # Exact calibration counters (10 equal-width confidence buckets).
+        self._cal_n = 10
+        self._cal_total = np.zeros(self._cal_n, dtype=np.int64)
+        self._cal_positive = np.zeros(self._cal_n, dtype=np.int64)
+        self._cal_conf_sum = np.zeros(self._cal_n, dtype=np.float64)
         # Mini-chart: per (threshold, tolerance) running sums.
         cfg = self.config
         self._mc_sums: dict[str, float] = {}
@@ -89,6 +94,27 @@ class FramewiseMetric(Metric):
                 k = f"mini/τ{tau_key}/{metric_name}"
                 self._mc_sums[k] = 0.0
                 self._mc_counts[k] = 0
+        # Mass correlation: per-window total_mass paired with quality.
+        self._mass_vals: list[float] = []
+        self._mass_f1: list[float] = []
+        self._mass_matched: list[float] = []
+        self._mass_halluc: list[float] = []
+        # Adjacent-bin drop: per confidence band, accumulate mean drop
+        # to neighbors. 10 bands: [0,0.1), [0.1,0.2), ..., [0.9,1.0].
+        self._adj_n_bands = 10
+        self._adj_drop_sum = np.zeros(self._adj_n_bands, dtype=np.float64)
+        self._adj_drop_count = np.zeros(self._adj_n_bands, dtype=np.int64)
+        # First-note HIT/MISS/GOOD per threshold.
+        self._fn_hit: dict[str, int] = {}
+        self._fn_good: dict[str, int] = {}
+        self._fn_miss: dict[str, int] = {}
+        self._fn_total: dict[str, int] = {}
+        for tau in cfg.thresholds:
+            tk = _tau_key(tau)
+            self._fn_hit[tk] = 0
+            self._fn_good[tk] = 0
+            self._fn_miss[tk] = 0
+            self._fn_total[tk] = 0
 
     # ── update ────────────────────────────────────────────────────────
 
@@ -169,6 +195,29 @@ class FramewiseMetric(Metric):
         self._brier_sum += float(((conf - tb) ** 2).sum().item())
         self._n_bins_total += n_bins_batch
 
+        # ── exact calibration counters ───────────────────────────────
+        flat_conf = conf.reshape(-1).cpu().numpy()
+        flat_gt = (tb > 0.5).reshape(-1).cpu().numpy()
+        bucket_idx = np.clip(
+            (flat_conf * self._cal_n).astype(np.int64), 0, self._cal_n - 1,
+        )
+        for b in range(self._cal_n):
+            mask = bucket_idx == b
+            n_in = int(mask.sum())
+            if n_in > 0:
+                self._cal_total[b] += n_in
+                self._cal_positive[b] += int(flat_gt[mask].sum())
+                self._cal_conf_sum[b] += float(flat_conf[mask].sum())
+
+        # ── mass correlation + adjacent drop + first-note ────────────
+        conf_np = conf.cpu().numpy()
+        gt_bins_np = gt_bins.cpu().numpy()
+        tb_np = tb.cpu().numpy()
+        for i in range(B):
+            self._accumulate_per_window(
+                conf_np[i], tb_np[i], gt_bins_np[i], n_bins,
+            )
+
         # ── mini-chart comparison at each threshold ──────────────────
         for tau in cfg.thresholds:
             self._mini_chart_at_threshold(conf, gt_bins, tau, n_bins)
@@ -186,6 +235,92 @@ class FramewiseMetric(Metric):
             reservoir.extend(v.tolist())
         else:
             reservoir.extend(v[:remaining].tolist())
+
+    def _accumulate_per_window(
+        self,
+        conf: np.ndarray,
+        tb: np.ndarray,
+        gt_bins_padded: np.ndarray,
+        n_bins: int,
+    ) -> None:
+        cfg = self.config
+
+        # ── 1. Mass correlation ──────────────────────────────────────
+        total_mass = float(conf.sum())
+        gt_idx = gt_bins_padded[gt_bins_padded >= 0]
+        if len(gt_idx) == 0:
+            return
+        # Per-window F1 at canonical threshold+tolerance.
+        pred_pos = conf > cfg.canonical_threshold
+        tol = cfg.canonical_tolerance_frames
+        gt_mask = tb > 0.5
+        if tol > 0:
+            from scipy.ndimage import maximum_filter1d
+            gt_dilated = maximum_filter1d(
+                gt_mask.astype(np.float32), size=2 * tol + 1,
+            ) > 0.5
+            pred_dilated = maximum_filter1d(
+                pred_pos.astype(np.float32), size=2 * tol + 1,
+            ) > 0.5
+        else:
+            gt_dilated = gt_mask
+            pred_dilated = pred_pos
+        tp = int((pred_pos & gt_dilated).sum())
+        fp = int((pred_pos & ~gt_dilated).sum())
+        fn = int((~pred_dilated & gt_mask).sum())
+        prec = tp / max(tp + fp, 1)
+        rec = tp / max(tp + fn, 1)
+        f1 = (2 * prec * rec / (prec + rec)) if (prec + rec) > 0 else 0.0
+        # Mini-chart at canonical threshold for mass correlation.
+        pred_bins_ms = np.where(pred_pos)[0].astype(np.float64) * cfg.bins_to_ms
+        gt_ms = gt_idx.astype(np.float64) * cfg.bins_to_ms
+        if len(pred_bins_ms) > 0 and len(gt_ms) > 0:
+            mc = gt_match_metrics(pred_bins_ms, gt_ms, tolerances_ms=(25.0,))
+            self._mass_matched.append(mc["matched_rate"])
+            self._mass_halluc.append(mc["hallucination_rate"])
+        else:
+            self._mass_matched.append(0.0)
+            self._mass_halluc.append(1.0 if len(pred_bins_ms) > 0 else 0.0)
+        self._mass_vals.append(total_mass)
+        self._mass_f1.append(f1)
+
+        # ── 2. Adjacent-bin confidence drop ──────────────────────────
+        for b_idx in range(n_bins):
+            val = conf[b_idx]
+            band = min(int(val * self._adj_n_bands), self._adj_n_bands - 1)
+            if val < 0.05:
+                continue
+            neighbors = []
+            if b_idx > 0:
+                neighbors.append(conf[b_idx - 1])
+            if b_idx < n_bins - 1:
+                neighbors.append(conf[b_idx + 1])
+            if neighbors:
+                drop = val - float(np.mean(neighbors))
+                self._adj_drop_sum[band] += drop
+                self._adj_drop_count[band] += 1
+
+        # ── 3. First-note HIT/MISS/GOOD per threshold ───────────────
+        for tau in cfg.thresholds:
+            tk = _tau_key(tau)
+            above = np.where(conf > tau)[0]
+            if len(above) == 0:
+                continue
+            first_bin = int(above[0])
+            # Find nearest GT bin.
+            if len(gt_idx) == 0:
+                self._fn_miss[tk] += 1
+                self._fn_total[tk] += 1
+                continue
+            diffs = np.abs(gt_idx.astype(np.int64) - first_bin)
+            nearest_dist = int(diffs.min())
+            self._fn_total[tk] += 1
+            if nearest_dist <= 2:
+                self._fn_hit[tk] += 1
+            elif nearest_dist <= 7:
+                self._fn_good[tk] += 1
+            else:
+                self._fn_miss[tk] += 1
 
     def _mini_chart_at_threshold(
         self,
@@ -258,8 +393,15 @@ class FramewiseMetric(Metric):
         out["frame/pred_hedge_frac"] = self._hedge_sum / n_total
         out["frame/brier"] = self._brier_sum / n_total
 
-        # ECE (10-bin calibration from the outcome reservoirs).
-        out["frame/ece"] = self._compute_ece()
+        # Calibration (exact counters, not reservoir).
+        cal = self._compute_calibration()
+        out["frame/cal/ece"] = cal["ece"]
+        out["frame/cal/brier"] = cal["brier"]
+        out["frame/cal/alignment"] = cal["alignment"]
+        for b in range(self._cal_n):
+            lo = b * 10
+            out[f"frame/cal/pos_rate_at_{lo:02d}"] = cal["pos_rates"][b]
+            out[f"frame/cal/count_at_{lo:02d}"] = float(self._cal_total[b])
 
         # Confidence by outcome.
         out["frame/conf_tp_median"] = _np_median(self._conf_tp)
@@ -269,6 +411,49 @@ class FramewiseMetric(Metric):
         out["frame/conf_tp_p10"] = _np_percentile(self._conf_tp, 10)
         out["frame/conf_fp_p90"] = _np_percentile(self._conf_fp, 90)
 
+        # ── Mass correlation ──────────────────────────────────────────
+        if len(self._mass_vals) >= 2:
+            mass_arr = np.array(self._mass_vals)
+            out["frame/mass/mean"] = float(mass_arr.mean())
+            out["frame/mass/median"] = float(np.median(mass_arr))
+            out["frame/mass/p95"] = float(np.percentile(mass_arr, 95))
+            out["frame/mass/std"] = float(mass_arr.std())
+            f1_arr = np.array(self._mass_f1)
+            mr_arr = np.array(self._mass_matched)
+            hr_arr = np.array(self._mass_halluc)
+            out["frame/mass/corr_f1"] = _safe_corr(mass_arr, f1_arr)
+            out["frame/mass/corr_matched"] = _safe_corr(mass_arr, mr_arr)
+            out["frame/mass/corr_halluc"] = _safe_corr(mass_arr, hr_arr)
+
+        # ── Adjacent-bin drop ────────────────────────────────────────
+        for b in range(self._adj_n_bands):
+            lo = b * 10
+            c = int(self._adj_drop_count[b])
+            if c > 0:
+                out[f"frame/adj_drop/mean_at_{lo:02d}"] = float(
+                    self._adj_drop_sum[b] / c
+                )
+            else:
+                out[f"frame/adj_drop/mean_at_{lo:02d}"] = 0.0
+            out[f"frame/adj_drop/count_at_{lo:02d}"] = float(c)
+
+        # ── First-note HIT/GOOD/MISS per threshold ──────────────────
+        for tau in cfg.thresholds:
+            tk = _tau_key(tau)
+            total = max(self._fn_total.get(tk, 0), 1)
+            out[f"frame/first_note/τ{tk}/hit"] = float(
+                self._fn_hit.get(tk, 0) / total
+            )
+            out[f"frame/first_note/τ{tk}/good"] = float(
+                self._fn_good.get(tk, 0) / total
+            )
+            out[f"frame/first_note/τ{tk}/miss"] = float(
+                self._fn_miss.get(tk, 0) / total
+            )
+            out[f"frame/first_note/τ{tk}/n"] = float(
+                self._fn_total.get(tk, 0)
+            )
+
         # Mini-chart.
         for k, s in self._mc_sums.items():
             c = max(self._mc_counts.get(k, 1), 1)
@@ -276,33 +461,40 @@ class FramewiseMetric(Metric):
 
         return out
 
-    def _compute_ece(self) -> float:
-        all_conf = self._conf_tp + self._conf_fn + self._conf_fp + self._conf_tn
-        # ECE uses empirical positive rate (GT=1), not accuracy.
-        all_positive = (
-            [1.0] * len(self._conf_tp)
-            + [1.0] * len(self._conf_fn)
-            + [0.0] * len(self._conf_fp)
-            + [0.0] * len(self._conf_tn)
-        )
-        if not all_conf:
-            return 0.0
-        conf_arr = np.array(all_conf)
-        corr_arr = np.array(all_positive)
-        n_bins_cal = 10
+    def _compute_calibration(self) -> dict[str, object]:
+        total = int(self._cal_total.sum())
+        pos_rates = np.zeros(self._cal_n)
+        mean_confs = np.zeros(self._cal_n)
         ece = 0.0
-        total = len(conf_arr)
-        for b in range(n_bins_cal):
-            lo = b / n_bins_cal
-            hi = (b + 1) / n_bins_cal
-            mask = (conf_arr >= lo) & (conf_arr < hi)
-            n_in = int(mask.sum())
+        brier = 0.0
+        n_populated = 0
+        alignment_sum = 0.0
+
+        for b in range(self._cal_n):
+            n_in = int(self._cal_total[b])
             if n_in == 0:
                 continue
-            avg_conf = float(conf_arr[mask].mean())
-            avg_acc = float(corr_arr[mask].mean())
-            ece += (n_in / total) * abs(avg_conf - avg_acc)
-        return ece
+            avg_conf = self._cal_conf_sum[b] / n_in
+            avg_pos = self._cal_positive[b] / n_in
+            pos_rates[b] = avg_pos
+            mean_confs[b] = avg_conf
+            if total > 0:
+                ece += (n_in / total) * abs(avg_conf - avg_pos)
+                brier += n_in * (avg_conf - avg_pos) ** 2
+            n_populated += 1
+            alignment_sum += abs(avg_conf - avg_pos)
+
+        if total > 0:
+            brier /= total
+        alignment = alignment_sum / max(n_populated, 1)
+
+        return {
+            "ece": ece,
+            "brier": brier,
+            "alignment": alignment,
+            "pos_rates": pos_rates,
+            "mean_confs": mean_confs,
+        }
 
 
 # ─────────────────────────── helpers ─────────────────────────────────
@@ -333,3 +525,9 @@ def _np_percentile(vals: list[float], pct: float) -> float:
     if not vals:
         return 0.0
     return float(np.percentile(vals, pct))
+
+
+def _safe_corr(a: np.ndarray, b: np.ndarray) -> float:
+    if len(a) < 2 or a.std() < 1e-12 or b.std() < 1e-12:
+        return 0.0
+    return float(np.corrcoef(a, b)[0, 1])

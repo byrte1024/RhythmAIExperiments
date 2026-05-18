@@ -32,6 +32,10 @@ from osu.taiko2.training.framewise_bce_loss import (
     FramewiseBCELoss,
     FramewiseBCELossConfig,
 )
+from osu.taiko2.training.framewise_focal_loss import (
+    FramewiseFocalLoss,
+    FramewiseFocalLossConfig,
+)
 from osu.taiko2.training.framewise_metric import (
     FramewiseMetric,
     FramewiseMetricConfig,
@@ -187,6 +191,62 @@ class TestLoss:
         assert grad_count > 0
 
 
+# ─────────────────────────── focal loss ──────────────────────────────
+
+
+class TestFocalLoss:
+    def test_smoke(self) -> None:
+        cfg = _tiny_config()
+        model = FramewiseDetector(cfg)
+        loss_fn = FramewiseFocalLoss(FramewiseFocalLossConfig())
+        inp = _make_input(2, cfg)
+        tgt = _make_target(2, cfg.b_pred)
+        out = model.predict(inp)
+        result = loss_fn(out, tgt)
+        assert result.loss.isfinite()
+        assert "loss" in result.metrics
+        assert "loss/focal_weight_pos" in result.metrics
+        assert "loss/focal_weight_neg" in result.metrics
+        assert "frame/f1_τ_50_tol_2" in result.metrics
+
+    def test_gamma_zero_matches_bce(self) -> None:
+        cfg = _tiny_config()
+        model = FramewiseDetector(cfg)
+        inp = _make_input(2, cfg)
+        tgt = _make_target(2, cfg.b_pred)
+        out = model.predict(inp)
+        bce_fn = FramewiseBCELoss(FramewiseBCELossConfig())
+        focal_fn = FramewiseFocalLoss(FramewiseFocalLossConfig(gamma=0.0))
+        bce_result = bce_fn(out, tgt)
+        focal_result = focal_fn(out, tgt)
+        assert abs(bce_result.loss.item() - focal_result.loss.item()) < 1e-5
+
+    def test_focal_reduces_easy_negative_weight(self) -> None:
+        cfg = _tiny_config()
+        model = FramewiseDetector(cfg)
+        loss_fn = FramewiseFocalLoss(FramewiseFocalLossConfig(gamma=2.0))
+        inp = _make_input(2, cfg)
+        tgt = _make_target(2, cfg.b_pred)
+        out = model.predict(inp)
+        result = loss_fn(out, tgt)
+        fw_neg = result.metrics["loss/focal_weight_neg"]
+        fw_pos = result.metrics["loss/focal_weight_pos"]
+        assert fw_neg < 1.0
+        assert fw_pos > 0.0
+
+    def test_backward(self) -> None:
+        cfg = _tiny_config()
+        model = FramewiseDetector(cfg)
+        loss_fn = FramewiseFocalLoss(FramewiseFocalLossConfig(gamma=2.0))
+        inp = _make_input(2, cfg)
+        tgt = _make_target(2, cfg.b_pred)
+        out = model.predict(inp)
+        result = loss_fn(out, tgt)
+        result.loss.backward()
+        grad_count = sum(1 for p in model.parameters() if p.grad is not None)
+        assert grad_count > 0
+
+
 # ─────────────────────────── adapter ─────────────────────────────────
 
 
@@ -327,6 +387,13 @@ class TestMetric:
         assert "frame/mini/τ50/matched_rate" in result
         assert "frame/mini/τ50/matched_rate_at_tol_25" in result
         assert result["frame/f1_τ_50_tol_2"] > 0
+        # Calibration metrics.
+        assert "frame/cal/ece" in result
+        assert "frame/cal/brier" in result
+        assert "frame/cal/alignment" in result
+        assert "frame/cal/pos_rate_at_00" in result
+        assert "frame/cal/pos_rate_at_90" in result
+        assert "frame/cal/count_at_00" in result
 
     def test_hedge_frac_committed(self) -> None:
         cfg = FramewiseMetricConfig()
@@ -384,6 +451,11 @@ class TestDiagnostics:
         assert (tmp_path / "value_hist_target.png").exists()
         assert (tmp_path / "confidence_by_outcome.png").exists()
         assert (tmp_path / "value_hist_combined.png").exists()
+        assert (tmp_path / "calibration.png").exists()
+        assert (tmp_path / "calibration.npz").exists()
+        cal = np.load(tmp_path / "calibration.npz")
+        assert cal["mean_conf"].shape[0] == 20
+        assert cal["pos_rate"].shape[0] == 20
         data = np.load(tmp_path / "per_bin_rate.npz")
         assert data["pos_rate"].shape == (n_bins,)
 

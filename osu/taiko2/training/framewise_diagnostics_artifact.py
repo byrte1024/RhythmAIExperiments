@@ -70,6 +70,11 @@ class FramewiseDiagnosticsArtifact:
         self._all_pred: list[float] = []
         self._all_target: list[float] = []
         self._n_seen = 0
+        # Exact calibration counters (20 fine buckets for the graph).
+        self._cal_n = 20
+        self._cal_total = np.zeros(self._cal_n, dtype=np.int64)
+        self._cal_positive = np.zeros(self._cal_n, dtype=np.int64)
+        self._cal_conf_sum = np.zeros(self._cal_n, dtype=np.float64)
 
     def update(self, batch: MetricInput) -> None:
         got = self._extract_confidence_and_target(batch)
@@ -113,6 +118,19 @@ class FramewiseDiagnosticsArtifact:
         )
         self._reservoir_extend(self._all_pred, flat_conf)
         self._reservoir_extend(self._all_target, flat_tb)
+
+        # Exact calibration counters.
+        bucket_idx = np.clip(
+            (flat_conf * self._cal_n).astype(np.int64), 0, self._cal_n - 1,
+        )
+        for b in range(self._cal_n):
+            mask = bucket_idx == b
+            n_in = int(mask.sum())
+            if n_in > 0:
+                self._cal_total[b] += n_in
+                self._cal_positive[b] += int(flat_gp[mask].sum())
+                self._cal_conf_sum[b] += float(flat_conf[mask].sum())
+
         self._n_seen += B
 
     def _reservoir_extend(
@@ -140,6 +158,7 @@ class FramewiseDiagnosticsArtifact:
         self._save_value_hist_pred(eval_dir, step)
         self._save_value_hist_combined(eval_dir, step)
         self._save_confidence_by_outcome(eval_dir, step)
+        self._save_calibration(eval_dir, step)
 
     def _save_per_bin_rate(self, d: Path, step: int) -> None:
         import matplotlib
@@ -282,5 +301,80 @@ class FramewiseDiagnosticsArtifact:
         ax.legend()
         fig.tight_layout()
         fig.savefig(d / "confidence_by_outcome.png", dpi=120)
+        plt.close(fig)
+
+    def _save_calibration(self, d: Path, step: int) -> None:
+        import matplotlib
+        matplotlib.use("Agg")
+        import matplotlib.pyplot as plt
+
+        n = self._cal_n
+        mean_conf = np.zeros(n)
+        pos_rate = np.zeros(n)
+        populated = np.zeros(n, dtype=bool)
+        total = int(self._cal_total.sum())
+
+        ece = 0.0
+        for b in range(n):
+            n_in = int(self._cal_total[b])
+            if n_in == 0:
+                continue
+            populated[b] = True
+            mean_conf[b] = self._cal_conf_sum[b] / n_in
+            pos_rate[b] = self._cal_positive[b] / n_in
+            if total > 0:
+                ece += (n_in / total) * abs(mean_conf[b] - pos_rate[b])
+
+        np.savez(
+            d / "calibration.npz",
+            mean_conf=mean_conf,
+            pos_rate=pos_rate,
+            count=self._cal_total,
+            populated=populated,
+            ece=np.float64(ece),
+        )
+
+        fig, axes = plt.subplots(1, 2, figsize=(14, 6))
+
+        # Left: calibration curve.
+        ax = axes[0]
+        ax.plot([0, 1], [0, 1], "k--", alpha=0.3, label="perfect")
+        if populated.any():
+            ax.plot(
+                mean_conf[populated], pos_rate[populated], "o-",
+                color="#d62728", label="model", markersize=6,
+            )
+            for b in range(n):
+                if populated[b]:
+                    ax.annotate(
+                        f"{self._cal_total[b]:,}",
+                        (mean_conf[b], pos_rate[b]),
+                        textcoords="offset points", xytext=(4, 4),
+                        fontsize=6, color="#666666",
+                    )
+        ax.set_xlabel("mean predicted confidence")
+        ax.set_ylabel("empirical positive rate (GT=1)")
+        ax.set_title(f"Calibration - step {step:,}  ECE={ece:.4f}")
+        ax.legend()
+        ax.set_xlim(0, 1)
+        ax.set_ylim(0, 1)
+        ax.set_aspect("equal")
+
+        # Right: bucket counts (log scale).
+        ax2 = axes[1]
+        bucket_edges = np.linspace(0, 1, n + 1)
+        bucket_centers = (bucket_edges[:-1] + bucket_edges[1:]) / 2
+        ax2.bar(
+            bucket_centers, self._cal_total,
+            width=1.0 / n * 0.85, color="#4a90d9", alpha=0.8,
+        )
+        ax2.set_xlabel("confidence bucket")
+        ax2.set_ylabel("count")
+        ax2.set_yscale("log")
+        ax2.set_title(f"Bucket population - step {step:,}")
+        ax2.set_xlim(0, 1)
+
+        fig.tight_layout()
+        fig.savefig(d / "calibration.png", dpi=120)
         plt.close(fig)
 

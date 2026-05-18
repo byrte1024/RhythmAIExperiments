@@ -1,6 +1,6 @@
 {
-    "_comment": "#017 inference: FramewiseDecoder thresholds the (1, 500) confidence map at tau=0.5, applies NMS kernel=3, emits all positive bins as onsets. The predictor's AR loop iterates multi-bin ARDecision.bin_offsets and advances cursor to the last emitted bin. Empty positive set -> STOP_HOP=20 bins.",
-    "checkpoint": "osu/taiko2/runs/exp_017_framewise_bce/checkpoints/best.pt",
+    "_comment": "#017b inference: identical decoder to #017. FramewiseDecoder, threshold 0.5, NMS kernel 3. Only the checkpoint path differs.",
+    "checkpoint": "osu/taiko2/runs/exp_017b_framewise_focal/checkpoints/best.pt",
     "predictor": {
         "__class__": "osu.taiko2.inference.autoregressive.predictor:AutoregressivePredictor",
         "config": {
