@@ -202,28 +202,161 @@ Everything below comes from real measurements, not predictions.
 
 ## Results summary
 
+The run trained for 5 evals across 1.25 epochs (steps 20,674 --
+103,370) before being stopped. Focal loss (gamma=2) **compressed the
+confidence range** without improving selectivity. The metronomic
+collapse that [#017](../017-framewise-bce/) resolved at E3 **never
+resolved** under focal — `over_pspace_self` increased from 39 to 53
+across the 5 evals, and `dc_human` plateaued at 83 (vs #017's 91 at
+E3). Val loss began rising at E4 (0.080 --> 0.083).
+
+### Headline finding
+
+**Focal loss suppresses gradient on both classes equally, preventing
+the model from learning to commit.** `focal_weight_pos` = 0.074
+[exp_017b_framewise_focal, step 82,696,
+val/single/loss/focal_weight_pos] means TPs receive only 7.4% of
+the gradient they would under BCE. The model cannot push TP confidence
+past ~0.74 (`conf_tp_median` 0.736 [exp_017b_framewise_focal, step
+82,696, val/single/frame/conf_tp_median] vs #017's 0.938). FP
+confidence did drop (0.627 vs #017's 0.793), but the TP-FP gap
+actually *shrank* (0.109 vs #017's 0.145) and separation collapsed
+(0.641 vs #017's 0.837).
+
+The calibration data shows the model is internally well-calibrated
+within its compressed range — `pos_rate_at_90` = 0.967 (when the
+model says 0.9, it's right 97% of the time). The problem is that it
+rarely *says* 0.9 — most predictions sit in the 0.5-0.7 band, making
+threshold-based decoding ineffective.
+
 ### Final vs baseline
 
-| Metric | Baseline (exp N) | This run (final) | Delta | Direction |
+`final` = E5 (step 103,370). Baseline = [#017](../017-framewise-bce/)
+best (E4, step 82,696).
+
+| Metric | #017 BCE (E4) | #017b Focal (E5) | Delta | Direction |
 |---|---:|---:|---:|:---:|
-| — | — | — | — | — |
+| AR `density_ratio` | 1.44 | 2.38 | +0.94 | worse |
+| AR `hallucination_rate` | 0.32 | 0.41 | +0.09 | worse |
+| AR `matched_rate` | 0.90 | 0.98 | +0.08 | inflated |
+| AR `error_median_ms` | 6.10 | 5.67 | -0.43 | better |
+| AR `dc_human` (%) | 91.0 | 83.4 | -7.6 | much worse |
+| AR `oc_human` (%) | 92.9 | 86.2 | -6.7 | much worse |
+| AR `events_per_sec` | 5.37 | 9.24 | +3.87 | 2.7x over |
+| `conf_tp_median` | 0.938 | 0.734 | -0.204 | compressed |
+| `conf_fp_median` | 0.793 | 0.619 | -0.174 | compressed |
+| `separation` | 0.837 | 0.638 | -0.199 | compressed |
+| `hedge_frac` | 0.064 | 0.187 | +0.123 | hedging |
+| `over_pspace_self` | 11.7 | 53.2 | +41.5 | much worse |
+| `gap_metronome_distance` | 0.389 | 0.418 | +0.029 | similar |
+| frame F1 | 0.778 | 0.780 | +0.002 | flat |
+| `focal_weight_pos` | n/a | 0.079 | — | TPs starved |
+| `focal_weight_neg` | n/a | 0.044 | — | TNs suppressed |
+| val `loss` | 0.291 | 0.083 | -0.208 | not comparable (different loss) |
+| train_noaug `loss` | 0.234 | 0.062 | -0.172 | not comparable |
 
 ### Per-eval progression
 
-{Generated from `runs/exp_017b_framewise_focal/metrics.jsonl`.}
+| E | Step | Epoch | loss | na_loss | gap | F1 | Prec | Rec | Sep | hedge | fp_med | tp_med | AR dens | AR dc | AR eps | op_self |
+|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| 1 | 20,674 | 0 | 0.090 | 0.086 | +0.004 | 0.773 | 0.635 | 0.988 | 0.586 | 0.262 | 0.621 | 0.725 | 2.40 | 82.2 | 9.27 | 39.0 |
+| 2 | 41,348 | 0 | 0.082 | 0.076 | +0.006 | 0.774 | 0.636 | 0.990 | 0.619 | 0.225 | 0.625 | 0.737 | 2.39 | 82.3 | 9.42 | 39.1 |
+| 3 | 62,022 | 0 | 0.080 | 0.070 | +0.010 | 0.775 | 0.636 | 0.990 | 0.639 | 0.197 | 0.626 | 0.742 | 2.37 | 82.8 | 9.50 | 43.3 |
+| 4 | 82,696 | 0 | 0.080 | 0.066 | +0.014 | 0.776 | 0.639 | 0.989 | 0.641 | 0.186 | 0.627 | 0.736 | 2.35 | 83.4 | 9.12 | 43.0 |
+| 5 | 103,370 | 1 | 0.083 | 0.062 | +0.021 | 0.780 | 0.645 | 0.989 | 0.638 | 0.187 | 0.619 | 0.734 | 2.38 | 83.4 | 9.24 | 53.2 |
 
-Machine-readable copies (both tables): [`metrics.json`](./metrics.json).
+Machine-readable copies: [`metrics.json`](./metrics.json).
 
 ## Visualizations
 
 ![Training loss](graphs/01_train_loss.png)
-*Training loss over steps (log-y).*
+*Training loss (log-y). Converges to E3-E4 then begins rising.*
 
-![Validation progression](graphs/02_val_progression.png)
-*Watched metric across evals.*
+![Val vs noaug loss](graphs/02_val_vs_noaug_loss.png)
+*Val vs train_noaug loss overlaid with #017 BCE for comparison.
+Focal loss values are ~3x smaller than BCE (different loss scale)
+but the overfitting gap shape is similar.*
+
+![AR corpus vs 017](graphs/03_ar_corpus_vs_017.png)
+*AR corpus metrics overlaid with #017 BCE and #007 reference.
+density_ratio stays at 2.4 (vs #017's drop to 1.4 at E3).
+dc_human stays at 83 (vs #017's jump to 91 at E3).*
+
+![Confidence compression](graphs/04_confidence_compression.png)
+*conf_tp_median, conf_fp_median, and separation — focal (red) vs
+BCE (blue). Focal compresses both TP and FP confidence ranges
+without widening the gap between them.*
+
+![Focal weights](graphs/05_focal_weights.png)
+*Mean focal modulation weight per class. pos weight ~0.07-0.08
+(TPs get 7-8% of gradient); neg weight ~0.04-0.06 (TNs get 4-6%).
+The ratio pos/neg is only 1.4-1.8x — insufficient asymmetry.*
 
 ## Vs prediction
 
+| Metric | Predicted | Actual (E4/E5) | Verdict |
+|---|---:|---:|---|
+| AR `density_ratio` | 0.85-1.15 must | 2.35 | **FAIL** — no improvement over #017 E1-E2 |
+| `conf_fp_median` < `conf_tp_median` - 0.15 | must | gap = 0.109 | **FAIL** — gap is 0.109 < 0.15 required |
+| AR `dc_human` >= 88 | must | 83.4 | **FAIL** — 5 pp below gate |
+| AR `hallucination_rate` <= 0.15 | nice | 0.41 | **FAIL** |
+| AR `density_ratio` 0.85-1.10 | nice | 2.35 | **FAIL** |
+| `loss/focal_weight_pos` >= 0.01 | fail-if | 0.079 | **PASS** (not triggered) |
+| AR `density_ratio` > 1.40 at every eval | fail-if | 2.35+ | **TRIGGERED** |
+| AR `dc_human` < 80 | fail-if | 83.4 | **PASS** (not triggered) |
+
+**Summary**: 0 of 3 must-haves PASSED. 1 of 2 fail-criteria
+TRIGGERED (`density_ratio > 1.40` at every eval). Hypothesis
+rejected — focal loss does not address the selectivity problem.
+
 ## Takeaways
 
+- **Focal loss (gamma=2) is the wrong tool for this problem.** The
+  premise of focal — "easy negatives dominate the gradient" — is
+  correct in principle (97% of bins are TN), but the cure is worse
+  than the disease: suppressing TP gradient prevents the model from
+  learning to commit to detected onsets, and the compressed confidence
+  range makes threshold-based decoding impossible.
+
+- **The metronomic phase transition requires confident predictions.**
+  [#017](../017-framewise-bce/) had its selectivity breakthrough at E3
+  when `conf_tp_median` was already at 0.93 and `separation` at 0.83.
+  Focal's compressed confidence (0.74 TP, 0.64 separation) prevents
+  this transition from occurring — the model can't create the sharp
+  TP/FP distinction needed to break out of the metronomic mode.
+
+- **Calibration is good but irrelevant.** The calibration positive
+  rates (`pos_rate_at_90` = 0.97) show the model *internally*
+  distinguishes GT from non-GT — it just does so in a confidence
+  range too narrow for the threshold decoder to exploit. A
+  calibration-aware decoder could potentially use this, but that
+  adds complexity without addressing the root cause.
+
+- **The `focal_weight_pos / focal_weight_neg` ratio of 1.4-1.8x is
+  insufficient.** The class ratio is ~33x (97% neg vs 3% pos).
+  Focal's modulation creates only 1.4-1.8x asymmetry — three orders
+  of magnitude too weak to counteract the class imbalance after
+  pos_weight is already applied. The two mechanisms (pos_weight +
+  focal) partially cancel each other.
+
+- **`over_pspace_self` increasing to 53 is a new failure mode.**
+  Neither #017 at any eval nor #016 produced this level of self-
+  repetition. The model under focal is *converging toward a more
+  uniform metronomic output* as training progresses — the opposite
+  of the desired behavior.
+
 ## Followup questions
+
+- **#017c — lower pos_weight only.** Replace [10, 200] with [1, 5]
+  or [1, 10] under plain BCE (no focal). The scalar model (#007) uses
+  a balanced softmax-CE with no explicit positive weighting and
+  achieves selectivity. High pos_weight may be the direct cause of
+  over-emission by making every missed positive cost 100x a FP.
+- **#017d — focal + dice, no pos_weight.** Dice loss handles class
+  imbalance inherently (it measures set overlap). Combined with focal
+  to suppress easy negatives. No pos_weight term to distort the
+  gradient balance.
+- **#017e — no weighting at all.** Plain BCE with `pos_weight=1`
+  everywhere. Literature suggests this underperforms on imbalanced
+  tasks, but the scalar model baseline never needed explicit positive
+  weighting — worth establishing as a lower bound.
