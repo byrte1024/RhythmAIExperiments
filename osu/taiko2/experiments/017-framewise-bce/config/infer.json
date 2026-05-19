@@ -20,7 +20,8 @@
             "nms_kernel": 3,
             "stop_hop_bins": 20,
             "min_emit_gap_bins": 1,
-            "top_k_log": 5
+            "top_k_log": 5,
+            "max_notes_per_step": 0
         }
     },
     "input_builder": {

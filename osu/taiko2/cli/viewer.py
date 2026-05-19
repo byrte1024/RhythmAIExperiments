@@ -448,8 +448,7 @@ def _parse_confidence_maps(
     """Parse confidence_map arrays from the step log.
 
     Returns ``{cursor_bin: [conf_0, conf_1, ..., conf_499]}`` for each
-    step that has a ``confidence_map`` key. Used by the framewise
-    heatmap overlay.
+    step that has a ``confidence_map`` key.
     """
     if not path.exists():
         return None
@@ -472,6 +471,29 @@ def _parse_confidence_maps(
     except OSError:
         return None
     return out or None
+
+
+def _parse_decode_threshold(path: Path) -> float:
+    """Read the decode_threshold from the first step log entry."""
+    if not path.exists():
+        return 0.5
+    try:
+        with path.open("r", encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    d = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                t = d.get("decode_threshold")
+                if t is not None:
+                    return float(t)
+    except OSError:
+        pass
+    return 0.5
+
 
 
 # ─────────────────────────── ffmpeg + gif support ────────────────────
@@ -682,9 +704,14 @@ class Viewer:
             conf_maps = _parse_confidence_maps(steps_log_path)
             if conf_maps:
                 self._conf_maps = conf_maps
+                self._conf_cursors_sorted = sorted(conf_maps.keys())
+                self._conf_threshold = _parse_decode_threshold(
+                    steps_log_path,
+                )
                 self.show_conf_heatmap = True
                 print(
                     f"[viewer] loaded {len(conf_maps):,} confidence maps "
+                    f"(threshold={self._conf_threshold}) "
                     f"from {steps_log_path}"
                 )
 
@@ -837,7 +864,7 @@ class Viewer:
 
         if self.show_conf_heatmap and self._conf_maps:
             self._draw_conf_heatmap(y_below)
-            y_below += 14 + 40 + 6   # label + panel + gap
+            y_below += 14 + 80 + 6   # label + graph + gap
 
         if self.show_density and self._density_surface is not None:
             self._draw_density_graph(y_below)
@@ -1137,70 +1164,102 @@ class Viewer:
                 pygame.draw.line(self.screen, (80, 80, 100),
                                  (lx, y), (lx, y + mel_h), 1)
 
-    # ── confidence heatmap ───────────────────────────────────────────
+    # ── confidence graph ────────────────────────────────────────────
 
     def _draw_conf_heatmap(self, y_start: int) -> None:
-        import numpy as np
+        """Line graph of the current AR step's confidence map.
+
+        The "current step" is the step whose cursor_bin is the highest
+        value that is <= the playback cursor. Only that step's
+        confidence map is shown — no merging of overlapping steps.
+        """
+        import bisect
         pygame = self.pygame
-        if not self._conf_maps:
+        if not self._conf_maps or not self._conf_cursors_sorted:
             return
         pad_x = 10
         view_w = self.w - 20
-        heat_h = 40
+        graph_h = 80
         px_per_frame = SCROLL_SPEED * self.zoom * MEL_BIN_MS
         cursor_frame = int(self.now_ms / MEL_BIN_MS)
 
+        # Find current step: highest cursor_bin <= playback cursor.
+        idx = bisect.bisect_right(self._conf_cursors_sorted, cursor_frame) - 1
+        if idx < 0:
+            return
+        step_cursor = self._conf_cursors_sorted[idx]
+        conf_list = self._conf_maps[step_cursor]
+        n_bins = len(conf_list)
+
         label = self.font_small.render(
-            "Confidence Map (C to toggle)", True, DIM_TEXT,
+            f"Confidence (C to toggle) - step cursor {step_cursor}",
+            True, DIM_TEXT,
         )
         self.screen.blit(label, (pad_x, y_start))
         y = y_start + 14
 
         pygame.draw.rect(self.screen, PANEL_BG,
-                         (pad_x, y, view_w, heat_h), border_radius=3)
+                         (pad_x, y, view_w, graph_h), border_radius=3)
 
-        cmap = np.array(_get_conf_colormap(), dtype=np.uint8)
-
-        for pred_cursor, conf_list in self._conf_maps.items():
-            n_bins = len(conf_list)
-            # Each bin in the confidence map covers one mel frame
-            # starting at the cursor position.
-            map_start_frame = pred_cursor
-            map_end_frame = pred_cursor + n_bins
-
-            vis_start = cursor_frame - int((HIT_X - pad_x) / max(px_per_frame, 0.001))
-            vis_end = cursor_frame + int((view_w - HIT_X + pad_x) / max(px_per_frame, 0.001))
-
-            if map_end_frame < vis_start or map_start_frame > vis_end:
-                continue
-
-            clip_lo = max(0, vis_start - map_start_frame)
-            clip_hi = min(n_bins, vis_end - map_start_frame)
-            if clip_hi <= clip_lo:
-                continue
-
-            vals = np.array(conf_list[clip_lo:clip_hi], dtype=np.float32)
-            vals_u8 = np.clip(vals * 255, 0, 255).astype(np.uint8)
-            colors = cmap[vals_u8]                             # (W, 3)
-            strip = np.broadcast_to(
-                colors[np.newaxis, :, :], (heat_h, clip_hi - clip_lo, 3),
-            ).copy()
-            strip_t = strip.transpose(1, 0, 2)                # (W, H, 3)
-            surf = pygame.surfarray.make_surface(strip_t)
-
-            x_offset = int((map_start_frame + clip_lo - vis_start) * px_per_frame)
-            w_px = max(1, int((clip_hi - clip_lo) * px_per_frame))
-            scaled = pygame.transform.scale(surf, (w_px, heat_h))
-            self.screen.blit(scaled, (pad_x + x_offset, y))
-
-        # Cursor line.
-        cx = pad_x + int(
-            (cursor_frame - (cursor_frame - int((HIT_X - pad_x) / max(px_per_frame, 0.001))))
-            * px_per_frame
-        )
+        # Threshold line.
+        threshold = getattr(self, "_conf_threshold", 0.5)
+        thr_y = y + graph_h - int(threshold * graph_h)
         pygame.draw.line(
-            self.screen, (255, 255, 255), (cx, y), (cx, y + heat_h), 1,
+            self.screen, (200, 200, 50),
+            (pad_x, thr_y), (pad_x + view_w, thr_y), 1,
         )
+        thr_label = self.font_small.render(
+            f"T={threshold}", True, (200, 200, 50),
+        )
+        self.screen.blit(thr_label, (pad_x + view_w - 40, thr_y - 12))
+
+        # Build the line: each bin in conf_list maps to absolute frame
+        # step_cursor + i. Convert to screen x.
+        vis_start = cursor_frame - int((HIT_X - pad_x) / max(px_per_frame, 0.001))
+
+        points: list[tuple[int, int]] = []
+        for i, val in enumerate(conf_list):
+            abs_frame = step_cursor + i
+            sx = pad_x + int((abs_frame - vis_start) * px_per_frame)
+            if sx < pad_x - 2 or sx > pad_x + view_w + 2:
+                continue
+            sy = y + graph_h - int(max(0.0, min(1.0, val)) * graph_h)
+            points.append((sx, sy))
+
+        if len(points) >= 2:
+            # Fill under the curve with translucent color.
+            fill_points = (
+                [(points[0][0], y + graph_h)]
+                + points
+                + [(points[-1][0], y + graph_h)]
+            )
+            fill_surf = pygame.Surface(
+                (view_w, graph_h), pygame.SRCALPHA,
+            )
+            shifted = [
+                (px - pad_x, py - y) for px, py in fill_points
+            ]
+            if len(shifted) >= 3:
+                pygame.draw.polygon(
+                    fill_surf, (214, 39, 40, 40), shifted,
+                )
+                self.screen.blit(fill_surf, (pad_x, y))
+            # Draw the line.
+            pygame.draw.lines(
+                self.screen, (214, 39, 40), False, points, 2,
+            )
+
+        # Playback cursor line.
+        cx = pad_x + int((cursor_frame - vis_start) * px_per_frame)
+        pygame.draw.line(
+            self.screen, (255, 255, 255), (cx, y), (cx, y + graph_h), 1,
+        )
+
+        # Y-axis labels.
+        for val, label_text in [(0.0, "0"), (0.5, ".5"), (1.0, "1")]:
+            ly = y + graph_h - int(val * graph_h)
+            lbl = self.font_small.render(label_text, True, (120, 120, 140))
+            self.screen.blit(lbl, (pad_x + 2, ly - 6))
 
     # ── density graph ─────────────────────────────────────────────────
 

@@ -16,11 +16,12 @@
         "config": {
             "__class__": "osu.taiko2.inference.autoregressive.framewise_decoder:FramewiseDecoderConfig",
             "b_pred": 500,
-            "decode_threshold": 0.5,
-            "nms_kernel": 3,
+            "decode_threshold": 0.7,
+            "nms_kernel": 5,
             "stop_hop_bins": 20,
             "min_emit_gap_bins": 1,
-            "top_k_log": 5
+            "top_k_log": 5,
+            "max_notes_per_step": 0
         }
     },
     "input_builder": {

@@ -102,6 +102,7 @@ class FramewiseDecoderConfig(ARDecoderConfig):
     stop_hop_bins: int = 20
     min_emit_gap_bins: int = 1
     top_k_log: int = 5
+    max_notes_per_step: int = 0
 
     def __post_init__(self) -> None:
         if self.b_pred < 1:
@@ -153,10 +154,19 @@ class FramewiseDecoder(ARDecoder[FramewiseDecoderConfig, "FramewiseDetectorOutpu
                 f"got shape {tuple(conf.shape)}"
             )
         cfg = self.config
-        return framewise_decision_from_map(
+        decision = framewise_decision_from_map(
             conf[0],
             decode_threshold=cfg.decode_threshold,
             nms_kernel=cfg.nms_kernel,
             min_emit_gap_bins=cfg.min_emit_gap_bins,
             top_k_log=cfg.top_k_log,
         )
+        if cfg.max_notes_per_step > 0 and len(decision.bin_offsets) > cfg.max_notes_per_step:
+            n = cfg.max_notes_per_step
+            decision = ARDecision(
+                bin_offsets=decision.bin_offsets[:n],
+                confidences=decision.confidences[:n],
+                extras={**decision.extras, "n_emitted": float(n), "truncated": 1.0},
+                confidence_map=decision.confidence_map,
+            )
+        return decision
