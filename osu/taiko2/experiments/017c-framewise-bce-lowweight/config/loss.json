@@ -1,0 +1,8 @@
+{
+    "_comment": "#017c loss: BCE with low pos_weight [3, 8]. At median window (11 GT onsets), raw weight 44.5 clamps to 8 — only 8x asymmetry vs #017's 44x. Shifts the model toward precision by making FPs cost 1/8 of a FN instead of 1/44.",
+    "__class__": "osu.taiko2.training.framewise_bce_loss:FramewiseBCELossConfig",
+    "pos_weight_clamp_min": 3.0,
+    "pos_weight_clamp_max": 8.0,
+    "canonical_threshold": 0.5,
+    "canonical_tolerance_frames": 2
+}
