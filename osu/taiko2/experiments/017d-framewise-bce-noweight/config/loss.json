@@ -1,0 +1,8 @@
+{
+    "_comment": "#017d loss: BCE with pos_weight clamped to [1, 1] — no positive-class upweighting. A false positive costs exactly the same as a false negative. Tests whether symmetric BCE can learn onset detection despite 38:1 class imbalance.",
+    "__class__": "osu.taiko2.training.framewise_bce_loss:FramewiseBCELossConfig",
+    "pos_weight_clamp_min": 1.0,
+    "pos_weight_clamp_max": 1.0,
+    "canonical_threshold": 0.5,
+    "canonical_tolerance_frames": 2
+}

@@ -503,11 +503,17 @@ class FramewiseMetric(Metric):
 _MC_METRIC_NAMES: tuple[str, ...] = (
     "matched_rate", "close_rate", "far_rate", "hallucination_rate",
     "error_mean_ms", "error_median_ms", "density_ratio",
+    "precision", "recall", "f1",
     "matched_rate_at_tol_5", "halluc_rate_at_tol_5",
+    "precision_at_tol_5", "recall_at_tol_5", "f1_at_tol_5",
     "matched_rate_at_tol_10", "halluc_rate_at_tol_10",
+    "precision_at_tol_10", "recall_at_tol_10", "f1_at_tol_10",
     "matched_rate_at_tol_25", "halluc_rate_at_tol_25",
+    "precision_at_tol_25", "recall_at_tol_25", "f1_at_tol_25",
     "matched_rate_at_tol_50", "halluc_rate_at_tol_50",
+    "precision_at_tol_50", "recall_at_tol_50", "f1_at_tol_50",
     "matched_rate_at_tol_100", "halluc_rate_at_tol_100",
+    "precision_at_tol_100", "recall_at_tol_100", "f1_at_tol_100",
 )
 
 

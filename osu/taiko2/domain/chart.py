@@ -895,11 +895,15 @@ def gt_match_metrics(
         matched_rate=0.0, close_rate=0.0, far_rate=0.0,
         hallucination_rate=0.0, error_mean_ms=0.0, error_median_ms=0.0,
         density_ratio=0.0,
+        precision=0.0, recall=0.0, f1=0.0,
     )
     for t in tolerances_ms:
         t_key = _tol_key(t)
         empty[f"matched_rate_at_tol_{t_key}"] = 0.0
         empty[f"halluc_rate_at_tol_{t_key}"] = 0.0
+        empty[f"precision_at_tol_{t_key}"] = 0.0
+        empty[f"recall_at_tol_{t_key}"] = 0.0
+        empty[f"f1_at_tol_{t_key}"] = 0.0
     if n_self == 0 or n_other == 0:
         return empty
 
@@ -929,10 +933,26 @@ def gt_match_metrics(
         error_median_ms=float(np.median(gt_err)),
         density_ratio=ps_density / max(gs_density, 0.01),
     )
+    # Canonical precision/recall/F1 at tol=25ms (same as matched_rate).
+    recall_25 = out["matched_rate"]
+    precision_25 = float((pe_err <= 25).mean()) if n_self > 0 else 0.0
+    f1_25 = (2 * precision_25 * recall_25 / (precision_25 + recall_25)
+             if (precision_25 + recall_25) > 0 else 0.0)
+    out["precision"] = precision_25
+    out["recall"] = recall_25
+    out["f1"] = f1_25
+
     for t in tolerances_ms:
         t_key = _tol_key(t)
-        out[f"matched_rate_at_tol_{t_key}"] = float((gt_err <= t).mean())
+        rec_t = float((gt_err <= t).mean())
+        prec_t = float((pe_err <= t).mean()) if n_self > 0 else 0.0
+        f1_t = (2 * prec_t * rec_t / (prec_t + rec_t)
+                if (prec_t + rec_t) > 0 else 0.0)
+        out[f"matched_rate_at_tol_{t_key}"] = rec_t
         out[f"halluc_rate_at_tol_{t_key}"] = float((pe_err > t).mean())
+        out[f"precision_at_tol_{t_key}"] = prec_t
+        out[f"recall_at_tol_{t_key}"] = rec_t
+        out[f"f1_at_tol_{t_key}"] = f1_t
     return out
 
 
