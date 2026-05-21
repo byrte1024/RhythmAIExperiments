@@ -1,5 +1,5 @@
 {
-    "_comment": "#017d inference: FramewiseDecoder with threshold 0.5, nms_kernel 3. Only checkpoint path differs from #017c.",
+    "_comment": "#017d ensemble inference: runs K+1 predictions at offset cursors and merges. ensemble_k=2 gives 3 predictions at C, C+1, C+2. merge_method=vote with quorum=2 keeps bins that pass threshold in at least 2 of 3 runs. Threshold 0.3 to match the model's compressed confidence range.",
     "checkpoint": "osu/taiko2/runs/exp_017d_framewise_bce_noweight/checkpoints/best.pt",
     "predictor": {
         "__class__": "osu.taiko2.inference.autoregressive.predictor:AutoregressivePredictor",
@@ -12,16 +12,20 @@
         }
     },
     "decoder": {
-        "__class__": "osu.taiko2.inference.autoregressive.framewise_decoder:FramewiseDecoder",
+        "__class__": "osu.taiko2.inference.autoregressive.ensemble_framewise_decoder:EnsembleFramewiseDecoder",
         "config": {
-            "__class__": "osu.taiko2.inference.autoregressive.framewise_decoder:FramewiseDecoderConfig",
+            "__class__": "osu.taiko2.inference.autoregressive.ensemble_framewise_decoder:EnsembleFramewiseDecoderConfig",
             "b_pred": 500,
-            "decode_threshold": 0.25,
-            "nms_kernel": 3,
+            "decode_threshold": 0.05,
+            "nms_kernel": 7,
             "stop_hop_bins": 20,
             "min_emit_gap_bins": 1,
             "top_k_log": 5,
-            "max_notes_per_step": 0
+            "max_notes_per_step": 0,
+            "ensemble_k": 5,
+            "ensemble_stride": 1,
+            "merge_method": "vote",
+            "vote_quorum": 2
         }
     },
     "input_builder": {

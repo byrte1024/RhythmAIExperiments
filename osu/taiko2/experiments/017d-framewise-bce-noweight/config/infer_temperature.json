@@ -1,5 +1,5 @@
 {
-    "_comment": "#017d inference: FramewiseDecoder with threshold 0.5, nms_kernel 3. Only checkpoint path differs from #017c.",
+    "_comment": "#017d temperature inference: each bin that survives NMS gets a random roll using its confidence as probability. temperature=1.0 = raw confidence as probability (0.7 confidence = 70% chance of firing). Lower = more deterministic, higher = more random.",
     "checkpoint": "osu/taiko2/runs/exp_017d_framewise_bce_noweight/checkpoints/best.pt",
     "predictor": {
         "__class__": "osu.taiko2.inference.autoregressive.predictor:AutoregressivePredictor",
@@ -16,12 +16,14 @@
         "config": {
             "__class__": "osu.taiko2.inference.autoregressive.framewise_decoder:FramewiseDecoderConfig",
             "b_pred": 500,
-            "decode_threshold": 0.25,
+            "decode_threshold": 0.3,
             "nms_kernel": 3,
             "stop_hop_bins": 20,
             "min_emit_gap_bins": 1,
             "top_k_log": 5,
-            "max_notes_per_step": 0
+            "max_notes_per_step": 0,
+            "temperature": 1.5,
+            "temperature_seed": 42
         }
     },
     "input_builder": {

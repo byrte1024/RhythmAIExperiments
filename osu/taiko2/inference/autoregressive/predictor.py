@@ -193,6 +193,15 @@ class AutoregressivePredictor(ChartPredictor[AutoregressivePredictorConfig]):
         step = 0
         bin_ms = self._event_sampler.bin_ms
 
+        # Ensemble decoder needs access to model + input builder +
+        # per-chart runtime state to re-run predictions at offsets.
+        if hasattr(self._decoder, "bind_runtime"):
+            self._decoder.bind_runtime(
+                audio_features=features,
+                conditioning=conditioning,
+                device=self._device,
+            )
+
         pbar: Any = None
         try:
             from tqdm.auto import tqdm

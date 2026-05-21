@@ -29,6 +29,8 @@ def framewise_decision_from_map(
     nms_kernel: int,
     min_emit_gap_bins: int,
     top_k_log: int,
+    temperature: float = 0.0,
+    rng: "torch.Generator | None" = None,
 ) -> ARDecision:
     """Threshold-decode a ``(n_bins,)`` confidence map into an
     ``ARDecision``. Shared by both ``FramewiseDecoder`` and
@@ -56,9 +58,19 @@ def framewise_decision_from_map(
     else:
         local_max = torch.ones_like(scores, dtype=torch.bool)
 
-    above = scores > decode_threshold
-    keep_mask = above & local_max
-    n_above_threshold = int(above.sum().item())
+    if temperature > 0.0:
+        # Temperature sampling: treat confidence as probability,
+        # scale by temperature, then roll per bin. Lower temperature
+        # = more deterministic (only high-confidence bins survive).
+        # Higher temperature = more random (low-confidence bins can
+        # pass). temperature=1.0 uses raw confidence as probability.
+        probs = scores.clamp(0.0, 1.0) ** (1.0 / temperature)
+        rolls = torch.rand(probs.shape, device=probs.device)
+        above = (rolls < probs) & local_max
+    else:
+        above = (scores > decode_threshold) & local_max
+    keep_mask = above
+    n_above_threshold = int((scores > decode_threshold).sum().item())
     extras["n_above_threshold"] = float(n_above_threshold)
 
     conf_map = tuple(scores.tolist())
@@ -103,6 +115,8 @@ class FramewiseDecoderConfig(ARDecoderConfig):
     min_emit_gap_bins: int = 1
     top_k_log: int = 5
     max_notes_per_step: int = 0
+    temperature: float = 0.0
+    temperature_seed: int = 42
 
     def __post_init__(self) -> None:
         if self.b_pred < 1:
@@ -142,6 +156,10 @@ class FramewiseDecoder(ARDecoder[FramewiseDecoderConfig, "FramewiseDetectorOutpu
 
     def __init__(self, config: FramewiseDecoderConfig):
         super().__init__(config)
+        self._rng: torch.Generator | None = None
+        if config.temperature > 0.0:
+            self._rng = torch.Generator()
+            self._rng.manual_seed(config.temperature_seed)
 
     def decode(self, output: "FramewiseDetectorOutput", context: ARContext) -> ARDecision:
         conf = getattr(output, "confidence_map", None)
@@ -160,6 +178,8 @@ class FramewiseDecoder(ARDecoder[FramewiseDecoderConfig, "FramewiseDetectorOutpu
             nms_kernel=cfg.nms_kernel,
             min_emit_gap_bins=cfg.min_emit_gap_bins,
             top_k_log=cfg.top_k_log,
+            temperature=cfg.temperature,
+            rng=self._rng,
         )
         if cfg.max_notes_per_step > 0 and len(decision.bin_offsets) > cfg.max_notes_per_step:
             n = cfg.max_notes_per_step

@@ -167,6 +167,8 @@ def assemble_predictor(
     if hasattr(decoder, "bind_model"):
         decoder.bind_model(model)
     input_builder = build_component(spec["input_builder"])
+    if hasattr(decoder, "bind_input_builder"):
+        decoder.bind_input_builder(input_builder)
     audio_sampler = build_component(spec["audio_sampler"])
     event_sampler = build_component(spec["event_sampler"])
 
@@ -210,6 +212,8 @@ def assemble_predictor_with_model(
     if hasattr(decoder, "bind_model"):
         decoder.bind_model(model)
     input_builder = build_component(spec["input_builder"])
+    if hasattr(decoder, "bind_input_builder"):
+        decoder.bind_input_builder(input_builder)
     audio_sampler = build_component(spec["audio_sampler"])
     event_sampler = build_component(spec["event_sampler"])
 
