@@ -1,0 +1,9 @@
+{
+    "_comment": "#017e loss: BCE with pos_weight clamped to [1, 1] (same as #017d). Adds label_smoothing=0.05 — target values become {0.05, 0.95} instead of {0, 1}. Prevents the model from being rewarded for pushing predictions to extreme values on memorized training examples.",
+    "__class__": "osu.taiko2.training.framewise_bce_loss:FramewiseBCELossConfig",
+    "pos_weight_clamp_min": 1.0,
+    "pos_weight_clamp_max": 1.0,
+    "label_smoothing": 0.05,
+    "canonical_threshold": 0.5,
+    "canonical_tolerance_frames": 2
+}

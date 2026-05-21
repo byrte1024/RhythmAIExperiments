@@ -31,6 +31,7 @@ from .framewise_curve_metrics import (
 class FramewiseBCELossConfig(LossConfig):
     pos_weight_clamp_min: float = 10.0
     pos_weight_clamp_max: float = 200.0
+    label_smoothing: float = 0.0
     canonical_threshold: float = 0.5
     canonical_tolerance_frames: int = 2
 
@@ -75,6 +76,13 @@ class FramewiseBCELoss(
         target_binary = target.target_map_binary              # (B, n_bins)
         n_bins = logits.size(-1)
 
+        # Label smoothing: {0, 1} -> {eps, 1-eps}.
+        # Keep original for pos_bin identification.
+        target_raw = target.target_map_binary
+        if cfg.label_smoothing > 0.0:
+            eps = cfg.label_smoothing
+            target_binary = target_binary * (1.0 - 2.0 * eps) + eps
+
         # Per-sample pos_weight.
         n_pos = target.n_gt.float().clamp(min=1.0)
         n_neg = float(n_bins) - target.n_gt.float()
@@ -84,7 +92,7 @@ class FramewiseBCELoss(
         )                                                     # (B,)
 
         # Per-bin weight map: pos_w on positive bins, 1.0 elsewhere.
-        pos_bin = target_binary > 0.5
+        pos_bin = target_raw > 0.5
         weight = torch.where(
             pos_bin,
             pos_w.view(-1, 1).expand_as(logits),
@@ -111,9 +119,9 @@ class FramewiseBCELoss(
         metrics["loss/neg_only"] = neg_mean
         metrics["loss/pos_neg_ratio"] = pos_mean / neg_mean if neg_mean > 0 else 0.0
 
-        # Frame metrics on confidence_map.
+        # Frame metrics on confidence_map (always vs raw binary target).
         conf = output.confidence_map.detach()
-        tb = target_binary.detach()
+        tb = target_raw.detach()
 
         f1_dict = compute_frame_f1_at_tolerance(
             conf, tb,

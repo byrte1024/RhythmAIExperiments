@@ -1,0 +1,47 @@
+{
+  "experiment_id": "017e-framewise-bce-regularized",
+  "run_name": "exp_017e_framewise_bce_regularized",
+  "baseline_experiment": "017d-framewise-bce-noweight",
+
+  "final": {
+    "eval_step": null,
+    "wall_time_s": null,
+    "epoch": null,
+    "metrics": {
+      "val/single/frame/f1_tau_50_tol_2": null,
+      "val/single/frame/precision_tau_50_tol_2": null,
+      "val/single/frame/recall_tau_50_tol_2": null,
+      "val/single/loss": null,
+      "infer_corpus/matched_rate": null,
+      "infer_corpus/hallucination_rate": null,
+      "infer_corpus/density_ratio": null,
+      "infer_corpus/dc_human": null
+    },
+    "baseline": {
+      "val/single/frame/f1_tau_50_tol_2": 0.824,
+      "val/single/frame/precision_tau_50_tol_2": 0.884,
+      "val/single/frame/recall_tau_50_tol_2": 0.772,
+      "val/single/loss": 0.072,
+      "infer_corpus/matched_rate": 0.742,
+      "infer_corpus/hallucination_rate": 0.118,
+      "infer_corpus/density_ratio": 0.925,
+      "infer_corpus/dc_human": 92.1
+    },
+    "deltas": {
+      "val/single/frame/f1_tau_50_tol_2": null,
+      "val/single/frame/precision_tau_50_tol_2": null,
+      "val/single/frame/recall_tau_50_tol_2": null,
+      "val/single/loss": null,
+      "infer_corpus/matched_rate": null,
+      "infer_corpus/hallucination_rate": null,
+      "infer_corpus/density_ratio": null,
+      "infer_corpus/dc_human": null
+    }
+  },
+
+  "per_eval": [],
+
+  "hypothesis_outcome": null,
+
+  "_comment": "Populate `per_eval` with one entry per eval step — include ALL metric keys the trainer emitted, not just the curated subset. The README tables are generated from these arrays. Baseline values are from #017d best AR checkpoint (E9, step 186,066, decode_threshold=0.3) [exp_017d_framewise_bce_noweight, threshold_sweep.json]."
+}

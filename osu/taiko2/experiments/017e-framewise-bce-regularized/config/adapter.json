@@ -1,0 +1,7 @@
+{
+    "_comment": "#017e adapter: identical to #017d.",
+    "__class__": "osu.taiko2.training.framewise_adapter:FramewiseSampleAdapterConfig",
+    "b_pred": 500,
+    "binary_only": true,
+    "max_events_per_window": 100
+}
