@@ -1,0 +1,57 @@
+{
+    "_comment": "#019 inference: FramewiseDecoder with decode_threshold 0.4 (017e optimal threshold at E8 from threshold_sweep.json). n_mels updated to 93 to match coincidence-input model. Checkpoint path exp_019_coincidence_input.",
+    "checkpoint": "osu/taiko2/runs/exp_019_coincidence_input/checkpoints/best.pt",
+    "predictor": {
+        "__class__": "osu.taiko2.inference.autoregressive.predictor:AutoregressivePredictor",
+        "config": {
+            "__class__": "osu.taiko2.inference.autoregressive.predictor:AutoregressivePredictorConfig",
+            "hop_bins_on_stop": 20,
+            "max_events": 10000,
+            "min_onset_gap_bins": 1,
+            "default_kind": "DON"
+        }
+    },
+    "decoder": {
+        "__class__": "osu.taiko2.inference.autoregressive.framewise_decoder:FramewiseDecoder",
+        "config": {
+            "__class__": "osu.taiko2.inference.autoregressive.framewise_decoder:FramewiseDecoderConfig",
+            "b_pred": 500,
+            "decode_threshold": 0.4,
+            "nms_kernel": 3,
+            "stop_hop_bins": 20,
+            "min_emit_gap_bins": 1,
+            "top_k_log": 5,
+            "max_notes_per_step": 0
+        }
+    },
+    "input_builder": {
+        "__class__": "osu.taiko2.inference.autoregressive.builders:DetectionARInputBuilder",
+        "config": {
+            "__class__": "osu.taiko2.inference.autoregressive.builders:DetectionARBuilderConfig",
+            "a_bins": 500,
+            "b_bins": 500,
+            "c_events": 128
+        }
+    },
+    "audio_sampler": {
+        "__class__": "osu.taiko2.samplers.mel:MelSampler",
+        "config": {
+            "__class__": "osu.taiko2.domain.dataset:MelSamplerConfig",
+            "sample_rate": 22000,
+            "n_fft": 2048,
+            "hop_divisor": 200,
+            "n_mels": 93,
+            "f_min": 20.0,
+            "f_max": 8000.0,
+            "power": 2.0,
+            "top_db": 80.0
+        }
+    },
+    "event_sampler": {
+        "__class__": "osu.taiko2.samplers.event:FixedRateEventSampler",
+        "config": {
+            "__class__": "osu.taiko2.domain.dataset:EventSamplerConfig",
+            "divisor": 200
+        }
+    }
+}

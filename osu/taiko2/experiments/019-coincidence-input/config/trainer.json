@@ -1,0 +1,15 @@
+{
+    "_comment": "#019 trainer: identical to #017e. metric_to_watch is frame/f1_τ_50_tol_2 (higher is better). 15 epochs, lr 3e-4, batch 64.",
+    "__class__": "osu.taiko2.domain.training:TrainerConfig",
+    "epochs": 15,
+    "batch_size": 64,
+    "learning_rate": 3e-4,
+    "weight_decay": 0.01,
+    "grad_clip": 1.0,
+    "evals_per_epoch": 4,
+    "amp": false,
+    "num_workers": 0,
+    "seed": 42,
+    "metric_to_watch": "frame/f1_τ_50_tol_2",
+    "metric_lower_is_better": false
+}
