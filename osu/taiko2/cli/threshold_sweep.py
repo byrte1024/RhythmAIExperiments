@@ -219,7 +219,7 @@ def main(argv: list[str] | None = None) -> int:
             if all_comparisons:
                 keys = all_comparisons[0].keys()
                 for k in keys:
-                    vals = [c[k] for c in all_comparisons if isinstance(c[k], (int, float))]
+                    vals = [c[k] for c in all_comparisons if k in c and isinstance(c[k], (int, float))]
                     if vals:
                         agg[k] = float(np.mean(vals))
 
