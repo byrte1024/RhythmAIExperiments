@@ -403,4 +403,15 @@ Saved under `runs/exp_017d_framewise_bce_noweight/eval_{step}/`:
 
 ## Addenda
 
-(None yet.)
+> *2026-05-23: ``threshold_sweep.json`` and all threshold sweep numbers
+> in ``README.md`` are **INVALID**. The sweep script
+> (``cli/threshold_sweep.py``) called ``gt.compare(pred_chart)``
+> instead of ``pred_chart.compare(gt)``, flipping self/other in
+> ``_gt_match_metrics``. This reversed matched_rate (became precision-
+> like), hallucination_rate (became miss-like), and density_ratio
+> (became GT/pred instead of pred/GT). All claims about "best
+> threshold at E9/tau=0.3" are based on inverted metrics. The bug
+> was fixed in ``threshold_sweep.py``; the sweep must be re-run to
+> obtain correct numbers. The per-eval AR corpus metrics (from
+> ``InferCorpusHook``) are NOT affected — ``corpus.py`` correctly
+> calls ``generated.compare(gt_chart)``.*

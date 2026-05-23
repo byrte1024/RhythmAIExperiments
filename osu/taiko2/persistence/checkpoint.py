@@ -305,7 +305,20 @@ class Checkpoint:
         counters.
         """
         if model is not None:
-            model.load_state_dict(self.model_state)
+            state = self.model_state
+            # Handle torch.compile mismatch: checkpoint has clean keys
+            # but the model is OptimizedModule expecting _orig_mod. prefix,
+            # or vice versa.
+            model_keys = set(model.state_dict().keys())
+            ckpt_keys = set(state.keys())
+            if model_keys and ckpt_keys and model_keys != ckpt_keys:
+                needs_prefix = any(k.startswith("_orig_mod.") for k in model_keys)
+                has_prefix = any(k.startswith("_orig_mod.") for k in ckpt_keys)
+                if needs_prefix and not has_prefix:
+                    state = {f"_orig_mod.{k}": v for k, v in state.items()}
+                elif has_prefix and not needs_prefix:
+                    state = {k.removeprefix("_orig_mod."): v for k, v in state.items()}
+            model.load_state_dict(state)
         if optimizer is not None and self.optimizer_state is not None:
             optimizer.load_state_dict(self.optimizer_state)
         if scheduler is not None and self.scheduler_state is not None:

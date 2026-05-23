@@ -196,12 +196,18 @@ Everything below comes from real measurements, not predictions.
 ## Results summary
 
 The run trained for 10 evals across 2.5 epochs (steps 20,674 --
-206,740). **First framewise model to beat
-[#007](../007-time-stretch/) on AR F1.** Post-run threshold sweep
-found the optimal operating point at E9 (step 186,066) with
-`decode_threshold=0.3`: `matched_rate` 0.742 (vs #007's 0.703),
-`hallucination_rate` 0.118 (vs #007's 0.172), `density_ratio` 0.925
-(vs #007's 0.865) [threshold_sweep.json].
+206,740).
+
+> **Amendment 2026-05-23:** The threshold sweep results in
+> `threshold_sweep.json` and all derived claims in this README are
+> **INVALID**. The sweep script called `gt.compare(pred_chart)`
+> instead of `pred_chart.compare(gt)`, flipping all comparison
+> metrics (matched_rate, hallucination_rate, density_ratio). The
+> per-eval AR corpus metrics (from InferCorpusHook during training)
+> are NOT affected and remain correct. The sweep must be re-run
+> with the fixed script. All specific numbers citing
+> `threshold_sweep.json` (E9/tau=0.3, matched_rate 0.742, etc.)
+> should be disregarded until re-run.
 
 Symmetric BCE (pos_weight=1) produced the opposite training
 trajectory from all prior 017 runs: **precision came first** (0.92

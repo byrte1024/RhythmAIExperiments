@@ -66,11 +66,15 @@ def main(argv: list[str] | None = None) -> int:
                    help="Comma-separated thresholds to sweep.")
     p.add_argument("--nms-kernels", default=None,
                    help="Comma-separated NMS kernels to sweep (optional, cross-product with thresholds).")
+    p.add_argument("--max-notes", default=None,
+                   help="Comma-separated max_notes_per_step values to sweep (0=unlimited). Cross-product with thresholds and NMS.")
     p.add_argument("--fraction", type=float, default=0.1)
     p.add_argument("--seed", type=int, default=42)
     p.add_argument("--device", default="cuda")
     p.add_argument("--experiment-dir", type=Path, default=None,
                    help="Experiment directory — saves sweep results to {dir}/threshold_sweep.json.")
+    p.add_argument("--debug-steps", type=Path, default=None,
+                   help="Directory to save per-step AR logs for debugging. Creates {dir}/{ckpt}_{tau}_{nms}_{max}.jsonl per config.")
     args = p.parse_args(argv)
 
     ds_root = args.datasets_dir / args.dataset
@@ -82,6 +86,9 @@ def main(argv: list[str] | None = None) -> int:
     nms_kernels = [3]  # default
     if args.nms_kernels:
         nms_kernels = [int(k) for k in args.nms_kernels.split(",")]
+    max_notes_list = [0]  # default
+    if args.max_notes:
+        max_notes_list = [int(m) for m in args.max_notes.split(",")]
 
     device = torch.device(args.device)
     spec = json.loads(args.config.read_text(encoding="utf-8"))
@@ -146,16 +153,24 @@ def main(argv: list[str] | None = None) -> int:
         model.eval()
 
         for nms_k in nms_kernels:
-          for tau in thresholds:
+          for max_n in max_notes_list:
+           for tau in thresholds:
             # Build a fresh predictor with this threshold.
             spec_copy = copy.deepcopy(spec)
             decoder_cfg = spec_copy["decoder"]["config"]
             decoder_cfg["decode_threshold"] = tau
             decoder_cfg["nms_kernel"] = nms_k
+            decoder_cfg["max_notes_per_step"] = max_n
+
+            step_log_path = None
+            if args.debug_steps:
+                args.debug_steps.mkdir(parents=True, exist_ok=True)
+                step_log_path = args.debug_steps / f"{ckpt_label}_tau{tau:.2f}_nms{nms_k}_max{max_n}.jsonl"
 
             from ..inference.spec import assemble_predictor_with_model
             predictor = assemble_predictor_with_model(
                 spec=spec_copy, model=model, device=device,
+                per_step_log_path=step_log_path,
             )
 
             t0 = time.time()
@@ -165,7 +180,7 @@ def main(argv: list[str] | None = None) -> int:
                 from tqdm.auto import tqdm
                 chart_iter = tqdm(
                     selected,
-                    desc=f"tau={tau:.2f} nms={nms_k}",
+                    desc=f"tau={tau:.2f} nms={nms_k} max={max_n}",
                     unit="chart",
                     leave=False,
                 )
@@ -183,7 +198,7 @@ def main(argv: list[str] | None = None) -> int:
                 pred_chart = predictor.predict_from_features(
                     gt, conditioning=gt_cond, features=features,
                 )
-                comparison = gt.compare(pred_chart)
+                comparison = pred_chart.compare(gt)
                 comp_dict = {
                     "cmp/" + f.name: getattr(comparison, f.name)
                     for f in comparison.__dataclass_fields__.values()
@@ -218,6 +233,7 @@ def main(argv: list[str] | None = None) -> int:
                 "checkpoint": ckpt_label,
                 "threshold": tau,
                 "nms_kernel": nms_k,
+                "max_notes_per_step": max_n,
                 "n_charts": len(all_comparisons),
                 "elapsed_s": round(elapsed, 1),
                 "ar_precision": round(ar_prec, 4),
@@ -228,10 +244,9 @@ def main(argv: list[str] | None = None) -> int:
             results.append(row)
 
             print(
-                f"  tau={tau:.2f}  nms={nms_k}  "
-                f"AR P={ar_prec:.4f}  R={mr:.4f}  F1={ar_f1:.4f}  "
-                f"dr={dr:.3f}  hr={agg.get('cmp/hallucination_rate',0):.4f}  "
-                f"dc={agg.get('cmp/dc_human',0):.1f}  "
+                f"  tau={tau:.2f}  nms={nms_k}  max={max_n}  "
+                f"mr={mr:.4f}  hr={agg.get('cmp/hallucination_rate',0):.4f}  "
+                f"dr={dr:.3f}  dc={agg.get('cmp/dc_human',0):.1f}  "
                 f"err={agg.get('cmp/error_median_ms',0):.1f}ms  "
                 f"eps={agg.get('pred/events_per_sec',0):.2f}  "
                 f"({elapsed:.1f}s)"
@@ -239,15 +254,16 @@ def main(argv: list[str] | None = None) -> int:
 
     # Summary table.
     print()
-    print(f"{'ckpt':>12s}  {'tau':>5s}  {'nms':>4s}  {'AR P':>7s}  {'AR R':>7s}  {'AR F1':>7s}  "
-          f"{'dr':>6s}  {'hr':>7s}  {'dc':>6s}  {'err_ms':>7s}  {'eps':>5s}  {'gmet':>6s}  {'gpk':>4s}")
-    print("-" * 100)
+    print(f"{'ckpt':>12s}  {'tau':>5s}  {'nms':>4s}  {'max':>4s}  {'AR mr':>7s}  {'AR hr':>7s}  "
+          f"{'dr':>6s}  {'dc':>6s}  {'err_ms':>7s}  {'eps':>5s}  {'gmet':>6s}  {'gpk':>4s}")
+    print("-" * 95)
     for r in results:
         print(
             f"{r['checkpoint']:>12s}  {r['threshold']:5.2f}  {r['nms_kernel']:4d}  "
-            f"{r['ar_precision']:7.4f}  {r['ar_recall']:7.4f}  {r['ar_f1']:7.4f}  "
-            f"{r.get('cmp/density_ratio',0):6.3f}  "
+            f"{r['max_notes_per_step']:4d}  "
+            f"{r.get('cmp/matched_rate',0):7.4f}  "
             f"{r.get('cmp/hallucination_rate',0):7.4f}  "
+            f"{r.get('cmp/density_ratio',0):6.3f}  "
             f"{r.get('cmp/dc_human',0):6.1f}  "
             f"{r.get('cmp/error_median_ms',0):7.1f}  "
             f"{r.get('pred/events_per_sec',0):5.2f}  "
