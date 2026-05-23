@@ -1,0 +1,11 @@
+{
+  "experiment_id": "018-baselines",
+  "run_name": "n/a (benchmark only)",
+  "baseline_experiment": "017e-framewise-bce-regularized",
+
+  "final": {},
+  "per_eval": [],
+  "hypothesis_outcome": null,
+
+  "_comment": "No training run. Results are per-backend JSON files: benchmark_mapperatorinator.json, benchmark_librosa.json, benchmark_madmom.json."
+}
