@@ -1,5 +1,5 @@
 {
-    "_comment": "#019 data: identical to #017e EXCEPT use_coincidence=true. Enables loading and concatenating the 13-row coincidence summary alongside the 80-band mel spectrogram.",
+    "_comment": "#019 data: identical to #017e. Coincidence features are baked into the dataset via CoincidenceMelSampler during prepare_dataset, not at training time.",
     "__class__": "osu.taiko2.data_samplers.detection:TaikoDetectionSamplerConfig",
     "batch_size": 64,
     "a_bins": 500,
@@ -11,6 +11,5 @@
     "allowed_overlap_back": 0,
     "subsample": 1,
     "split_ratios": [["train", 0.9], ["val", 0.1]],
-    "split_seed": 42,
-    "use_coincidence": true
+    "split_seed": 42
 }

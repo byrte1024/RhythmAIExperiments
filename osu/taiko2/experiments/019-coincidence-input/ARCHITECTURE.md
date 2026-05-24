@@ -85,52 +85,51 @@ or broadband), complementing the IDF importance signal with timbre information.
 
 ### Coincidence preprocessing
 
-The coincidence summary is precomputed once per track before training
-and stored on disk at the same time resolution as the mel spectrogram
-(hop_length=110, 5 ms/frame).
+The coincidence summary is computed by the ``CoincidenceMelSampler``
+(``samplers/coincidence_mel.py``) at dataset build time. The sampler
+runs the mel pipeline and the coincidence pipeline in sequence,
+concatenates the outputs, and writes a single ``(93, T)`` float16
+feature file to disk. The same sampler is used at inference time to
+produce ``(93, T)`` features from raw audio.
 
-**Pipeline:**
+**Pipeline (executed inside ``CoincidenceMelSampler._transform``):**
 
 1. **Mel spectrogram** — same parameters as above (22 000 Hz, FFT 2048,
-   hop 110, 80 bands, 20-8000 Hz, power=2.0, top_db=80).
+   hop 110, 80 bands, 20-8000 Hz, power=2.0, top_db=80). Produces
+   rows 0-79.
 2. **Spectral flux** — half-wave rectified first-order difference along
-   the time axis of the mel power spectrogram. Captures onset energy at
-   each frame.
+   the time axis of the mel power spectrogram.
 3. **Spike detection** — local maxima of the flux signal above an
-   adaptive threshold (median + k * IQR, computed per track). Each spike
-   is a candidate onset with an associated flux magnitude (spike energy).
-4. **IDF weighting** — for each spike, compute an inverse-document-frequency
-   score based on how often its spectral fingerprint appears across the
-   full training corpus. Common, metronomic-beat-like fingerprints receive
-   low IDF; rare or acoustically unusual fingerprints receive high IDF.
-   IDF values are normalized to [0, 1] per track.
+   adaptive threshold (median + k * MAD, per-band).
+4. **IDF weighting** — per-spike inverse-document-frequency score based
+   on how many bands fire simultaneously. Common patterns receive low
+   IDF; rare patterns receive high IDF. Normalized to [0, 1] per track.
 5. **LSH coloring** — locality-sensitive hashing maps each onset's
-   spectral fingerprint to an RGB color triplet. Similar fingerprints
-   map to similar colors. Metronomic beats with nearly identical spectral
-   content cluster to the same color; chart highlights with varied content
-   scatter.
-6. **13-row summary** — at each time frame, the four per-spike signals
-   (LSH R, LSH G, LSH B, IDF) and the spike energy are written to rows
-   0-4. The spectral flux signal is partitioned into 8 frequency-band
-   groups; per-band averages are written to rows 5-12. Frames that are
-   not detected spike peaks receive zero in rows 0-4 and the
-   band-average values in rows 5-12.
-7. **On-disk format** — float16, shape (13, T), same T as mel. Stored
-   alongside mel features in `features/` as a separate `.npy` file.
+   band co-activation pattern to an RGB color triplet via stable random
+   projections.
+6. **13-row summary** — rows 80-92 of the output:
+   - Rows 80-82: LSH R, G, B (onset type identity)
+   - Row 83: IDF population (onset importance)
+   - Row 84: total spike energy
+   - Rows 85-92: 8 frequency-band-group averages of spike confidence
 
-**Temporal alignment:** hop_length=110 is identical for mel and
-coincidence. The T dimension matches exactly; channels can be
-concatenated along the frequency axis without resampling.
+**On-disk format:** single ``features/{stem}.npy`` file per chart,
+shape ``(93, T)`` float16. The first 80 rows are mel; the last 13
+are coincidence summary. No separate coincidence files — everything
+is in one array.
 
-**Preparation CLI:**
+**Dataset preparation:**
 
 ```bash
-osu/taiko2/.venv/bin/python -m osu.taiko2.cli.prepare_coincidence \
-    --dataset taiko2_v1
+osu/taiko2/.venv/bin/python -m osu.taiko2.cli.prepare_dataset \
+    --name taiko2_v1_coin \
+    --charts-dir /path/to/osz/packs/ \
+    --audio-sampler coincidence_mel
 ```
 
-Must be run before training. Output: one `coincidence.npy` file per
-chart in `features/`.
+**Temporal alignment:** hop_length=110 is shared between mel and
+coincidence (both computed from the same waveform in the same sampler
+call). The T dimension is identical by construction.
 
 ### Event encoding
 
@@ -518,7 +517,7 @@ Saved under `runs/exp_019_coincidence_input/eval_{step}/`:
 
 ## Dataset
 
-- Name: taiko2_v1
+- Name: taiko2_v1_coin
 - Source: osu!taiko .osz packs
 - Mel bands: 80 + 13 coincidence rows = 93 input channels
 - GT positive rate: 2.54% of bins

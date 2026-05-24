@@ -98,7 +98,6 @@ class TaikoDetectionSamplerConfig(DataSamplerConfig):
     # Cannot override `split`, `split_ratios`, `split_seed`, or
     # `split_overrides` itself (those define the split mechanism).
     split_overrides: dict[str, dict[str, object]] = field(default_factory=dict)
-    use_coincidence: bool = False
 
     def __post_init__(self):
         if self.allowed_overlap_forward is None:
@@ -213,7 +212,6 @@ class TaikoDetectionSampler(
         self._chart_ids: list[str] = []
         self._chart_entries: list[ChartEntry] = []     # manifest row per chart
         self._features: list[np.ndarray] = []          # mmap'd (F, T)
-        self._coin_features: list[np.ndarray | None] = []  # mmap'd (13, T) or None
         self._event_bins: list[np.ndarray] = []        # (N,) int32
         self._event_times_ms: list[np.ndarray] = []    # (N,) int32
         self._event_kind_ids: list[np.ndarray] = []    # (N,) uint8
@@ -253,7 +251,6 @@ class TaikoDetectionSampler(
         self._chart_ids.clear()
         self._chart_entries.clear()
         self._features.clear()
-        self._coin_features.clear()
         self._event_bins.clear()
         self._event_times_ms.clear()
         self._event_kind_ids.clear()
@@ -285,14 +282,6 @@ class TaikoDetectionSampler(
                 continue
             try:
                 features = np.load(feat_path, mmap_mode="r")
-                coin_features = None
-                if cfg.use_coincidence:
-                    from pathlib import PureWindowsPath
-                    stem = PureWindowsPath(entry.features_path).stem
-                    coin_path = ds_root / "coincidence" / f"{stem}.npy"
-                    if not coin_path.exists():
-                        continue
-                    coin_features = np.load(coin_path, mmap_mode="r")
                 with np.load(evt_path) as data:
                     bins = np.asarray(data["bins"], dtype=np.int64)
                     times = np.asarray(data["times_ms"], dtype=np.int64)
@@ -304,7 +293,6 @@ class TaikoDetectionSampler(
             self._chart_ids.append(entry.chart_id)
             self._chart_entries.append(entry)
             self._features.append(features)
-            self._coin_features.append(coin_features)
             self._event_bins.append(bins)
             self._event_times_ms.append(times)
             self._event_kind_ids.append(kinds)
@@ -602,21 +590,11 @@ class TaikoDetectionSampler(
         times_ms = ctx.event_times_ms
         kind_ids = ctx.event_kind_ids
         features = self._features[ctx.chart_idx]
-        coin = self._coin_features[ctx.chart_idx]
         cursor = ctx.cursor_bin
         ei = ctx.event_idx
 
         audio_past = self._extract_audio(features, cursor - cfg.a_bins, cursor)
         audio_future = self._extract_audio(features, cursor, cursor + cfg.b_bins)
-        if coin is not None:
-            coin_past = self._extract_audio(coin, cursor - cfg.a_bins, cursor)
-            coin_future = self._extract_audio(coin, cursor, cursor + cfg.b_bins)
-            audio_past = np.concatenate(
-                [audio_past.astype(np.float32), coin_past.astype(np.float32)], axis=0,
-            )
-            audio_future = np.concatenate(
-                [audio_future.astype(np.float32), coin_future.astype(np.float32)], axis=0,
-            )
 
         past_events, past_mask = self._extract_events(
             bins, times_ms, kind_ids,

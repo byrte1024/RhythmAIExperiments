@@ -539,3 +539,49 @@ class TestEndToEnd:
         grad_count = sum(1 for p in model.parameters() if p.grad is not None)
         assert grad_count > 0
         assert result.loss.isfinite()
+
+    def test_coincidence_input_channels(self) -> None:
+        """Model with n_mels=77 (64+13) must accept (B, 77, T) input."""
+        n_coin = 13
+        base_mels = 8
+        total = base_mels + n_coin  # 21
+        a_bins = 64
+        b_bins = 64
+        cfg = FramewiseDetectorConfig(
+            n_mels=total, d_model=16, n_layers=1, n_heads=2,
+            c_events=4, cond_dim=8,
+            a_bins=a_bins, b_bins=b_bins, b_pred=b_bins,
+            head_channels=16, head_kernels=(3, 3),
+            head_pos_embed_dim=8, head_cursor_proj_dim=8,
+            head_dropout=0.0,
+        )
+        model = FramewiseDetector(cfg)
+        T_mel = a_bins + b_bins
+        inp = EventEmbeddingInput(
+            mel=torch.randn(2, total, T_mel),
+            event_offsets=torch.full((2, cfg.c_events), -50, dtype=torch.long),
+            event_mask=torch.zeros(2, cfg.c_events, dtype=torch.bool),
+            conditioning=torch.randn(2, 3),
+        )
+        out = model.predict(inp)
+        assert out.logits.shape == (2, b_bins)
+        assert out.confidence_map.shape == (2, b_bins)
+
+    def test_coincidence_mel_mismatch_fails(self) -> None:
+        """Model expects n_mels channels — feeding wrong count must fail."""
+        cfg = FramewiseDetectorConfig(
+            n_mels=21, d_model=16, n_layers=1, n_heads=2,
+            c_events=4, cond_dim=8,
+            a_bins=64, b_bins=64, b_pred=64,
+            head_channels=16, head_kernels=(3, 3),
+            head_pos_embed_dim=8, head_cursor_proj_dim=8,
+        )
+        model = FramewiseDetector(cfg)
+        inp = EventEmbeddingInput(
+            mel=torch.randn(2, 8, 128),  # 8 channels, model expects 21
+            event_offsets=torch.full((2, 4), -50, dtype=torch.long),
+            event_mask=torch.zeros(2, 4, dtype=torch.bool),
+            conditioning=torch.randn(2, 3),
+        )
+        with pytest.raises(RuntimeError):
+            model.predict(inp)

@@ -122,7 +122,7 @@ def _pick_chart_indices(
 def _features_for(
     sampler: TaikoDetectionSampler, chart_index: int, ds_root: Path,
 ) -> np.ndarray:
-    """Load the mel features the dataset stores on disk for this chart.
+    """Load the features the dataset stores on disk for this chart.
     `features_path` in the manifest is relative to the dataset root."""
     manifest = sampler._manifest
     if manifest is None:

@@ -65,7 +65,9 @@ input from 80 to 93.
     `hallucination_rate` 0.172, `density_ratio` 0.865, `dc_human` 92.0
     [exp_007_time_stretch, step 413,480].
 - Coincidence feature implementation: `domain/coincidence.py`.
-- Preparation CLI: `osu/taiko2/cli/prepare_coincidence.py`.
+- Audio sampler: `samplers/coincidence_mel.py`
+  (`CoincidenceMelSampler` — produces ``(93, T)`` on disk and at
+  inference time).
 
 ---
 <!--
@@ -137,18 +139,23 @@ Reference: [#017e](../017e-framewise-bce-regularized/) E8/tau=0.40 sweep
 
 Baseline: [#017e -- framewise BCE regularized](../017e-framewise-bce-regularized/).
 
-Two changes:
+Three changes:
 
-- `config/model.json` — `n_mels: 80 -> 93`. Widens the Conv stem input
-  from 80 to 93 channels. All other model params unchanged.
-- `config/data.json` — `use_coincidence: true` (new field). Instructs
-  the data sampler to load and concatenate the precomputed 13-row
-  coincidence summary with the 80-band mel at sample time.
+- **New dataset `taiko2_v1_coin`** — built with
+  `CoincidenceMelSampler` (``--audio-sampler coincidence_mel``).
+  Features on disk are ``(93, T)`` float16 — the standard 80-band
+  mel concatenated with the 13-row coincidence summary. Both the
+  data sampler and the inference sampler consume this format
+  natively with no special flags.
+- `config/model.json` — `n_mels: 80 -> 93`. Widens the Conv stem
+  input from 80 to 93 channels. All other model params unchanged.
+- `config/infer.json` — `audio_sampler` changed from `MelSampler`
+  to `CoincidenceMelSampler` so live inference also produces
+  ``(93, T)`` features from audio.
 
-All other configs (loss.json, trainer.json, adapter.json, infer.json
-trunk) are identical to #017e except the checkpoint path and
-decode_threshold in infer.json (0.3 -> 0.4, the #017e optimal threshold
-from threshold_sweep.json).
+All other configs (loss.json, trainer.json, adapter.json, data.json)
+are identical to #017e except the checkpoint path and
+decode_threshold in infer.json (0.4, the #017e optimal threshold).
 
 Two new benchmarks added vs #017e:
 - `no_coincidence`: rows 80-92 zeroed at eval time. Measures how much
@@ -156,24 +163,31 @@ Two new benchmarks added vs #017e:
 - `no_mel`: rows 0-79 zeroed at eval time. Measures whether coincidence
   alone is informative.
 
-Requires precomputed coincidence features. Run before training:
+Dataset preparation:
 
 ```bash
-osu/taiko2/.venv/bin/python -m osu.taiko2.cli.prepare_coincidence \
-    --dataset taiko2_v1
+# Build dataset with coincidence features baked in
+osu/taiko2/.venv/bin/python -m osu.taiko2.cli.prepare_dataset \
+    --name taiko2_v1_coin \
+    --charts-dir /home/drore/charts/repos/BeatDetector/osu/taiko/charts/ \
+    --audio-sampler coincidence_mel
+
+# Fetch star ratings + engagement
+osu/taiko2/.venv/bin/python -m osu.taiko2.cli.fetch_stars --dataset taiko2_v1_coin
+osu/taiko2/.venv/bin/python -m osu.taiko2.cli.fetch_engagement --dataset taiko2_v1_coin
 ```
 
 ## Run config
 
 - Run name: `exp_019_coincidence_input`
 - Config snapshots: [`config/`](./config/)
-- Dataset: `taiko2_v1`, split `train` / `val`
+- Dataset: `taiko2_v1_coin` (93-channel features: 80 mel + 13 coincidence)
 - Command:
   ```bash
   osu/taiko2/.venv/bin/python -m osu.taiko2.cli.train \
       --run-name exp_019_coincidence_input \
       --config-dir osu/taiko2/experiments/019-coincidence-input/config \
-      --dataset taiko2_v1 --device cuda \
+      --dataset taiko2_v1_coin --device cuda \
       --time-stretch-prob 0.3 --time-stretch-max-scale 1.4 \
       --train-noaug-fraction 0.05 \
       --benchmarks all \
