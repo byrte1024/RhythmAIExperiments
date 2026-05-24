@@ -115,8 +115,13 @@ class MelFreqJitter(_RngAug):
         shift = self._rng.randint(-self.max_shift, self.max_shift)
         if shift == 0:
             return sample
-        past = np.roll(sample.audio_past, shift, axis=0)
-        fut = np.roll(sample.audio_future, shift, axis=0)
+        # Roll only the mel rows (first 80); leave coincidence rows
+        # (81+) untouched so the two feature spaces don't cross.
+        n_mel = 80
+        past = sample.audio_past.copy()
+        fut = sample.audio_future.copy()
+        past[:n_mel] = np.roll(past[:n_mel], shift, axis=0)
+        fut[:n_mel] = np.roll(fut[:n_mel], shift, axis=0)
         return replace(sample, audio_past=past, audio_future=fut)
 
 

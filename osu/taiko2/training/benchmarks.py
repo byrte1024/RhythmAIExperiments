@@ -291,6 +291,51 @@ BENCH_CONTEXT_TIME_SHIFTED = BenchmarkMode(
 )
 
 
+# ─────────────────────────── coincidence benchmarks ──────────────────
+
+
+def _xform_no_coincidence(
+    s: TaikoDetectionSample, rng: random.Random,
+) -> TaikoDetectionSample | None:
+    """Zero the last 13 rows of audio (coincidence channels)."""
+    n_mel = 80
+    if s.audio_past.shape[0] <= n_mel:
+        return s
+    past = s.audio_past.copy()
+    future = s.audio_future.copy()
+    past[n_mel:, :] = 0.0
+    future[n_mel:, :] = 0.0
+    return replace(s, audio_past=past, audio_future=future)
+
+
+def _xform_no_mel(
+    s: TaikoDetectionSample, rng: random.Random,
+) -> TaikoDetectionSample | None:
+    """Zero the first 80 rows of audio (mel channels), keep coincidence."""
+    n_mel = 80
+    if s.audio_past.shape[0] <= n_mel:
+        return replace(
+            s,
+            audio_past=np.zeros_like(s.audio_past),
+            audio_future=np.zeros_like(s.audio_future),
+        )
+    past = s.audio_past.copy()
+    future = s.audio_future.copy()
+    past[:n_mel, :] = 0.0
+    future[:n_mel, :] = 0.0
+    return replace(s, audio_past=past, audio_future=future)
+
+
+BENCH_NO_COINCIDENCE = BenchmarkMode(
+    name="no_coincidence", transform=_xform_no_coincidence,
+    description="Zero coincidence rows (last 13); mel intact.",
+)
+BENCH_NO_MEL = BenchmarkMode(
+    name="no_mel", transform=_xform_no_mel,
+    description="Zero mel rows (first 80); coincidence intact.",
+)
+
+
 DEFAULT_BENCHMARKS: tuple[BenchmarkMode, ...] = (
     BENCH_NORMAL,
     BENCH_NO_AUDIO,
@@ -302,6 +347,8 @@ DEFAULT_BENCHMARKS: tuple[BenchmarkMode, ...] = (
     BENCH_METRONOME,
     BENCH_ADVANCED_METRONOME,
     BENCH_CONTEXT_TIME_SHIFTED,
+    BENCH_NO_COINCIDENCE,
+    BENCH_NO_MEL,
 )
 
 
