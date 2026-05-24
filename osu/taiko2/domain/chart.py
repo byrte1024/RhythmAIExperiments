@@ -40,6 +40,8 @@ TN_SCALE: int = 8
 # Seed TaikoNation's published results used for the dc_rand baseline.
 TN_SEED: int = 2009000042
 
+RESOLUTION_FPS: tuple[int, ...] = (1, 2, 4, 10, 20, 50, 100, 200)
+
 
 # ─────────────────────────── metrics payload ──────────────────────────
 
@@ -118,6 +120,7 @@ class ChartMetrics:
     #                          noise / tail). Paired with
     #                          `gap_peak_count` as the "raw vs mass"
     #                          summary per chart.
+    gap_histogram_dense: tuple[int, ...] = ()
     gap_peak_count: int = 0
     gap_peak_falloff: float = 0.0
     gap_random_distance: float = 0.0
@@ -131,6 +134,7 @@ class ChartMetrics:
     # rules as the gap histogram. `ratio_metronome_distance` uses the
     # same formula; a chart whose peak ratio is 2.0 has distance from
     # "all ratios are 2.0". Values outside the log2 range are dropped.
+    ratio_histogram_dense: tuple[int, ...] = ()
     ratio_peak_count: int = 0
     ratio_peak_falloff: float = 0.0
     ratio_random_distance: float = 0.0
@@ -140,6 +144,22 @@ class ChartMetrics:
 
 
 # ─────────────────────────── comparison payload ───────────────────────
+
+@dataclass(frozen=True, slots=True)
+class ResolutionComparison:
+    """Onset comparison at a single temporal resolution (FPS)."""
+    fps: int
+    frame_ms: float
+    n_frames: int
+    # Binary: does frame have >= 1 onset?
+    binary_precision: float
+    binary_recall: float
+    binary_f1: float
+    # Integer: onset count per frame
+    count_mae: float
+    count_corr: float
+    count_accuracy: float
+
 
 @dataclass(frozen=True, slots=True)
 class ChartComparison:
@@ -155,13 +175,34 @@ class ChartComparison:
     error_median_ms: float
     density_ratio: float      # self events/s ÷ other events/s
 
+    # Standard precision / recall / F1 at 25 ms tolerance
+    precision: float = 0.0
+    recall: float = 0.0
+    f1: float = 0.0
+
     # TaikoNation pattern-space (self vs other)
-    over_pspace_self: float
-    over_pspace_other: float
-    hi_pspace: float          # |self ∩ other| / |other| for 8-step patterns
-    dc_human: float           # direct per-step match rate (%)
-    oc_human: float           # ±1-step buffered match rate (%)
-    dc_rand: float            # random baseline vs self (%)
+    over_pspace_self: float = 0.0
+    over_pspace_other: float = 0.0
+    hi_pspace: float = 0.0    # |self ∩ other| / |other| for 8-step patterns
+    dc_human: float = 0.0     # direct per-step match rate (%)
+    oc_human: float = 0.0     # ±1-step buffered match rate (%)
+    dc_rand: float = 0.0      # random baseline vs self (%)
+
+    # Distributional comparison (derived from both charts' ChartMetrics)
+    gap_hist_tvd: float = 0.0
+    ratio_hist_tvd: float = 0.0
+    density_corr: float = 0.0
+    density_mae: float = 0.0
+    silence_overlap_f1: float = 0.0
+    dense_overlap_f1: float = 0.0
+    gap_peak_iou: float = 0.0
+    ioi_mean_ratio: float = 0.0
+    ioi_std_ratio: float = 0.0
+    streak_fraction_delta: float = 0.0
+    bpm_ratio: float = 0.0
+
+    # Multi-resolution comparison
+    fps_comparisons: tuple[ResolutionComparison, ...] = ()
 
 
 # ─────────────────────────── Chart class ──────────────────────────────
@@ -271,12 +312,12 @@ class Chart:
         bpm, dominant_ioi = _estimate_bpm_from_ioi(gaps_pos)
 
         # Gap-distribution + ratio-distribution shape (peak list + counts
-        # + TVDs from uniform and delta-at-mode).
+        # + TVDs from uniform and delta-at-mode + raw histogram).
         (
-            gap_peaks, gap_pc, gap_pf, gap_rd, gap_md,
+            gap_peaks, gap_pc, gap_pf, gap_rd, gap_md, gap_hist_raw,
         ) = _compute_gap_distribution(gaps_pos)
         (
-            ratio_peaks, ratio_pc, ratio_pf, ratio_rd, ratio_md,
+            ratio_peaks, ratio_pc, ratio_pf, ratio_rd, ratio_md, ratio_hist_raw,
         ) = _compute_ratio_distribution(gaps_pos)
 
         # Self pattern-space
@@ -316,12 +357,14 @@ class Chart:
             estimated_bpm=bpm,
             dominant_ioi_ms=dominant_ioi,
             over_pspace_self=round(over_self, 3),
+            gap_histogram_dense=gap_hist_raw,
             gap_peak_count=gap_pc,
             gap_peak_falloff=gap_pf,
             gap_random_distance=gap_rd,
             gap_metronome_distance=gap_md,
             gap_peaks=gap_peaks,
             gap_peak_mass_total=sum(int(c) for _, c in gap_peaks),
+            ratio_histogram_dense=ratio_hist_raw,
             ratio_peak_count=ratio_pc,
             ratio_peak_falloff=ratio_pf,
             ratio_random_distance=ratio_rd,
@@ -340,6 +383,11 @@ class Chart:
 
         gt = _gt_match_metrics(self_ms, other_ms)
         tn = _tn_pattern_metrics(self_ms, other_ms, rng_seed=seed)
+        fps_cmp = _compute_resolution_comparisons(self_ms, other_ms)
+
+        self_metrics = self.calculate_metrics()
+        other_metrics = other.calculate_metrics()
+        dist = _distributional_comparison(self_metrics, other_metrics)
 
         return ChartComparison(
             n_self=len(self_ms),
@@ -351,12 +399,27 @@ class Chart:
             error_mean_ms=gt["error_mean_ms"],
             error_median_ms=gt["error_median_ms"],
             density_ratio=gt["density_ratio"],
+            precision=gt["precision"],
+            recall=gt["recall"],
+            f1=gt["f1"],
             over_pspace_self=tn["over_pspace_self"],
             over_pspace_other=tn["over_pspace_other"],
             hi_pspace=tn["hi_pspace"],
             dc_human=tn["dc_human"],
             oc_human=tn["oc_human"],
             dc_rand=tn["dc_rand"],
+            gap_hist_tvd=dist["gap_hist_tvd"],
+            ratio_hist_tvd=dist["ratio_hist_tvd"],
+            density_corr=dist["density_corr"],
+            density_mae=dist["density_mae"],
+            silence_overlap_f1=dist["silence_overlap_f1"],
+            dense_overlap_f1=dist["dense_overlap_f1"],
+            gap_peak_iou=dist["gap_peak_iou"],
+            ioi_mean_ratio=dist["ioi_mean_ratio"],
+            ioi_std_ratio=dist["ioi_std_ratio"],
+            streak_fraction_delta=dist["streak_fraction_delta"],
+            bpm_ratio=dist["bpm_ratio"],
+            fps_comparisons=fps_cmp,
         )
 
     # ── Save / load ───────────────────────────────────────────────────
@@ -690,75 +753,71 @@ def _histogram_shape(
 
 def _compute_gap_distribution(
     gaps_pos: np.ndarray,
-) -> "tuple[tuple[tuple[float, int], ...], int, float, float, float]":
-    """``(peaks, peak_count, falloff, random_distance, metronome_distance)``
-    over a fixed ``[0, 2000) ms`` histogram at 10-ms resolution. Peaks
-    are ``(bucket_center_ms, count)`` sorted by count desc."""
+) -> "tuple[tuple[tuple[float, int], ...], int, float, float, float, tuple[int, ...]]":
+    """``(peaks, peak_count, falloff, random_distance, metronome_distance,
+    histogram_dense)`` over a fixed ``[0, 2000) ms`` histogram at 10-ms
+    resolution. Peaks are ``(bucket_center_ms, count)`` sorted by count
+    desc. ``histogram_dense`` is the raw 200-bucket count array."""
     if len(gaps_pos) < 2:
-        return (), 0, 0.0, 0.0, 0.0
+        return (), 0, 0.0, 0.0, 0.0, ()
     kept = gaps_pos[(gaps_pos >= 0) & (gaps_pos < _GAP_HIST_CAP_MS)]
     if len(kept) < 2:
-        return (), 0, 0.0, 0.0, 0.0
+        return (), 0, 0.0, 0.0, 0.0, ()
     bucket_idx = (kept.astype(np.int64) // _GAP_HIST_BUCKET_MS)
     h = np.bincount(bucket_idx, minlength=_GAP_HIST_N_BUCKETS).astype(np.float64)
-    return _histogram_shape(
+    shape = _histogram_shape(
         h,
         bucket_center_fn=lambda i: i * _GAP_HIST_BUCKET_MS + _GAP_HIST_BUCKET_MS / 2,
     )
+    return (*shape, tuple(int(x) for x in h))
 
 
 def _compute_ratio_distribution(
     gaps_pos: np.ndarray,
-) -> "tuple[tuple[tuple[float, int], ...], int, float, float, float]":
+) -> "tuple[tuple[tuple[float, int], ...], int, float, float, float, tuple[int, ...]]":
     """Same analysis applied to the log2 ratio distribution
     ``ratio[i] = gaps_pos[i] / gaps_pos[i-1]``. Bucketing is log2 so
     doubling (2x) and halving (0.5x) are equidistant from 1x.
 
     Returns peaks as ``(bucket_center_ratio, count)`` in LINEAR ratio
     units (already exponentiated from log2), sorted by count desc.
+    ``histogram_dense`` is the raw 200-bucket count array.
     """
     if len(gaps_pos) < 2:
-        return (), 0, 0.0, 0.0, 0.0
+        return (), 0, 0.0, 0.0, 0.0, ()
     # Pairwise ratios. Need 2 consecutive positive gaps → 3+ onsets.
     denom = gaps_pos[:-1]
     numer = gaps_pos[1:]
     valid = (denom > 0) & (numer > 0)
     if not valid.any():
-        return (), 0, 0.0, 0.0, 0.0
+        return (), 0, 0.0, 0.0, 0.0, ()
     ratios = (numer[valid] / denom[valid]).astype(np.float64)
     ratios = ratios[np.isfinite(ratios) & (ratios > 0)]
     if len(ratios) < 2:
-        return (), 0, 0.0, 0.0, 0.0
+        return (), 0, 0.0, 0.0, 0.0, ()
 
     log2r = np.log2(ratios)
     in_range = (log2r >= _RATIO_LOG2_MIN) & (log2r < _RATIO_LOG2_MAX)
     log2r = log2r[in_range]
     if len(log2r) < 2:
-        return (), 0, 0.0, 0.0, 0.0
+        return (), 0, 0.0, 0.0, 0.0, ()
     bucket_idx = ((log2r - _RATIO_LOG2_MIN) / _RATIO_LOG2_WIDTH).astype(np.int64)
     bucket_idx = np.clip(bucket_idx, 0, _RATIO_N_BUCKETS - 1)
     h = np.bincount(bucket_idx, minlength=_RATIO_N_BUCKETS).astype(np.float64)
 
     def _center(i: int) -> float:
-        # Center of bucket i in log2 space → linear ratio.
         log2_center = _RATIO_LOG2_MIN + (i + 0.5) * _RATIO_LOG2_WIDTH
         return float(2.0 ** log2_center)
 
-    # Anchor "pure metronome" at the 1.0x bucket (log2 ratio = 0) —
-    # i.e. "all consecutive gaps are the same, so every ratio = 1".
     one_bucket = int((0.0 - _RATIO_LOG2_MIN) / _RATIO_LOG2_WIDTH)
-    # Smoothing + merge radii are wider than the gap histogram. Ratios
-    # 1.01 and 0.95 are musically indistinguishable from a metronomic
-    # 1.0, so the smoothing window has to cover ±10% ratio; separate
-    # rhythmic categories (0.67x, 1.0x, 1.33x) are ~33% apart so the
-    # merge radius sits at ~23% to keep them distinct.
-    return _histogram_shape(
+    shape = _histogram_shape(
         h,
         bucket_center_fn=_center,
         metronome_ref_bucket=one_bucket,
         smooth_radius=5,
         min_separation=10,
     )
+    return (*shape, tuple(int(x) for x in h))
 
 
 def _events_to_binary(
@@ -860,6 +919,219 @@ def _dc_random(binary: np.ndarray, seed: int) -> float:
         dtype=np.int32, count=len(binary),
     )
     return float((binary == noise).sum() / len(binary) * 100.0)
+
+
+# ─────────────────────── distributional comparison ─────────────────────
+
+
+def _hist_tvd(a: tuple[int, ...], b: tuple[int, ...]) -> float:
+    """Total Variation Distance between two count histograms."""
+    if not a and not b:
+        return 0.0
+    n = max(len(a), len(b))
+    ha = np.zeros(n, dtype=np.float64)
+    hb = np.zeros(n, dtype=np.float64)
+    if a:
+        ha[: len(a)] = a
+    if b:
+        hb[: len(b)] = b
+    sa, sb = ha.sum(), hb.sum()
+    if sa < 1 or sb < 1:
+        return 1.0 if (sa >= 1 or sb >= 1) else 0.0
+    return round(0.5 * float(np.abs(ha / sa - hb / sb).sum()), 4)
+
+
+def _density_corr_mae(
+    a: tuple[int, ...], b: tuple[int, ...],
+) -> tuple[float, float]:
+    """Pearson r and MAE of two per-second density timelines."""
+    n = min(len(a), len(b))
+    if n < 2:
+        return 0.0, 0.0
+    aa = np.asarray(a[:n], dtype=np.float64)
+    ba = np.asarray(b[:n], dtype=np.float64)
+    mae = round(float(np.abs(aa - ba).mean()), 4)
+    if aa.std() < 1e-12 and ba.std() < 1e-12:
+        return 1.0, mae
+    if aa.std() < 1e-12 or ba.std() < 1e-12:
+        return 0.0, mae
+    corr = round(float(np.corrcoef(aa, ba)[0, 1]), 4)
+    return corr, mae
+
+
+def _region_overlap_f1(
+    pred: tuple[tuple[float, float], ...],
+    gt: tuple[tuple[float, float], ...],
+    tolerance_s: float = 1.0,
+) -> float:
+    """F1 of region overlap. A predicted region matches a GT region if
+    their temporal overlap exceeds ``tolerance_s``."""
+    if not gt and not pred:
+        return 1.0
+    if not gt or not pred:
+        return 0.0
+    matched_gt = 0
+    matched_pred: set[int] = set()
+    for gs, ge in gt:
+        best_overlap = 0.0
+        best_idx = -1
+        for j, (ps, pe) in enumerate(pred):
+            overlap = max(0.0, min(ge, pe) - max(gs, ps))
+            if overlap > best_overlap:
+                best_overlap = overlap
+                best_idx = j
+        if best_overlap >= tolerance_s:
+            matched_gt += 1
+            matched_pred.add(best_idx)
+    rec = matched_gt / len(gt)
+    prec = len(matched_pred) / len(pred)
+    if prec + rec < 1e-12:
+        return 0.0
+    return round(2.0 * prec * rec / (prec + rec), 4)
+
+
+def _gap_peak_iou(
+    a: tuple[tuple[float, int], ...],
+    b: tuple[tuple[float, int], ...],
+    tolerance_ms: float = 20.0,
+) -> float:
+    """Jaccard overlap of gap-peak positions (within ``tolerance_ms``)."""
+    if not a and not b:
+        return 1.0
+    if not a or not b:
+        return 0.0
+    b_used: set[int] = set()
+    matched = 0
+    for ac, _ in a:
+        for j, (bc, _) in enumerate(b):
+            if j not in b_used and abs(ac - bc) <= tolerance_ms:
+                matched += 1
+                b_used.add(j)
+                break
+    union = len(a) + len(b) - matched
+    return round(matched / max(union, 1), 4)
+
+
+def _safe_ratio(a: float | None, b: float | None) -> float:
+    """``a / b`` clamped to [0, 10], 0.0 when either is missing or zero."""
+    if a is None or b is None or b == 0:
+        return 0.0
+    return round(min(a / b, 10.0), 4)
+
+
+def _distributional_comparison(
+    self_metrics: ChartMetrics, other_metrics: ChartMetrics,
+) -> dict[str, float]:
+    """Compute distributional / structural comparison fields from
+    both charts' ``ChartMetrics``."""
+    gap_tvd = _hist_tvd(
+        self_metrics.gap_histogram_dense, other_metrics.gap_histogram_dense,
+    )
+    ratio_tvd = _hist_tvd(
+        self_metrics.ratio_histogram_dense, other_metrics.ratio_histogram_dense,
+    )
+    d_corr, d_mae = _density_corr_mae(
+        self_metrics.density_timeline, other_metrics.density_timeline,
+    )
+    silence_f1 = _region_overlap_f1(
+        self_metrics.silence_regions, other_metrics.silence_regions,
+    )
+    dense_f1 = _region_overlap_f1(
+        self_metrics.dense_regions, other_metrics.dense_regions,
+    )
+    peak_iou = _gap_peak_iou(
+        self_metrics.gap_peaks, other_metrics.gap_peaks,
+    )
+    return dict(
+        gap_hist_tvd=gap_tvd,
+        ratio_hist_tvd=ratio_tvd,
+        density_corr=d_corr,
+        density_mae=d_mae,
+        silence_overlap_f1=silence_f1,
+        dense_overlap_f1=dense_f1,
+        gap_peak_iou=peak_iou,
+        ioi_mean_ratio=_safe_ratio(
+            self_metrics.ioi_mean_ms, other_metrics.ioi_mean_ms,
+        ),
+        ioi_std_ratio=_safe_ratio(
+            self_metrics.ioi_std_ms, other_metrics.ioi_std_ms,
+        ),
+        streak_fraction_delta=round(
+            self_metrics.streak_event_fraction
+            - other_metrics.streak_event_fraction, 4,
+        ),
+        bpm_ratio=_safe_ratio(
+            self_metrics.estimated_bpm, other_metrics.estimated_bpm,
+        ),
+    )
+
+
+# ─────────────────────── resolution comparison ─────────────────────────
+
+
+def _resolution_comparison(
+    self_ms: np.ndarray, other_ms: np.ndarray, fps: int,
+) -> ResolutionComparison:
+    """Compare two onset lists binned at a given FPS."""
+    frame_ms = 1000.0 / fps
+    max_time = 0.0
+    if len(self_ms):
+        max_time = max(max_time, float(self_ms.max()))
+    if len(other_ms):
+        max_time = max(max_time, float(other_ms.max()))
+    n_frames = int(max_time / frame_ms) + 1 if max_time > 0 else 0
+    if n_frames == 0:
+        return ResolutionComparison(
+            fps=fps, frame_ms=round(frame_ms, 3), n_frames=0,
+            binary_precision=0.0, binary_recall=0.0, binary_f1=0.0,
+            count_mae=0.0, count_corr=0.0, count_accuracy=1.0,
+        )
+
+    pred_counts = np.zeros(n_frames, dtype=np.int64)
+    gt_counts = np.zeros(n_frames, dtype=np.int64)
+    if len(self_ms):
+        idx = np.clip((self_ms / frame_ms).astype(np.int64), 0, n_frames - 1)
+        np.add.at(pred_counts, idx, 1)
+    if len(other_ms):
+        idx = np.clip((other_ms / frame_ms).astype(np.int64), 0, n_frames - 1)
+        np.add.at(gt_counts, idx, 1)
+
+    pred_bin = pred_counts > 0
+    gt_bin = gt_counts > 0
+    tp = int((pred_bin & gt_bin).sum())
+    fp = int((pred_bin & ~gt_bin).sum())
+    fn = int((~pred_bin & gt_bin).sum())
+    prec = tp / max(tp + fp, 1)
+    rec = tp / max(tp + fn, 1)
+    f1 = (2.0 * prec * rec / (prec + rec)) if (prec + rec) > 0 else 0.0
+
+    count_mae = float(np.abs(pred_counts - gt_counts).mean())
+    count_accuracy = float((pred_counts == gt_counts).mean())
+    if n_frames >= 2 and pred_counts.std() > 1e-12 and gt_counts.std() > 1e-12:
+        count_corr = float(np.corrcoef(
+            pred_counts.astype(np.float64),
+            gt_counts.astype(np.float64),
+        )[0, 1])
+    else:
+        count_corr = 1.0 if pred_counts.std() < 1e-12 and gt_counts.std() < 1e-12 else 0.0
+
+    return ResolutionComparison(
+        fps=fps, frame_ms=round(frame_ms, 3), n_frames=n_frames,
+        binary_precision=round(prec, 4),
+        binary_recall=round(rec, 4),
+        binary_f1=round(f1, 4),
+        count_mae=round(count_mae, 4),
+        count_corr=round(count_corr, 4),
+        count_accuracy=round(count_accuracy, 4),
+    )
+
+
+def _compute_resolution_comparisons(
+    self_ms: np.ndarray,
+    other_ms: np.ndarray,
+    fps_values: tuple[int, ...] = RESOLUTION_FPS,
+) -> tuple[ResolutionComparison, ...]:
+    return tuple(_resolution_comparison(self_ms, other_ms, fps) for fps in fps_values)
 
 
 def _gt_match_metrics(

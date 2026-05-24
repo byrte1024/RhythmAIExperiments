@@ -17,7 +17,7 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 
-from ..domain.chart import gt_match_metrics
+from ..domain.chart import RESOLUTION_FPS, gt_match_metrics, _resolution_comparison
 from ..domain.metrics import Metric, MetricConfig, MetricInput
 from .framewise_curve_metrics import (
     compute_auc_pr,
@@ -115,6 +115,16 @@ class FramewiseMetric(Metric):
             self._fn_good[tk] = 0
             self._fn_miss[tk] = 0
             self._fn_total[tk] = 0
+        # FPS resolution mini-chart metrics per threshold.
+        self._fps_sums: dict[str, float] = {}
+        self._fps_counts: dict[str, int] = {}
+        for tau in cfg.thresholds:
+            tk = _tau_key(tau)
+            for fps in RESOLUTION_FPS:
+                for m in _FPS_MINI_METRICS:
+                    k = f"mini/τ{tk}/fps_{fps}/{m}"
+                    self._fps_sums[k] = 0.0
+                    self._fps_counts[k] = 0
 
     # ── update ────────────────────────────────────────────────────────
 
@@ -363,6 +373,13 @@ class FramewiseMetric(Metric):
                 self._mc_sums[k] = self._mc_sums.get(k, 0.0) + val
                 self._mc_counts[k] = self._mc_counts.get(k, 0) + 1
 
+            for fps in RESOLUTION_FPS:
+                rc = _resolution_comparison(pred_ms, gt_ms, fps)
+                for m in _FPS_MINI_METRICS:
+                    k = f"mini/τ{tau_key}/fps_{fps}/{m}"
+                    self._fps_sums[k] = self._fps_sums.get(k, 0.0) + getattr(rc, m)
+                    self._fps_counts[k] = self._fps_counts.get(k, 0) + 1
+
     # ── compute ───────────────────────────────────────────────────────
 
     def compute(self) -> dict[str, float]:
@@ -459,6 +476,11 @@ class FramewiseMetric(Metric):
             c = max(self._mc_counts.get(k, 1), 1)
             out[f"frame/{k}"] = s / c
 
+        # FPS resolution mini-chart.
+        for k, s in self._fps_sums.items():
+            c = max(self._fps_counts.get(k, 1), 1)
+            out[f"frame/{k}"] = s / c
+
         return out
 
     def _compute_calibration(self) -> dict[str, object]:
@@ -498,6 +520,12 @@ class FramewiseMetric(Metric):
 
 
 # ─────────────────────────── helpers ─────────────────────────────────
+
+
+_FPS_MINI_METRICS: tuple[str, ...] = (
+    "binary_precision", "binary_recall", "binary_f1",
+    "count_mae", "count_corr", "count_accuracy",
+)
 
 
 _MC_METRIC_NAMES: tuple[str, ...] = (

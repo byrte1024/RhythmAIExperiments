@@ -25,7 +25,13 @@ from typing import Any, Callable
 import numpy as np
 
 from ..data_samplers import TaikoDetectionSampler
-from ..domain.chart import Chart, ChartComparison, ChartMetrics
+from ..domain.chart import (
+    RESOLUTION_FPS,
+    Chart,
+    ChartComparison,
+    ChartMetrics,
+    ResolutionComparison,
+)
 from ..domain.inference import ChartPredictor, Conditioning
 from .autoregressive.predictor import AutoregressivePredictor
 
@@ -87,8 +93,15 @@ _SUMMARY_COMPARISON_FIELDS: tuple[str, ...] = (
     "matched_rate", "close_rate", "far_rate", "hallucination_rate",
     "error_mean_ms", "error_median_ms",
     "density_ratio",
+    "precision", "recall", "f1",
     "over_pspace_self", "over_pspace_other", "hi_pspace",
     "dc_human", "oc_human",
+    "gap_hist_tvd", "ratio_hist_tvd",
+    "density_corr", "density_mae",
+    "silence_overlap_f1", "dense_overlap_f1",
+    "gap_peak_iou",
+    "ioi_mean_ratio", "ioi_std_ratio",
+    "streak_fraction_delta", "bpm_ratio",
 )
 
 # Everything in ChartMetrics that the CSV should carry — same as the
@@ -98,10 +111,12 @@ _METRIC_CSV_FIELDS: tuple[str, ...] = tuple(
     if f.name not in {
         "density_timeline", "silence_regions", "dense_regions",
         "ioi_histogram_10ms", "gap_peaks", "ratio_peaks",
+        "gap_histogram_dense", "ratio_histogram_dense",
     }
 )
 _COMPARISON_CSV_FIELDS: tuple[str, ...] = tuple(
     f.name for f in fields(ChartComparison)
+    if f.name != "fps_comparisons"
 )
 
 
@@ -198,6 +213,43 @@ def _write_csv(
         writer.writerows(rows)
 
 
+_FPS_METRIC_NAMES: tuple[str, ...] = (
+    "binary_precision", "binary_recall", "binary_f1",
+    "count_mae", "count_corr", "count_accuracy",
+)
+
+
+def _aggregate_fps_comparisons(
+    cmp_rows_raw: list[ChartComparison],
+) -> dict[str, Any]:
+    """Roll up per-chart ResolutionComparison tuples into a single
+    summary with percentile stats per (fps, metric) pair."""
+    out: dict[str, Any] = {"fps_values": list(RESOLUTION_FPS), "fields": {}}
+    for fps in RESOLUTION_FPS:
+        for metric in _FPS_METRIC_NAMES:
+            vals: list[float] = []
+            for cmp_ in cmp_rows_raw:
+                for rc in cmp_.fps_comparisons:
+                    if rc.fps == fps:
+                        vals.append(float(getattr(rc, metric)))
+                        break
+            if not vals:
+                continue
+            arr = np.asarray(vals, dtype=np.float64)
+            q = np.percentile(arr, [0, 25, 50, 75, 95, 100])
+            out["fields"][f"{metric}_at_{fps}fps"] = {
+                "n": int(arr.size),
+                "min":    round(float(q[0]), 4),
+                "p25":    round(float(q[1]), 4),
+                "median": round(float(q[2]), 4),
+                "p75":    round(float(q[3]), 4),
+                "p95":    round(float(q[4]), 4),
+                "max":    round(float(q[5]), 4),
+                "mean":   round(float(arr.mean()), 4),
+            }
+    return out
+
+
 def _mean_of_field(rows: list[dict[str, Any]], name: str) -> float | None:
     vals: list[float] = []
     for r in rows:
@@ -256,19 +308,19 @@ def _run_one_mode(
     features_cache: dict[int, np.ndarray],
     gt_charts: dict[int, Chart],
     conditioning_for: Callable[[Chart], Conditioning],
-    save_bundles: bool,
-    save_per_chart_jsons: bool,
     progress: bool,
     tolerances_ms: tuple[int, ...] = (),
-) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[int, ChartComparison]]]:
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[ChartComparison], list[dict[int, ChartComparison]]]:
     gen_dir = mode_dir / "generated"
     metrics_dir = mode_dir / "metrics"
     cmp_dir = mode_dir / "comparisons"
-    for d in (gen_dir, metrics_dir, cmp_dir):
+    steps_dir = mode_dir / "steps"
+    for d in (gen_dir, metrics_dir, cmp_dir, steps_dir):
         d.mkdir(parents=True, exist_ok=True)
 
     metric_rows: list[dict[str, Any]] = []
     cmp_rows: list[dict[str, Any]] = []
+    cmp_raw: list[ChartComparison] = []
     multi_tol: list[dict[int, ChartComparison]] = []
 
     it: Any = selected
@@ -283,24 +335,25 @@ def _run_one_mode(
         gt_chart = gt_charts[i]
         features = features_cache[i]
         cond = conditioning_for(gt_chart)
-        generated = predictor.predict_from_features(
-            gt_chart, conditioning=cond, features=features,
-        )
         chart_id = sampler.chart_ids()[i]
         stem = _safe_chart_stem(chart_id) or f"chart_{i}"
 
-        if save_bundles:
-            generated.save(gen_dir / f"{stem}.zip")
+        step_log_path = steps_dir / f"{stem}.jsonl"
+        generated = predictor.predict_from_features(
+            gt_chart, conditioning=cond, features=features,
+            step_log_path=step_log_path,
+        )
+
+        generated.save(gen_dir / f"{stem}.zip")
 
         metrics = generated.calculate_metrics()
-        if save_per_chart_jsons:
-            _dump_json(metrics_dir / f"{stem}.json", asdict(metrics))
+        _dump_json(metrics_dir / f"{stem}.json", asdict(metrics))
         metric_rows.append(_metrics_to_csv_row(chart_id, metrics))
 
         cmp_ = generated.compare(gt_chart)
-        if save_per_chart_jsons:
-            _dump_json(cmp_dir / f"{stem}.json", asdict(cmp_))
+        _dump_json(cmp_dir / f"{stem}.json", asdict(cmp_))
         cmp_rows.append(_comparison_to_csv_row(chart_id, cmp_))
+        cmp_raw.append(cmp_)
 
         if tolerances_ms:
             from .multi_tolerance_compare import compare_at_tolerances
@@ -308,7 +361,7 @@ def _run_one_mode(
                 compare_at_tolerances(generated, gt_chart, tolerances_ms),
             )
 
-    return metric_rows, cmp_rows, multi_tol
+    return metric_rows, cmp_rows, cmp_raw, multi_tol
 
 
 # ─────────────────────────── entry point ─────────────────────────────
@@ -399,17 +452,28 @@ def run_infer_corpus(
                 f"known: {sorted(mode_cond_map)!r}"
             )
         mode_dir = out_dir / f"{mode}_cond"
-        metric_rows, cmp_rows, multi_tol = _run_one_mode(
+        metric_rows, cmp_rows, cmp_raw, multi_tol = _run_one_mode(
             predictor=predictor, mode_dir=mode_dir, mode_label=mode,
             selected=selected, sampler=val_sampler,
             features_cache=features_cache, gt_charts=gt_charts,
             conditioning_for=mode_cond_map[mode],
-            save_bundles=config.save_bundles,
-            save_per_chart_jsons=config.save_per_chart_jsons,
             progress=progress,
             tolerances_ms=config.tolerances_ms,
         )
         per_mode_rows[mode] = (metric_rows, cmp_rows)
+
+        # FPS resolution summary.
+        if cmp_raw:
+            fps_summary = _aggregate_fps_comparisons(cmp_raw)
+            _dump_json(mode_dir / "fps_summary.json", fps_summary)
+            for fps in RESOLUTION_FPS:
+                for metric in ("binary_f1", "count_mae", "count_corr"):
+                    key = f"{metric}_at_{fps}fps"
+                    stats = fps_summary["fields"].get(key)
+                    if stats:
+                        flat_summary[
+                            f"corpus/{mode}_cond_cmp/{key}_median"
+                        ] = stats["median"]
 
         if config.tolerances_ms and multi_tol:
             from .multi_tolerance_compare import (

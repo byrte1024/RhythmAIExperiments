@@ -16,7 +16,7 @@ from .beatmap import (
     RelativeOnset,
     Track,
 )
-from .chart import Chart, ChartComparison, ChartMetrics
+from .chart import Chart, ChartComparison, ChartMetrics, ResolutionComparison
 from .inference import ChartPredictor, Conditioning, PredictorConfig
 from .dataset import (
     AudioSampler,
@@ -89,6 +89,7 @@ __all__ = [
     "PostSampleAugmentation",
     "PreSampleAugmentation",
     "RelativeOnset",
+    "ResolutionComparison",
     "RunSpec",
     "SampleToModelAdapter",
     "Track",

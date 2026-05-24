@@ -125,6 +125,7 @@ class AutoregressivePredictor(ChartPredictor[AutoregressivePredictorConfig]):
         *,
         conditioning: Conditioning,
         features: np.ndarray,
+        step_log_path: Path | None = None,
     ) -> Chart:
         """Run the AR loop on pre-computed audio features — skips the
         `_extract_features` audio-decode pass.
@@ -137,9 +138,12 @@ class AutoregressivePredictor(ChartPredictor[AutoregressivePredictorConfig]):
         ``chart.audio`` is ignored (may be None). ``features`` must be a
         ``(n_mels, T)`` float32 array matching the training-time mel
         sampler config — this is not validated at runtime.
+
+        ``step_log_path`` overrides ``config.per_step_log_path`` for
+        this call only. Pass a per-chart path from the corpus runner.
         """
         max_bin = int(round(features.shape[1] * self._frames_to_bins_ratio()))
-        log_fh = self._open_step_log()
+        log_fh = self._open_step_log(override_path=step_log_path)
         try:
             past_onsets = self._run_ar_loop(
                 features=features,
@@ -315,8 +319,8 @@ class AutoregressivePredictor(ChartPredictor[AutoregressivePredictorConfig]):
 
     # ── logging helper ────────────────────────────────────────────────
 
-    def _open_step_log(self):
-        path = self.config.per_step_log_path
+    def _open_step_log(self, override_path: Path | None = None):
+        path = override_path or self.config.per_step_log_path
         if path is None:
             return None
         path = Path(path)

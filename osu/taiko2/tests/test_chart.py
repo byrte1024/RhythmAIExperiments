@@ -199,19 +199,19 @@ class TestGapDistribution:
 
     def test_empty(self):
         assert _compute_gap_distribution(np.zeros(0, dtype=np.float64)) == (
-            (), 0, 0.0, 0.0, 0.0,
+            (), 0, 0.0, 0.0, 0.0, (),
         )
 
     def test_single_gap(self):
         # One gap isn't enough to form a histogram — treated as empty.
         assert _compute_gap_distribution(np.array([250.0])) == (
-            (), 0, 0.0, 0.0, 0.0,
+            (), 0, 0.0, 0.0, 0.0, (),
         )
 
     def test_pure_metronome(self):
         # All 200 gaps at 250 ms → one bucket holds everything.
         gaps = np.full(200, 250.0)
-        peaks, pc, pf, rd, md = _compute_gap_distribution(gaps)
+        peaks, pc, pf, rd, md, _ = _compute_gap_distribution(gaps)
         assert pc == 1
         # Only one peak → no next peak to decay into → 0.0 by convention.
         assert pf == 0.0
@@ -226,7 +226,7 @@ class TestGapDistribution:
         # 100 gaps at 125 ms, 100 gaps at 250 ms. Buckets 12 and 25.
         # They're >= 30 ms apart so the min-separation filter keeps both.
         gaps = np.concatenate([np.full(100, 125.0), np.full(100, 250.0)])
-        peaks, pc, pf, rd, md = _compute_gap_distribution(gaps)
+        peaks, pc, pf, rd, md, _ = _compute_gap_distribution(gaps)
         assert pc == 2
         assert pf == pytest.approx(1.0)
         assert md == pytest.approx(0.5, abs=1e-6)
@@ -241,7 +241,7 @@ class TestGapDistribution:
             np.full(200, 200.0),       # bucket 20 → center 205
             np.full(100, 400.0),       # bucket 40 → center 405
         ])
-        peaks, pc, pf, rd, md = _compute_gap_distribution(gaps)
+        peaks, pc, pf, rd, md, _ = _compute_gap_distribution(gaps)
         assert pc == 3
         # Ratios: 200/400=0.5, 100/200=0.5 → mean 0.5.
         assert pf == pytest.approx(0.5)
@@ -254,7 +254,7 @@ class TestGapDistribution:
             np.full(500, 250.0),
             np.array([130.0, 310.0, 470.0, 670.0, 990.0]),
         ])
-        _, pc, _, _, _ = _compute_gap_distribution(gaps)
+        _, pc, _, _, _, _ = _compute_gap_distribution(gaps)
         assert pc == 1
 
     def test_minimum_separation_merges_close_peaks(self):
@@ -262,7 +262,7 @@ class TestGapDistribution:
             np.full(300, 100.0),
             np.full(200, 110.0),
         ])
-        _, pc, _, _, _ = _compute_gap_distribution(gaps)
+        _, pc, _, _, _, _ = _compute_gap_distribution(gaps)
         assert pc == 1
 
     def test_gaps_above_cap_excluded(self):
@@ -279,20 +279,20 @@ class TestRatioDistribution:
 
     def test_empty(self):
         assert _compute_ratio_distribution(np.zeros(0, dtype=np.float64)) == (
-            (), 0, 0.0, 0.0, 0.0,
+            (), 0, 0.0, 0.0, 0.0, (),
         )
 
     def test_too_few_gaps(self):
         # Two onsets → one gap → no ratios → empty.
         assert _compute_ratio_distribution(np.array([250.0])) == (
-            (), 0, 0.0, 0.0, 0.0,
+            (), 0, 0.0, 0.0, 0.0, (),
         )
 
     def test_pure_metronome_all_ratios_at_one(self):
         # Constant-gap chart → every consecutive ratio = 1.0.
         # Metronome distance must be 0 (all mass in the 1.0x bucket).
         gaps = np.full(200, 250.0)
-        peaks, pc, pf, rd, md = _compute_ratio_distribution(gaps)
+        peaks, pc, pf, rd, md, _ = _compute_ratio_distribution(gaps)
         assert pc == 1
         assert md == pytest.approx(0.0, abs=1e-6)
         assert pf == 0.0
@@ -314,7 +314,7 @@ class TestRatioDistribution:
             + [10.0 * (2 ** i) for i in range(8)],
             dtype=np.float64,
         )
-        peaks, pc, pf, rd, md = _compute_ratio_distribution(gaps)
+        peaks, pc, pf, rd, md, _ = _compute_ratio_distribution(gaps)
         assert pc == 1
         # Peak should be at ratio 2.0x (ratio bucket for log2=1).
         assert peaks[0][0] == pytest.approx(2.0, rel=0.05)
@@ -324,7 +324,7 @@ class TestRatioDistribution:
     def test_falloff_two_equal_ratio_peaks(self):
         # Alternating doubling/halving → ratios alternate 2.0x, 0.5x.
         gaps = np.array([100.0, 200.0] * 100, dtype=np.float64)
-        peaks, pc, pf, rd, md = _compute_ratio_distribution(gaps)
+        peaks, pc, pf, rd, md, _ = _compute_ratio_distribution(gaps)
         assert pc == 2
         # Peaks near-equal (within 1) → falloff ≈ 1.0 up to the
         # alternating pattern's off-by-one.
@@ -346,7 +346,7 @@ class TestRatioDistribution:
             r = 1.01 if i % 2 == 0 else 0.95
             gaps_list.append(gaps_list[-1] * r)
         gaps = np.array(gaps_list, dtype=np.float64)
-        peaks, pc, _, _, md = _compute_ratio_distribution(gaps)
+        peaks, pc, _, _, md, _ = _compute_ratio_distribution(gaps)
         assert pc == 1
         # Single peak centered near 1.0x.
         center, _ = peaks[0]
@@ -364,7 +364,7 @@ class TestRatioDistribution:
             r = 1.33 if i % 2 == 0 else 0.67
             gaps_list.append(gaps_list[-1] * r)
         gaps = np.array(gaps_list, dtype=np.float64)
-        _, pc, _, _, _ = _compute_ratio_distribution(gaps)
+        _, pc, _, _, _, _ = _compute_ratio_distribution(gaps)
         assert pc == 2
 
     def test_ratios_out_of_range_dropped(self):

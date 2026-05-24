@@ -1,0 +1,9 @@
+{
+    "_comment": "#017f loss: identical to #017e.",
+    "__class__": "osu.taiko2.training.framewise_bce_loss:FramewiseBCELossConfig",
+    "pos_weight_clamp_min": 1.0,
+    "pos_weight_clamp_max": 1.0,
+    "label_smoothing": 0.05,
+    "canonical_threshold": 0.5,
+    "canonical_tolerance_frames": 2
+}

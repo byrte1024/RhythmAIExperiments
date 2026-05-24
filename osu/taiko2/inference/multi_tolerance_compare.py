@@ -23,6 +23,8 @@ from ..domain.chart import (
     TN_SEED,
     Chart,
     ChartComparison,
+    _compute_resolution_comparisons,
+    _distributional_comparison,
     _tn_pattern_metrics,
 )
 
@@ -51,6 +53,7 @@ def _gt_match_metrics_at(
             hallucination_rate=0.0,
             error_mean_ms=0.0, error_median_ms=0.0,
             density_ratio=0.0,
+            precision=0.0, recall=0.0, f1=0.0,
         )
     ps = np.sort(self_ms)
     gs = np.sort(other_ms)
@@ -71,14 +74,21 @@ def _gt_match_metrics_at(
 
     far_thresh = float(max(100, 4 * tolerance_ms))
     close_thresh = float(2 * tolerance_ms)
+    matched = float((gt_err <= tolerance_ms).mean())
+    prec = float((pe_err <= tolerance_ms).mean()) if n_self > 0 else 0.0
+    f1 = (2.0 * prec * matched / (prec + matched)
+           if (prec + matched) > 0 else 0.0)
     return dict(
-        matched_rate=float((gt_err <= tolerance_ms).mean()),
+        matched_rate=matched,
         close_rate=float((gt_err <= close_thresh).mean()),
         far_rate=float((gt_err > far_thresh).mean()),
         hallucination_rate=float((pe_err > far_thresh).mean()),
         error_mean_ms=float(gt_err.mean()),
         error_median_ms=float(np.median(gt_err)),
         density_ratio=ps_density / max(gs_density, 0.01),
+        precision=prec,
+        recall=matched,
+        f1=f1,
     )
 
 
@@ -105,6 +115,11 @@ def compare_at_tolerances(
         [o.time_ms for o in gt_chart.track.onsets], dtype=np.float64,
     )
     tn = _tn_pattern_metrics(self_ms, other_ms, rng_seed=seed)
+    fps_cmp = _compute_resolution_comparisons(self_ms, other_ms)
+
+    self_metrics = chart.calculate_metrics()
+    gt_metrics = gt_chart.calculate_metrics()
+    dist = _distributional_comparison(self_metrics, gt_metrics)
 
     out: dict[int, ChartComparison] = {}
     for tol in tolerances_ms:
@@ -119,12 +134,27 @@ def compare_at_tolerances(
             error_mean_ms=gt["error_mean_ms"],
             error_median_ms=gt["error_median_ms"],
             density_ratio=gt["density_ratio"],
+            precision=gt["precision"],
+            recall=gt["recall"],
+            f1=gt["f1"],
             over_pspace_self=tn["over_pspace_self"],
             over_pspace_other=tn["over_pspace_other"],
             hi_pspace=tn["hi_pspace"],
             dc_human=tn["dc_human"],
             oc_human=tn["oc_human"],
             dc_rand=tn["dc_rand"],
+            gap_hist_tvd=dist["gap_hist_tvd"],
+            ratio_hist_tvd=dist["ratio_hist_tvd"],
+            density_corr=dist["density_corr"],
+            density_mae=dist["density_mae"],
+            silence_overlap_f1=dist["silence_overlap_f1"],
+            dense_overlap_f1=dist["dense_overlap_f1"],
+            gap_peak_iou=dist["gap_peak_iou"],
+            ioi_mean_ratio=dist["ioi_mean_ratio"],
+            ioi_std_ratio=dist["ioi_std_ratio"],
+            streak_fraction_delta=dist["streak_fraction_delta"],
+            bpm_ratio=dist["bpm_ratio"],
+            fps_comparisons=fps_cmp,
         )
     return out
 
