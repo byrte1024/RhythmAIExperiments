@@ -107,13 +107,17 @@ routes primarily through the audio pathway.
 
 - **Must:** dreamed mels show structured patterns (not random noise)
   that correlate with target onset positions. Confidence at target bins
-  must reach >= 0.9 by iteration 1000.
+  must reach >= 0.9 by iteration 3000.
 - **Must:** conditioning sweep produces visibly different dreamed mels
   across density_mean values 0.5 to 12.0.
+- **Must:** per-band analysis shows measurable energy difference at
+  onset vs non-onset frames (onset_mean_energy > notonset_mean_energy).
 - **Fails if:** optimization does not converge (loss does not decrease)
   or dreamed mels are indistinguishable from random noise.
 - **Nice-to-have:** low-band energy dominance (>= 3:1 ratio bands
-  0-30 vs 40-79).
+  0-30 vs 40-79), visible in the band-group bar chart.
+- **Nice-to-have:** positive correlation between low-band mel energy
+  and model confidence (corr_low_bands > 0.3).
 - **Nice-to-have:** Griffin-Lim audio sounds percussive at onset
   positions.
 
@@ -127,8 +131,20 @@ No model changes. This is an analysis experiment using the 017e
 New code:
 - `cli/dream.py` -- activation maximization script. Modes: dream,
   counterfactual, saliency. Axes: event sweep (empty vs real),
-  conditioning sweep (density_mean 0.5 to 12.0). Outputs: PNG
-  visualizations, WAV audio (Griffin-Lim), NPZ data.
+  conditioning sweep (density_mean 0.5 to 12.0). Runs on N charts
+  (default 5) spread across density 2.0-7.0. Outputs per dream:
+  - Mel comparison PNG (past/future layout, cursor line, onset/event
+    markers in cyan/yellow)
+  - Optimization trajectory PNG
+  - Mel analysis PNG: per-band energy at onset vs non-onset frames,
+    band-group summary, mel energy vs confidence scatter with
+    correlation coefficients (all-band, low-band 0-29, high-band 40-79)
+  - Dream-vs-real PNG: per-band profile comparison, per-band
+    dreamed-real correlation, mel value distribution histograms
+  - Analysis NPZ: onset_band_mean, notonset_band_mean, band_delta,
+    per_frame_energy, corr_all/low/high, low_high_energy_ratio
+  - WAV audio (Griffin-Lim) for dreamed and real mels
+  - Sweep PNGs (conditioning, events) with full annotations
 
 ## Run config
 
@@ -141,7 +157,7 @@ New code:
 ```bash
 osu/taiko2/.venv/bin/python -m osu.taiko2.cli.dream \
     --checkpoint osu/taiko2/runs/exp_017e_framewise_bce_regularized/checkpoints/best.pt \
-    --dataset taiko2_v1 --sample-idx 0 \
+    --dataset taiko2_v1 --n-charts 5 \
     --mode dream --target gt \
     --cond-sweep \
     --out-dir osu/taiko2/experiments/020-activation-maximization/custom/dream_gt_s0 \
@@ -180,14 +196,12 @@ osu/taiko2/.venv/bin/python -m osu.taiko2.cli.dream \
 ### Run 4: Saliency on real samples
 
 ```bash
-for idx in 0 1 2 3 4; do
 osu/taiko2/.venv/bin/python -m osu.taiko2.cli.dream \
     --checkpoint osu/taiko2/runs/exp_017e_framewise_bce_regularized/checkpoints/best.pt \
-    --dataset taiko2_v1 --sample-idx $idx \
+    --dataset taiko2_v1 --n-charts 5 \
     --mode saliency --target gt \
-    --out-dir osu/taiko2/experiments/020-activation-maximization/custom/saliency_s${idx} \
+    --out-dir osu/taiko2/experiments/020-activation-maximization/custom/saliency \
     --device cuda
-done
 ```
 
 ### Run 5: Counterfactual
@@ -195,9 +209,9 @@ done
 ```bash
 osu/taiko2/.venv/bin/python -m osu.taiko2.cli.dream \
     --checkpoint osu/taiko2/runs/exp_017e_framewise_bce_regularized/checkpoints/best.pt \
-    --dataset taiko2_v1 --sample-idx 0 \
+    --dataset taiko2_v1 --n-charts 5 \
     --mode counterfactual --target gt \
-    --out-dir osu/taiko2/experiments/020-activation-maximization/custom/counterfactual_s0 \
+    --out-dir osu/taiko2/experiments/020-activation-maximization/custom/counterfactual \
     --device cuda
 ```
 

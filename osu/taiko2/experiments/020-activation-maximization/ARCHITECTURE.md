@@ -112,7 +112,7 @@ pass input. This reduces grid-aligned artifacts (per Mordvintsev et al.
 | Optimizer | Adam |
 | Learning rate | 0.03 |
 | LR schedule | CosineAnnealingLR, eta_min=0.001 |
-| Iterations | 1000 |
+| Iterations | 3000 |
 | lambda_tv | 0.01 |
 | lambda_l2 | 0.001 |
 | mel_min | -35.0 |
@@ -192,36 +192,63 @@ noise-like?) not quantitative analysis.
 
 ## Output artifacts
 
-Per dream run (one target + one event mode):
+All mel visualizations share a common layout:
+- White dashed vertical line at frame 500 = cursor position.
+- "PAST" / "FUTURE" labels on each half.
+- Cyan vertical lines = target onset positions (future half only).
+- Yellow vertical lines = past event positions (when event context is
+  "real").
+- Confidence plots use x-axis "Future bin (0-499, each = 5ms)".
+
+### Per dream run (one target + one event mode)
 
 | Artifact | Description |
 |---|---|
-| `{slug}_mel.png` | Real mel (if available) vs dreamed mel, with target onset positions marked, plus target vs output confidence maps. |
-| `{slug}_trajectory.png` | Optimization loss curve (log-y) + confidence at target/non-target bins over iterations. |
+| `{slug}_mel.png` | Real mel vs dreamed mel with cursor/onset/event annotations, plus target vs output confidence maps. |
+| `{slug}_trajectory.png` | Optimization loss curve (log-y) + confidence at target/non-target bins over 3000 iterations. |
 | `{slug}_dreamed.wav` | Griffin-Lim audio from dreamed mel. |
-| `{slug}_real.wav` | Griffin-Lim audio from real mel (if available). |
 | `{slug}_data.npz` | Raw data: dreamed_mel, confidence_map, target_map, trajectory arrays. |
+| `{slug}_analysis.png` | 2x2 grid: (1) per-band energy at onset vs non-onset frames, (2) per-band onset selectivity delta, (3) band-group summary bar chart, (4) mel energy vs confidence scatter with Pearson r for all/low/high bands. |
+| `{slug}_vs_real.png` | 2x2 grid: (1) onset frame per-band profile dreamed vs real, (2) non-onset frame per-band profile dreamed vs real, (3) per-band dreamed-real Pearson r, (4) mel value distribution histogram dreamed vs real. |
+| `{slug}_analysis.npz` | Numeric data: onset_band_mean, notonset_band_mean, band_delta, per_frame_energy, low/high_band_energy, confidence_map, corr_all/low/high_bands, low_high_energy_ratio, onset/notonset_mean_energy. |
 
-Per event sweep:
-
-| Artifact | Description |
-|---|---|
-| `events_sweep.png` | Side-by-side dreamed mels for empty vs real events, plus overlaid confidence maps. |
-
-Per conditioning sweep:
+### Per event sweep
 
 | Artifact | Description |
 |---|---|
-| `cond_sweep.png` | Dreamed mels at all 7 density_mean values, plus overlaid confidence maps. |
+| `events_sweep.png` | Annotated dreamed mels for empty vs real events (with cursor/onset/event markers), plus overlaid confidence maps. |
+
+### Per conditioning sweep
+
+| Artifact | Description |
+|---|---|
+| `cond_sweep.png` | Annotated dreamed mels at all 7 density_mean values (with cursor/onset markers), plus overlaid confidence maps. |
 | `cond_dm{N}_dreamed.wav` | Griffin-Lim audio per density value. |
+| `cond_dm{N}_analysis.png` | Per-band analysis for each density value. |
+| `cond_dm{N}_vs_real.png` | Dream-vs-real comparison for each density value. |
 | `cond_sweep_data.npz` | All dreamed mels and confidence maps. |
 
-Per saliency run:
+### Per saliency run
 
 | Artifact | Description |
 |---|---|
-| `saliency.png` | Input mel, saliency map (RdBu diverging colormap), confidence map. |
+| `saliency.png` | Input mel with cursor line, saliency map (RdBu diverging colormap) with cursor line, confidence map (future bins only). |
 | `saliency.npz` | Raw saliency, confidence_map, mel arrays. |
+
+### Per experiment run
+
+| Artifact | Description |
+|---|---|
+| `manifest.json` | List of all charts processed with chart_id, density_mean, n_onsets, mode. |
+| `real.wav` | Griffin-Lim audio from real mel (one per chart). |
+
+### Chart selection
+
+Charts are selected by sorting all val-split charts with
+density_mean in [2.0, 7.0] by density, then picking N evenly spaced
+across the sorted list. This ensures coverage from low-density
+(~2 onsets/s) to high-density (~7 onsets/s) charts while excluding
+extreme outliers.
 
 ---
 
