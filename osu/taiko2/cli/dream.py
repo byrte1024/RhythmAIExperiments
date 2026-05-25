@@ -97,12 +97,12 @@ _BAND_STD = np.array([
 PRESETS: dict[str, dict] = {
     "default": {},
     "legible": {
-        "lambda_tv": 0.001,
-        "lambda_l2": 0.0001,
-        "lambda_realism": 0.005,
-        "use_lbfgs": True,
+        "lambda_tv": 0.003,
+        "lambda_l2": 0.0003,
+        "lambda_realism": 0.01,
+        "use_lbfgs": False,
         "realistic_init": True,
-        "iterations": 500,
+        "iterations": 2000,
     },
 }
 
