@@ -1,0 +1,38 @@
+{
+  "mode": "dream",
+  "target": "gt",
+  "n_charts": 5,
+  "iterations": 3000,
+  "charts": [
+    {
+      "chart_id": "2018338 Slax - Lolly Tomboy [Kantan]",
+      "n_onsets": 4,
+      "density_mean": 2.01,
+      "mode": "dream"
+    },
+    {
+      "chart_id": "2232197 Shawn Mendes, Camila Cabello - Senorita [[-E S I A-]'s Muzukashii]",
+      "n_onsets": 6,
+      "density_mean": 3.084,
+      "mode": "dream"
+    },
+    {
+      "chart_id": "2249694 yuri - Heart111 [Oni]",
+      "n_onsets": 9,
+      "density_mean": 4.032,
+      "mode": "dream"
+    },
+    {
+      "chart_id": "2099087 Gomadare - Resolver [Oni]",
+      "n_onsets": 14,
+      "density_mean": 4.875,
+      "mode": "dream"
+    },
+    {
+      "chart_id": "2433778 LizNoir - GIRI-GIRI borderless world (Game Ver.) [Oni]",
+      "n_onsets": 7,
+      "density_mean": 5.858,
+      "mode": "dream"
+    }
+  ]
+}
