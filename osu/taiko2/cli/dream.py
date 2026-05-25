@@ -61,10 +61,50 @@ class DreamConfig:
     lr_end: float = 0.001
     lambda_tv: float = 0.01
     lambda_l2: float = 0.001
+    lambda_realism: float = 0.0
     mel_min: float = -35.0
     mel_max: float = 55.0
     jitter_px: int = 2
     seed: int = 42
+    use_lbfgs: bool = False
+    realistic_init: bool = False
+
+
+# Per-band dataset statistics (from 50 charts of taiko2_v1).
+# Used for realistic initialization and realism penalty.
+_BAND_MEAN = np.array([
+    21.79, 26.05, 25.20, 23.75, 23.46, 22.73, 22.16, 21.55, 20.94, 20.42,
+    19.88, 19.37, 18.91, 18.48, 18.10, 17.74, 17.44, 17.13, 16.83, 16.53,
+    16.28, 16.08, 15.87, 15.65, 15.42, 15.21, 15.05, 14.87, 14.70, 14.53,
+    14.37, 14.22, 14.10, 13.97, 13.86, 13.74, 13.63, 13.53, 13.43, 13.34,
+    13.25, 13.17, 13.09, 13.00, 12.91, 12.84, 12.76, 12.68, 12.61, 12.53,
+    12.45, 12.37, 12.29, 12.22, 12.15, 12.08, 12.02, 11.95, 11.88, 11.82,
+    11.75, 11.69, 11.62, 11.56, 11.50, 11.43, 11.37, 11.31, 11.25, 11.18,
+    11.12, 11.06, 10.99, 10.93, 10.87, 10.83, 10.71, 10.45, 10.51, 10.17,
+], dtype=np.float32)
+_BAND_STD = np.array([
+    14.09, 14.69, 15.06, 15.22, 15.42, 15.57, 15.76, 15.87, 15.92, 15.95,
+    15.93, 15.90, 15.85, 15.79, 15.72, 15.67, 15.59, 15.53, 15.46, 15.39,
+    15.31, 15.22, 15.13, 15.06, 14.98, 14.90, 14.82, 14.74, 14.66, 14.58,
+    14.50, 14.43, 14.35, 14.27, 14.19, 14.12, 14.04, 13.97, 13.89, 13.82,
+    13.74, 13.67, 13.59, 13.52, 13.44, 13.37, 13.30, 13.22, 13.15, 13.07,
+    13.00, 12.93, 12.86, 12.79, 12.72, 12.65, 12.58, 12.50, 12.43, 12.37,
+    12.30, 12.23, 12.16, 12.10, 12.03, 11.96, 11.89, 11.83, 11.76, 11.69,
+    11.63, 11.56, 11.50, 11.43, 11.37, 11.32, 11.28, 11.28, 11.28, 11.28,
+], dtype=np.float32)
+
+
+PRESETS: dict[str, dict] = {
+    "default": {},
+    "legible": {
+        "lambda_tv": 0.001,
+        "lambda_l2": 0.0001,
+        "lambda_realism": 0.005,
+        "use_lbfgs": True,
+        "realistic_init": True,
+        "iterations": 500,
+    },
+}
 
 
 # ─────────────────────────── regularization ──────────────────────────
@@ -125,6 +165,16 @@ def _run_dream(
     if init_mel is not None:
         mel_param = init_mel.clone().detach().to(device).requires_grad_(True)
         mel_anchor = init_mel.clone().detach().to(device)
+    elif config.realistic_init:
+        band_mean_t = torch.from_numpy(_BAND_MEAN).to(device).view(1, n_mels, 1)
+        band_std_t = torch.from_numpy(_BAND_STD).to(device).view(1, n_mels, 1)
+        rng = torch.Generator(device="cpu").manual_seed(config.seed)
+        mel_param = (
+            torch.randn(1, n_mels, n_frames, generator=rng).to(device)
+            * band_std_t + band_mean_t
+        )
+        mel_param = mel_param.requires_grad_(True)
+        mel_anchor = None
     else:
         rng = torch.Generator(device="cpu").manual_seed(config.seed)
         mel_param = torch.randn(
@@ -133,7 +183,16 @@ def _run_dream(
         mel_param = mel_param.requires_grad_(True)
         mel_anchor = None
 
-    optimizer = torch.optim.Adam([mel_param], lr=config.lr)
+    # Realism reference (per-band mean/std on device).
+    realism_mean = torch.from_numpy(_BAND_MEAN).to(device).view(1, n_mels, 1)
+    realism_std = torch.from_numpy(_BAND_STD).to(device).view(1, n_mels, 1)
+
+    if config.use_lbfgs:
+        optimizer = torch.optim.LBFGS(
+            [mel_param], lr=config.lr, max_iter=1, history_size=20,
+        )
+    else:
+        optimizer = torch.optim.Adam([mel_param], lr=config.lr)
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
         optimizer, T_max=config.iterations, eta_min=config.lr_end,
     )
@@ -144,12 +203,13 @@ def _run_dream(
     }
     target_bins = target_map[0] > 0.5
 
-    pbar = tqdm(range(config.iterations), desc="Dreaming", leave=False)
-    for step in pbar:
-        optimizer.zero_grad()
+    # Shared forward + loss computation used by both Adam and L-BFGS.
+    _last = {"loss_bce": 0.0, "loss_tv": 0.0, "loss_l2": 0.0, "loss": 0.0,
+             "logits": None}
 
+    def _compute_loss() -> torch.Tensor:
         mel_input = mel_param
-        if config.jitter_px > 0 and step % 2 == 0:
+        if config.jitter_px > 0 and _last.get("step", 0) % 2 == 0:
             jt = torch.randint(
                 -config.jitter_px, config.jitter_px + 1, (2,),
             ).tolist()
@@ -172,31 +232,61 @@ def _run_dream(
 
         loss = loss_bce + loss_tv + loss_l2
 
+        if config.lambda_realism > 0:
+            per_band_mean = mel_param.mean(dim=2, keepdim=True)
+            loss_realism = config.lambda_realism * (
+                ((per_band_mean - realism_mean) / realism_std.clamp(min=1.0))
+                .pow(2).mean()
+            )
+            loss = loss + loss_realism
+
         if perturbation_budget is not None and mel_anchor is not None:
             delta = mel_param - mel_anchor
             loss_budget = 0.1 * F.relu(delta.norm() - perturbation_budget)
             loss = loss + loss_budget
 
-        loss.backward()
-        optimizer.step()
+        _last["loss_bce"] = float(loss_bce.detach())
+        _last["loss_tv"] = float(loss_tv.detach())
+        _last["loss_l2"] = float(loss_l2.detach())
+        _last["loss"] = float(loss.detach())
+        _last["logits"] = logits.detach()
+        return loss
+
+    pbar = tqdm(range(config.iterations), desc="Dreaming", leave=False)
+    for step in pbar:
+        _last["step"] = step
+
+        if config.use_lbfgs:
+            def closure():
+                optimizer.zero_grad()
+                loss = _compute_loss()
+                loss.backward()
+                return loss
+            optimizer.step(closure)
+        else:
+            optimizer.zero_grad()
+            loss = _compute_loss()
+            loss.backward()
+            optimizer.step()
+
         scheduler.step()
 
         with torch.no_grad():
             mel_param.clamp_(config.mel_min, config.mel_max)
 
         with torch.no_grad():
-            conf = torch.sigmoid(logits[0])
+            conf = torch.sigmoid(_last["logits"][0])
             t_conf = float(conf[target_bins].mean()) if target_bins.any() else 0.0
-            trajectory["loss_total"].append(float(loss))
-            trajectory["loss_bce"].append(float(loss_bce))
-            trajectory["loss_tv"].append(float(loss_tv))
-            trajectory["loss_l2"].append(float(loss_l2))
+            trajectory["loss_total"].append(_last["loss"])
+            trajectory["loss_bce"].append(_last["loss_bce"])
+            trajectory["loss_tv"].append(_last["loss_tv"])
+            trajectory["loss_l2"].append(_last["loss_l2"])
             trajectory["conf_at_target_mean"].append(t_conf)
             trajectory["conf_at_nontarget_mean"].append(
                 float(conf[~target_bins].mean()) if (~target_bins).any() else 0.0,
             )
             if step % 50 == 0 or step == config.iterations - 1:
-                pbar.set_postfix(bce=f"{float(loss_bce):.3f}", tgt=f"{t_conf:.3f}")
+                pbar.set_postfix(bce=f"{_last['loss_bce']:.3f}", tgt=f"{t_conf:.3f}")
 
     with torch.no_grad():
         inp_final = EventEmbeddingInput(
@@ -1223,11 +1313,17 @@ def _run_experiment(args: argparse.Namespace) -> int:
     device = torch.device(args.device)
     out_dir = Path(args.out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
-    dcfg = DreamConfig(
-        iterations=args.iterations,
-        lr=args.lr,
-        seed=args.seed,
-    )
+    preset_vals: dict = dict(PRESETS.get(args.preset, {}))
+    preset_vals["seed"] = args.seed
+    if args.iterations is not None:
+        preset_vals["iterations"] = args.iterations
+    if args.lr is not None:
+        preset_vals["lr"] = args.lr
+    dcfg = DreamConfig(**preset_vals)
+    print(f"Preset: {args.preset} -> iterations={dcfg.iterations}, "
+          f"lr={dcfg.lr}, tv={dcfg.lambda_tv}, l2={dcfg.lambda_l2}, "
+          f"realism={dcfg.lambda_realism}, lbfgs={dcfg.use_lbfgs}, "
+          f"realistic_init={dcfg.realistic_init}")
 
     print(f"Loading checkpoint: {args.checkpoint}")
     model, _, meta = load_model_from_checkpoint(
@@ -1372,9 +1468,15 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     p.add_argument("--model-threshold", default=0.4, type=float,
                    help="Threshold for --target model.")
 
-    p.add_argument("--iterations", default=3000, type=int)
-    p.add_argument("--lr", default=0.03, type=float)
+    p.add_argument("--iterations", default=None, type=int,
+                   help="Override iterations (default from preset).")
+    p.add_argument("--lr", default=None, type=float,
+                   help="Override learning rate (default from preset).")
     p.add_argument("--seed", default=42, type=int)
+    p.add_argument("--preset", default="default",
+                   choices=list(PRESETS.keys()),
+                   help="Optimization preset: 'default' (Adam, high reg) "
+                        "or 'legible' (L-BFGS, low reg, realistic init).")
 
     p.add_argument("--cond-sweep", action="store_true",
                    help="Run conditioning density sweep.")
