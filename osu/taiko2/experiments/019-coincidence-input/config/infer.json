@@ -1,5 +1,5 @@
 {
-    "_comment": "#019 inference: FramewiseDecoder with decode_threshold 0.4 (017e optimal threshold at E8 from threshold_sweep.json). n_mels updated to 93 to match coincidence-input model. Checkpoint path exp_019_coincidence_input.",
+    "_comment": "#019 inference: FramewiseDecoder with decode_threshold 0.4 (017f optimal threshold from threshold_sweep.json). n_mels updated to 93 to match coincidence-input model. Checkpoint path exp_019_coincidence_input.",
     "checkpoint": "osu/taiko2/runs/exp_019_coincidence_input/checkpoints/best.pt",
     "predictor": {
         "__class__": "osu.taiko2.inference.autoregressive.predictor:AutoregressivePredictor",

@@ -392,8 +392,11 @@ where `weight_map` is all-ones (every bin, every sample, weight=1.0).
 
 ## Training
 
-metric_to_watch = `frame/f1_τ_50_tol_2` (higher is better). The trainer
-saves `best.pt` at the eval with the highest frame-level F1.
+metric_to_watch = `frame/mini/tau50/fps_50/binary_f1` (higher is better).
+The trainer saves `best.pt` at the eval with the highest mini-chart
+binary F1 at 50 FPS (20 ms frames). This metric was found in #017f to
+track AR chart quality better than frame-level F1, peaking later in
+training (E15 vs E11).
 
 | Param | Value |
 |---|---|
@@ -405,7 +408,7 @@ saves `best.pt` at the eval with the highest frame-level F1.
 | torch.compile | on (triton backend) |
 | Balanced sampling | off |
 | Evals per epoch | 4 |
-| Watched metric | frame/f1_τ_50_tol_2 (higher is better) |
+| Watched metric | frame/mini/tau50/fps_50/binary_f1 (higher is better) |
 | metric_lower_is_better | false |
 | Train-noaug fraction | 0.05 |
 | Benchmarks | all (including no_coincidence, no_mel) |
@@ -469,17 +472,40 @@ The following per-eval metrics are logged and tracked:
 | val/single/loss/neg_only | Loss on GT-negative bins only |
 | val/single/loss/pos_neg_ratio | Ratio pos_only / neg_only |
 
+### Frame-level FPS resolution (validation set)
+
+Per threshold, each val window is compared at 8 temporal resolutions
+(1, 2, 4, 10, 20, 50, 100, 200 FPS).
+
+| Metric | Description |
+|---|---|
+| frame/mini/tau{T}/fps_{F}/binary_f1 | Binary F1 at F FPS, threshold T/100 |
+| frame/mini/tau{T}/fps_{F}/binary_precision | Binary precision at F FPS |
+| frame/mini/tau{T}/fps_{F}/binary_recall | Binary recall at F FPS |
+| frame/mini/tau{T}/fps_{F}/count_mae | Count MAE per frame at F FPS |
+| frame/mini/tau{T}/fps_{F}/count_corr | Count correlation at F FPS |
+
+The watched metric is frame/mini/tau50/fps_50/binary_f1.
+
 ### AR corpus metrics (inference pass per eval)
 
 | Metric | Description |
 |---|---|
-| infer_corpus/density_ratio | Emitted notes / GT notes |
-| infer_corpus/dc_human | Pattern quality score [0, 100] |
-| infer_corpus/oc_human | Overlap correctness [0, 100] |
-| infer_corpus/hallucination_rate | Fraction of emitted notes with no GT match |
-| infer_corpus/matched_rate | Fraction of GT notes matched |
-| infer_corpus/error_median_ms | Median timing error on matched notes |
-| infer_corpus/events_per_sec | Emitted notes per second |
+| corpus/precision | Onset precision at 25ms tolerance |
+| corpus/recall | Onset recall at 25ms tolerance |
+| corpus/f1 | Onset F1 at 25ms tolerance |
+| corpus/density_ratio | Emitted notes/s / GT notes/s |
+| corpus/dc_human | Pattern quality score [0, 100] |
+| corpus/oc_human | Overlap correctness [0, 100] |
+| corpus/error_median_ms | Median timing error on matched notes |
+| corpus/binary_f1_at_{F}fps_median | Median binary F1 at F FPS |
+| corpus/gap_hist_tvd | Gap distribution total variation distance |
+| corpus/ratio_hist_tvd | Ratio distribution total variation distance |
+| corpus/density_corr | Per-second density Pearson correlation |
+| corpus/gap_peak_iou | Gap histogram peak IoU |
+| corpus/silence_overlap_f1 | Silence region overlap F1 |
+| corpus/dense_overlap_f1 | Dense region overlap F1 |
+| corpus/bpm_ratio | Pred/GT estimated BPM ratio |
 
 ### Benchmark metrics (at each eval)
 
