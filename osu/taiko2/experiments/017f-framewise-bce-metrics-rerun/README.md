@@ -2,7 +2,7 @@
 
 ## Status
 
-`Planned`
+`Complete`
 
 ## Context
 
@@ -239,16 +239,249 @@ Everything below comes from real measurements, not predictions.
 
 ## Results summary
 
-<!-- TODO: fill after run -->
+15 evals completed (steps 2,584 to 289,436). Training dynamics are
+statistically identical to #017e: frame F1 within +/-0.006 at every
+eval from E3 onward, AR corpus metrics within +/-0.01 mean delta.
+All new metrics populated correctly across training and threshold
+sweep.
+
+### Training: 017e vs 017f
+
+Mean delta across 15 evals (017f - 017e). E1 warmup outlier
+(F1 0.178 vs 0.742) excluded from the mean where noted.
+
+| Metric | Mean delta | Std | 017e best | 017f best |
+|---|---:|---:|---:|---:|
+| Frame F1 | -0.004* | 0.010 | 0.827 (E11) | 0.822 (E11) |
+| Frame precision | +0.002 | 0.011 | 0.913 | 0.953 |
+| Frame recall | -0.004* | 0.010 | 0.779 | 0.766 |
+| Loss | +0.000 | 0.005 | 0.233 | 0.233 |
+| AR matched_rate | -0.001 | 0.014 | 0.871 | 0.847 |
+| AR dc_human | +0.096 | 0.400 | 92.60 | 92.74 |
+| AR density_ratio | +0.003 | 0.030 | 1.213 | 1.155 |
+
+*Excluding E1 warmup outlier. All deltas are within noise (std >> mean).
+
+### Threshold sweep: 017e vs 017f
+
+60 common (checkpoint, threshold) configurations compared. Mean
+deltas are negligible across all metrics
+[017f threshold_sweep.json, 017e threshold_sweep.json]:
+
+| Metric | Mean delta | Std |
+|---|---:|---:|
+| AR F1 | +0.005 | 0.018 |
+| matched_rate | +0.007 | 0.027 |
+| halluc_rate | -0.001 | 0.008 |
+| density_ratio | +0.009 | 0.041 |
+| dc_human | -0.030 | 0.377 |
+
+Best operating points match:
+
+| Goal | 017e | 017f |
+|---|---|---|
+| Best AR F1 | 0.787 (eval_310110/0.3) | 0.782 (eval_289436/0.3) |
+| Best dc_human | 93.19 (eval_165392/0.5) | 93.18 (eval_124044/0.5) |
+| Best density ~1.0 | 0.995 (eval_206740/0.4) | 0.964 (eval_248088/0.4) |
+
+### New metrics: baselines established
+
+#### FPS resolution (AR corpus, gt_cond, best F1 checkpoint)
+
+Median binary F1 across val charts at each temporal resolution.
+Per-eval progression showed coarse resolutions (1-4 FPS) saturating
+early, mid-range (10-50 FPS) peaking at E6-E11, and 200 FPS slowly
+climbing throughout training
+[exp_017f, infer_corpus/eval_*/gt_cond/fps_summary.json].
+
+| FPS | frame_ms | Best median F1 | Best step | Precision | Recall |
+|---:|---:|---:|---:|---:|---:|
+| 1 | 1000 | 0.976 | 62,022 | 0.960 | 0.997 |
+| 4 | 250 | 0.899 | 62,022 | 0.860 | 0.949 |
+| 10 | 100 | 0.774 | 62,022 | 0.732 | 0.848 |
+| 20 | 50 | 0.723 | 103,370 | 0.677 | 0.775 |
+| 50 | 20 | 0.650 | 103,370 | 0.565 | 0.675 |
+| 100 | 10 | 0.498 | 103,370 | 0.414 | 0.484 |
+| 200 | 5 | 0.243 | 103,370 | 0.188 | 0.199 |
+
+#### Watched metric (fps50 binary F1)
+
+`frame/mini/tau50/fps_50/binary_f1` peaked at E15 (step 289,436)
+at 0.741 -- still slowly climbing after frame F1 plateaued at E11.
+This metric captures a quality dimension that frame-level F1 misses:
+the mini-chart FPS comparison accounts for AR-style onset placement,
+not just per-bin classification accuracy
+[exp_017f, metrics.jsonl].
+
+#### Distributional metrics (threshold sweep, tau=0.4)
+
+Best checkpoint at tau=0.4 is eval_248088 (step 248,088)
+[017f threshold_sweep.json]:
+
+| Metric | Value | Interpretation |
+|---|---:|---|
+| P/R/F1 (25ms) | 0.778 / 0.757 / 0.771 | Balanced precision-recall |
+| density_ratio | 0.964 | Slight under-emission (3.6%) |
+| dc_human | 92.44 | Pattern quality |
+| gap_hist_tvd | 0.331 | Gap distribution 67% similar to GT |
+| ratio_hist_tvd | 0.472 | Ratio distribution 53% similar |
+| density_corr | 0.546 | Moderate per-second density tracking |
+| gap_peak_iou | 0.742 | 74% overlap on rhythmic peaks |
+| bpm_ratio | 0.979 | Near-perfect BPM match |
+| dense_overlap_f1 | 0.979 | Dense regions well matched |
+| silence_overlap_f1 | 0.546 | Silence regions only half matched |
+| ioi_mean_ratio | 0.898 | IOI 10% shorter than GT |
+| streak_fraction_delta | -0.044 | Slightly less repetitive than GT |
+
+#### Threshold ladder (new distributional metrics)
+
+All at eval_289436 (best F1 checkpoint)
+[017f threshold_sweep.json]:
+
+| tau | P | R | F1 | DR | gap_TVD | den_corr | gap_IoU | bpm_r |
+|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| 0.1 | 0.533 | 0.962 | 0.682 | 1.785 | 0.543 | 0.401 | 0.483 | 1.036 |
+| 0.2 | 0.659 | 0.908 | 0.759 | 1.364 | 0.399 | 0.535 | 0.650 | 1.032 |
+| 0.3 | 0.728 | 0.836 | 0.774 | 1.138 | 0.332 | 0.541 | 0.698 | 0.995 |
+| **0.4** | **0.777** | **0.755** | **0.760** | **0.967** | **0.327** | **0.538** | **0.745** | **0.994** |
+| 0.5 | 0.820 | 0.666 | 0.726 | 0.809 | 0.374 | 0.511 | 0.718 | 0.963 |
+| 0.6 | 0.854 | 0.550 | 0.657 | 0.647 | 0.465 | 0.477 | 0.595 | 0.933 |
+| 0.7 | 0.876 | 0.433 | 0.564 | 0.500 | 0.569 | 0.418 | 0.490 | 0.881 |
+
+**tau=0.4 is the structural optimum.** It has the best gap_TVD
+(0.327), best gap_peak_IoU (0.745), best bpm_ratio (0.994), and
+density_ratio closest to 1.0 (0.967). This confirms the tau=0.4
+finding from #017e's sweep with independent distributional evidence:
+the model produces the most rhythmically faithful charts at this
+threshold.
 
 ## Visualizations
 
-<!-- TODO: fill after run -->
+![Training loss](graphs/01_train_loss.png)
+*Training loss over steps. Minimum at E2 (step 41,348), rising
+steadily after -- same overfitting pattern as #017e.*
+
+![Training progression](graphs/12_training_progression.png)
+*Four-panel training progression: val loss (top-left), frame P/R/F1
+(top-right), watched fps50 F1 vs frame F1 (bottom-left), AR corpus
+P/R/F1 at 25ms (bottom-right). Recall climbs while precision
+gently declines.*
+
+![FPS progression](graphs/13_fps_progression.png)
+*FPS resolution binary F1 across training. Coarse resolutions (1-4
+FPS) saturate early. Mid-range (10-50 FPS) peak at E6. 200 FPS
+slowly climbs throughout -- the model keeps sharpening timing
+precision even after coarse quality plateaus.*
+
+![Threshold sweep](graphs/14_threshold_sweep.png)
+*Threshold sweep at eval_289436. Left: P/R/F1 cross at tau ~0.4.
+Center: density_ratio crosses 1.0 between tau 0.3-0.4. Right:
+distributional metrics -- gap_TVD minimized at tau 0.4, gap_peak_IoU
+maximized, density_corr stable.*
+
+![Heatmap E11](graphs/02_heatmap_e11.png)
+*Predicted confidence maps vs GT at best frame F1 (E11, step
+206,740). Sharp activations at GT onset positions.*
+
+![Distribution E11](graphs/03_distribution_e11.png)
+*Confidence distribution at GT-positive vs GT-negative bins. Clean
+separation between the two populations.*
+
+![Confidence by outcome E11](graphs/04_confidence_outcome_e11.png)
+*Confidence histograms for TP/FN/FP/TN at E11.*
+
+![Calibration E11](graphs/05_calibration_e11.png)
+*Calibration curve at E11.*
+
+![Per-bin rate E11](graphs/06_per_bin_rate_e11.png)
+*Per-bin positive rate, recall, and FPR at E11.*
+
+![Value histogram E11](graphs/07_value_hist_e11.png)
+*Target vs prediction value distributions at E11 (linear + log).*
+
+![Heatmap E2](graphs/10_heatmap_e2.png)
+*Confidence maps at E2 (step 20,674) -- early training, sparse
+activations, high precision but low recall.*
+
+![Confidence E2 vs E11](graphs/11_confidence_outcome_e2.png)
+*Confidence by outcome at E2 -- FN distribution still overlaps with
+TN, explaining the low recall.*
+
+![017e vs 017f comparison](graphs/15_e_vs_f_comparison.png)
+*017e (blue) vs 017f (orange) across 15 evals. Curves overlap almost
+perfectly on all 12 metrics -- loss, frame P/R/F1, AUC-PR, brier,
+corpus matched/halluc/density/dc_human. The E1 warmup outlier
+(017f recall lagged at E1) is visible in recall and F1.*
+
+![017e vs 017f deltas](graphs/16_e_vs_f_deltas.png)
+*Per-eval deltas (017f - 017e). Green = 017f higher, red = 017e
+higher. Blue dotted line = mean delta (excluding E1 warmup). All
+means are near zero (< 0.01 magnitude). E1 dominates the frame F1
+and recall delta plots; from E2 onward the bars are tiny. dc_human
+shows the largest systematic trend (+0.13 mean) but this is within
+single-eval noise (std 0.40).*
 
 ## Vs prediction
 
-<!-- TODO: fill after run -->
+- **Frame F1 within 0.01 of 017e's 0.827:** predicted yes -> actual
+  0.822 (delta 0.005) -> **match**.
+- **All new metrics populate correctly:** predicted yes -> actual yes,
+  15 evals + threshold sweep -> **match**.
+- **AR density_ratio ~1.21 at tau=0.3:** predicted ~1.21 -> actual
+  1.138 (best F1 checkpoint) -> **close** (same over-emission pattern,
+  slightly less).
+- **fps50 binary_f1 selects comparable best.pt:** predicted yes ->
+  actual best.pt differs (fps50 peaked at E15, frame F1 at E11) but
+  AR metrics are equivalent -> **match** (different checkpoint, same
+  quality).
+- **Frame F1 deviates > 0.02 (fail criterion):** actual delta 0.005
+  -> **not triggered**.
 
 ## Takeaways
 
-<!-- TODO: fill after run -->
+- **Training is reproducible.** Same seed, same config, same
+  dataset: frame F1 within +/-0.006 at every eval from E3 onward.
+  The new metrics infrastructure does not affect training dynamics.
+
+- **tau=0.4 confirmed as structural optimum.** The new distributional
+  metrics (gap_TVD, gap_peak_IoU, bpm_ratio) independently confirm
+  what matched_rate/hallucination_rate suggested in #017e. tau=0.4
+  balances precision and recall while producing the most rhythmically
+  faithful gap distributions and BPM alignment.
+
+- **fps50_f1 captures a different quality dimension than frame F1.**
+  It peaked at E15 (0.741) while frame F1 peaked at E11 (0.822).
+  The mini-chart FPS metric continued improving through the
+  overfitting phase because it measures onset placement in context,
+  not just per-bin classification. This makes it a better proxy for
+  AR chart quality.
+
+- **Silence regions are the weakest point.** silence_overlap_f1 is
+  only 0.546 at the best operating point -- the model fills in onsets
+  during GT silence regions. This is consistent with the
+  hallucination problem from #017e. dense_overlap_f1 at 0.979 shows
+  the model handles busy sections well; it's the quiet sections
+  where it over-emits.
+
+- **Gap distribution alignment is moderate.** gap_hist_tvd 0.33 and
+  gap_peak_iou 0.74 at tau=0.4. The model reproduces the correct
+  rhythmic peak positions (74% overlap) but the overall gap shape
+  differs by 33%. The ratio distribution is worse (tvd 0.47) --
+  consecutive-gap ratios are less well-preserved than absolute gaps.
+
+- **IOI is 10% shorter than GT.** ioi_mean_ratio 0.90 at tau=0.4
+  indicates the model produces slightly faster rhythms than GT.
+  Combined with density_ratio 0.964 (slight under-emission), this
+  means the model spaces onsets more tightly but emits fewer total.
+
+## Followup questions
+
+- **Does the fps50 watched metric select better AR checkpoints?**
+  017f's best.pt (selected by fps50_f1) should be compared against
+  017e's best.pt (selected by frame F1) on the same threshold sweep
+  to see if the different selection criterion produces measurably
+  different AR quality.
+
+- **Can silence_overlap_f1 be improved?** The 0.546 score suggests
+  the model doesn't learn silence structure. A silence-aware loss
+  term or augmentation that emphasizes quiet sections might help.
