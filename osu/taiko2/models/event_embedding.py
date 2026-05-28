@@ -46,6 +46,7 @@ class EventEmbeddingConfig(ModelConfig):
     # Mel / audio encoder
     n_mels: int = 80
     d_model: int = 384
+    stem_width: int = 0        # 0 = d_model // 2 (default 192)
     n_layers: int = 8
     n_heads: int = 8
     dropout: float = 0.1
@@ -186,7 +187,7 @@ class EventEmbeddingDetector(
         )
 
         # 2. Conv stem — mel → audio tokens
-        self.conv_stem = AudioConvStem(c.n_mels, d)
+        self.conv_stem = AudioConvStem(c.n_mels, d, stem_width=c.stem_width)
         self.audio_pos_emb = SinusoidalPosEmb(d)
         self.film_conv = FiLM(c.cond_dim, d)
 

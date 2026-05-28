@@ -70,15 +70,17 @@ class AudioConvStem(nn.Module):
     positional encoding afterward.
     """
 
-    def __init__(self, n_mels: int, d_model: int):
+    def __init__(self, n_mels: int, d_model: int, stem_width: int = 0):
         super().__init__()
-        if d_model % 2 != 0:
-            raise ValueError(f"d_model must be even, got {d_model}")
+        if stem_width <= 0:
+            if d_model % 2 != 0:
+                raise ValueError(f"d_model must be even, got {d_model}")
+            stem_width = d_model // 2
         self.conv = nn.Sequential(
-            nn.Conv1d(n_mels, d_model // 2, kernel_size=7, stride=2, padding=3),
+            nn.Conv1d(n_mels, stem_width, kernel_size=7, stride=2, padding=3),
             nn.GELU(),
-            nn.GroupNorm(1, d_model // 2),
-            nn.Conv1d(d_model // 2, d_model, kernel_size=7, stride=2, padding=3),
+            nn.GroupNorm(1, stem_width),
+            nn.Conv1d(stem_width, d_model, kernel_size=7, stride=2, padding=3),
             nn.GELU(),
         )
         self.norm = nn.LayerNorm(d_model)
