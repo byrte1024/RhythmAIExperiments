@@ -18,6 +18,7 @@ from ..domain.dataset import (
     MelSamplerConfig,
 )
 from ..samplers.coincidence_mel import CoincidenceMelSamplerConfig
+from ..samplers.mel_octopus import MelOctopusSamplerConfig
 from ..samplers.mel_onset import MelOnsetSamplerConfig
 
 _CONFIG_REGISTRY: dict[str, type[AudioSamplerConfig]] = {
@@ -25,6 +26,7 @@ _CONFIG_REGISTRY: dict[str, type[AudioSamplerConfig]] = {
     "MelSamplerConfig": MelSamplerConfig,
     "MelOnsetSamplerConfig": MelOnsetSamplerConfig,
     "CoincidenceMelSamplerConfig": CoincidenceMelSamplerConfig,
+    "MelOctopusSamplerConfig": MelOctopusSamplerConfig,
 }
 
 

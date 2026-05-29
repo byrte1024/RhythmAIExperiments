@@ -323,7 +323,12 @@ def main(argv: list[str] | None = None) -> int:
 
     pipeline: AugmentationPipeline | None = None
     if not args.no_augmentation:
-        post_augs = build_exp45_post_augs(seed=trainer_cfg.seed)
+        feat_rows = getattr(adapter_cfg, "feature_rows", None)
+        freq_boundary = feat_rows[0] if feat_rows else None
+        post_augs = build_exp45_post_augs(
+            seed=trainer_cfg.seed,
+            freq_roll_section_boundary=freq_boundary,
+        )
         if args.time_stretch_prob > 0.0:
             # Prepend — all subsequent augs (event jitter, specaug, etc)
             # operate on the already-stretched sample, which is the
@@ -415,12 +420,14 @@ def main(argv: list[str] | None = None) -> int:
         from ..training.framewise_adapter import (
             FramewiseSampleAdapter, FramewiseSampleAdapterConfig,
         )
-        adapter = FramewiseSampleAdapter(
-            FramewiseSampleAdapterConfig(
+        if isinstance(adapter_cfg, FramewiseSampleAdapterConfig):
+            fw_cfg = adapter_cfg
+        else:
+            fw_cfg = FramewiseSampleAdapterConfig(
                 b_pred=model_cfg.b_pred,
                 binary_only=is_framewise_bce,
-            ),
-        )
+            )
+        adapter = FramewiseSampleAdapter(fw_cfg)
     else:
         adapter = DetectionSampleAdapter(adapter_cfg)
 

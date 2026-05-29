@@ -38,6 +38,7 @@ class FramewiseSampleAdapterConfig:
     sigma_frames: float = 2.0
     binary_only: bool = False
     max_events_per_window: int = 100
+    feature_rows: tuple[int, int] | None = None
 
     def __post_init__(self) -> None:
         if self.b_pred <= 0:
@@ -83,7 +84,16 @@ class FramewiseSampleAdapter(
         *,
         device: torch.device,
     ) -> EventEmbeddingInput:
-        return self._detection_adapter.make_input(samples, device=device)
+        inp = self._detection_adapter.make_input(samples, device=device)
+        if self.config.feature_rows is not None:
+            lo, hi = self.config.feature_rows
+            inp = EventEmbeddingInput(
+                mel=inp.mel[:, lo:hi, :],
+                event_offsets=inp.event_offsets,
+                event_mask=inp.event_mask,
+                conditioning=inp.conditioning,
+            )
+        return inp
 
     # ── target ────────────────────────────────────────────────────────
 

@@ -106,22 +106,34 @@ class MelGaussianNoise(_RngAug):
 
 @dataclass
 class MelFreqJitter(_RngAug):
-    """Roll the mel bands by a small integer offset. Bins that shift
-    off the edge wrap — the model learns small translations don't
-    change which onset is which."""
+    """Roll feature rows by a small integer offset. Each contiguous
+    section (defined by ``section_boundary``) is rolled independently
+    so rows from one representation don't wrap into another.
+
+    With ``section_boundary=None`` (default), all rows are rolled as
+    one block — correct for single-representation inputs (mel-only or
+    octopus-only). With ``section_boundary=80``, rows 0-79 and 80+
+    are rolled separately — correct for mel+octopus datasets where
+    mel (dB scale) and octopus ([0,1] scale) must not mix.
+    """
     max_shift: int = 3
+    section_boundary: int | None = None
 
     def _apply(self, sample: TaikoDetectionSample) -> TaikoDetectionSample:
         shift = self._rng.randint(-self.max_shift, self.max_shift)
         if shift == 0:
             return sample
-        # Roll only the mel rows (first 80); leave coincidence rows
-        # (81+) untouched so the two feature spaces don't cross.
-        n_mel = 80
         past = sample.audio_past.copy()
         fut = sample.audio_future.copy()
-        past[:n_mel] = np.roll(past[:n_mel], shift, axis=0)
-        fut[:n_mel] = np.roll(fut[:n_mel], shift, axis=0)
+        if self.section_boundary is not None:
+            b = self.section_boundary
+            past[:b] = np.roll(past[:b], shift, axis=0)
+            past[b:] = np.roll(past[b:], shift, axis=0)
+            fut[:b] = np.roll(fut[:b], shift, axis=0)
+            fut[b:] = np.roll(fut[b:], shift, axis=0)
+        else:
+            past = np.roll(past, shift, axis=0)
+            fut = np.roll(fut, shift, axis=0)
         return replace(sample, audio_past=past, audio_future=fut)
 
 
@@ -658,11 +670,18 @@ class TimeStretch(_RngAug):
 
 # ─────────────────────────── exp 45 bundle ────────────────────────────
 
-def build_exp45_post_augs(*, seed: int | None = None) -> list[PostSampleAugmentation]:
+def build_exp45_post_augs(
+    *, seed: int | None = None,
+    freq_roll_section_boundary: int | None = None,
+) -> list[PostSampleAugmentation]:
     """The exact augmentation list used by exp 45, in canonical order.
 
     Audio augs run first (they don't depend on event layout), then
     event augs, then conditioning jitter last.
+
+    ``freq_roll_section_boundary``: if set, FreqRoll rolls rows above
+    and below this boundary independently (e.g., 80 for mel+octopus
+    datasets where rows 0-79 are mel and 80+ are octopus).
     """
     rng = random.Random(seed)
     def _s() -> int:
@@ -672,7 +691,7 @@ def build_exp45_post_augs(*, seed: int | None = None) -> list[PostSampleAugmenta
         # Audio
         MelGainJitter(prob=0.30, range_db=2.0, seed=_s()),
         MelGaussianNoise(prob=0.15, min_std=0.1, max_std=0.3, seed=_s()),
-        MelFreqJitter(prob=0.15, max_shift=3, seed=_s()),
+        MelFreqJitter(prob=0.15, max_shift=3, section_boundary=freq_roll_section_boundary, seed=_s()),
         SpecAugFreq(prob=0.20, max_bands=10, seed=_s()),
         SpecAugTime(prob=0.20, max_frames=30, seed=_s()),
         # Events

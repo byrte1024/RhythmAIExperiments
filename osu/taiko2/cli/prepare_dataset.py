@@ -58,6 +58,10 @@ AUDIO_SAMPLERS: dict[str, tuple[str, str]] = {
         "osu.taiko2.samplers.coincidence_mel:CoincidenceMelSampler",
         "osu.taiko2.samplers.coincidence_mel:CoincidenceMelSamplerConfig",
     ),
+    "mel_octopus": (
+        "osu.taiko2.samplers.mel_octopus:MelOctopusSampler",
+        "osu.taiko2.samplers.mel_octopus:MelOctopusSamplerConfig",
+    ),
 }
 
 EVENT_SAMPLERS: dict[str, tuple[str, str]] = {

@@ -1,0 +1,8 @@
+{
+    "_comment": "#022 adapter: feature_rows [80, 177] selects octopus-only from the (177, T) mel_octopus dataset. Rows 0-79 = mel, 80-176 = octopus gradient (97 cells).",
+    "__class__": "osu.taiko2.training.framewise_adapter:FramewiseSampleAdapterConfig",
+    "b_pred": 500,
+    "binary_only": true,
+    "max_events_per_window": 100,
+    "feature_rows": [80, 177]
+}
