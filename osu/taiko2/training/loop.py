@@ -56,6 +56,17 @@ def _pick_fetch(
     return getattr(sampler, preferred, sampler.get_sample)
 
 
+def _fetch_batch(
+    fetch: Callable[[int], DataSample],
+    indices: Sequence[int],
+    pool: "ThreadPoolExecutor | None" = None,
+) -> list[DataSample]:
+    """Fetch a batch of samples, optionally in parallel."""
+    if pool is not None:
+        return list(pool.map(lambda i: fetch(int(i)), indices))
+    return [fetch(int(i)) for i in indices]
+
+
 def _draw_indices(
     n: int, *, weights: np.ndarray | None, rng: np.random.Generator,
 ) -> np.ndarray:
@@ -255,6 +266,7 @@ def _run_eval(
     sample_mutation: "Callable[[DataSample], DataSample | None] | None" = None,
     desc: str = "eval",
     model_b_pred: int | None = None,
+    worker_pool: "ThreadPoolExecutor | None" = None,
 ) -> dict[str, float]:
     """Eval pass. Defaults to the full sampler; can be scoped to a
     subset via `indices`, and every sample can be mutated before the
@@ -295,14 +307,34 @@ def _run_eval(
     if progress:
         try:
             from tqdm.auto import tqdm
-            pbar = tqdm(idx_chunks, desc=desc, unit="batch", leave=False)
+            pbar = tqdm(
+                range(len(idx_chunks)), desc=desc, unit="batch", leave=False,
+            )
         except ImportError:
             pass
-    chunk_iter = pbar if pbar is not None else idx_chunks
+
+    # Prefetch first chunk while setting up.
+    _pf_exec = None
+    _pf_future = None
+    if worker_pool is not None and idx_chunks:
+        from concurrent.futures import ThreadPoolExecutor as _TPE
+        _pf_exec = _TPE(max_workers=1)
+        _pf_future = _pf_exec.submit(
+            _fetch_batch, fetch, idx_chunks[0], worker_pool,
+        )
 
     with torch.no_grad():
-        for chunk in chunk_iter:
-            raw = [fetch(i) for i in chunk]
+        for ci, chunk in enumerate(idx_chunks):
+            if _pf_future is not None:
+                raw = _pf_future.result()
+                if ci + 1 < len(idx_chunks):
+                    _pf_future = _pf_exec.submit(
+                        _fetch_batch, fetch, idx_chunks[ci + 1], worker_pool,
+                    )
+                else:
+                    _pf_future = None
+            else:
+                raw = _fetch_batch(fetch, chunk, worker_pool)
             if sample_mutation is not None:
                 raw = [sample_mutation(s) for s in raw]
             samples = [s for s in raw if s is not None]
@@ -364,6 +396,12 @@ def _run_eval(
                         "miss":  f"{bs['onset/miss']:.3f}/"
                                 f"{eval_miss_sum / eval_batches:.3f}",
                     })
+
+            if pbar is not None:
+                pbar.update(1)
+
+    if _pf_exec is not None:
+        _pf_exec.shutdown(wait=False)
     out_dict: dict[str, float] = {}
     denom = max(n_seen, 1)
     out_dict["loss"] = total_loss / denom
@@ -427,6 +465,13 @@ def train(
 
     train_fetch = _pick_fetch(train_sampler, augmented=True)
     val_fetch = _pick_fetch(val_sampler, augmented=False)
+
+    _worker_pool = None
+    if trainer_config.num_workers > 0:
+        from concurrent.futures import ThreadPoolExecutor
+        _worker_pool = ThreadPoolExecutor(
+            max_workers=trainer_config.num_workers,
+        )
 
     n_train = train_sampler.count_samples()
     batch_size = trainer_config.batch_size
@@ -545,16 +590,19 @@ def train(
             if _resume_skip_slices:
                 slices = slices[_resume_skip_slices:]
                 _resume_skip_slices = 0  # one-shot — only first epoch
+            # Materialize slices into a list BEFORE tqdm wrapping so
+            # prefetch can index into it without consuming the iterator.
+            _slices_list = list(slices) if not isinstance(slices, list) else slices
+
             pbar = None
             if progress:
                 try:
                     from tqdm.auto import tqdm
                     pbar = tqdm(
-                        slices,
+                        range(len(_slices_list)),
                         desc=f"epoch {state.epoch + 1}/{trainer_config.epochs}",
                         unit="batch",
                     )
-                    slices = pbar
                 except ImportError:
                     pass
 
@@ -565,10 +613,30 @@ def train(
             epoch_hit_sum = 0.0
             epoch_miss_sum = 0.0
             epoch_n = 0
+            _prefetch_future = None
+            if _worker_pool is not None and _slices_list:
+                from concurrent.futures import ThreadPoolExecutor as _TPE
+                _prefetch_exec = _TPE(max_workers=1)
+                first_lo, first_hi = _slices_list[0]
+                _prefetch_future = _prefetch_exec.submit(
+                    _fetch_batch, train_fetch, indices[first_lo:first_hi], _worker_pool,
+                )
+            else:
+                _prefetch_exec = None
 
-            for lo, hi in slices:
+            for si, (lo, hi) in enumerate(_slices_list):
                 batch_idx = indices[lo:hi]
-                samples = [train_fetch(int(i)) for i in batch_idx]
+                if _prefetch_future is not None:
+                    samples = _prefetch_future.result()
+                    if si + 1 < len(_slices_list):
+                        nlo, nhi = _slices_list[si + 1]
+                        _prefetch_future = _prefetch_exec.submit(
+                            _fetch_batch, train_fetch, indices[nlo:nhi], _worker_pool,
+                        )
+                    else:
+                        _prefetch_future = None
+                else:
+                    samples = _fetch_batch(train_fetch, batch_idx, _worker_pool)
                 inp, tgt = adapter.make_batch(samples, device=device)
 
                 optimizer.zero_grad(set_to_none=True)
@@ -663,6 +731,9 @@ def train(
                             ),
                         })
 
+                if pbar is not None:
+                    pbar.update(1)
+
                 if state.step % eval_every == 0:
                     val_out = _run_eval(
                         model=model,
@@ -676,6 +747,7 @@ def train(
                         device=device,
                         progress=progress,
                         model_b_pred=_model_b_pred,
+                        worker_pool=_worker_pool,
                     )
                     state.last_eval_metrics = val_out
 
@@ -728,6 +800,7 @@ def train(
                             indices=noaug_indices,
                             desc="train_noaug",
                             model_b_pred=_model_b_pred,
+                            worker_pool=_worker_pool,
                         )
                         for k, v in train_noaug_out.items():
                             val_out[f"train_noaug/{k}"] = v
@@ -779,6 +852,7 @@ def train(
                                 sample_mutation=_mut,
                                 desc=f"bench[{mode.name}]",
                                 model_b_pred=_model_b_pred,
+                                worker_pool=_worker_pool,
                             )
                             for k, v in bench_out.items():
                                 val_out[f"bench/{mode.name}/{k}"] = v
@@ -797,6 +871,8 @@ def train(
         exc = e
         raise
     finally:
+        if _worker_pool is not None:
+            _worker_pool.shutdown(wait=False)
         for h in hooks:
             try:
                 h.on_train_end(state, exc)

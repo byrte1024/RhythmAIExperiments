@@ -8,7 +8,7 @@
     "grad_clip": 1.0,
     "evals_per_epoch": 4,
     "amp": false,
-    "num_workers": 0,
+    "num_workers": 8,
     "seed": 42,
     "metric_to_watch": "frame/mini/τ50/fps_50/binary_f1",
     "metric_lower_is_better": false
