@@ -136,9 +136,12 @@ def _pick_chart_indices(
 
 def _features_for(
     sampler: TaikoDetectionSampler, chart_index: int, ds_root: Path,
+    feature_rows: tuple[int, int] | None = None,
 ) -> np.ndarray:
     """Load the features the dataset stores on disk for this chart.
-    `features_path` in the manifest is relative to the dataset root."""
+    `features_path` in the manifest is relative to the dataset root.
+    If `feature_rows` is set, slices to those rows (e.g., [80, 177]
+    for octopus-only from a mel+octopus dataset)."""
     manifest = sampler._manifest
     if manifest is None:
         raise RuntimeError("sampler not loaded")
@@ -148,7 +151,11 @@ def _features_for(
     )
     if entry is None:
         raise KeyError(f"chart id {chart_id} not in manifest")
-    return np.load(ds_root / entry.features_path).astype(np.float32)
+    features = np.load(ds_root / entry.features_path).astype(np.float32)
+    if feature_rows is not None:
+        lo, hi = feature_rows
+        features = features[lo:hi]
+    return features
 
 
 def _safe_chart_stem(chart_id: str) -> str:
@@ -414,9 +421,16 @@ def run_infer_corpus(
             load_iter = tqdm(selected, desc="preload", unit="chart")
         except ImportError:
             pass
+    # Detect feature_rows from the predictor's audio sampler or adapter.
+    _feat_rows: tuple[int, int] | None = getattr(
+        predictor._audio_sampler.config, "output_rows", None,
+    )
+
     for i in load_iter:
         gt_charts[i] = val_sampler.get_chart(i)
-        features_cache[i] = _features_for(val_sampler, i, ds_root)
+        features_cache[i] = _features_for(
+            val_sampler, i, ds_root, feature_rows=_feat_rows,
+        )
 
     # Conditioning builders per mode.
     fixed_cond = Conditioning(

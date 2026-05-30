@@ -84,16 +84,35 @@ class FramewiseSampleAdapter(
         *,
         device: torch.device,
     ) -> EventEmbeddingInput:
-        inp = self._detection_adapter.make_input(samples, device=device)
-        if self.config.feature_rows is not None:
-            lo, hi = self.config.feature_rows
-            inp = EventEmbeddingInput(
-                mel=inp.mel[:, lo:hi, :],
-                event_offsets=inp.event_offsets,
-                event_mask=inp.event_mask,
-                conditioning=inp.conditioning,
+        fr = self.config.feature_rows
+        if fr is not None:
+            lo, hi = fr
+            B = len(samples)
+            mel_np = np.stack([
+                np.concatenate([s.audio_past[lo:hi], s.audio_future[lo:hi]], axis=1)
+                for s in samples
+            ], axis=0)
+            mel = torch.from_numpy(mel_np).to(device=device, dtype=torch.float32)
+
+            c_events = len(samples[0].past_events)
+            offsets_np = np.empty((B, c_events), dtype=np.int64)
+            mask_np = np.empty((B, c_events), dtype=bool)
+            cond_np = np.empty((B, 3), dtype=np.float32)
+            for i, s in enumerate(samples):
+                offsets_np[i] = np.fromiter(
+                    (o.cursor_offset for o in s.past_events),
+                    dtype=np.int64, count=c_events,
+                )
+                mask_np[i] = s.past_events_mask
+                cond_np[i] = [s.density_mean, s.density_peak, s.density_std]
+
+            return EventEmbeddingInput(
+                mel=mel,
+                event_offsets=torch.from_numpy(offsets_np).to(device=device),
+                event_mask=torch.from_numpy(mask_np).to(device=device),
+                conditioning=torch.from_numpy(cond_np).to(device=device),
             )
-        return inp
+        return self._detection_adapter.make_input(samples, device=device)
 
     # ── target ────────────────────────────────────────────────────────
 

@@ -130,14 +130,26 @@ def main(argv: list[str] | None = None) -> int:
     print(f"Val charts: {total}, selected: {len(selected)}")
 
     # Preload charts + features.
+    # Detect feature_rows from the audio sampler config (e.g., output_rows
+    # on MelOctopusSampler selects octopus-only from a mel+octopus dataset).
+    _audio_cfg = spec.get("audio_sampler", {}).get("config", {})
+    _feat_rows = _audio_cfg.get("output_rows")
+    if _feat_rows is not None:
+        _feat_rows = tuple(_feat_rows)
+
     gt_charts: dict[int, Chart] = {}
     features_cache: dict[int, np.ndarray] = {}
     for i in selected:
         gt_charts[i] = sampler.get_chart(i)
         entry = sampler._chart_entries[i]
         feat_path = ds_root / entry.features_path
-        features_cache[i] = np.load(feat_path, mmap_mode="r")
-    print(f"Preloaded {len(gt_charts)} charts")
+        feat = np.load(feat_path, mmap_mode="r")
+        if _feat_rows is not None:
+            lo, hi = _feat_rows
+            feat = feat[lo:hi].copy()
+        features_cache[i] = feat
+    print(f"Preloaded {len(gt_charts)} charts"
+          + (f" (feature_rows={_feat_rows})" if _feat_rows else ""))
 
     results: list[dict[str, Any]] = []
 
