@@ -2,7 +2,7 @@
 
 ## Status
 
-`Planned`
+`Complete`
 
 ## Context
 
@@ -384,16 +384,154 @@ Everything below comes from real measurements, not predictions.
 
 ## Results summary
 
-<!-- TODO: fill after run -->
+8 evals completed (steps 41,140 to 185,130), stopped without
+threshold sweep. The octopus representation is learnable but plateaus
+~0.035-0.04 F1 below mel on every metric.
 
-## Visualizations
+### Training progression
 
-<!-- TODO: fill after run -->
+| Eval | Step | Loss | Frame F1 | fps50 | AR F1 | DR | dc_human | gap_TVD | sil_f1 |
+|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| 1 | 41,140 | 0.237 | 0.727 | 0.634 | 0.682 | 0.806 | 91.79 | 0.401 | 0.344 |
+| 2 | 61,710 | 0.237 | 0.743 | 0.649 | 0.676 | 0.773 | 92.31 | 0.401 | 0.403 |
+| 3 | 82,280 | 0.238 | 0.764 | 0.674 | 0.707 | 0.881 | 91.41 | 0.376 | 0.422 |
+| 4 | 102,850 | 0.240 | 0.780 | 0.689 | 0.725 | 0.957 | 91.99 | 0.352 | 0.353 |
+| 5 | 123,420 | 0.241 | 0.773 | 0.678 | 0.716 | 0.902 | 92.21 | 0.359 | 0.328 |
+| 6 | 143,990 | 0.241 | 0.780 | 0.688 | 0.715 | 0.916 | 91.77 | 0.367 | 0.432 |
+| 7 | 164,560 | 0.241 | 0.785 | 0.696 | 0.717 | 0.937 | 91.58 | 0.363 | 0.334 |
+| 8 | 185,130 | 0.241 | 0.784 | 0.698 | 0.728 | 0.942 | 92.04 | 0.353 | 0.389 |
+
+Frame F1 plateaued at ~0.784 from E4 onward. AR F1 peaked at 0.728
+(E8). Loss flat at 0.241.
+
+### Gap vs 017f (mel baseline)
+
+The gap closed from -0.069 to -0.036 over 8 evals then stabilized.
+
+| Eval | Frame F1 gap | AR F1 gap |
+|---:|---:|---:|
+| E1 | -0.069 | -0.074 |
+| E3 | -0.055 | -0.054 |
+| E4 | -0.040 | -0.039 |
+| E7 | -0.035 | -0.053 |
+| E8 | -0.036 | -0.038 |
+
+### Mini-window vs AR: octopus loses more in the AR loop
+
+The per-window onset detection (mini F1) is only 0.04 behind mel,
+but the AR gap is larger (0.07 at FPS-50). The octopus model loses
+more quality going from single-window detection to full autoregressive
+chart generation
+[exp_022, metrics.jsonl; exp_017f, metrics.jsonl]:
+
+| Metric | 022 mini | 022 AR | Gap | 017f mini | 017f AR | Gap |
+|---|---:|---:|---:|---:|---:|---:|
+| F1 (25ms) E8 | 0.750 | 0.728 | +0.022 | 0.782 | 0.773 | +0.009 |
+| fps50 F1 E8 | 0.698 | 0.570 | **+0.128** | 0.738 | 0.638 | +0.100 |
+
+The 0.128 mini-to-AR gap (vs mel's 0.100) means the octopus
+representation lacks information the AR decoder needs to maintain
+coherent onset spacing across windows — specifically absolute energy
+levels that distinguish silence from quiet-but-active audio.
+
+### Why silence_f1 is worse
+
+silence_overlap_f1 averaged 0.37 across evals vs 017f's ~0.53. The
+octopus gradient uses a log-domain onset function
+(`max(0, log(E[t]) - log(E[t-k]))`) that normalizes for absolute
+loudness — a quiet onset and a loud onset produce similar-magnitude
+signals. In a very quiet section (ambient decay, reverb tail), any
+small energy fluctuation produces a proportionally large log-domain
+onset, which passes the coincidence gate and appears as a real onset
+in the gradient. The model has no way to distinguish "quiet onset in
+silence" from "real onset in active music" because the representation
+discards absolute energy. Mel preserves this: a quiet section has low
+energy across all bands, and the model learns to suppress predictions
+when overall energy is low.
+
+### Benchmarks
+
+The octopus model is MORE robust to context removal (no_context
+-7.0% vs mel's -10.3%) but LESS robust to metronomic context
+(-23.5% vs -19.2%)
+[exp_022, metrics.jsonl, bench/*, step 82280]:
+
+| Benchmark | 022 drop | 017f drop | Delta |
+|---|---:|---:|---:|
+| no_context | -7.0% | -10.3% | +3.3 pp (less dependent) |
+| no_past_audio | -11.0% | -10.2% | -0.8 pp |
+| metronome | -23.5% | -19.2% | -4.3 pp (more disrupted) |
+| random_context | -14.2% | -12.0% | -2.2 pp |
 
 ## Vs prediction
 
-<!-- TODO: fill after run -->
+- **AR F1 0.72-0.77:** predicted 0.72-0.77 -> actual **0.728** ->
+  **match** (lower end of range).
+- **Precision >= 0.75:** predicted yes -> actual 0.743 ->
+  **marginal miss**.
+- **Recall 0.65-0.75:** predicted yes -> actual 0.727 -> **match**.
+- **density_ratio 0.85-1.05:** predicted yes -> actual 0.942 ->
+  **match**.
+- **dc_human >= 91:** predicted yes -> actual 92.04 -> **match**.
+- **gap_hist_tvd < 0.33:** predicted yes -> actual 0.353 -> **miss**.
+- **silence_overlap_f1 >= 0.55:** predicted yes -> actual **0.389** ->
+  **miss (wrong direction)**. Worse than mel's 0.527.
+- **frame F1 >= 0.78:** predicted yes -> actual 0.784 -> **match**.
+- **fps50 F1 >= 0.70:** predicted yes -> actual 0.698 ->
+  **marginal miss**.
+
+The silence_overlap_f1 failure is the most significant — the onset-
+focused representation was expected to improve silence handling but
+made it worse. The log-domain normalization that makes the
+representation loudness-invariant also makes it unable to distinguish
+silence from active audio.
 
 ## Takeaways
 
-<!-- TODO: fill after run -->
+- **Octopus gradient is learnable but caps ~0.035 F1 below mel.** The
+  representation carries enough onset information for frame F1 0.784
+  and AR F1 0.728, demonstrating that cross-frequency synchrony
+  detection is a valid onset feature. But it lacks timbral detail and
+  absolute energy that mel provides for the remaining ~4%.
+
+- **Log-domain loudness normalization hurts silence detection.** The
+  octopus representation's key strength (loudness invariance) is also
+  its key weakness. In quiet sections, small energy fluctuations
+  produce proportionally large onset signals, causing the model to
+  hallucinate onsets in silence. silence_overlap_f1 0.389 vs mel's
+  0.527.
+
+- **The representation loses more quality in AR than in per-window.**
+  The mini-to-AR gap at FPS-50 is 0.128 (vs mel's 0.100). The AR
+  decoder needs absolute energy context to make chart-level spacing
+  decisions (where to emit, where to stay silent), and the onset-only
+  representation doesn't provide this. This explains the silence
+  failure — the AR loop can't detect "this is a quiet section."
+
+- **Less context-dependent than mel.** The no_context benchmark drops
+  only 7.0% (vs mel's 10.3%), confirming that the pre-computed onset
+  synchrony reduces the model's reliance on event history. But this
+  advantage is outweighed by the silence/energy limitation.
+
+- **The natural next step is dual-channel input.** Mel provides
+  absolute energy and timbral context; octopus provides pre-computed
+  onset synchrony. Together, the model can use octopus for onset
+  detection and mel for energy-based gating decisions (silence
+  detection, onset importance). The `taiko2_v1_mel_octopus` dataset
+  already supports this via `feature_rows: null` (all 177 channels).
+
+## Followup questions
+
+- **Dual channel (mel + octopus)**: `feature_rows: null`, `n_mels: 177`.
+  Does adding octopus on top of mel improve onset detection without
+  the silence regression? The dataset is already built.
+
+- **Energy-augmented octopus**: add the per-channel envelope mean
+  (broadband energy) as an additional row. This gives the model one
+  "how loud is it overall" signal alongside the onset synchrony,
+  potentially fixing the silence problem without full mel.
+
+- **Onset-gated mel**: use the octopus gradient to gate/weight mel
+  features — multiply mel by octopus to emphasize onset frames and
+  suppress sustained energy. A different form of dual input that
+  explicitly combines the two representations.
