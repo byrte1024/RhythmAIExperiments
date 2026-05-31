@@ -39,6 +39,7 @@ class FramewiseSampleAdapterConfig:
     binary_only: bool = False
     max_events_per_window: int = 100
     feature_rows: tuple[int, int] | None = None
+    freq_roll_boundary: int | None = None
 
     def __post_init__(self) -> None:
         if self.b_pred <= 0:

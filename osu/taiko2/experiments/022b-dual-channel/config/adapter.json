@@ -1,0 +1,8 @@
+{
+    "_comment": "#022b adapter: no feature_rows slicing -- model sees all 177 rows (80 mel + 97 octopus). freq_roll_boundary=80 prevents FreqRoll from wrapping mel into octopus space.",
+    "__class__": "osu.taiko2.training.framewise_adapter:FramewiseSampleAdapterConfig",
+    "b_pred": 500,
+    "binary_only": true,
+    "max_events_per_window": 100,
+    "freq_roll_boundary": 80
+}

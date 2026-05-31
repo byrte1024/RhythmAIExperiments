@@ -323,8 +323,10 @@ def main(argv: list[str] | None = None) -> int:
 
     pipeline: AugmentationPipeline | None = None
     if not args.no_augmentation:
-        feat_rows = getattr(adapter_cfg, "feature_rows", None)
-        freq_boundary = feat_rows[0] if feat_rows else None
+        freq_boundary = getattr(adapter_cfg, "freq_roll_boundary", None)
+        if freq_boundary is None:
+            feat_rows = getattr(adapter_cfg, "feature_rows", None)
+            freq_boundary = feat_rows[0] if feat_rows else None
         post_augs = build_exp45_post_augs(
             seed=trainer_cfg.seed,
             freq_roll_section_boundary=freq_boundary,
