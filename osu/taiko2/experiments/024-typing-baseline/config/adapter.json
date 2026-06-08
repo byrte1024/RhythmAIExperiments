@@ -1,0 +1,5 @@
+{
+  "__class__": "osu.taiko2.training.typing_adapter:TypingAdapterConfig",
+  "dk_flip_prob": 0.5,
+  "future_dropout_prob": 0.1
+}

@@ -291,25 +291,28 @@ def main(argv: list[str] | None = None) -> int:
         return 2
 
     # 1. Load configs.
-    model_cfg: EventEmbeddingConfig = _build_from_json(cfg_dir / "model.json")
+    model_cfg = _build_from_json(cfg_dir / "model.json")
     loss_cfg = _build_from_json(cfg_dir / "loss.json")
     trainer_cfg: TrainerConfig = _build_from_json(cfg_dir / "trainer.json")
-    data_cfg: TaikoDetectionSamplerConfig = _build_from_json(cfg_dir / "data.json")
-    adapter_cfg: DetectionSampleAdapterConfig = _build_from_json(
-        cfg_dir / "adapter.json",
-    )
+    data_cfg = _build_from_json(cfg_dir / "data.json")
+    adapter_cfg = _build_from_json(cfg_dir / "adapter.json")
 
-    # Sanity: adapter/model/data must agree on b_pred + window geometry.
-    if adapter_cfg.b_pred != model_cfg.b_pred:
-        raise ValueError(
-            f"adapter.b_pred ({adapter_cfg.b_pred}) != "
-            f"model.b_pred ({model_cfg.b_pred})"
-        )
-    if data_cfg.a_bins != model_cfg.a_bins or data_cfg.b_bins != model_cfg.b_bins:
-        raise ValueError(
-            f"data a/b_bins ({data_cfg.a_bins}/{data_cfg.b_bins}) != "
-            f"model a/b_bins ({model_cfg.a_bins}/{model_cfg.b_bins})"
-        )
+    # Sanity: adapter/model/data must agree on b_pred + window geometry
+    # (onset-detector modes only; typing mode has different config shapes).
+    from ..domain.typing import TypingModelConfig
+    if not isinstance(model_cfg, TypingModelConfig):
+        if hasattr(adapter_cfg, "b_pred") and hasattr(model_cfg, "b_pred"):
+            if adapter_cfg.b_pred != model_cfg.b_pred:
+                raise ValueError(
+                    f"adapter.b_pred ({adapter_cfg.b_pred}) != "
+                    f"model.b_pred ({model_cfg.b_pred})"
+                )
+        if hasattr(data_cfg, "a_bins") and hasattr(model_cfg, "a_bins"):
+            if data_cfg.a_bins != model_cfg.a_bins or data_cfg.b_bins != model_cfg.b_bins:
+                raise ValueError(
+                    f"data a/b_bins ({data_cfg.a_bins}/{data_cfg.b_bins}) != "
+                    f"model a/b_bins ({model_cfg.a_bins}/{model_cfg.b_bins})"
+                )
 
     # 2. Resolve dataset root and wire train / val samplers. Splits
     # come from `data_cfg`; we only override `split` here so the same
@@ -318,44 +321,43 @@ def main(argv: list[str] | None = None) -> int:
     if not ds_root.is_dir():
         print(f"ERROR: dataset not found: {ds_root}", file=sys.stderr)
         return 2
-    data_cfg_train = _with(data_cfg, split="train", dataset_root=ds_root)
-    data_cfg_val = _with(data_cfg, split="val", dataset_root=ds_root)
+    # Typing mode builds its own samplers later; onset modes use
+    # TaikoDetectionSampler with the audio augmentation pipeline.
+    if not isinstance(model_cfg, TypingModelConfig):
+        data_cfg_train = _with(data_cfg, split="train", dataset_root=ds_root)
+        data_cfg_val = _with(data_cfg, split="val", dataset_root=ds_root)
 
-    pipeline: AugmentationPipeline | None = None
-    if not args.no_augmentation:
-        freq_boundary = getattr(adapter_cfg, "freq_roll_boundary", None)
-        if freq_boundary is None:
-            feat_rows = getattr(adapter_cfg, "feature_rows", None)
-            freq_boundary = feat_rows[0] if feat_rows else None
-        post_augs = build_exp45_post_augs(
-            seed=trainer_cfg.seed,
-            freq_roll_section_boundary=freq_boundary,
-        )
-        if args.time_stretch_prob > 0.0:
-            # Prepend — all subsequent augs (event jitter, specaug, etc)
-            # operate on the already-stretched sample, which is the
-            # correct order (stretch defines "real content", then
-            # perturb).
-            post_augs = [
-                TimeStretch(
-                    prob=args.time_stretch_prob,
-                    max_scale=args.time_stretch_max_scale,
-                    seed=trainer_cfg.seed,
-                ),
-            ] + post_augs
-        pre_augs: list = []
-        if args.cursor_shift_prob > 0.0:
-            pre_augs.append(
-                CursorShift(prob=args.cursor_shift_prob, seed=trainer_cfg.seed),
+        pipeline: AugmentationPipeline | None = None
+        if not args.no_augmentation:
+            freq_boundary = getattr(adapter_cfg, "freq_roll_boundary", None)
+            if freq_boundary is None:
+                feat_rows = getattr(adapter_cfg, "feature_rows", None)
+                freq_boundary = feat_rows[0] if feat_rows else None
+            post_augs = build_exp45_post_augs(
+                seed=trainer_cfg.seed,
+                freq_roll_section_boundary=freq_boundary,
             )
-        pipeline = AugmentationPipeline(
-            pre=tuple(pre_augs), post=tuple(post_augs),
-        )
+            if args.time_stretch_prob > 0.0:
+                post_augs = [
+                    TimeStretch(
+                        prob=args.time_stretch_prob,
+                        max_scale=args.time_stretch_max_scale,
+                        seed=trainer_cfg.seed,
+                    ),
+                ] + post_augs
+            pre_augs: list = []
+            if args.cursor_shift_prob > 0.0:
+                pre_augs.append(
+                    CursorShift(prob=args.cursor_shift_prob, seed=trainer_cfg.seed),
+                )
+            pipeline = AugmentationPipeline(
+                pre=tuple(pre_augs), post=tuple(post_augs),
+            )
 
-    train_sampler = TaikoDetectionSampler(data_cfg_train, pipeline=pipeline)
-    val_sampler = TaikoDetectionSampler(data_cfg_val)
-    train_sampler.load_data(progress=True)
-    val_sampler.load_data(progress=True)
+        train_sampler = TaikoDetectionSampler(data_cfg_train, pipeline=pipeline)
+        val_sampler = TaikoDetectionSampler(data_cfg_val)
+        train_sampler.load_data(progress=True)
+        val_sampler.load_data(progress=True)
 
     # 3. Model + loss + adapter + metrics + artifacts.
     is_ratio_mode = isinstance(model_cfg, RatioDetectorConfig)
@@ -373,7 +375,12 @@ def main(argv: list[str] | None = None) -> int:
         model_cfg, FramewiseDiffusionDetectorConfig,
     )
     is_framewise_bce = isinstance(model_cfg, FramewiseDetectorConfig)
-    if is_ratio_mode:
+    from ..domain.typing import TypingModelConfig
+    from ..models.typing_model import TypingTransformer
+    is_typing_mode = isinstance(model_cfg, TypingModelConfig)
+    if is_typing_mode:
+        model = TypingTransformer(model_cfg)
+    elif is_ratio_mode:
         model = RatioDetector(model_cfg)
     elif is_framewise_bce:
         model = FramewiseDetector(model_cfg)
@@ -383,7 +390,10 @@ def main(argv: list[str] | None = None) -> int:
         model = DiffusionDetector(model_cfg)
     else:
         model = EventEmbeddingDetector(model_cfg)
-    if isinstance(loss_cfg, GaussianCELossConfig):
+    from ..training.typing_loss import TypingLoss, TypingLossConfig
+    if isinstance(loss_cfg, TypingLossConfig):
+        loss = TypingLoss(loss_cfg)
+    elif isinstance(loss_cfg, GaussianCELossConfig):
         loss = GaussianCELoss(loss_cfg)
     elif isinstance(loss_cfg, LogEmdLossConfig):
         loss = LogEmdLoss(loss_cfg)
@@ -416,93 +426,118 @@ def main(argv: list[str] | None = None) -> int:
             raise TypeError(f"unsupported loss config: {type(loss_cfg).__name__}")
     if (is_diffusion_mode or is_framewise_diffusion) and hasattr(loss, "bind_model"):
         loss.bind_model(model)
-    if is_ratio_mode:
-        adapter_cfg = _with(adapter_cfg, ratio_mode=True)
-    if is_framewise_bce or is_framewise_diffusion:
-        from ..training.framewise_adapter import (
-            FramewiseSampleAdapter, FramewiseSampleAdapterConfig,
-        )
-        if isinstance(adapter_cfg, FramewiseSampleAdapterConfig):
-            fw_cfg = adapter_cfg
-        else:
-            fw_cfg = FramewiseSampleAdapterConfig(
-                b_pred=model_cfg.b_pred,
-                binary_only=is_framewise_bce,
-            )
-        adapter = FramewiseSampleAdapter(fw_cfg)
-    else:
-        adapter = DetectionSampleAdapter(adapter_cfg)
+    if is_typing_mode:
+        from ..data_samplers.typing import TypingSampler, TypingSamplerConfig
+        from ..training.typing_adapter import TypingSampleAdapter, TypingAdapterConfig
+        from ..training.metrics_typing import TypingMetric
+        from ..training.typing_artifacts import TypingConfusionArtifact
 
-    if is_framewise_bce:
-        from ..training.framewise_metric import (
-            FramewiseMetric, FramewiseMetricConfig,
+        typing_adapter_cfg = adapter_cfg if isinstance(adapter_cfg, TypingAdapterConfig) else TypingAdapterConfig()
+        adapter = TypingSampleAdapter(typing_adapter_cfg, training=True)
+        train_metrics = MetricSet(TypingMetric(prefix="typing"))
+        val_metrics = MetricSet(TypingMetric(prefix="typing"))
+        eval_artifacts: list = [TypingConfusionArtifact()]
+        # Override samplers with typing-specific ones
+        typing_data_cfg = data_cfg if isinstance(data_cfg, TypingSamplerConfig) else TypingSamplerConfig(
+            dataset_root=ds_root, batch_size=trainer_cfg.batch_size,
         )
-        train_metrics = MetricSet()
-        val_metrics = MetricSet(FramewiseMetric(FramewiseMetricConfig()))
-        from ..training.framewise_artifacts import (
-            FramewiseDistributionArtifact,
-            FramewiseHeatmapArtifact,
-        )
-        from ..training.framewise_diagnostics_artifact import (
-            FramewiseDiagnosticsArtifact,
-        )
-        eval_artifacts: list = [
-            FramewiseHeatmapArtifact(),
-            FramewiseDistributionArtifact(),
-            FramewiseDiagnosticsArtifact(),
-        ]
-    elif is_framewise_diffusion:
-        train_metrics = MetricSet()
-        val_metrics = MetricSet()
-        from ..training.framewise_artifacts import (
-            FramewiseDistributionArtifact,
-            FramewiseHeatmapArtifact,
-        )
-        eval_artifacts = [
-            FramewiseHeatmapArtifact(),
-            FramewiseDistributionArtifact(),
-        ]
+        data_cfg_train = _with(typing_data_cfg, split="train", dataset_root=ds_root)
+        data_cfg_val = _with(typing_data_cfg, split="val", dataset_root=ds_root)
+        train_sampler = TypingSampler(data_cfg_train)
+        val_sampler = TypingSampler(data_cfg_val)
+        train_sampler.load_data(progress=True)
+        val_sampler.load_data(progress=True)
+        train_weights = None
     else:
-        train_metrics = MetricSet(
-            OnsetMetric(OnsetMetricConfig(b_pred=model_cfg.b_pred)),
-        )
-        val_metrics = MetricSet(
-            OnsetMetric(OnsetMetricConfig(b_pred=model_cfg.b_pred)),
-        )
-        eval_artifacts = [
-            PredictionHeatmapArtifact(b_pred=model_cfg.b_pred),
-            DistributionArtifact(b_pred=model_cfg.b_pred),
-            RatioErrorHeatmapArtifact(b_pred=model_cfg.b_pred),
-            ErrorHistogramArtifact(b_pred=model_cfg.b_pred),
-            RatioHitArtifact(b_pred=model_cfg.b_pred),
-            MetronomeHitArtifact(b_pred=model_cfg.b_pred),
-        ]
-    if model_cfg.n_mdn_components > 0:
-        from ..training.artifacts import MdnComponentArtifact
-        eval_artifacts.append(
-            MdnComponentArtifact(
-                b_pred=model_cfg.b_pred,
-                n_components=model_cfg.n_mdn_components,
-            ),
-        )
-    if is_ratio_mode:
-        from ..training.artifacts import RatioDecompositionArtifact
-        eval_artifacts.append(
-            RatioDecompositionArtifact(
-                b_pred=model_cfg.b_pred,
-                offset_bins=model_cfg.offset_bins,
-                ratio_bins=model_cfg.ratio_bins,
-            ),
-        )
+        if is_ratio_mode:
+            adapter_cfg = _with(adapter_cfg, ratio_mode=True)
+        if is_framewise_bce or is_framewise_diffusion:
+            from ..training.framewise_adapter import (
+                FramewiseSampleAdapter, FramewiseSampleAdapterConfig,
+            )
+            if isinstance(adapter_cfg, FramewiseSampleAdapterConfig):
+                fw_cfg = adapter_cfg
+            else:
+                fw_cfg = FramewiseSampleAdapterConfig(
+                    b_pred=model_cfg.b_pred,
+                    binary_only=is_framewise_bce,
+                )
+            adapter = FramewiseSampleAdapter(fw_cfg)
+        else:
+            adapter = DetectionSampleAdapter(adapter_cfg)
+
+        if is_framewise_bce:
+            from ..training.framewise_metric import (
+                FramewiseMetric, FramewiseMetricConfig,
+            )
+            train_metrics = MetricSet()
+            val_metrics = MetricSet(FramewiseMetric(FramewiseMetricConfig()))
+            from ..training.framewise_artifacts import (
+                FramewiseDistributionArtifact,
+                FramewiseHeatmapArtifact,
+            )
+            from ..training.framewise_diagnostics_artifact import (
+                FramewiseDiagnosticsArtifact,
+            )
+            eval_artifacts = [
+                FramewiseHeatmapArtifact(),
+                FramewiseDistributionArtifact(),
+                FramewiseDiagnosticsArtifact(),
+            ]
+        elif is_framewise_diffusion:
+            train_metrics = MetricSet()
+            val_metrics = MetricSet()
+            from ..training.framewise_artifacts import (
+                FramewiseDistributionArtifact,
+                FramewiseHeatmapArtifact,
+            )
+            eval_artifacts = [
+                FramewiseHeatmapArtifact(),
+                FramewiseDistributionArtifact(),
+            ]
+        else:
+            train_metrics = MetricSet(
+                OnsetMetric(OnsetMetricConfig(b_pred=model_cfg.b_pred)),
+            )
+            val_metrics = MetricSet(
+                OnsetMetric(OnsetMetricConfig(b_pred=model_cfg.b_pred)),
+            )
+            eval_artifacts = [
+                PredictionHeatmapArtifact(b_pred=model_cfg.b_pred),
+                DistributionArtifact(b_pred=model_cfg.b_pred),
+                RatioErrorHeatmapArtifact(b_pred=model_cfg.b_pred),
+                ErrorHistogramArtifact(b_pred=model_cfg.b_pred),
+                RatioHitArtifact(b_pred=model_cfg.b_pred),
+                MetronomeHitArtifact(b_pred=model_cfg.b_pred),
+            ]
+    if not is_typing_mode:
+        if getattr(model_cfg, "n_mdn_components", 0) > 0:
+            from ..training.artifacts import MdnComponentArtifact
+            eval_artifacts.append(
+                MdnComponentArtifact(
+                    b_pred=model_cfg.b_pred,
+                    n_components=model_cfg.n_mdn_components,
+                ),
+            )
+        if is_ratio_mode:
+            from ..training.artifacts import RatioDecompositionArtifact
+            eval_artifacts.append(
+                RatioDecompositionArtifact(
+                    b_pred=model_cfg.b_pred,
+                    offset_bins=model_cfg.offset_bins,
+                    ratio_bins=model_cfg.ratio_bins,
+                ),
+            )
 
     # 4. Weighted sampling (exp 45 default).
-    # Framewise: per-bin target distribution makes the (B,)
-    # single-target-class weighting meaningless. Disable.
-    train_weights = None
-    if args.weighted_sampling and not (is_framewise_diffusion or is_framewise_bce):
-        train_weights = train_sampler.compute_target_weights(
-            b_pred=model_cfg.b_pred, power=args.weighted_power,
-        )
+    # Typing mode sets train_weights=None above; onset modes use
+    # per-target-class balanced sampling.
+    if not is_typing_mode:
+        train_weights = None
+        if args.weighted_sampling and not (is_framewise_diffusion or is_framewise_bce):
+            train_weights = train_sampler.compute_target_weights(
+                b_pred=model_cfg.b_pred, power=args.weighted_power,
+            )
 
     # 5. Run.
     spec = RunSpec(root=args.runs_dir, name=args.run_name)

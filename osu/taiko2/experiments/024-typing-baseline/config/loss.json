@@ -1,0 +1,4 @@
+{
+  "__class__": "osu.taiko2.training.typing_loss:TypingLossConfig",
+  "strength_pos_weight": 17.0
+}

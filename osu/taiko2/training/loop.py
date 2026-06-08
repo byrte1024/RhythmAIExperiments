@@ -241,11 +241,15 @@ def _infer_b_pred(output: Any, model_b_pred: int | None = None) -> int:
     directly — this is the only reliable path for ratio-mode and MDN
     outputs whose packed tensor width doesn't equal ``b_pred + 1``.
     Falls back to ``output.logits.size(-1) - 1`` for the standard
-    softmax head.
+    softmax head. Returns 0 when neither source is available (e.g.
+    typing model outputs that carry no logits field).
     """
     if model_b_pred is not None:
         return model_b_pred
-    return int(output.logits.size(-1)) - 1
+    logits = getattr(output, "logits", None)
+    if logits is not None:
+        return int(logits.size(-1)) - 1
+    return 0
 
 
 # ─────────────────────────── eval pass ────────────────────────────────
@@ -384,16 +388,30 @@ def _run_eval(
                         "f1":   f"{fs['fw/f1_loose']:.3f}",
                         "p@gt": f"{fs['fw/pmean_at_gt']:.3f}",
                     })
+                elif hasattr(out, "type_logit"):
+                    import torch as _t
+                    with _t.no_grad():
+                        _tp = _t.sigmoid(out.type_logit)
+                        _ta = float((((_tp > 0.5).float() == tgt.type_target).float().mean()))
+                        _sp = _t.sigmoid(out.strength_logit)
+                        _sa = float((((_sp > 0.5).float() == tgt.strength_target).float().mean()))
+                    eval_hit_sum += _ta
+                    eval_miss_sum += _sa
+                    pbar.set_postfix({
+                        "loss": f"{batch_loss:.3f}/{avg_loss:.3f}",
+                        "type": f"{_ta:.3f}/{eval_hit_sum / eval_batches:.3f}",
+                        "str":  f"{_sa:.3f}/{eval_miss_sum / eval_batches:.3f}",
+                    })
                 else:
                     b_pred = _infer_b_pred(out, model_b_pred)
                     bs = _batch_stats(out, tgt, b_pred=b_pred)
-                    eval_hit_sum += bs["onset/hit"]
-                    eval_miss_sum += bs["onset/miss"]
+                    eval_hit_sum += bs.get("onset/hit", 0.0)
+                    eval_miss_sum += bs.get("onset/miss", 0.0)
                     pbar.set_postfix({
                         "loss": f"{batch_loss:.3f}/{avg_loss:.3f}",
-                        "hit":  f"{bs['onset/hit']:.3f}/"
+                        "hit":  f"{bs.get('onset/hit', 0):.3f}/"
                                 f"{eval_hit_sum / eval_batches:.3f}",
-                        "miss":  f"{bs['onset/miss']:.3f}/"
+                        "miss":  f"{bs.get('onset/miss', 0):.3f}/"
                                 f"{eval_miss_sum / eval_batches:.3f}",
                     })
 
@@ -527,11 +545,7 @@ def train(
                 f"{_resume_skip_slices} slice(s) of epoch {state.epoch}"
             )
     else:
-        resumed = load_latest_if_any(spec)
-        if resumed is not None:
-            state = resumed.restore_to(
-                model=model, optimizer=optimizer, scheduler=scheduler,
-            )
+        pass  # Fresh start — no auto-resume from latest.pt.
 
     # Hooks: defaults + user-provided.
     # Order matters — MetricLogger must fire BEFORE ConsoleLogger so
@@ -711,9 +725,29 @@ def train(
                             "f1": f"{batch_extras['fw/f1_loose']:.3f}",
                             "p@gt": f"{batch_extras['fw/pmean_at_gt']:.3f}",
                         })
+                elif "type_acc" in result.metrics:
+                    epoch_hit_sum += result.metrics["type_acc"]
+                    epoch_miss_sum += result.metrics["strength_acc"]
+                    if pbar is not None:
+                        denom = max(epoch_n, 1)
+                        pbar.set_postfix({
+                            "loss": (
+                                f"{batch_loss:.3f}/"
+                                f"{epoch_loss_sum / denom:.3f}"
+                            ),
+                            "type": (
+                                f"{result.metrics['type_acc']:.3f}/"
+                                f"{epoch_hit_sum / denom:.3f}"
+                            ),
+                            "str": (
+                                f"{result.metrics['strength_acc']:.3f}/"
+                                f"{epoch_miss_sum / denom:.3f}"
+                            ),
+                            "comb": f"{result.metrics['combined_acc']:.3f}",
+                        })
                 else:
-                    epoch_hit_sum += batch_extras["onset/hit"]
-                    epoch_miss_sum += batch_extras["onset/miss"]
+                    epoch_hit_sum += batch_extras.get("onset/hit", 0.0)
+                    epoch_miss_sum += batch_extras.get("onset/miss", 0.0)
                     if pbar is not None:
                         denom = max(epoch_n, 1)
                         pbar.set_postfix({
@@ -722,11 +756,11 @@ def train(
                                 f"{epoch_loss_sum / denom:.3f}"
                             ),
                             "hit": (
-                                f"{batch_extras['onset/hit']:.3f}/"
+                                f"{batch_extras.get('onset/hit', 0):.3f}/"
                                 f"{epoch_hit_sum / denom:.3f}"
                             ),
                             "miss": (
-                                f"{batch_extras['onset/miss']:.3f}/"
+                                f"{batch_extras.get('onset/miss', 0):.3f}/"
                                 f"{epoch_miss_sum / denom:.3f}"
                             ),
                         })
