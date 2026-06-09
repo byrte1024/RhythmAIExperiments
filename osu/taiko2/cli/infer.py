@@ -244,6 +244,16 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--debug", action="store_true",
                    help="Save per-step AR log + chart metrics JSON.")
     p.add_argument(
+        "--typing-config", type=Path, default=None,
+        help=(
+            "Path to a typing model spec JSON. When provided, a second "
+            "pass runs the typing model over the predicted onsets to "
+            "assign D/K and normal/big kinds. Without this, all onsets "
+            "are DON. Spec shape: {\"checkpoint\": \"...\", \"config\": "
+            "{\"strength_threshold\": 0.8, \"bin_ms\": 5.0}}"
+        ),
+    )
+    p.add_argument(
         "--andopen", type=str, nargs="?",
         const="", default=None, metavar="VIEWER_FLAGS",
         help=(
@@ -298,6 +308,26 @@ def main(argv: list[str] | None = None) -> int:
         print(f"[infer] device:     {device}")
 
         out_chart = predictor.predict(chart, conditioning=conditioning)
+
+    # Optional second pass: typing model assigns D/K + normal/big.
+    if args.typing_config is not None:
+        from ..inference.typing_pass import load_typing_spec, type_chart
+
+        typing_model, typing_cfg = load_typing_spec(
+            args.typing_config, device=device,
+        )
+        print(
+            f"[infer] typing pass: {args.typing_config}  "
+            f"(strength_thr={typing_cfg.strength_threshold})"
+        )
+        typing_features = predictor._extract_features(chart)
+        out_chart = type_chart(
+            typing_model, out_chart, typing_features,
+            device=device, config=typing_cfg,
+        )
+        from collections import Counter
+        kind_counts = Counter(o.kind.value for o in out_chart.track.onsets)
+        print(f"[infer] typed: {dict(kind_counts)}")
 
     out_chart.save_osz(osz_path)
     print(

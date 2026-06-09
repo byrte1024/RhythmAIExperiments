@@ -1,0 +1,9 @@
+{
+  "_comment": "Typing model inference spec for experiment 024b (full run).",
+  "checkpoint": "osu/taiko2/runs/exp_024b_typing_full/checkpoints/best.pt",
+  "config": {
+    "__class__": "osu.taiko2.inference.typing_pass:TypingInferConfig",
+    "strength_threshold": 0.8,
+    "bin_ms": 5.0
+  }
+}

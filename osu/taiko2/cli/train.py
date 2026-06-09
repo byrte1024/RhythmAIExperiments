@@ -543,8 +543,28 @@ def main(argv: list[str] | None = None) -> int:
     spec = RunSpec(root=args.runs_dir, name=args.run_name)
     print(f"run dir: {spec.run_dir}")
 
-    # Optional per-eval corpus inference hook.
+    # Optional per-eval hooks.
     pre_hooks: list = []
+
+    # Typing AR hook (fires for typing mode runs).
+    if is_typing_mode:
+        from ..training.typing_ar_hook import TypingARHook, TypingARHookConfig
+        ar_cfg = TypingARHookConfig(
+            n_charts=min(100, len(val_sampler._chart_ids)),
+            every_n_evals=2,
+        )
+        pre_hooks.append(TypingARHook(
+            config=ar_cfg,
+            spec=spec,
+            model=model,
+            val_sampler=val_sampler,
+            device=args.device,
+        ))
+        print(
+            f"[typing-ar] hook enabled — every {ar_cfg.every_n_evals} "
+            f"eval(s), {ar_cfg.n_charts} charts"
+        )
+
     if args.infer_corpus_spec is not None and args.infer_corpus_config is not None:
         import json as _json
         from ..inference.spec import build_config, load_spec

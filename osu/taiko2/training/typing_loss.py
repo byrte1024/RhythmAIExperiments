@@ -1,4 +1,6 @@
-"""Loss for the typing model: BCE on type (D/K) + weighted BCE on strength."""
+"""Loss for the typing model: BCE on type (D/K) + weighted BCE on strength,
+with optional entropy penalty to push predictions toward certainty.
+"""
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -13,6 +15,8 @@ from ..domain.typing import TypingOutput, TypingTarget
 @dataclass(frozen=True, slots=True)
 class TypingLossConfig(LossConfig):
     strength_pos_weight: float = 17.0
+    entropy_weight_type: float = 0.0
+    entropy_weight_strength: float = 0.0
 
 
 class TypingLoss(Loss[TypingLossConfig, TypingOutput, TypingTarget]):
@@ -34,37 +38,47 @@ class TypingLoss(Loss[TypingLossConfig, TypingOutput, TypingTarget]):
             output.strength_logit, target.strength_target,
             pos_weight=self._strength_pw,
         )
-        total = type_loss + strength_loss
 
-        # Per-batch metrics (detached, for train/batch/* logging)
+        # Entropy penalties — push sigmoid outputs toward 0 or 1.
+        # H(p) = -p*log(p) - (1-p)*log(1-p), maximized at p=0.5.
+        # Minimizing H encourages commitment. The penalty is computed
+        # on the graph-connected sigmoid so gradients flow.
+        type_prob = torch.sigmoid(output.type_logit)
+        str_prob = torch.sigmoid(output.strength_logit)
+        eps = 1e-7
+
+        type_ent = -(
+            type_prob * torch.log(type_prob + eps)
+            + (1 - type_prob) * torch.log(1 - type_prob + eps)
+        )
+        str_ent = -(
+            str_prob * torch.log(str_prob + eps)
+            + (1 - str_prob) * torch.log(1 - str_prob + eps)
+        )
+
+        total = type_loss + strength_loss
+        ent_type_val = type_ent.mean()
+        ent_str_val = str_ent.mean()
+        if self.config.entropy_weight_type > 0:
+            total = total + self.config.entropy_weight_type * ent_type_val
+        if self.config.entropy_weight_strength > 0:
+            total = total + self.config.entropy_weight_strength * ent_str_val
+
+        # Per-batch metrics (detached)
         with torch.no_grad():
-            type_prob = torch.sigmoid(output.type_logit)
             type_pred = (type_prob > 0.5).float()
             type_acc = float((type_pred == target.type_target).float().mean())
 
-            str_prob = torch.sigmoid(output.strength_logit)
             str_pred = (str_prob > 0.5).float()
             str_acc = float((str_pred == target.strength_target).float().mean())
 
-            # Combined 4-class
-            pred_kind = type_pred.long()           # 0=D, 1=K
-            pred_big = str_pred.long()             # 0=normal, 1=big
-            pred_4 = pred_kind + pred_big * 2      # 0=D, 1=K, 2=BD, 3=BK
+            pred_kind = type_pred.long()
+            pred_big = str_pred.long()
+            pred_4 = pred_kind + pred_big * 2
             gt_kind = target.type_target.long()
             gt_big = target.strength_target.long()
             gt_4 = gt_kind + gt_big * 2
             combined_acc = float((pred_4 == gt_4).float().mean())
-
-            # Entropy
-            eps = 1e-7
-            type_ent = -(
-                type_prob * torch.log(type_prob + eps)
-                + (1 - type_prob) * torch.log(1 - type_prob + eps)
-            )
-            str_ent = -(
-                str_prob * torch.log(str_prob + eps)
-                + (1 - str_prob) * torch.log(1 - str_prob + eps)
-            )
 
         return LossResult(
             loss=total,
@@ -72,10 +86,10 @@ class TypingLoss(Loss[TypingLossConfig, TypingOutput, TypingTarget]):
                 "loss": float(total.detach()),
                 "type_loss": float(type_loss.detach()),
                 "strength_loss": float(strength_loss.detach()),
+                "type_entropy": float(ent_type_val.detach()),
+                "strength_entropy": float(ent_str_val.detach()),
                 "type_acc": type_acc,
                 "strength_acc": str_acc,
                 "combined_acc": combined_acc,
-                "type_entropy_mean": float(type_ent.mean()),
-                "strength_entropy_mean": float(str_ent.mean()),
             },
         )

@@ -214,8 +214,8 @@ class TestTypingLoss:
         assert "type_acc" in result.metrics
         assert "strength_acc" in result.metrics
         assert "combined_acc" in result.metrics
-        assert "type_entropy_mean" in result.metrics
-        assert "strength_entropy_mean" in result.metrics
+        assert "type_entropy" in result.metrics
+        assert "strength_entropy" in result.metrics
 
     def test_loss_positive(self, loss_fn):
         B = 4
@@ -257,7 +257,7 @@ class TestTypingLoss:
             strength_target=torch.zeros(B),
         )
         result = loss_fn(out_conf, tgt)
-        assert result.metrics["type_entropy_mean"] < 0.01
+        assert result.metrics["type_entropy"] < 0.01
 
         # Uncertain predictions -> high entropy
         out_unc = TypingOutput(
@@ -265,7 +265,7 @@ class TestTypingLoss:
             strength_logit=torch.zeros(B),
         )
         result2 = loss_fn(out_unc, tgt)
-        assert result2.metrics["type_entropy_mean"] > 0.6
+        assert result2.metrics["type_entropy"] > 0.6
 
     def test_strength_pos_weight_effect(self):
         B = 4

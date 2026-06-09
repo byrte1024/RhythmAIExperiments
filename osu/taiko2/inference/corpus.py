@@ -71,6 +71,11 @@ class InferCorpusConfig:
     # `comparisons_summary_tol.json` under each mode dir. Existing
     # single-tolerance flow is untouched.
     tolerances_ms: tuple[int, ...] = ()
+    # Optional typing model spec JSON path. When set, a second pass
+    # runs the typing model AR over each generated chart's onsets to
+    # assign D/K and normal/big kinds before comparison. Uses the same
+    # spec format as cli/infer.py --typing-config.
+    typing_spec: str | None = None
 
 
 # ─────────────────────────── metric averaging ────────────────────────
@@ -317,6 +322,9 @@ def _run_one_mode(
     conditioning_for: Callable[[Chart], Conditioning],
     progress: bool,
     tolerances_ms: tuple[int, ...] = (),
+    typing_model: Any = None,
+    typing_device: Any = None,
+    typing_config: Any = None,
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[ChartComparison], list[dict[int, ChartComparison]]]:
     gen_dir = mode_dir / "generated"
     metrics_dir = mode_dir / "metrics"
@@ -350,6 +358,14 @@ def _run_one_mode(
             gt_chart, conditioning=cond, features=features,
             step_log_path=step_log_path,
         )
+
+        if typing_model is not None:
+            from .typing_pass import type_chart
+            generated = type_chart(
+                typing_model, generated, features,
+                device=typing_device or "cpu",
+                config=typing_config,
+            )
 
         generated.save(gen_dir / f"{stem}.zip")
 
@@ -455,6 +471,17 @@ def run_infer_corpus(
         "fixed": _cond_fixed,
     }
 
+    # Optional typing model for second-pass kind assignment.
+    _typing_model = None
+    _typing_device = None
+    _typing_cfg = None
+    if config.typing_spec is not None:
+        from .typing_pass import load_typing_spec
+        _typing_device = next(predictor._model.parameters()).device
+        _typing_model, _typing_cfg = load_typing_spec(
+            config.typing_spec, device=_typing_device,
+        )
+
     started = time.time()
     flat_summary: dict[str, float] = {}
     per_mode_rows: dict[str, tuple[list[dict[str, Any]], list[dict[str, Any]]]] = {}
@@ -473,6 +500,9 @@ def run_infer_corpus(
             conditioning_for=mode_cond_map[mode],
             progress=progress,
             tolerances_ms=config.tolerances_ms,
+            typing_model=_typing_model,
+            typing_device=_typing_device,
+            typing_config=_typing_cfg,
         )
         per_mode_rows[mode] = (metric_rows, cmp_rows)
 
