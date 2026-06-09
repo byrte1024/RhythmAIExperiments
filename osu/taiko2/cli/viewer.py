@@ -519,12 +519,22 @@ class GifPlayer:
     progressed between the last-passed onset and the next-upcoming
     onset. One full GIF cycle spans ``cycles`` onset crossings, so
     `cycles=4` produces a loop that completes every 4 beats.
+
+    **gifsplit mode** (``split_don_first`` is not None): the GIF is
+    cut in half — first half and second half are assigned to DON and
+    KA (or KA and DON if ``split_don_first=1``). Which half plays
+    depends on the kind of the next approaching onset. This lets a
+    single GIF carry two character animations that switch per-note.
     """
 
-    def __init__(self, gif_path: Path, cycles: int = 1):
+    def __init__(
+        self, gif_path: Path, cycles: int = 1,
+        split_don_first: int | None = None,
+    ):
         import pygame
         from PIL import Image
         self.cycles = max(1, int(cycles))
+        self.split_don_first = split_don_first
         self.frames: list = []
         img = Image.open(gif_path)
         try:
@@ -541,6 +551,22 @@ class GifPlayer:
             raise ValueError(f"No frames found in {gif_path}")
         self.n_frames = len(self.frames)
         self.current_frame = 0
+
+        # In split mode, divide frames into two halves.
+        if self.split_don_first is not None:
+            mid = self.n_frames // 2
+            if self.split_don_first == 0:
+                self.don_frames_idx = list(range(0, mid))
+                self.ka_frames_idx = list(range(mid, self.n_frames))
+            else:
+                self.ka_frames_idx = list(range(0, mid))
+                self.don_frames_idx = list(range(mid, self.n_frames))
+            if not self.don_frames_idx or not self.ka_frames_idx:
+                raise ValueError(
+                    f"GIF has {self.n_frames} frames -- need at least 2 "
+                    f"for gifsplit mode"
+                )
+
         # Pre-scale once to a reasonable overlay height.
         fw, fh = self.frames[0].get_size()
         self.display_h = 440
@@ -551,11 +577,40 @@ class GifPlayer:
             )
             for f in self.frames
         ]
+        mode_str = ""
+        if self.split_don_first is not None:
+            first = "DON" if self.split_don_first == 0 else "KA"
+            mode_str = f", gifsplit (first half={first})"
         print(
             f"[viewer] GIF loaded: {self.n_frames} frames, "
             f"display {self.display_w}x{self.display_h}, "
-            f"{self.cycles} onsets/cycle"
+            f"{self.cycles} onsets/cycle{mode_str}"
         )
+
+    def _next_onset_is_don(self, now_ms: int, onsets) -> bool:
+        """Return True if the next approaching onset is DON or BIG_DON."""
+        for o in onsets:
+            if int(o.time_ms) > now_ms:
+                return o.kind in (OnsetKind.DON, OnsetKind.BIG_DON)
+        return True  # default to DON if past all onsets
+
+    def _big_intensity(self, now_ms: int, onsets) -> float:
+        """Return 0.0-1.0 intensity for the BIG flash effect.
+
+        Peaks at the moment a BIG note crosses the hit line, fades
+        over ~150ms. Looks for the most recent BIG onset within 150ms.
+        """
+        best = 0.0
+        for o in onsets:
+            t = int(o.time_ms)
+            if t > now_ms:
+                break
+            if o.kind in (OnsetKind.BIG_DON, OnsetKind.BIG_KA):
+                age = now_ms - t
+                if 0 <= age < 150:
+                    intensity = 1.0 - age / 150.0
+                    best = max(best, intensity)
+        return best
 
     def update(self, now_ms: int, onsets) -> None:
         """Advance the current frame based on playhead progress between
@@ -578,10 +633,42 @@ class GifPlayer:
             inter = 0.0
         inter = max(0.0, min(1.0, inter))
         progress = (cycle_event + inter) / self.cycles
-        self.current_frame = int(progress * self.n_frames) % self.n_frames
+
+        if self.split_don_first is not None:
+            is_don = self._next_onset_is_don(now_ms, onsets)
+            half = self.don_frames_idx if is_don else self.ka_frames_idx
+            n_half = len(half)
+            idx_in_half = int(progress * n_half) % n_half
+            self.current_frame = half[idx_in_half]
+        else:
+            self.current_frame = int(progress * self.n_frames) % self.n_frames
+
+        self._current_big_intensity = self._big_intensity(now_ms, onsets)
 
     def draw(self, screen, x: int, y: int) -> None:
-        screen.blit(self.scaled_frames[self.current_frame], (x, y))
+        frame = self.scaled_frames[self.current_frame]
+        if self._current_big_intensity > 0:
+            frame = self._apply_big_effect(frame, self._current_big_intensity)
+        screen.blit(frame, (x, y))
+
+    _current_big_intensity: float = 0.0
+
+    @staticmethod
+    def _apply_big_effect(surface, intensity: float):
+        """Boost contrast and saturation. intensity 0-1."""
+        import numpy as np
+        import pygame
+        arr = pygame.surfarray.pixels3d(surface).copy()
+        # Contrast: push away from midpoint (128)
+        contrast = 1.0 + 0.6 * intensity
+        arr = np.clip((arr.astype(np.float32) - 128) * contrast + 128, 0, 255)
+        # Saturation: boost distance from per-pixel luminance
+        lum = arr.mean(axis=2, keepdims=True)
+        sat = 1.0 + 0.8 * intensity
+        arr = np.clip(lum + (arr - lum) * sat, 0, 255)
+        result = surface.copy()
+        pygame.surfarray.blit_array(result, arr.astype(np.uint8))
+        return result
 
 
 # ─────────────────────────── main viewer ──────────────────────────────
@@ -596,6 +683,7 @@ class Viewer:
         compute_mel: bool = True,
         gif_path: Path | None = None,
         gif_cycles: int = 1,
+        gifsplit: int | None = None,
     ):
         import pygame
         self.pygame = pygame
@@ -722,7 +810,10 @@ class Viewer:
         self.gif_player: "GifPlayer | None" = None
         if gif_path is not None:
             try:
-                self.gif_player = GifPlayer(gif_path, cycles=gif_cycles)
+                self.gif_player = GifPlayer(
+                    gif_path, cycles=gif_cycles,
+                    split_don_first=gifsplit,
+                )
             except Exception as exc:
                 print(f"[viewer] gif load failed: {exc}", file=sys.stderr)
 
@@ -1685,17 +1776,41 @@ class Viewer:
         print(f"[viewer] rendering to {output_path} at {fps}fps …")
 
         # ── mixed audio (song + tick sounds at each onset) ────────────
+        # Four distinct ticks: DON = low thump, KA = high click,
+        # BIG variants = louder + longer versions.
         sr = 44100
-        tick_dur_s = 0.04
-        n_tick = int(sr * tick_dur_s)
 
-        def _noise_tick(vol: float) -> np.ndarray:
-            noise = np.random.uniform(-1.0, 1.0, n_tick)
-            fade = 1.0 - (np.arange(n_tick) / n_tick) ** 0.5
+        def _make_don(dur_s: float, vol: float) -> np.ndarray:
+            """Low-pass filtered noise — thuddy, muffled."""
+            n = int(sr * dur_s)
+            noise = np.random.uniform(-1.0, 1.0, n)
+            # Simple low-pass: cumulative average over ~8 samples
+            kernel = np.ones(8) / 8
+            noise = np.convolve(noise, kernel, mode="same")
+            fade = np.exp(-np.linspace(0, dur_s, n) * 40)
             return (noise * fade * vol * 32767).astype(np.int16)
 
-        don_tick = _noise_tick(1.4)
-        ka_tick = _noise_tick(1.0)
+        def _make_ka(dur_s: float, vol: float) -> np.ndarray:
+            """Lightly filtered noise — slightly brighter than don."""
+            n = int(sr * dur_s)
+            noise = np.random.uniform(-1.0, 1.0, n)
+            # Mild low-pass: less smoothing than don (4 vs 8 taps)
+            kernel = np.ones(4) / 4
+            noise = np.convolve(noise, kernel, mode="same")
+            fade = np.exp(-np.linspace(0, dur_s, n) * 50)
+            return (noise * fade * vol * 32767).astype(np.int16)
+
+        tick_don = _make_don(0.04, 1.6)
+        tick_ka = _make_ka(0.03, 1.3)
+        tick_big_don = _make_don(0.06, 2.4)
+        tick_big_ka = _make_ka(0.05, 2.0)
+
+        tick_map = {
+            OnsetKind.DON: tick_don,
+            OnsetKind.KA: tick_ka,
+            OnsetKind.BIG_DON: tick_big_don,
+            OnsetKind.BIG_KA: tick_big_ka,
+        }
 
         audio_data: np.ndarray | None = None
         if self.audio_path is not None and self.audio_path.exists():
@@ -1733,12 +1848,11 @@ class Viewer:
             mixed[: len(audio_data)] = audio_data
             for o in self._sorted_onsets:
                 pos = int(o.time_ms / 1000 * sr)
-                tick = ka_tick if o.kind in (
-                    OnsetKind.KA, OnsetKind.BIG_KA,
-                ) else don_tick
+                tick = tick_map.get(o.kind, tick_don)
                 end = min(pos + len(tick), total)
                 if 0 <= pos < total:
                     mixed[pos:end] += tick[: end - pos]
+            mixed = mixed * 1.25
             peak = np.abs(mixed).max()
             if peak > 32767:
                 mixed = mixed * (32767 / peak)
@@ -1902,6 +2016,10 @@ class Viewer:
                     src = self.gif_player.scaled_frames[
                         self.gif_player.current_frame
                     ]
+                    if self.gif_player._current_big_intensity > 0:
+                        src = GifPlayer._apply_big_effect(
+                            src, self.gif_player._current_big_intensity,
+                        )
                     scaled = pygame.transform.smoothscale(src, (gw, gh))
                     surface.blit(scaled, (render_w - gw, 0))
 
@@ -1972,6 +2090,14 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="Onsets per full GIF animation cycle (default 1).",
     )
     p.add_argument(
+        "--gifsplit", type=int, default=None, choices=[0, 1],
+        help=(
+            "Split the GIF into two halves: one for DON, one for KA. "
+            "The displayed half changes based on the next approaching "
+            "note's kind. 0 = first half is DON, 1 = first half is KA."
+        ),
+    )
+    p.add_argument(
         "--render", type=Path, default=None,
         help=(
             "Headless render mode — skip the interactive window, write "
@@ -2024,6 +2150,7 @@ def main(argv: list[str] | None = None) -> int:
             compute_mel=not args.no_mel,
             gif_path=args.gif,
             gif_cycles=args.gif_cycles,
+            gifsplit=args.gifsplit,
         )
         if args.render is not None:
             # Headless render: skip the interactive window entirely.

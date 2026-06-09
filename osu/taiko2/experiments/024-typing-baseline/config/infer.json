@@ -3,7 +3,7 @@
   "checkpoint": "osu/taiko2/runs/exp_024_typing_smoke/checkpoints/best.pt",
   "config": {
     "__class__": "osu.taiko2.inference.typing_pass:TypingInferConfig",
-    "strength_threshold": 0.8,
+    "strength_threshold": 0.9,
     "bin_ms": 5.0
   }
 }

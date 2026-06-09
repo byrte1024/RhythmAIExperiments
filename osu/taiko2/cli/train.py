@@ -551,7 +551,7 @@ def main(argv: list[str] | None = None) -> int:
         from ..training.typing_ar_hook import TypingARHook, TypingARHookConfig
         ar_cfg = TypingARHookConfig(
             n_charts=min(100, len(val_sampler._chart_ids)),
-            every_n_evals=2,
+            every_n_evals=1,
         )
         pre_hooks.append(TypingARHook(
             config=ar_cfg,
