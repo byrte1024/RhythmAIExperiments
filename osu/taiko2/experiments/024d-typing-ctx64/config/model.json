@@ -1,0 +1,16 @@
+{
+  "__class__": "osu.taiko2.domain.typing:TypingModelConfig",
+  "n_mels": 80,
+  "mel_patch": 5,
+  "past_context": 64,
+  "future_context": 64,
+  "d_model": 64,
+  "n_layers": 3,
+  "n_heads": 4,
+  "d_ff": 256,
+  "dropout": 0.1,
+  "d_mel": 32,
+  "d_ioi": 16,
+  "d_kind": 16,
+  "d_pos": 32
+}
