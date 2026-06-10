@@ -38,7 +38,8 @@ _HALF_MEL = TYPING_MEL_PATCH // 2
 @dataclass(frozen=True, slots=True)
 class TypingSamplerConfig(DataSamplerConfig):
     dataset_root: Path = field(default=Path("."))
-    context: int = TYPING_CONTEXT
+    past_context: int = TYPING_CONTEXT
+    future_context: int = TYPING_CONTEXT
     mel_patch: int = TYPING_MEL_PATCH
     split: str = "all"
     split_ratios: tuple[tuple[str, float], ...] = (("train", 0.9), ("val", 0.1))
@@ -175,24 +176,25 @@ class TypingSampler(DataSampler[TypingSample, TypingSamplerConfig]):
         bins = self._event_bins[chart_idx]
         kinds = self._event_kind_ids[chart_idx]
         features = self._features[chart_idx]
-        ctx = self.config.context
+        pc = self.config.past_context
+        fc = self.config.future_context
         n_hits = len(bins)
 
         target_bin = int(bins[hit_pos])
         target_kind_id = int(kinds[hit_pos])
 
         # Past context
-        past_iois = np.zeros((ctx, 3), dtype=np.float32)
-        past_kinds = np.zeros(ctx, dtype=np.uint8)
-        past_bigs = np.zeros(ctx, dtype=np.uint8)
-        past_mel = np.zeros((ctx, features.shape[0], self.config.mel_patch), dtype=np.float32)
-        past_mask = np.ones(ctx, dtype=bool)  # True = padded
+        past_iois = np.zeros((pc, 3), dtype=np.float32)
+        past_kinds = np.zeros(pc, dtype=np.uint8)
+        past_bigs = np.zeros(pc, dtype=np.uint8)
+        past_mel = np.zeros((pc, features.shape[0], self.config.mel_patch), dtype=np.float32)
+        past_mask = np.ones(pc, dtype=bool)  # True = padded
 
-        past_start = max(0, hit_pos - ctx)
+        past_start = max(0, hit_pos - pc)
         past_count = hit_pos - past_start
         for j in range(past_count):
             src = past_start + j
-            dst = ctx - past_count + j
+            dst = pc - past_count + j
             past_iois[dst] = _compute_iois(bins, src)
             past_kinds[dst] = self._kind_to_dk(int(kinds[src]))
             past_bigs[dst] = self._kind_to_big(int(kinds[src]))
@@ -204,11 +206,11 @@ class TypingSampler(DataSampler[TypingSample, TypingSamplerConfig]):
         target_mel = self._extract_mel_patch(features, target_bin)
 
         # Future context
-        future_iois = np.zeros((ctx, 3), dtype=np.float32)
-        future_mel = np.zeros((ctx, features.shape[0], self.config.mel_patch), dtype=np.float32)
-        future_mask = np.ones(ctx, dtype=bool)
+        future_iois = np.zeros((fc, 3), dtype=np.float32)
+        future_mel = np.zeros((fc, features.shape[0], self.config.mel_patch), dtype=np.float32)
+        future_mask = np.ones(fc, dtype=bool)
 
-        future_end = min(n_hits, hit_pos + 1 + ctx)
+        future_end = min(n_hits, hit_pos + 1 + fc)
         future_count = future_end - (hit_pos + 1)
         for j in range(future_count):
             src = hit_pos + 1 + j

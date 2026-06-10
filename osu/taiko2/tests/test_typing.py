@@ -100,7 +100,9 @@ class TestDomainTypes:
         assert cfg.d_model == 64
         assert cfg.n_layers == 3
         assert cfg.n_heads == 4
-        assert cfg.context == TYPING_CONTEXT
+        assert cfg.past_context == TYPING_CONTEXT
+        assert cfg.future_context == TYPING_CONTEXT
+        assert cfg.window == 2 * TYPING_CONTEXT + 1
 
 
 # ─────────────────────────── model ───────────────────────────────────

@@ -27,7 +27,7 @@ from ..data_samplers.typing import (
     IDX_KA,
     TypingSampler,
 )
-from ..domain.beatmap import OnsetBinned, OnsetKind, Density
+from ..domain.beatmap import OnsetBinned, OnsetKind
 from ..domain.chart import Chart
 from ..domain.training import RunSpec, TrainerHook, TrainingState
 from ..inference.typing_pass import type_chart

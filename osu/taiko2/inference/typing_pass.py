@@ -33,9 +33,7 @@ import torch
 from ..domain.beatmap import OnsetBinned, OnsetKind
 from ..domain.chart import Chart
 from ..domain.typing import (
-    TYPING_CONTEXT,
     TYPING_MEL_PATCH,
-    TYPING_WINDOW,
     TypingInput,
     TypingModelConfig,
 )
@@ -156,8 +154,9 @@ def type_chart(
     bins = np.array([o.bin if hasattr(o, "bin") else round(o.time_ms / _bin_ms)
                      for o in onsets], dtype=np.int64)
 
-    ctx = TYPING_CONTEXT
-    W = TYPING_WINDOW
+    pc = model.config.past_context
+    fc = model.config.future_context
+    W = pc + 1 + fc
     n_hits = len(bins)
     n_mels = features.shape[0]
     mel_dim = n_mels * TYPING_MEL_PATCH
@@ -174,11 +173,11 @@ def type_chart(
         mask_all = np.ones((1, W), dtype=bool)
 
         # Past (own predictions)
-        past_start = max(0, i - ctx)
+        past_start = max(0, i - pc)
         past_count = i - past_start
         for j in range(past_count):
             src = past_start + j
-            dst = ctx - past_count + j
+            dst = pc - past_count + j
             mel_all[0, dst] = _extract_mel_patch(features, int(bins[src])).ravel()
             ioi_all[0, dst] = _compute_iois(bins, src)
             kind_all[0, dst] = int(pred_dk[src])
@@ -186,14 +185,14 @@ def type_chart(
             mask_all[0, dst] = False
 
         # Target
-        mel_all[0, ctx] = _extract_mel_patch(features, int(bins[i])).ravel()
-        ioi_all[0, ctx] = _compute_iois(bins, i)
-        mask_all[0, ctx] = False
+        mel_all[0, pc] = _extract_mel_patch(features, int(bins[i])).ravel()
+        ioi_all[0, pc] = _compute_iois(bins, i)
+        mask_all[0, pc] = False
 
         # Future
-        future_end = min(n_hits, i + 1 + ctx)
+        future_end = min(n_hits, i + 1 + fc)
         for j in range(future_end - (i + 1)):
-            fi = ctx + 1 + j
+            fi = pc + 1 + j
             src = i + 1 + j
             mel_all[0, fi] = _extract_mel_patch(features, int(bins[src])).ravel()
             ioi_all[0, fi] = _compute_iois(bins, src)

@@ -15,9 +15,9 @@ from .model import ModelConfig, ModelInput, ModelOutput, ModelTarget
 from .sampling import DataSample
 
 
-TYPING_CONTEXT = 16  # past and future onset count
+TYPING_CONTEXT = 16  # default past and future onset count (legacy)
 TYPING_MEL_PATCH = 5  # frames per onset mel patch
-TYPING_WINDOW = 2 * TYPING_CONTEXT + 1  # total tokens (33)
+TYPING_WINDOW = 2 * TYPING_CONTEXT + 1  # legacy total tokens (33)
 
 
 @dataclass(frozen=True, slots=True)
@@ -42,7 +42,8 @@ class TypingSample(DataSample):
 class TypingModelConfig(ModelConfig):
     n_mels: int = 80
     mel_patch: int = TYPING_MEL_PATCH
-    context: int = TYPING_CONTEXT
+    past_context: int = TYPING_CONTEXT
+    future_context: int = TYPING_CONTEXT
     d_model: int = 64
     n_layers: int = 3
     n_heads: int = 4
@@ -52,6 +53,10 @@ class TypingModelConfig(ModelConfig):
     d_ioi: int = 16
     d_kind: int = 16
     d_pos: int = 32
+
+    @property
+    def window(self) -> int:
+        return self.past_context + 1 + self.future_context
 
 
 @dataclass(frozen=True, slots=True)

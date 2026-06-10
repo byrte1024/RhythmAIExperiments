@@ -16,8 +16,6 @@ import torch
 
 from ..domain.adapter import SampleToModelAdapter
 from ..domain.typing import (
-    TYPING_CONTEXT,
-    TYPING_WINDOW,
     TypingInput,
     TypingSample,
     TypingTarget,
@@ -59,8 +57,9 @@ class TypingSampleAdapter(
         self, samples: list[TypingSample], *, device: torch.device,
     ) -> tuple[TypingInput, TypingTarget]:
         B = len(samples)
-        ctx = TYPING_CONTEXT
-        W = TYPING_WINDOW
+        pc = samples[0].past_iois.shape[0]   # past context from sample
+        fc = samples[0].future_iois.shape[0]  # future context from sample
+        W = pc + 1 + fc
         n_mels = samples[0].target_mel.shape[0]
         mel_dim = samples[0].target_mel.size
         cfg = self.config
@@ -82,12 +81,12 @@ class TypingSampleAdapter(
             drop_future = aug and self._rng.random() < cfg.future_dropout_prob
 
             # Past label dropout mask (per-token)
-            past_label_drop = np.zeros(ctx, dtype=bool)
+            past_label_drop = np.zeros(pc, dtype=bool)
             if aug and cfg.past_label_dropout_prob > 0:
-                past_label_drop = self._rng.random(ctx) < cfg.past_label_dropout_prob
+                past_label_drop = self._rng.random(pc) < cfg.past_label_dropout_prob
 
             # Past tokens
-            for j in range(ctx):
+            for j in range(pc):
                 mel_all[i, j] = s.past_mel[j].ravel()
                 ioi_all[i, j] = s.past_iois[j]
                 mask_all[i, j] = s.past_mask[j]
@@ -95,15 +94,14 @@ class TypingSampleAdapter(
                     k = int(s.past_kinds[j])
                     kind_all[i, j] = (1 - k) if flip else k
                     big_all[i, j] = int(s.past_bigs[j])
-                # else: stays UNK (dropped or padded)
 
             # Target token
-            mel_all[i, ctx] = s.target_mel.ravel()
-            ioi_all[i, ctx] = s.target_iois
+            mel_all[i, pc] = s.target_mel.ravel()
+            ioi_all[i, pc] = s.target_iois
 
             # Future tokens
-            for j in range(ctx):
-                fi = ctx + 1 + j
+            for j in range(fc):
+                fi = pc + 1 + j
                 if drop_future:
                     mask_all[i, fi] = True
                 else:

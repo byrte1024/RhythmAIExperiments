@@ -42,7 +42,7 @@ class TypingTransformer(Model[TypingModelConfig, TypingInput, TypingOutput]):
         )
         self.kind_emb = nn.Embedding(3, c.d_kind)   # D=0, K=1, UNK=2
         self.big_emb = nn.Embedding(3, c.d_kind)    # normal=0, big=1, UNK=2
-        self.pos_emb = nn.Embedding(TYPING_WINDOW, c.d_pos)
+        self.pos_emb = nn.Embedding(c.window, c.d_pos)
 
         feat_dim = c.d_mel + c.d_ioi + c.d_kind + c.d_kind + c.d_pos
         self.input_proj = nn.Linear(feat_dim, c.d_model)
@@ -91,8 +91,8 @@ class TypingTransformer(Model[TypingModelConfig, TypingInput, TypingOutput]):
         # Transformer with padding mask (True = ignore)
         out = self.transformer(tokens, src_key_padding_mask=mask)
 
-        # Extract center token (target onset)
-        center = self.config.context  # index 16 in a 33-token window
+        # Extract target token (after all past tokens)
+        center = self.config.past_context
         target_feat = out[:, center, :]                 # (B, d_model)
 
         type_logit = self.type_head(target_feat).squeeze(-1)        # (B,)
