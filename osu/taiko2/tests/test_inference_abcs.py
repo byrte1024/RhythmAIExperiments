@@ -328,7 +328,10 @@ class TestAutoregressivePredictor:
         source = _blank_chart()
         out = p.predict(source, conditioning=Conditioning(4.0, 8, 1.0))
         assert out.track.artist == source.track.artist
-        assert out.track.difficulty.version == source.track.difficulty.version
+        assert out.track.difficulty.version in (
+            "Kantan", "Futsuu", "Muzukashii", "Oni", "Inner Oni",
+        )
+        assert out.track.difficulty.star_rating is not None
         assert out.audio == source.audio   # audio round-trips
 
     def test_per_step_log_written(self, tmp_path: Path):

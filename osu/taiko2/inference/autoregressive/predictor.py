@@ -307,14 +307,14 @@ class AutoregressivePredictor(ChartPredictor[AutoregressivePredictorConfig]):
     def _build_output_chart(
         source: Chart, predicted_binned: list[OnsetBinned],
     ) -> Chart:
-        # Keep the OnsetBinned instances: their `bin` field is part of
-        # the prediction record and is useful for re-inference, viewer,
-        # and chart comparison. OnsetBinned subclasses Onset, so this
-        # is type-compatible with `Track.onsets: tuple[Onset, ...]`.
+        from ...domain.chart import estimate_difficulty
         onsets = tuple(predicted_binned)
         density = compute_density(onsets)
-        new_track = replace(source.track, onsets=onsets, density=density)
-        # Audio preserved on output so the Chart can be saved back to .osz.
+        difficulty = estimate_difficulty(density.mean)
+        new_track = replace(
+            source.track, onsets=onsets, density=density,
+            difficulty=difficulty,
+        )
         return Chart(track=new_track, audio=source.audio)
 
     # ── logging helper ────────────────────────────────────────────────

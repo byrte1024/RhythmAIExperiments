@@ -1289,6 +1289,39 @@ def _track_to_dict(t: Track) -> dict[str, Any]:
     }
 
 
+# ─────────────────────────── auto difficulty ─────────────────────────
+
+# Linear fits from taiko2_v1 corpus (R^2=0.91 for star, 0.84 for OD).
+_STAR_SLOPE = 0.7238
+_STAR_INTERCEPT = 0.1952
+_OD_SLOPE = 0.5307
+_OD_INTERCEPT = 2.4992
+
+_DIFF_BRACKETS: tuple[tuple[float, float, str], ...] = (
+    (0.0, 2.0, "Kantan"),
+    (2.0, 3.5, "Futsuu"),
+    (3.5, 5.0, "Muzukashii"),
+    (5.0, 6.5, "Oni"),
+    (6.5, 99.0, "Inner Oni"),
+)
+
+
+def estimate_difficulty(density_mean: float) -> Difficulty:
+    """Estimate star rating, OD, and version name from density."""
+    star = max(0.0, _STAR_SLOPE * density_mean + _STAR_INTERCEPT)
+    od = max(1.0, min(10.0, _OD_SLOPE * density_mean + _OD_INTERCEPT))
+    version = "Inner Oni"
+    for lo, hi, name in _DIFF_BRACKETS:
+        if lo <= star < hi:
+            version = name
+            break
+    return Difficulty(
+        version=version,
+        overall_difficulty=round(od, 1),
+        star_rating=round(star, 2),
+    )
+
+
 # ─────────────────────────── Track ↔ .osu text ────────────────────────
 
 # Hit-object encoding tables. These are the INVERSE of

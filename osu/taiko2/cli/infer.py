@@ -329,6 +329,18 @@ def main(argv: list[str] | None = None) -> int:
         kind_counts = Counter(o.kind.value for o in out_chart.track.onsets)
         print(f"[infer] typed: {dict(kind_counts)}")
 
+    # Auto-map difficulty from the generated chart's density.
+    from ..domain.chart import estimate_difficulty
+    auto_diff = estimate_difficulty(out_chart.track.density.mean)
+    out_chart = Chart(
+        track=dataclasses.replace(out_chart.track, difficulty=auto_diff),
+        audio=out_chart.audio,
+    )
+    print(
+        f"[infer] difficulty: {auto_diff.version} "
+        f"(star={auto_diff.star_rating}, OD={auto_diff.overall_difficulty})"
+    )
+
     out_chart.save_osz(osz_path)
     print(
         f"[infer] wrote {osz_path}  "

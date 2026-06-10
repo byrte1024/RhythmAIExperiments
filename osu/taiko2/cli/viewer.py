@@ -325,22 +325,68 @@ def _bisect_onsets_ge(onsets, t_ms: int) -> int:
     return lo
 
 
+def _shaped_noise(n: int, sr: int, band_weights: list[tuple[float, float, float]]) -> np.ndarray:
+    """Generate noise shaped by per-band weights via FFT.
+
+    band_weights: list of (freq_lo_hz, freq_hi_hz, weight).
+    Frequencies outside all bands get weight 0.
+    """
+    import numpy as np
+    noise = np.random.uniform(-1.0, 1.0, n)
+    spectrum = np.fft.rfft(noise)
+    freqs = np.fft.rfftfreq(n, d=1.0 / sr)
+    weights = np.zeros_like(freqs)
+    for lo, hi, w in band_weights:
+        mask = (freqs >= lo) & (freqs <= hi)
+        weights[mask] = np.maximum(weights[mask], w)
+    spectrum *= weights
+    return np.fft.irfft(spectrum, n=n)
+
+
+# Spectral profiles: DON emphasizes low-mid, KA emphasizes mid-high.
+# Both cover the full range — just different weights.
+_DON_BANDS = [
+    (20, 150, 0.7),
+    (150, 500, 1.0),    # peak in low-mid
+    (500, 1500, 0.8),
+    (1500, 4000, 0.5),
+    (4000, 10000, 0.3),
+]
+_KA_BANDS = [
+    (20, 200, 0.4),
+    (200, 600, 0.6),
+    (600, 2000, 0.8),
+    (2000, 5000, 1.0),  # peak in upper-mid
+    (5000, 10000, 0.6),
+]
+
+
 def _synth_tick(
-    duration_ms: int, amp: float,
+    kind: OnsetKind,
     mixer_freq: int, mixer_channels: int, *, volume: float = 0.9,
 ):
+    """Spectrally shaped noise tick. DON = warm (low-weighted),
+    KA = bright (high-weighted). BIG = louder + longer."""
+    import numpy as np
     import pygame
-    n_samples = int(mixer_freq * duration_ms / 1000)
-    buf = array.array("h")
-    peak = int(volume * amp * 32767)
-    peak = max(-32768, min(32767, peak))
-    for i in range(n_samples):
-        fade = 1.0 - (i / n_samples) ** 0.5
-        val = int(peak * fade * (random.random() * 2 - 1))
-        val = max(-32768, min(32767, val))
-        for _ in range(mixer_channels):
-            buf.append(val)
-    return pygame.mixer.Sound(buffer=buf)
+
+    is_don = kind in (OnsetKind.DON, OnsetKind.BIG_DON)
+    is_big = kind in (OnsetKind.BIG_DON, OnsetKind.BIG_KA)
+    dur_s = (0.06 if is_big else 0.04) if is_don else (0.05 if is_big else 0.03)
+    vol = (3.2 if is_big else 2.2) if is_don else (2.8 if is_big else 1.8)
+    vol *= volume
+
+    n = int(mixer_freq * dur_s)
+    bands = _DON_BANDS if is_don else _KA_BANDS
+    shaped = _shaped_noise(n, mixer_freq, bands)
+    decay = 40 if is_don else 50
+    fade = np.exp(-np.linspace(0, dur_s, n) * decay)
+    samples = (shaped * fade * vol * 32767).astype(np.int16)
+
+    if mixer_channels == 2:
+        stereo = np.column_stack([samples, samples]).ravel().astype(np.int16)
+        return pygame.mixer.Sound(buffer=stereo.tobytes())
+    return pygame.mixer.Sound(buffer=samples.tobytes())
 
 
 # ─────────────────────────── mel computation ─────────────────────────
@@ -749,10 +795,9 @@ class Viewer:
         # ── ticks ─────────────────────────────────────────────────────
         self._ticks: dict[OnsetKind, object] = {}
         mixer_freq, _, mixer_ch = pygame.mixer.get_init() or (44100, -16, 2)
-        for kind, (dur, amp) in TICK_VOICE.items():
+        for kind in TICK_VOICE:
             self._ticks[kind] = _synth_tick(
-                duration_ms=dur, amp=amp,
-                mixer_freq=mixer_freq, mixer_channels=mixer_ch,
+                kind, mixer_freq=mixer_freq, mixer_channels=mixer_ch,
                 volume=self.tick_volume,
             )
         self._sorted_onsets = sorted(self.onsets, key=lambda o: o.time_ms)
@@ -1780,30 +1825,16 @@ class Viewer:
         # BIG variants = louder + longer versions.
         sr = 44100
 
-        def _make_don(dur_s: float, vol: float) -> np.ndarray:
-            """Low-pass filtered noise — thuddy, muffled."""
+        def _make_tick(dur_s: float, vol: float, bands: list, decay: float) -> np.ndarray:
             n = int(sr * dur_s)
-            noise = np.random.uniform(-1.0, 1.0, n)
-            # Simple low-pass: cumulative average over ~8 samples
-            kernel = np.ones(8) / 8
-            noise = np.convolve(noise, kernel, mode="same")
-            fade = np.exp(-np.linspace(0, dur_s, n) * 40)
-            return (noise * fade * vol * 32767).astype(np.int16)
+            shaped = _shaped_noise(n, sr, bands)
+            fade = np.exp(-np.linspace(0, dur_s, n) * decay)
+            return (shaped * fade * vol * 32767).astype(np.int16)
 
-        def _make_ka(dur_s: float, vol: float) -> np.ndarray:
-            """Lightly filtered noise — slightly brighter than don."""
-            n = int(sr * dur_s)
-            noise = np.random.uniform(-1.0, 1.0, n)
-            # Mild low-pass: less smoothing than don (4 vs 8 taps)
-            kernel = np.ones(4) / 4
-            noise = np.convolve(noise, kernel, mode="same")
-            fade = np.exp(-np.linspace(0, dur_s, n) * 50)
-            return (noise * fade * vol * 32767).astype(np.int16)
-
-        tick_don = _make_don(0.04, 1.6)
-        tick_ka = _make_ka(0.03, 1.3)
-        tick_big_don = _make_don(0.06, 2.4)
-        tick_big_ka = _make_ka(0.05, 2.0)
+        tick_don = _make_tick(0.04, 2.2, _DON_BANDS, 40)
+        tick_ka = _make_tick(0.03, 1.8, _KA_BANDS, 50)
+        tick_big_don = _make_tick(0.06, 3.2, _DON_BANDS, 40)
+        tick_big_ka = _make_tick(0.05, 2.8, _KA_BANDS, 50)
 
         tick_map = {
             OnsetKind.DON: tick_don,
@@ -1859,7 +1890,9 @@ class Viewer:
             mixed_pcm = mixed.astype(np.int16).tobytes()
 
         # ── offscreen surface + ffmpeg pipe ───────────────────────────
-        render_w, render_h = 1200, 300
+        has_mel = self.mel_data is not None
+        render_w = 1200
+        render_h = 520 if has_mel else 300
         surface = pygame.Surface((render_w, render_h))
 
         tmp_wav: tempfile._TemporaryFileWrapper | None = None
@@ -2005,10 +2038,119 @@ class Viewer:
                 )
                 surface.blit(info, (10, info_y))
 
-                # beat-synced gif (right-aligned, full render height)
+                # ── mel spectrogram strip (time-aligned to playfield) ──
+                if has_mel:
+                    mel_top = info_y + 24
+                    mel_h = 100
+                    mel_strip_w = render_w
+
+                    # Align time axis with the playfield. The playfield
+                    # scrolls at SCROLL_R px/ms. Each mel pixel must cover
+                    # the same time span: 1 pixel = 1/SCROLL_R ms =
+                    # (1/SCROLL_R)/MEL_BIN_MS mel frames.
+                    ms_per_px = 1.0 / SCROLL_R
+                    frames_per_px = ms_per_px / MEL_BIN_MS
+                    center_frame = int(now_ms / MEL_BIN_MS)
+                    frames_left = int(HIT_X_R * frames_per_px)
+                    frames_right = int((mel_strip_w - HIT_X_R) * frames_per_px)
+                    f_lo = center_frame - frames_left
+                    f_hi = center_frame + frames_right
+
+                    n_mels_r, total_frames = self.mel_data.shape
+                    slice_w = f_hi - f_lo
+                    src_lo = max(0, f_lo)
+                    src_hi = min(total_frames, f_hi)
+                    col_lo = src_lo - f_lo
+                    col_hi = col_lo + (src_hi - src_lo)
+
+                    mel_slice = np.zeros((n_mels_r, slice_w), dtype=np.float32)
+                    if src_hi > src_lo:
+                        mel_slice[:, col_lo:col_hi] = self.mel_data[:, src_lo:src_hi]
+
+                    vmin = self._mel_global_min
+                    vmax = self._mel_global_max
+                    normed = np.clip((mel_slice - vmin) / max(vmax - vmin, 1e-6), 0, 1)
+                    r = np.clip(normed * 3, 0, 1) * 255
+                    g = np.clip((normed - 0.33) * 3, 0, 1) * 180
+                    b = np.clip((0.66 - normed) * 3, 0, 1) * 200
+                    rgb = np.stack([r, g, b], axis=-1).astype(np.uint8)
+                    rgb = np.flip(rgb, axis=0)
+
+                    mel_surf = pygame.Surface((slice_w, n_mels_r))
+                    pygame.surfarray.blit_array(
+                        mel_surf, np.ascontiguousarray(rgb.transpose(1, 0, 2)),
+                    )
+                    scaled_mel = pygame.transform.smoothscale(
+                        mel_surf, (mel_strip_w, mel_h),
+                    )
+                    surface.blit(scaled_mel, (0, mel_top))
+
+                    # Playhead line on mel — aligned with HIT_X_R
+                    pygame.draw.line(
+                        surface, (255, 255, 255, 150),
+                        (HIT_X_R, mel_top),
+                        (HIT_X_R, mel_top + mel_h), 1,
+                    )
+                    mel_label = font.render("mel", True, DIM_TEXT)
+                    surface.blit(mel_label, (4, mel_top))
+
+                    # ── confidence strip (onset detector activation) ──
+                    conf_top = mel_top + mel_h + 2
+                    conf_h = 24
+                    conf_maps = getattr(self, "_conf_maps", None)
+                    conf_cursors = getattr(self, "_conf_cursors_sorted", None)
+
+                    if conf_maps and conf_cursors:
+                        # Find the confidence map closest to now
+                        import bisect
+                        now_bin = int(now_ms / MEL_BIN_MS)
+                        ci = bisect.bisect_right(conf_cursors, now_bin) - 1
+                        ci = max(0, min(ci, len(conf_cursors) - 1))
+                        cursor_bin = conf_cursors[ci]
+                        cmap = conf_maps[cursor_bin]
+
+                        # Build confidence strip aligned with playfield.
+                        # Each bin offset maps to a pixel via SCROLL_R:
+                        #   px = HIT_X_R + (bin_ms - now_ms) * SCROLL_R
+                        conf_strip = np.zeros(mel_strip_w, dtype=np.float32)
+                        for bi, cv in enumerate(cmap):
+                            abs_bin = cursor_bin + bi
+                            bin_ms = abs_bin * MEL_BIN_MS
+                            px = int(HIT_X_R + (bin_ms - now_ms) * SCROLL_R)
+                            if 0 <= px < mel_strip_w:
+                                conf_strip[px] = max(conf_strip[px], cv)
+
+                        # Render as green-intensity bar
+                        conf_rgb = np.zeros((conf_h, mel_strip_w, 3), dtype=np.uint8)
+                        for px in range(mel_strip_w):
+                            v = conf_strip[px]
+                            if v > 0.01:
+                                intensity = int(min(v, 1.0) * 255)
+                                conf_rgb[:, px] = (0, intensity, int(intensity * 0.3))
+                        conf_surf = pygame.Surface((mel_strip_w, conf_h))
+                        pygame.surfarray.blit_array(
+                            conf_surf,
+                            np.ascontiguousarray(conf_rgb.transpose(1, 0, 2)),
+                        )
+                        surface.blit(conf_surf, (0, conf_top))
+                        pygame.draw.line(
+                            surface, (255, 255, 255, 150),
+                            (HIT_X_R, conf_top),
+                            (HIT_X_R, conf_top + conf_h), 1,
+                        )
+                        conf_label = font.render("conf", True, DIM_TEXT)
+                        surface.blit(conf_label, (4, conf_top))
+                    else:
+                        # No confidence data — draw empty strip
+                        pygame.draw.rect(
+                            surface, (20, 20, 30),
+                            (0, conf_top, mel_strip_w, conf_h),
+                        )
+
+                # beat-synced gif (top-right, moderate size)
                 if self.gif_player is not None:
                     self.gif_player.update(int(now_ms), self._sorted_onsets)
-                    gh = render_h
+                    gh = min(200, render_h // 2)
                     gw = int(
                         self.gif_player.display_w
                         * gh / max(self.gif_player.display_h, 1)
@@ -2021,7 +2163,7 @@ class Viewer:
                             src, self.gif_player._current_big_intensity,
                         )
                     scaled = pygame.transform.smoothscale(src, (gw, gh))
-                    surface.blit(scaled, (render_w - gw, 0))
+                    surface.blit(scaled, (render_w - gw - 8, 4))
 
                 frame_bytes = pygame.image.tobytes(surface, "RGB")
                 try:
