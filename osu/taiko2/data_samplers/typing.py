@@ -189,6 +189,7 @@ class TypingSampler(DataSampler[TypingSample, TypingSamplerConfig]):
         past_bigs = np.zeros(pc, dtype=np.uint8)
         past_mel = np.zeros((pc, features.shape[0], self.config.mel_patch), dtype=np.float32)
         past_mask = np.ones(pc, dtype=bool)  # True = padded
+        past_bins = np.zeros(pc, dtype=np.int64)
 
         past_start = max(0, hit_pos - pc)
         past_count = hit_pos - past_start
@@ -199,6 +200,7 @@ class TypingSampler(DataSampler[TypingSample, TypingSamplerConfig]):
             past_kinds[dst] = self._kind_to_dk(int(kinds[src]))
             past_bigs[dst] = self._kind_to_big(int(kinds[src]))
             past_mel[dst] = self._extract_mel_patch(features, int(bins[src]))
+            past_bins[dst] = int(bins[src])
             past_mask[dst] = False
 
         # Target
@@ -209,6 +211,7 @@ class TypingSampler(DataSampler[TypingSample, TypingSamplerConfig]):
         future_iois = np.zeros((fc, 3), dtype=np.float32)
         future_mel = np.zeros((fc, features.shape[0], self.config.mel_patch), dtype=np.float32)
         future_mask = np.ones(fc, dtype=bool)
+        future_bins = np.zeros(fc, dtype=np.int64)
 
         future_end = min(n_hits, hit_pos + 1 + fc)
         future_count = future_end - (hit_pos + 1)
@@ -216,6 +219,7 @@ class TypingSampler(DataSampler[TypingSample, TypingSamplerConfig]):
             src = hit_pos + 1 + j
             future_iois[j] = _compute_iois(bins, src)
             future_mel[j] = self._extract_mel_patch(features, int(bins[src]))
+            future_bins[j] = int(bins[src])
             future_mask[j] = False
 
         return TypingSample(
@@ -227,11 +231,14 @@ class TypingSampler(DataSampler[TypingSample, TypingSamplerConfig]):
             past_bigs=past_bigs,
             past_mel=past_mel,
             past_mask=past_mask,
+            past_bins=past_bins,
             target_iois=target_iois,
             target_mel=target_mel,
+            target_bin=target_bin,
             future_iois=future_iois,
             future_mel=future_mel,
             future_mask=future_mask,
+            future_bins=future_bins,
             target_kind=self._kind_to_dk(target_kind_id),
             target_big=self._kind_to_big(target_kind_id),
         )

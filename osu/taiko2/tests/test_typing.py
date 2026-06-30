@@ -58,14 +58,17 @@ def _make_sample(
             [True] * past_mask_count + [False] * (ctx - past_mask_count),
             dtype=bool,
         ),
+        past_bins=np.arange(1000, 1000 + ctx * 30, 30, dtype=np.int64),
         target_iois=rng.randn(3).astype(np.float32),
         target_mel=rng.randn(n_mels, mp).astype(np.float32),
+        target_bin=1000 + ctx * 30,
         future_iois=rng.randn(ctx, 3).astype(np.float32),
         future_mel=rng.randn(ctx, n_mels, mp).astype(np.float32),
         future_mask=np.array(
             [False] * (ctx - future_mask_count) + [True] * future_mask_count,
             dtype=bool,
         ),
+        future_bins=np.arange(1000 + (ctx + 1) * 30, 1000 + (2 * ctx + 1) * 30, 30, dtype=np.int64),
         target_kind=target_kind,
         target_big=target_big,
     )
@@ -125,6 +128,7 @@ class TestTypingTransformer:
             big_labels=torch.randint(0, 3, (B, W)),
             positions=torch.arange(W).unsqueeze(0).expand(B, -1),
             mask=torch.zeros(B, W, dtype=torch.bool),
+            onset_bins=torch.arange(W, dtype=torch.float32).unsqueeze(0).expand(B, -1) * 30,
         )
         out = model.predict(inp)
         assert out.type_logit.shape == (B,)
@@ -143,6 +147,7 @@ class TestTypingTransformer:
             big_labels=torch.randint(0, 3, (B, W)),
             positions=torch.arange(W).unsqueeze(0).expand(B, -1),
             mask=mask,
+            onset_bins=torch.arange(W, dtype=torch.float32).unsqueeze(0).expand(B, -1) * 30,
         )
         out = model.predict(inp)
         assert out.type_logit.shape == (B,)
@@ -159,6 +164,7 @@ class TestTypingTransformer:
             big_labels=torch.randint(0, 3, (B, W)),
             positions=torch.arange(W).unsqueeze(0).expand(B, -1),
             mask=torch.zeros(B, W, dtype=torch.bool),
+            onset_bins=torch.arange(W, dtype=torch.float32).unsqueeze(0).expand(B, -1) * 30,
         )
         out = model.predict(inp)
         loss = out.type_logit.sum() + out.strength_logit.sum()
@@ -182,11 +188,12 @@ class TestTypingTransformer:
             big_labels=torch.randint(0, 3, (B, W)),
             positions=torch.arange(W).unsqueeze(0).expand(B, -1),
             mask=torch.zeros(B, W, dtype=torch.bool),
+            onset_bins=torch.arange(W, dtype=torch.float32).unsqueeze(0).expand(B, -1) * 30,
         )
         out1 = model.predict(inp)
         out2 = model.forward(
             inp.mel_patches, inp.ioi_features, inp.kind_labels,
-            inp.big_labels, inp.positions, inp.mask,
+            inp.big_labels, inp.positions, inp.mask, inp.onset_bins,
         )
         assert torch.allclose(out1.type_logit, out2.type_logit)
         assert torch.allclose(out1.strength_logit, out2.strength_logit)

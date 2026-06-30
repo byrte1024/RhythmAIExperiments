@@ -71,6 +71,7 @@ class TypingSampleAdapter(
         big_all = np.full((B, W), UNK_LABEL, dtype=np.int64)
         pos_all = np.zeros((B, W), dtype=np.int64)
         mask_all = np.zeros((B, W), dtype=bool)
+        bins_all = np.zeros((B, W), dtype=np.float32)
         type_targets = np.zeros(B, dtype=np.float32)
         str_targets = np.zeros(B, dtype=np.float32)
 
@@ -89,6 +90,7 @@ class TypingSampleAdapter(
             for j in range(pc):
                 mel_all[i, j] = s.past_mel[j].ravel()
                 ioi_all[i, j] = s.past_iois[j]
+                bins_all[i, j] = float(s.past_bins[j])
                 mask_all[i, j] = s.past_mask[j]
                 if not s.past_mask[j] and not past_label_drop[j]:
                     k = int(s.past_kinds[j])
@@ -98,6 +100,7 @@ class TypingSampleAdapter(
             # Target token
             mel_all[i, pc] = s.target_mel.ravel()
             ioi_all[i, pc] = s.target_iois
+            bins_all[i, pc] = float(s.target_bin)
 
             # Future tokens
             for j in range(fc):
@@ -107,6 +110,7 @@ class TypingSampleAdapter(
                 else:
                     mel_all[i, fi] = s.future_mel[j].ravel()
                     ioi_all[i, fi] = s.future_iois[j]
+                    bins_all[i, fi] = float(s.future_bins[j])
                     mask_all[i, fi] = s.future_mask[j]
 
             pos_all[i] = positions
@@ -135,6 +139,7 @@ class TypingSampleAdapter(
             big_labels=torch.from_numpy(big_all).to(device),
             positions=torch.from_numpy(pos_all).to(device),
             mask=torch.from_numpy(mask_all).to(device),
+            onset_bins=torch.from_numpy(bins_all).to(device),
         )
         tgt = TypingTarget(
             type_target=torch.from_numpy(type_targets).to(device),

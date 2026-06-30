@@ -1,0 +1,11 @@
+{
+  "__class__": "osu.taiko2.data_samplers.typing:TypingSamplerConfig",
+  "batch_size": 128,
+  "past_context": 32,
+  "future_context": 32,
+  "mel_patch": 5,
+  "subsample": 1,
+  "split": "train",
+  "split_ratios": [["train", 0.9], ["val", 0.1]],
+  "split_seed": 42
+}

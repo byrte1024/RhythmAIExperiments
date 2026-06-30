@@ -29,11 +29,14 @@ class TypingSample(DataSample):
     past_bigs: np.ndarray       # (CONTEXT,) uint8: 0=normal, 1=big
     past_mel: np.ndarray        # (CONTEXT, n_mels, MEL_PATCH) float32
     past_mask: np.ndarray       # (CONTEXT,) bool: True=padded
+    past_bins: np.ndarray       # (CONTEXT,) int64: onset bin positions
     target_iois: np.ndarray     # (3,) float32
     target_mel: np.ndarray      # (n_mels, MEL_PATCH) float32
+    target_bin: int             # onset bin position
     future_iois: np.ndarray     # (CONTEXT, 3) float32
     future_mel: np.ndarray      # (CONTEXT, n_mels, MEL_PATCH) float32
     future_mask: np.ndarray     # (CONTEXT,) bool: True=padded
+    future_bins: np.ndarray     # (CONTEXT,) int64: onset bin positions
     target_kind: int            # GT: 0=D, 1=K
     target_big: int             # GT: 0=normal, 1=big
 
@@ -53,6 +56,8 @@ class TypingModelConfig(ModelConfig):
     d_ioi: int = 16
     d_kind: int = 16
     d_pos: int = 32
+    temporal_bias: bool = False
+    temporal_sigma: float = 50.0
 
     @property
     def window(self) -> int:
@@ -67,6 +72,7 @@ class TypingInput(ModelInput):
     big_labels: torch.Tensor    # (B, W) long: 0=normal, 1=big, 2=UNK
     positions: torch.Tensor     # (B, W) long: [-context .. 0 .. +context]
     mask: torch.Tensor          # (B, W) bool: True=padded
+    onset_bins: torch.Tensor    # (B, W) float32: onset bin positions (for temporal bias)
 
 
 @dataclass(frozen=True, slots=True)

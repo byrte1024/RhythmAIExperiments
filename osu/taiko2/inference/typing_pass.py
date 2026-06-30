@@ -171,6 +171,7 @@ def type_chart(
         big_all = np.full((1, W), 2, dtype=np.int64)
         pos_all = np.arange(W, dtype=np.int64).reshape(1, W)
         mask_all = np.ones((1, W), dtype=bool)
+        bins_all = np.zeros((1, W), dtype=np.float32)
 
         # Past (own predictions)
         past_start = max(0, i - pc)
@@ -182,11 +183,13 @@ def type_chart(
             ioi_all[0, dst] = _compute_iois(bins, src)
             kind_all[0, dst] = int(pred_dk[src])
             big_all[0, dst] = int(pred_big[src])
+            bins_all[0, dst] = float(bins[src])
             mask_all[0, dst] = False
 
         # Target
         mel_all[0, pc] = _extract_mel_patch(features, int(bins[i])).ravel()
         ioi_all[0, pc] = _compute_iois(bins, i)
+        bins_all[0, pc] = float(bins[i])
         mask_all[0, pc] = False
 
         # Future
@@ -196,6 +199,7 @@ def type_chart(
             src = i + 1 + j
             mel_all[0, fi] = _extract_mel_patch(features, int(bins[src])).ravel()
             ioi_all[0, fi] = _compute_iois(bins, src)
+            bins_all[0, fi] = float(bins[src])
             mask_all[0, fi] = False
 
         inp = TypingInput(
@@ -205,6 +209,7 @@ def type_chart(
             big_labels=torch.from_numpy(big_all).to(device),
             positions=torch.from_numpy(pos_all).to(device),
             mask=torch.from_numpy(mask_all).to(device),
+            onset_bins=torch.from_numpy(bins_all).to(device),
         )
         out = model.predict(inp)
         type_prob = torch.sigmoid(out.type_logit).item()
