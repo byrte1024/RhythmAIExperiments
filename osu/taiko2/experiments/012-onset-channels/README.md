@@ -24,10 +24,10 @@ infer_corpus/eval_308550/gt_cond/comparisons_summary.json:fields.matched_rate.me
 > - stop_f1 0.5831 → **0.5850** [exp_007_time_stretch, step
 >   372,132, val/single/onset/stop_f1]
 >
-> The pre-run section is left as-written per CLAUDE.md §10
-> (historical predictions don't get silently revised). Use this
-> amendment as the source of truth when scaffolding any future
-> experiment that copies #007's reference numbers from #012.
+> The pre-run section is left as-written (historical predictions
+> are never silently revised). Use this amendment as the source of
+> truth when scaffolding any future experiment that copies #007's
+> reference numbers from #012.
 
 > **Amendment 2026-05-07 (infer.json config bug — AR corpus
 > rerun planned):** `config/infer.json` was copied from

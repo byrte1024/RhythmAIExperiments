@@ -16,7 +16,7 @@ loss flow back into the divisor and offset heads breaks the
 decomposition: the ratio head learns to invert divisor noise back
 into a correct bin, leaving div_acc at 0.39 and ratio outputs as a
 trivial diagonal in raw bin space rather than musical-ratio
-structure. The user reading the divisor heatmap saw the
+structure. The divisor heatmap showed the
 pre-decomposition direct-detector "fanning rays" pattern reappear —
 the divisor head had stopped predicting tempo entirely.
 

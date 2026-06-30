@@ -26,9 +26,8 @@ directory but are not the basis for ongoing work.
   bundle formats are versioned and migrate via additive optional
   fields, never silent renames.
 - **Frozen dataclasses with slots** for data types; explicit
-  type hints everywhere; stdlib-name shadowing prohibited (the
-  `secrets`/`types` rename trap from earlier work is documented
-  in [`CLAUDE.md`](CLAUDE.md)).
+  type hints everywhere; stdlib-name shadowing prohibited (an
+  early `secrets`/`types` shadowing bug motivated this rule).
 - **Save don't print.** Every metric, checkpoint, and analysis
   output that's worth showing a human is also written to disk
   in a parseable format. The terminal is a debugging aid; the
@@ -38,10 +37,6 @@ directory but are not the basis for ongoing work.
   results) and `ARCHITECTURE.md` (reference-free, fully
   self-contained spec). Pre-run sections are written before the
   run starts and never edited afterward (use amendments instead).
-
-Conventions for working in this directory are documented in
-[`CLAUDE.md`](CLAUDE.md). Read it before changing anything under
-`osu/taiko2/`.
 
 ## Current state of the work
 
@@ -80,7 +75,6 @@ osu/taiko2/
 
   pyproject.toml       # deps + dev group
   uv.lock              # committed lockfile (uv sync --frozen --group dev)
-  CLAUDE.md            # working conventions
   README.md            # this file
   DATA.md              # how to obtain & build datasets
   LICENSE.md           # licensing & disclaimer
@@ -198,7 +192,6 @@ alone.
 | File                                            | Purpose                                              |
 | ----------------------------------------------- | ---------------------------------------------------- |
 | [`README.md`](README.md)                         | This file.                                           |
-| [`CLAUDE.md`](CLAUDE.md)                         | Working conventions. Read before editing.            |
 | [`DATA.md`](DATA.md)                             | How to obtain `.osz` packs and build datasets.     |
 | [`LICENSE.md`](LICENSE.md)                       | Licensing and disclaimer.                            |
 | [`experiments/README.md`](experiments/README.md) | Per-experiment index with status + key result.       |

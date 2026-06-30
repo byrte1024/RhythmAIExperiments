@@ -362,7 +362,7 @@ trivially, not toward configurations that match the GT divisor.
   produce a cleaner ratio head?** With the aux heads frozen, the
   ratio head can't drag them off-target — and it has to work
   against high-quality div/off rather than against its own noise.
-  This directly tests the user's two questions: (a) does better
+  This directly tests two questions: (a) does better
   div/off improve ratio?, and (b) does freezing div/off improve
   ratio? Natural setup for #011.
 - **Static (GT-based) ratio target.** Replace the dynamic

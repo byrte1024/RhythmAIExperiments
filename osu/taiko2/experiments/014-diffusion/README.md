@@ -310,7 +310,7 @@ comparison stays honest.
 - **Must have:** `±log(2)` ratio-banding ridges in the
   predicted-x_0 heatmap at the best eval are visibly weaker than
   #007's at matched compute (qualitative — judged by side-by-side
-  PNG inspection by the human reviewer; recorded with both heatmaps
+  PNG inspection; recorded with both heatmaps
   side-by-side under `graphs/`).
 - **Must have:** train_noaug → val gap not materially worse than
   #007's −3.50 pp at best eval (−4.0 pp is the fails-if line).
